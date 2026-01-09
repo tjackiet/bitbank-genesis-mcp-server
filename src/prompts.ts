@@ -1867,15 +1867,23 @@ BTC/JPYは現在、[短期/中期/長期の状況を1段落で要約]。
 - テクニカル指標の解釈は含めず、ファクト整理に特化
 - 詳細な分析は「中級：主要指標でBTCを分析して」に任せる
 
-【使用ツール（4つ）】
-1. get_candles(pair="btc_jpy", type="1hour", limit=8)
-   → 8時間分の価格推移、高値・安値・変動率
-2. get_flow_metrics(pair="btc_jpy", limit=300, bucketMs=60000)
+【使用ツール（5つ）】
+1. get_ticker(pair="btc_jpy")
+   → リアルタイム現在価格（※1時間足は確定済みのみ返されるため、現在価格は別途取得）
+2. get_candles(pair="btc_jpy", type="1hour", limit=8)
+   → 確定済み8本の1時間足（高値・安値の参照用）
+3. get_flow_metrics(pair="btc_jpy", limit=300, bucketMs=60000)
    → 急騰/急落スパイク、出来高、売買バランス（CVD/アグレッサー比）
-3. analyze_support_resistance(pair="btc_jpy", lookbackDays=90, topN=3)
+4. analyze_support_resistance(pair="btc_jpy", lookbackDays=90, topN=3)
    → サポート/レジスタンスラインとの関係
-4. get_orderbook_pressure(pair="btc_jpy", bandsPct=[0.005, 0.01, 0.02])
+5. get_orderbook_pressure(pair="btc_jpy", bandsPct=[0.005, 0.01, 0.02])
    → 現在の板の買い/売り圧力
+
+【重要：価格データの取り扱い】
+- **現在価格**: get_ticker の last を使用（リアルタイム）
+- **8時間前の価格**: get_candles の最古の足（data[0]）の open を使用
+- **高値/安値**: 確定済み8本の高値/安値と、現在価格を比較して最大/最小を採用
+  - 例: 現在価格が確定済み足の高値より高ければ、現在価格を高値として表示
 
 【出力フォーマット】
 ※ 横線（━/─）は使わず、Markdownの見出し（# / ## / ###）で区切ること
