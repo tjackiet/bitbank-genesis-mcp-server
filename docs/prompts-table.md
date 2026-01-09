@@ -14,6 +14,7 @@
 | 8 | 中級 | 中級：BTCの板の状況を詳しく見て | get_orderbook_statistics<br>get_depth（任意） | 板の厚み・流動性分布・大口注文から短期サポレジと売買圧力を分析 | 1. タイムスタンプ<br>2. 結論<br>3. 重要価格帯<br>4. 大口注文<br>5. 短期トレード示唆 |
 | 9 | 中級 | 中級：BTCのパターン分析をして | detect_patterns<br>analyze_candle_patterns | 過去6ヶ月の完成済み＆形成中チャートパターン＋2本足パターンを統合検出・評価 | 1. 形成中パターン<br>2. 完成済みパターン（影響度順）<br>3. 2本足パターン<br>4. 解釈<br>5. 今後のシナリオ |
 | 10 | 中級 | 中級：BTCのサポレジを分析して | analyze_support_resistance<br>get_depth<br>get_orderbook_pressure<br>analyze_sma_snapshot（任意） | 過去90日の反応と現在の板・圧力を統合してサポート/レジスタンスの強度を評価 | 1. サポレジツール解釈<br>2. 板・圧力との照合<br>3. 最終強度評価とまとめ |
+| 11 | 中級 | 🌅 おはようレポート（直近8時間） | get_candles<br>get_flow_metrics<br>analyze_support_resistance<br>get_orderbook_pressure | 直近8時間の価格変動・急変イベント・サポレジ接触・板状況をファクトベースで報告 | 1. 価格の動き<br>2. 主なイベント<br>3. 出来高・売買バランス<br>4. 重要ラインとの関係<br>5. 今の板状況 |
 
 ## 主な特徴
 
