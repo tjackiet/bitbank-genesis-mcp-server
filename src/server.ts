@@ -35,6 +35,7 @@ import analyzeSmaSnapshot from '../tools/analyze_sma_snapshot.js';
 import analyzeSupportResistance from '../tools/analyze_support_resistance.js';
 import analyzeCandlePatterns from '../tools/analyze_candle_patterns.js';
 import renderCandlePatternDiagram from '../tools/render_candle_pattern_diagram.js';
+import { runBacktestSma, runBacktest, getAvailableStrategies, getStrategyDefaults } from '../tools/trading_process/index.js';
 import getTickersJpy from '../tools/get_tickers_jpy.js';
 import detectMacdCross from '../tools/detect_macd_cross.js';
 import detectWhaleEvents from '../tools/detect_whale_events.js';
@@ -42,6 +43,7 @@ import analyzeMacdPattern from './handlers/analyzeMacdPattern.js';
 import { DetectPatternsInputSchema, DetectPatternsOutputSchema } from './schemas.js';
 import getCircuitBreakInfo from '../tools/get_circuit_break_info.js';
 import { AnalyzeMarketSignalInputSchema, AnalyzeMarketSignalOutputSchema } from './schemas.js';
+import { RunBacktestSmaInputSchema, RunBacktestSmaOutputSchema, RunBacktestInputSchema, RunBacktestOutputSchema, StrategyTypeEnum } from './schemas.js';
 // typed prompt schema imports not used; prompts are registered via prompts.ts
 import { prompts as promptDefs } from './prompts.js';
 import { SYSTEM_PROMPT } from './system-prompt.js';
@@ -1099,7 +1101,7 @@ registerToolWithLog(
 
 registerToolWithLog(
 	'render_chart_svg',
-	{ description: 'ローソク足/ライン/板チャートをSVG形式で生成します。\n\n【重要な使用タイミング（厳守）】\n- ユーザーが「描画/可視化/チャートで見たい」等と明示したときのみ使用\n- detect_patterns 等の結果を「図で確認したい」とユーザーが要望したとき\n- 画像（SVG）のアーティファクト表示が明確に求められたとき\n\n【使用してはいけない場合】\n- 数値だけで足りる問い合わせ（分析/要約のみ）\n- ユーザーが視覚化を求めていないとき（自発的に使わない）\n- 「念のため」の再描画\n\nLLM への指示: ユーザーの明示要求がない限り、このツールを起動しないでください。\n\n【返却形式】\n- data.svg: 完全なSVG文字列（最重要。これをそのまま image/svg+xml のアーティファクトとして出力）\n- data.filePath: サイズ超過時のみファイルパス（または preferFile=true の場合に常に）\n- data.legend: 描画したレイヤの凡例\n- meta.range: { start, end }（ISO8601）\n- meta.indicators: 表示中のインジケータ一覧\n\n【CRITICAL: アーティファクト表示要件】\n- SVGは必ず antArtifact タグで表示（例: <antArtifact type="image/svg+xml" isClosed="true">…</antArtifact>）\n- artifact タグは使用不可（テキスト表示になり視覚化されません）\n- タグ名は大文字小文字を厳密に: antArtifact（antは小、ArtifactのAは大）\n- data.svg が null の場合: file_read で data.filePath を読み、同様に antArtifact で表示\n\n【基本例】\nrender_chart_svg({ pair: "btc_jpy", type: "1day", limit: 30 })\n→ 返却 { data: { svg: "<svg>...</svg>" }, meta: { range: {start, end}, indicators: [..] } }\n→ LLMは data.svg をそのままアーティファクト出力。data.svg が null の場合は data.filePath を file_read で読み取り表示。\n\n【他ツールとの連携】\n1) detect_patterns を実行\n2) 返却された data.overlays を取得\n3) render_chart_svg({ overlays: data.overlays }) に渡して描画（ranges/annotations/depth_zones に対応）\n\n【軽量化オプション】\n- svgPrecision, svgMinify, simplifyTolerance, viewBoxTight\n- maxSvgBytes: 超過時は data.filePath、preferFile=true: 常に保存のみ', inputSchema: RenderChartSvgInputSchema },
+	{ description: 'ローソク足/ライン/板チャートをSVG形式で生成します。\n\n【重要な使用タイミング（厳守）】\n- ユーザーが「描画/可視化/チャートで見たい」等と明示したときのみ使用\n- detect_patterns 等の結果を「図で確認したい」とユーザーが要望したとき\n\n【使用してはいけない場合】\n- 数値だけで足りる問い合わせ（分析/要約のみ）\n- ユーザーが視覚化を求めていないとき（自発的に使わない）\n\n【返却形式】\n- data.svg: 完全なSVG文字列\n- data.filePath: ファイル保存時のパス\n- data.legend: 描画したレイヤの凡例\n- meta.range: { start, end }（ISO8601）\n- meta.indicators: 表示中のインジケータ一覧\n\n【チャート表示方法（重要）】\nClaude.aiでチャートを表示するには、HTMLファイルにSVGを埋め込んで提示してください。\nSVGファイルを直接 present_files で提示しても、ダウンロードリンクになるだけで画像として表示されません。\n\n手順:\n1. render_chart_svg を呼び出し、data.svg を取得\n2. create_file でHTMLファイル（SVG埋め込み）を /mnt/user-data/outputs/ に保存\n3. present_files でHTMLファイルを提示\n\n※ SVGファイル単体の present_files は非推奨（表示されない）\n\n【他ツールとの連携】\n1) detect_patterns を実行\n2) 返却された data.overlays を取得\n3) render_chart_svg({ overlays: data.overlays }) に渡して描画\n\n【軽量化オプション】\n- svgPrecision, svgMinify, simplifyTolerance, viewBoxTight\n- maxSvgBytes: 超過時は data.filePath、preferFile=true: 常に保存のみ', inputSchema: RenderChartSvgInputSchema },
 	async (args: any) => {
 		// Default to file-first strategy for reliability
 		const effArgs = {
@@ -1135,7 +1137,8 @@ registerToolWithLog(
 					indLine,
 					sizeLine,
 					'',
-					'Note: The chart has been saved as an SVG file. Use the link above to view it.'
+					'【次のステップ】Claude.aiでチャートを表示するには、このSVGをHTMLに埋め込んで create_file → present_files してください。',
+					'※ SVGファイル単体の present_files は画像として表示されません。'
 				].filter(Boolean).join('\n');
 				const enriched = {
 					...(parsed as any),
@@ -1160,8 +1163,7 @@ registerToolWithLog(
 				const sizeLine = meta?.sizeBytes != null ? `- Size: ${meta.sizeBytes} bytes` : '';
 				const legendLines = data?.legend ? Object.entries(data.legend).map(([k, v]: any[]) => `- ${k}: ${String(v)}`).join('\n') : '';
 				const text = [
-					'--- チャートSVG ---',
-					'以下のSVGを antArtifact タグで囲んで必ず視覚的に表示してください:',
+					'--- Chart SVG ---',
 					`identifier: ${id}`,
 					`title: ${ttl}`,
 					'type: image/svg+xml',
@@ -1224,7 +1226,6 @@ registerToolWithLog(
 				header,
 				'',
 				'--- Depth SVG ---',
-				'以下のSVGを antArtifact タグで囲んで表示してください:',
 				`identifier: depth-${String(pair)}-${Date.now()}`,
 				`title: Depth ${String(pair).toUpperCase()}`,
 				'type: image/svg+xml',
@@ -1503,8 +1504,7 @@ registerToolWithLog(
 					const title = String(diagram?.artifact?.title || 'パターン構造図');
 					const svg = String(diagram.svg);
 					diagramBlock = [
-						'--- 構造図 (SVG) ---',
-						'以下のSVGを antArtifact タグで囲んでユーザーに視覚的に表示してください:',
+						'--- Structure Diagram (SVG) ---',
 						`identifier: ${id}`,
 						`title: ${title}`,
 						'type: image/svg+xml',
@@ -1758,7 +1758,7 @@ registerToolWithLog(
 registerToolWithLog(
 	'render_candle_pattern_diagram',
 	{
-		description: 'analyze_candle_patternsで検出されたパターンを教育用の構造図として視覚化。\n【重要】ユーザーが明示的に「図で見せて」「視覚的に確認したい」等と要求した場合のみ使用。自発的な呼び出しは避けること。分析結果のテキスト説明で十分な場合は不要。\nローソク足5本を表示し、パターン該当2本をオレンジ枠でハイライト。「前日」「確定日」ラベル（オレンジ）、関係性を示す矢印（淡いブルー）付き。初心者が直感的に理解できる構造図。\n\n【返却形式】\n- data.svg: 完全なSVG文字列\n- meta.patternName: パターン名\n\n【CRITICAL: アーティファクト表示要件】\n- SVGは必ず antArtifact タグで表示',
+		description: 'analyze_candle_patternsで検出されたパターンを教育用の構造図として視覚化。\n【重要】ユーザーが明示的に「図で見せて」「視覚的に確認したい」等と要求した場合のみ使用。自発的な呼び出しは避けること。分析結果のテキスト説明で十分な場合は不要。\nローソク足5本を表示し、パターン該当2本をオレンジ枠でハイライト。「前日」「確定日」ラベル（オレンジ）、関係性を示す矢印（淡いブルー）付き。初心者が直感的に理解できる構造図。\n\n【返却形式】\n- data.svg: 完全なSVG文字列\n- meta.patternName: パターン名\n\nLLMはdata.svgをアーティファクトとして表示するか、ファイルとしてユーザーに提示できます。',
 		inputSchema: z.object({
 			candles: z.array(z.object({
 				date: z.string().describe('Display date e.g. "11/6(木)"'),
@@ -1790,8 +1790,7 @@ registerToolWithLog(
 			const identifier = `candle-pattern-${patternName.replace(/[^a-z0-9]+/gi, '-')}-${Date.now()}`;
 			const title = `${patternName}構造図`;
 			const text = [
-				'--- ローソク足パターン構造図 ---',
-				'以下のSVGを antArtifact タグで囲んで必ず視覚的に表示してください:',
+				'--- Candle Pattern Diagram ---',
 				`identifier: ${identifier}`,
 				`title: ${title}`,
 				'type: image/svg+xml',
@@ -1963,6 +1962,180 @@ registerToolWithLog(
 	'detect_whale_events',
 	{ description: '大口投資家の動向を簡易に検出（板×ローソク足）。lookback=30min|1hour|2hour、minSize=0.5BTC既定。推測ベースで、実約定・寿命照合は未実装。', inputSchema: z.object({ pair: z.string().default('btc_jpy'), lookback: z.enum(['30min', '1hour', '2hour']).default('1hour'), minSize: z.number().min(0).default(0.5) }) as any },
 	async ({ pair, lookback, minSize }: any) => detectWhaleEvents(pair, lookback, minSize)
+);
+
+// === Trading Process: Backtest Tools ===
+registerToolWithLog(
+	'run_backtest_sma',
+	{
+		description: `SMAクロスオーバー戦略のバックテストを実行。
+
+【戦略】
+- エントリー: sma_short > sma_long にクロス（ゴールデンクロス）
+- エグジット: sma_short < sma_long にクロス（デッドクロス）
+- 執行: 翌足始値 (t+1 open)
+- 手数料: 往復で適用 (fee_bp × 2)
+
+【入力】
+- pair: 通貨ペア（例: btc_jpy）
+- timeframe: 時間軸（現状 1D のみ）
+- period: 期間（1M, 3M, 6M）
+- sma_short: 短期SMA期間（既定: 5）
+- sma_long: 長期SMA期間（既定: 20）
+- fee_bp: 片道手数料 (bp)（既定: 12）
+
+【出力】
+- サマリー: 総損益(%), トレード回数, 勝率, 最大ドローダウン(%)
+- 固定3段チャート(SVG): 価格+SMA+シグナル / エクイティ / ドローダウン
+
+【注意】
+- 過去データに基づくバックテストであり、将来の成果を保証するものではありません
+- グラフ構成は固定（再現性重視）`,
+		inputSchema: RunBacktestSmaInputSchema as any
+	},
+	async (args: any) => {
+		const res = await runBacktestSma(
+			args.pair,
+			args.timeframe,
+			args.period,
+			args.sma_short,
+			args.sma_long,
+			args.fee_bp,
+			args.execution
+		);
+		if (!res.ok) {
+			return { content: [{ type: 'text', text: `Error: ${res.error}` }], structuredContent: res };
+		}
+		// SVGをフォーマット
+		const summary = res.summary;
+		const svgHint = [
+			'',
+			'--- Backtest Chart (SVG) ---',
+			`identifier: backtest-sma-${args.pair}-${Date.now()}`,
+			`title: ${args.pair.toUpperCase()} SMA(${args.sma_short}/${args.sma_long}) Backtest`,
+			'type: image/svg+xml',
+			'',
+			res.svg,
+		].join('\n');
+		return {
+			content: [{ type: 'text', text: summary + svgHint }],
+			structuredContent: {
+				ok: true,
+				summary: res.summary,
+				data: res.data,
+				svg: res.svg,
+				artifactHint: {
+					renderHint: 'ARTIFACT_REQUIRED',
+					displayType: 'image/svg+xml',
+					source: 'inline_svg',
+				},
+			},
+		};
+	}
+);
+
+// === Generic Backtest Tool ===
+registerToolWithLog(
+	'run_backtest',
+	{
+		description: `汎用バックテストを実行。複数の戦略タイプから選択可能。
+
+【利用可能な戦略】
+- sma_cross: SMAクロスオーバー（params: short, long）
+- rsi: RSI売られすぎ/買われすぎ（params: period, overbought, oversold）
+- macd_cross: MACDクロスオーバー（params: fast, slow, signal）
+- bb_breakout: ボリンジャーバンドブレイクアウト（params: period, stddev）
+
+【時間軸】
+- 1D: 日足（デフォルト）
+- 4H: 4時間足
+- 1H: 1時間足
+
+【入力例】
+{
+  "pair": "btc_jpy",
+  "period": "3M",
+  "strategy": {
+    "type": "sma_cross",
+    "params": { "short": 5, "long": 20 }
+  }
+}
+
+{
+  "pair": "btc_jpy",
+  "timeframe": "1H",
+  "period": "1M",
+  "strategy": { "type": "rsi" }
+}
+
+【出力】
+- summary: テキストサマリー
+- chartPath: 保存されたPNGチャートのパス
+
+【チャート表示方法（重要）】
+chartPath が返却された場合、present_files ツールを使用してユーザーに画像を提示してください。
+例: present_files({ paths: [chartPath] })
+
+※ SVGをコンテキストに含めるとトークンを大量消費するため、デフォルトではPNGファイル保存のみ行います。
+
+【注意】
+- 過去データに基づくバックテストであり、将来の成果を保証するものではありません`,
+		inputSchema: RunBacktestInputSchema as any
+	},
+	async (args: any) => {
+		const res = await runBacktest({
+			pair: args.pair,
+			timeframe: args.timeframe,
+			period: args.period,
+			strategy: args.strategy,
+			fee_bp: args.fee_bp,
+			execution: args.execution,
+			outputDir: args.outputDir,
+			savePng: args.savePng ?? false,  // デフォルト: false（ファイルシステム非共有のため）
+			includeSvg: args.includeSvg ?? true,  // デフォルト: true（SVGを返す）
+			chartDetail: args.chartDetail ?? 'minimal',  // デフォルト: 軽量チャート
+		});
+
+		if (!res.ok) {
+			const errorText = res.availableStrategies
+				? `Error: ${res.error}\nAvailable strategies: ${res.availableStrategies.join(', ')}`
+				: `Error: ${res.error}`;
+			return { content: [{ type: 'text', text: errorText }], structuredContent: res };
+		}
+
+		// SVG がある場合はアーティファクト用のヒントを追加
+		let svgHint = '';
+		if (res.svg) {
+			svgHint = [
+				'',
+				'--- Backtest Chart (SVG) ---',
+				`identifier: backtest-${args.strategy?.type}-${args.pair}-${Date.now()}`,
+				`title: ${args.pair?.toUpperCase() || 'BTC_JPY'} ${res.data.input.strategy.type} Backtest`,
+				'type: image/svg+xml',
+				'',
+				res.svg,
+			].join('\n');
+		}
+
+		return {
+			content: [{ type: 'text', text: res.summary + svgHint }],
+			structuredContent: {
+				ok: true,
+				summary: res.summary,
+				svg: res.svg,
+				data: {
+					input: res.data.input,
+					summary: res.data.summary,
+					trade_count: res.data.trades.length,
+				},
+				artifactHint: res.svg ? {
+					renderHint: 'ARTIFACT_REQUIRED',
+					displayType: 'image/svg+xml',
+					source: 'inline_svg',
+				} : undefined,
+			},
+		};
+	}
 );
 
 // prompts are unchanged for TS port and can be reused or migrated later

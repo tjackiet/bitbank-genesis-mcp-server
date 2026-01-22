@@ -15,7 +15,7 @@ import { formatPair } from '../lib/formatter.js';
 import { getErrorMessage } from '../lib/error.js';
 import type { Result, Pair, CandleType, RenderChartSvgOptions, ChartPayload } from '../src/types/domain.d.ts';
 
-type RenderData = { svg?: string; filePath?: string; legend?: Record<string, string> };
+type RenderData = { svg?: string; filePath?: string; legend?: Record<string, string>; base64?: string };
 type RenderMeta = {
   pair: Pair;
   type: CandleType | string;
@@ -27,6 +27,7 @@ type RenderMeta = {
   layerCount?: number;
   truncated?: boolean;
   fallback?: string;
+  warnings?: string[];
 };
 
 export default async function renderChartSvg(args: RenderChartSvgOptions = {}): Promise<Result<RenderData, RenderMeta>> {
@@ -197,7 +198,18 @@ export default async function renderChartSvg(args: RenderChartSvgOptions = {}): 
   }
 
   // ★ データ取得はバッファ計算をgetIndicatorsに任せる
-  const internalLimit = withIchimoku ? limit + 26 : limit;
+  // 一目均衡表の雲を適切に表示するには limit >= 60 が必要（先行スパンB: 52期間 + シフト: 26日）
+  const ICHIMOKU_MIN_LIMIT_FOR_CLOUD = 60;
+  const warnings: string[] = [];
+  
+  // 一目均衡表使用時に limit が小さすぎる場合は自動調整
+  let effectiveLimit = limit;
+  if (withIchimoku && limit < ICHIMOKU_MIN_LIMIT_FOR_CLOUD) {
+    effectiveLimit = ICHIMOKU_MIN_LIMIT_FOR_CLOUD;
+    summaryNotes.push(`一目均衡表の雲表示のため limit を ${limit} → ${effectiveLimit} に自動調整`);
+  }
+  
+  const internalLimit = withIchimoku ? effectiveLimit + 26 : effectiveLimit;
   const res = await analyzeIndicators(pair, type as any, internalLimit);
   if (!res?.ok) {
     return fail(res?.summary?.replace?.(/^Error: /, '') || 'failed to fetch indicators', (res as any)?.meta?.errorType || 'internal');
@@ -214,6 +226,24 @@ export default async function renderChartSvg(args: RenderChartSvgOptions = {}): 
 
   if (!items?.length) {
     return fail('No candle data available to render SVG chart.', 'user');
+  }
+  
+  // 一目均衡表の雲（spanA/spanB）が十分なデータを持っているかチェック
+  if (withIchimoku) {
+    const spanA = indicators?.ICHI_spanA as Array<number | null> | undefined;
+    const spanB = indicators?.ICHI_spanB as Array<number | null> | undefined;
+    const spanAValidCount = spanA?.filter(v => v !== null)?.length ?? 0;
+    const spanBValidCount = spanB?.filter(v => v !== null)?.length ?? 0;
+    
+    if (spanBValidCount === 0) {
+      warnings.push('先行スパンBのデータが不足しています。雲が描画されません。');
+    } else if (spanAValidCount < effectiveLimit || spanBValidCount < effectiveLimit) {
+      const cloudCoverage = Math.min(spanAValidCount, spanBValidCount);
+      const coveragePct = Math.round((cloudCoverage / effectiveLimit) * 100);
+      if (coveragePct < 80) {
+        warnings.push(`雲のカバー率: ${coveragePct}%（${cloudCoverage}/${effectiveLimit}本）。`);
+      }
+    }
   }
 
   // Y軸スケール用の "きれいな" 目盛りを生成する関数
@@ -560,12 +590,18 @@ export default async function renderChartSvg(args: RenderChartSvgOptions = {}): 
     const spanBPath = createLinePath(ichiSeries.spanB, '#ef4444', { width: '1', offset: 26 });
 
     // 雲の描画（交点で色切替）
+    // 描画領域外のポイントを除外してSVGサイズを削減
     const createCloudPaths = (spanA?: Array<number | null>, spanB?: Array<number | null>, offset?: number) => {
       let greenCloudPath = '';
       let redCloudPath = '';
       let currentTop: Array<{ x: number; y: number }> = [];
       let currentBottom: Array<{ x: number; y: number }> = [];
       let currentIsGreen: boolean | null = null;
+      
+      // 描画領域の範囲（少し余裕を持たせる）
+      const minPosIndex = -1;
+      const maxPosIndex = xs.length + forwardShift + 1;
+      
       const pushPolygon = () => {
         if (currentTop.length < 2 || currentBottom.length < 2) return;
         const polygon = 'M ' + [...currentTop, ...currentBottom.slice().reverse()]
@@ -573,7 +609,10 @@ export default async function renderChartSvg(args: RenderChartSvgOptions = {}): 
           .join(' L ') + ' Z';
         if (currentIsGreen) greenCloudPath += polygon; else redCloudPath += polygon;
       };
-      const toPoint = (i: number, yVal: number) => ({ x: x(i - pastBuffer + (offset || 0)), y: y(yVal) });
+      
+      const getPosIndex = (i: number) => i - pastBuffer + (offset || 0);
+      const toPoint = (i: number, yVal: number) => ({ x: x(getPosIndex(i)), y: y(yVal) });
+      
       const len = Math.max(spanA?.length || 0, spanB?.length || 0);
       for (let i = 0; i < len - 1; i++) {
         const a0 = spanA?.[i] as number | null; const b0 = spanB?.[i] as number | null;
@@ -581,6 +620,15 @@ export default async function renderChartSvg(args: RenderChartSvgOptions = {}): 
         if (a0 == null || b0 == null || a1 == null || b1 == null || !isFinite(a0) || !isFinite(b0) || !isFinite(a1) || !isFinite(b1)) {
           pushPolygon(); currentTop = []; currentBottom = []; currentIsGreen = null; continue;
         }
+        
+        // 描画領域外のセグメントをスキップ（SVGサイズ削減）
+        const posIndex0 = getPosIndex(i);
+        const posIndex1 = getPosIndex(i + 1);
+        if (posIndex1 < minPosIndex || posIndex0 > maxPosIndex) {
+          // 完全に描画領域外 → スキップ
+          pushPolygon(); currentTop = []; currentBottom = []; currentIsGreen = null; continue;
+        }
+        
         const isGreen0 = a0 >= b0; const isGreen1 = a1 >= b1;
         if (currentIsGreen === null) { currentIsGreen = isGreen0; currentTop.push(toPoint(i, currentIsGreen ? a0 : b0)); currentBottom.push(toPoint(i, currentIsGreen ? b0 : a0)); }
         if (isGreen0 === isGreen1) { currentTop.push(toPoint(i + 1, currentIsGreen ? a1 : b1)); currentBottom.push(toPoint(i + 1, currentIsGreen ? b1 : a1)); continue; }
@@ -763,7 +811,7 @@ ${priceLine}
       .replace(/\son[a-z]+="[^"]*"/gi, '')
       .replace(/\son[a-z]+='[^']*'/gi, '');
 
-  // --- 返却ポリシー（preferFile / maxSvgBytes） ---
+  // --- 返却ポリシー（preferFile / maxSvgBytes / outputFormat） ---
   const finalSvg = sanitizeSvg(withIchimoku ? lightSvg : fullSvg);
   const sizeBytes = Buffer.byteLength(finalSvg, 'utf8');
   const layerCount = estimatedLayers;
@@ -772,6 +820,12 @@ ${priceLine}
   const outputNameRaw = (args as any)?.outputPath as string | undefined;
   const maxSvgBytesRaw = (args as any)?.maxSvgBytes as number | undefined;
   const maxSvgBytes = typeof maxSvgBytesRaw === 'number' ? maxSvgBytesRaw : 100_000;
+  
+  // outputFormat: 'svg'(デフォルト), 'base64', 'dataUri'
+  // Claude.ai等でpresent_filesがうまく動作しない場合の回避策
+  const outputFormat = ((args as any)?.outputFormat || 'svg') as 'svg' | 'base64' | 'dataUri';
+  const toBase64 = (svg: string) => Buffer.from(svg, 'utf8').toString('base64');
+  const toDataUri = (svg: string) => `data:image/svg+xml;base64,${toBase64(svg)}`;
 
   // Human-friendly identifiers
   const title = `${formatPair(pair)} ${type} chart`;
@@ -782,7 +836,7 @@ ${priceLine}
   const metaBase: RenderMeta & { identifier?: string; title?: string } = {
     pair: pair as Pair,
     type,
-    limit,
+    limit: effectiveLimit,
     indicators: Object.keys(legendMeta),
     bbMode,
     range: { start: rangeStart, end: rangeEnd },
@@ -791,6 +845,8 @@ ${priceLine}
     // helpful hints for artifact renderers
     ...(identifier ? { identifier } : {}),
     ...(title ? { title } : {}),
+    // 警告メッセージ（データ不足等）
+    ...(warnings.length > 0 ? { warnings } : {}),
   };
   if (debugEnabled) {
     (metaBase as any).debug = {
@@ -834,11 +890,32 @@ ${priceLine}
         await fs.writeFile(p, finalSvg);
         return p;
       };
+      // autoSave 時の返却データ生成
+      const buildAutoSaveData = (savedPath: string) => {
+        const base: RenderData & { url?: string } = {
+          filePath: savedPath,
+          legend: legendMeta,
+          url: `computer://${savedPath}`,
+        };
+        switch (outputFormat) {
+          case 'base64':
+            base.base64 = toBase64(finalSvg);
+            break;
+          case 'dataUri':
+            base.base64 = toDataUri(finalSvg);
+            break;
+          case 'svg':
+          default:
+            base.svg = finalSvg;
+            break;
+        }
+        return base;
+      };
+      
       try {
         const outDir = '/mnt/user-data/outputs';
         const autoPath = await trySave(outDir);
-        const base = { svg: finalSvg, filePath: autoPath, legend: legendMeta } as any;
-        base.url = `computer://${autoPath}`;
+        const base = buildAutoSaveData(autoPath);
         const suffix = `\nSaved to: ${autoPath}\nURL: ${base.url}`;
         const msg = summaryNotes.length ? `${formatPair(pair)} ${type} chart rendered (${summaryNotes.join('; ')})${suffix}` : `${formatPair(pair)} ${type} chart rendered${suffix}`;
         return ok<RenderData & { url?: string }, RenderMeta>(msg, base, metaBase);
@@ -847,8 +924,7 @@ ${priceLine}
           // Fallback to repo assets dir when /mnt is not writable
           const outDir = path.join(process.cwd(), 'assets');
           const autoPath = await trySave(outDir);
-          const base = { svg: finalSvg, filePath: autoPath, legend: legendMeta } as any;
-          base.url = `computer://${autoPath}`;
+          const base = buildAutoSaveData(autoPath);
           const suffix = `\nSaved to: ${autoPath}\nURL: ${base.url}`;
           const msg = summaryNotes.length ? `${formatPair(pair)} ${type} chart rendered (${summaryNotes.join('; ')})${suffix}` : `${formatPair(pair)} ${type} chart rendered${suffix}`;
           return ok<RenderData & { url?: string }, RenderMeta>(msg, base, metaBase);
@@ -858,22 +934,69 @@ ${priceLine}
         }
       }
     }
+    // outputFormat に応じた返却データを生成
+    const buildInlineData = () => {
+      const baseData: RenderData & { meta?: any } = {
+        legend: legendMeta,
+        filePath: undefined,
+        meta: { identifier, title, sizeBytes, range: { start: rangeStart, end: rangeEnd } },
+      };
+      switch (outputFormat) {
+        case 'base64':
+          baseData.base64 = toBase64(finalSvg);
+          break;
+        case 'dataUri':
+          baseData.base64 = toDataUri(finalSvg);
+          break;
+        case 'svg':
+        default:
+          baseData.svg = finalSvg;
+          break;
+      }
+      return baseData;
+    };
+    
     if (summaryNotes.length) {
       // 軽量化メモをサマリーにのみ表示
       const summary = `${formatPair(pair)} ${type} chart rendered (${summaryNotes.join('; ')})`;
-      return ok<RenderData & { meta?: any }, RenderMeta>(summary, { svg: finalSvg, filePath: undefined, legend: legendMeta, meta: { identifier, title, sizeBytes, range: { start: rangeStart, end: rangeEnd } } }, metaBase);
+      return ok<RenderData & { meta?: any }, RenderMeta>(summary, buildInlineData(), metaBase);
     }
-    return ok<RenderData & { meta?: any }, RenderMeta>(`${formatPair(pair)} ${type} chart rendered`, { svg: finalSvg, filePath: undefined, legend: legendMeta, meta: { identifier, title, sizeBytes, range: { start: rangeStart, end: rangeEnd } } }, metaBase);
+    return ok<RenderData & { meta?: any }, RenderMeta>(`${formatPair(pair)} ${type} chart rendered`, buildInlineData(), metaBase);
   }
 
   // 超過 → ファイル保存し、truncated=true で返す
+  // ファイル保存後の返却データ生成
+  const buildFileSaveData = (savedPath: string, includeInline = false): RenderData & { url?: string; meta?: any } => {
+    const base: RenderData & { url?: string; meta?: any } = {
+      filePath: savedPath,
+      legend: legendMeta,
+      url: `computer://${savedPath}`,
+      meta: { identifier, title, sizeBytes, range: { start: rangeStart, end: rangeEnd } },
+    };
+    if (includeInline) {
+      switch (outputFormat) {
+        case 'base64':
+          base.base64 = toBase64(finalSvg);
+          break;
+        case 'dataUri':
+          base.base64 = toDataUri(finalSvg);
+          break;
+        case 'svg':
+        default:
+          base.svg = finalSvg;
+          break;
+      }
+    }
+    return base;
+  };
+  
   try {
     await fs.mkdir(assetsDir, { recursive: true });
     await fs.writeFile(outputPath, finalSvg);
     const savedUrl = `computer://${outputPath}`;
     return ok<RenderData & { url?: string; meta?: any }, RenderMeta>(
       `${formatPair(pair)} ${type} chart saved to ${outputPath} (truncated)\nURL: ${savedUrl}`,
-      { filePath: outputPath, svg: undefined, legend: legendMeta, url: savedUrl, meta: { identifier, title, sizeBytes, range: { start: rangeStart, end: rangeEnd } } },
+      buildFileSaveData(outputPath, false),
       { ...metaBase, truncated: true, fallback: summaryNotes[0] }
     );
   } catch (err) {
@@ -883,9 +1006,22 @@ ${priceLine}
       err
     );
     // 最後の手段: inline で返却（サイズ超過の可能性に注意）
+    const fallbackData: RenderData = { legend: legendMeta, filePath: undefined };
+    switch (outputFormat) {
+      case 'base64':
+        fallbackData.base64 = toBase64(finalSvg);
+        break;
+      case 'dataUri':
+        fallbackData.base64 = toDataUri(finalSvg);
+        break;
+      case 'svg':
+      default:
+        fallbackData.svg = finalSvg;
+        break;
+    }
     return ok<RenderData, RenderMeta>(
       `${formatPair(pair)} ${type} chart rendered (fallback inline)`,
-      { svg: finalSvg, filePath: undefined, legend: legendMeta },
+      fallbackData,
       metaBase
     );
   }

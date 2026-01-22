@@ -32,6 +32,7 @@ export const RenderChartSvgInputSchema = z
     withIchimoku: z.boolean().optional().default(false),
     ichimoku: z
       .object({
+        // mode: default=転換線/基準線/雲, extended=+遅行スパン
         mode: z.enum(['default', 'extended']).optional().default('default'),
         // implementation optionally respects this when true
         withChikou: z.boolean().optional(),
@@ -54,6 +55,9 @@ export const RenderChartSvgInputSchema = z
     maxSvgBytes: z.number().int().min(1024).optional().default(100_000).describe('If set and svg exceeds this size (bytes), omit data.svg and return filePath only.'),
     // 返却方針: true の場合は保存を最優先し、失敗時はエラーにする（inline返却にフォールバックしない）
     preferFile: z.boolean().optional().default(false).describe('If true, prefer saving SVG to file and return error on save failure (no inline fallback).'),
+    // 出力フォーマット: 'svg'(デフォルト), 'base64'(Base64文字列), 'dataUri'(data:image/svg+xml;base64,...形式)
+    // Claude.ai等でpresent_filesがうまく動作しない場合の回避策として使用
+    outputFormat: z.enum(['svg', 'base64', 'dataUri']).optional().default('svg').describe('Output format: svg (default), base64, or dataUri (for embedding in HTML/Markdown).'),
     // Optional pattern overlays (ranges/annotations)
     overlays: z
       .object({
@@ -105,6 +109,7 @@ export const RenderChartSvgOutputSchema = z.object({
   summary: z.string(),
   data: z.object({
     svg: z.string().optional(),
+    base64: z.string().optional(),
     filePath: z.string().optional(),
     url: z.string().optional(),
     legend: z.record(z.string()).optional(),
@@ -121,6 +126,7 @@ export const RenderChartSvgOutputSchema = z.object({
       layerCount: z.number().optional(),
       truncated: z.boolean().optional(),
       fallback: z.string().optional(),
+      warnings: z.array(z.string()).optional(),
     })
     .optional(),
 });
@@ -1347,5 +1353,134 @@ export const RenderCandlePatternDiagramOutputSchema = z.union([
     summary: z.string(),
     data: z.object({}).passthrough(),
     meta: z.object({ errorType: z.string() }).passthrough(),
+  }),
+]);
+
+// === Trading Process: Backtest Schemas ===
+
+export const BacktestTimeframeEnum = z.enum(['1D', '4H', '1H']);
+export const BacktestPeriodEnum = z.enum(['1M', '3M', '6M']);
+
+export const RunBacktestSmaInputSchema = z.object({
+  pair: z.string().optional().default('btc_jpy').describe('Trading pair (e.g., btc_jpy)'),
+  timeframe: BacktestTimeframeEnum.optional().default('1D').describe('Candle timeframe: 1D (daily), 4H (4-hour), 1H (hourly)'),
+  period: BacktestPeriodEnum.optional().default('3M').describe('Backtest period: 1M, 3M, or 6M'),
+  sma_short: z.number().int().min(2).max(50).optional().default(5).describe('Short SMA period'),
+  sma_long: z.number().int().min(5).max(200).optional().default(20).describe('Long SMA period (must be > sma_short)'),
+  fee_bp: z.number().min(0).max(100).optional().default(12).describe('One-way fee in basis points'),
+  execution: z.literal('t+1_open').optional().default('t+1_open').describe('Execution timing (fixed: t+1_open)'),
+});
+
+const BacktestTradeSchema = z.object({
+  entry_time: z.string(),
+  entry_price: z.number(),
+  exit_time: z.string(),
+  exit_price: z.number(),
+  pnl_pct: z.number(),
+  fee_pct: z.number(),
+});
+
+const BacktestSummarySchema = z.object({
+  total_pnl_pct: z.number(),
+  trade_count: z.number(),
+  win_rate: z.number(),
+  max_drawdown_pct: z.number(),
+});
+
+const EquityPointSchema = z.object({
+  time: z.string(),
+  equity_pct: z.number(),
+});
+
+const DrawdownPointSchema = z.object({
+  time: z.string(),
+  drawdown_pct: z.number(),
+});
+
+const BacktestResultDataSchema = z.object({
+  input: z.object({
+    pair: z.string(),
+    timeframe: z.string(),
+    period: z.string(),
+    sma_short: z.number(),
+    sma_long: z.number(),
+    fee_bp: z.number(),
+    execution: z.string(),
+  }),
+  summary: BacktestSummarySchema,
+  trades: z.array(BacktestTradeSchema),
+  equity_curve: z.array(EquityPointSchema),
+  drawdown_curve: z.array(DrawdownPointSchema),
+});
+
+export const RunBacktestSmaOutputSchema = z.union([
+  z.object({
+    ok: z.literal(true),
+    summary: z.string(),
+    data: BacktestResultDataSchema,
+    svg: z.string(),
+  }),
+  z.object({
+    ok: z.literal(false),
+    error: z.string(),
+  }),
+]);
+
+// === Generic Backtest Schema ===
+
+export const StrategyTypeEnum = z.enum(['sma_cross', 'rsi', 'macd_cross', 'bb_breakout']);
+
+export const StrategyConfigSchema = z.object({
+  type: StrategyTypeEnum.describe('Strategy type'),
+  params: z.record(z.number()).optional().default({}).describe('Strategy parameters (overrides defaults)'),
+});
+
+export const RunBacktestInputSchema = z.object({
+  pair: z.string().optional().default('btc_jpy').describe('Trading pair (e.g., btc_jpy)'),
+  timeframe: BacktestTimeframeEnum.optional().default('1D').describe('Candle timeframe: 1D (daily), 4H (4-hour), 1H (hourly)'),
+  period: BacktestPeriodEnum.optional().default('3M').describe('Backtest period: 1M, 3M, or 6M'),
+  strategy: StrategyConfigSchema.describe('Strategy configuration'),
+  fee_bp: z.number().min(0).max(100).optional().default(12).describe('One-way fee in basis points'),
+  execution: z.literal('t+1_open').optional().default('t+1_open').describe('Execution timing (fixed: t+1_open)'),
+  outputDir: z.string().optional().default('/mnt/user-data/outputs').describe('Output directory for chart files'),
+  savePng: z.boolean().optional().default(true).describe('Save chart as PNG file (default: true)'),
+  includeSvg: z.boolean().optional().default(false).describe('Include SVG string in response (default: false, for token saving)'),
+});
+
+const GenericBacktestSummarySchema = z.object({
+  total_pnl_pct: z.number(),
+  trade_count: z.number(),
+  win_rate: z.number(),
+  max_drawdown_pct: z.number(),
+  buy_hold_pnl_pct: z.number(),
+  excess_return_pct: z.number(),
+});
+
+export const RunBacktestOutputSchema = z.union([
+  z.object({
+    ok: z.literal(true),
+    summary: z.string(),
+    data: z.object({
+      input: z.object({
+        pair: z.string(),
+        timeframe: z.string(),
+        period: z.string(),
+        strategy: StrategyConfigSchema,
+        fee_bp: z.number(),
+        execution: z.string(),
+      }),
+      summary: GenericBacktestSummarySchema,
+      trades: z.array(BacktestTradeSchema),
+      equity_curve: z.array(EquityPointSchema),
+      drawdown_curve: z.array(DrawdownPointSchema),
+      overlays: z.array(z.any()),
+    }),
+    chartPath: z.string().optional().describe('Path to saved PNG chart file'),
+    svg: z.string().optional().describe('SVG string (only if includeSvg: true)'),
+  }),
+  z.object({
+    ok: z.literal(false),
+    error: z.string(),
+    availableStrategies: z.array(StrategyTypeEnum).optional(),
   }),
 ]);

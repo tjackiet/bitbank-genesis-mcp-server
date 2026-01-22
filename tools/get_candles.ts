@@ -31,6 +31,15 @@ const YEARLY_TYPES: Set<string> = new Set([
   '1month',
 ]);
 
+// 日単位でリクエストする時間足（YYYYMMDD形式）
+const DAILY_TYPES: Set<string> = new Set([
+  '1min',
+  '5min',
+  '15min',
+  '30min',
+  '1hour',
+]);
+
 // 時間足ごとの年間本数（複数年取得時の計算用）
 const BARS_PER_YEAR: Record<string, number> = {
   '1month': 12,
@@ -39,6 +48,15 @@ const BARS_PER_YEAR: Record<string, number> = {
   '12hour': 730,
   '8hour': 1095,
   '4hour': 2190,
+};
+
+// 時間足ごとの1日あたりの本数
+const BARS_PER_DAY: Record<string, number> = {
+  '1min': 1440,
+  '5min': 288,
+  '15min': 96,
+  '30min': 48,
+  '1hour': 24,
 };
 
 function todayYyyymmdd(): string {
@@ -67,6 +85,35 @@ async function fetchSingleYear(
   }
 }
 
+// 単一日のデータを取得する内部関数
+async function fetchSingleDay(
+  pair: string,
+  type: string,
+  dateStr: string  // YYYYMMDD形式
+): Promise<Array<[unknown, unknown, unknown, unknown, unknown, unknown]>> {
+  const url = `${BITBANK_API_BASE}/${pair}/candlestick/${type}/${dateStr}`;
+  try {
+    const json: unknown = await fetchJson(url, { timeoutMs: 8000, retries: 2 });
+    const jsonObj = json as { data?: { candlestick?: Array<{ ohlcv?: unknown[] }> } };
+    const cs = jsonObj?.data?.candlestick?.[0];
+    const ohlcvs = cs?.ohlcv ?? [];
+    return ohlcvs as Array<[unknown, unknown, unknown, unknown, unknown, unknown]>;
+  } catch {
+    // 存在しない日や取得失敗は空配列を返す
+    return [];
+  }
+}
+
+// N日前の日付をYYYYMMDD形式で取得
+function getDateNDaysAgo(daysAgo: number): string {
+  const d = new Date();
+  d.setDate(d.getDate() - daysAgo);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}${m}${day}`;
+}
+
 export default async function getCandles(
   pair: string,
   type: CandleType | string = '1day',
@@ -85,12 +132,29 @@ export default async function getCandles(
 
   // 複数年取得が必要かどうかを判定
   const isYearlyType = YEARLY_TYPES.has(type);
+  const isDailyType = DAILY_TYPES.has(type);
   const barsPerYear = BARS_PER_YEAR[type] || 365;
-  const yearsNeeded = isYearlyType ? Math.ceil(limit / barsPerYear) : 1;
+  const barsPerDay = BARS_PER_DAY[type] || 24;
+  
+  // 年初付近では今年のデータだけでは足りない場合があるため、
+  // 今年の経過日数も考慮して必要年数を計算
+  const now = new Date();
+  const startOfYear = new Date(now.getFullYear(), 0, 1);
+  const dayOfYear = Math.ceil((now.getTime() - startOfYear.getTime()) / (1000 * 60 * 60 * 24));
+  const estimatedBarsThisYear = Math.floor(dayOfYear * (barsPerYear / 365));
+  
+  // limit が今年の推定本数を超える場合、または単純計算で複数年が必要な場合
+  const yearsNeeded = isYearlyType 
+    ? Math.max(Math.ceil(limit / barsPerYear), limit > estimatedBarsThisYear ? 2 : 1)
+    : 1;
   const needsMultiYear = isYearlyType && yearsNeeded > 1;
 
-  // 複数年取得の場合は上限を緩和（最大10年分 = 約3650本）
-  const maxLimit = needsMultiYear ? 5000 : 1000;
+  // 日単位タイプの場合、複数日取得が必要かどうかを判定
+  const daysNeeded = isDailyType ? Math.ceil(limit / barsPerDay) + 1 : 1;  // +1 for buffer
+  const needsMultiDay = isDailyType && daysNeeded > 1;
+
+  // 複数年/複数日取得の場合は上限を緩和
+  const maxLimit = needsMultiYear ? 5000 : (needsMultiDay ? 10000 : 1000);
   const limitCheck = validateLimit(limit, 1, maxLimit);
   if (!limitCheck.ok) return fail(limitCheck.error.message, limitCheck.error.type);
 
@@ -122,6 +186,34 @@ export default async function getCandles(
 
       ohlcvs = allOhlcvs;
       json = { data: { candlestick: [{ ohlcv: ohlcvs }] }, _multiYear: { years, totalFetched: ohlcvs.length } };
+    } else if (needsMultiDay) {
+      // 複数日の並列取得（1hour, 30min, etc.）
+      // 最大同時リクエスト数を制限（API負荷対策）
+      const maxConcurrent = 10;
+      const dates = Array.from({ length: daysNeeded }, (_, i) => getDateNDaysAgo(i));
+      
+      const allOhlcvs: Array<[unknown, unknown, unknown, unknown, unknown, unknown]> = [];
+      
+      // バッチ処理で並列取得
+      for (let i = 0; i < dates.length; i += maxConcurrent) {
+        const batch = dates.slice(i, i + maxConcurrent);
+        const results = await Promise.all(
+          batch.map(dateStr => fetchSingleDay(chk.pair, type, dateStr))
+        );
+        for (const result of results) {
+          allOhlcvs.push(...result);
+        }
+      }
+
+      // タイムスタンプでソート（古い順）
+      allOhlcvs.sort((a, b) => {
+        const tsA = Number(a[5]) || 0;
+        const tsB = Number(b[5]) || 0;
+        return tsA - tsB;
+      });
+
+      ohlcvs = allOhlcvs;
+      json = { data: { candlestick: [{ ohlcv: ohlcvs }] }, _multiDay: { daysRequested: daysNeeded, totalFetched: ohlcvs.length } };
     } else {
       // 従来の単一リクエスト
       const url = `${BITBANK_API_BASE}/${chk.pair}/candlestick/${type}/${dateCheck.value}`;

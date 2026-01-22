@@ -41,6 +41,8 @@ export type RenderChartSvgInput = {
     maxSvgBytes?: number;
     /** If true, prefer saving SVG to file and return error on save failure (no inline fallback). */
     preferFile?: boolean;
+    /** Output format: svg (default), base64, or dataUri (for embedding in HTML/Markdown). */
+    outputFormat?: ("svg" | "base64" | "dataUri");
     overlays?: {
         ranges?: {
             start: string;
@@ -65,6 +67,7 @@ export type RenderChartSvgOutput = {
     summary: string;
     data: {
         svg?: string | undefined;
+        base64?: string | undefined;
         filePath?: string | undefined;
         url?: string | undefined;
         legend?: {
@@ -85,6 +88,7 @@ export type RenderChartSvgOutput = {
         layerCount?: number | undefined;
         truncated?: boolean | undefined;
         fallback?: string | undefined;
+        warnings?: string[] | undefined;
     } | undefined;
 };
 

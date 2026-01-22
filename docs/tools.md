@@ -37,6 +37,8 @@
   - Claude で LLM がうまくアーティファクトを出力できない場合は、以下のプロンプトを加えるのがおすすめです。
     - 「identifier と title を追加して、アーティファクトとして表示して」
 - render_depth_svg: 板（Depth）の厚みを可視化する SVG チャート描画 
+- render_candle_pattern_diagram: 2本足パターン（包み線/はらみ線等）を SVG で視覚化
+  - analyze_candle_patterns の検出結果を入力として使用 
 
 ---
 
@@ -67,6 +69,7 @@
 | 21 | 分析 | detect_whale_events | 大口取引イベント推定 | 影響把握 |
 | 22 | 表示 | render_chart_svg | チャート SVG 描画（指標対応） | 一目/SMA/BB/Depth |
 | 23 | 表示 | render_depth_svg | 板の深度を可視化する SVG 描画 | 買い/売り圧力の視覚化 |
+| 24 | 表示 | render_candle_pattern_diagram | 2本足パターンを SVG で視覚化 | analyze_candle_patterns と連携 |
 
 ---
 
@@ -74,3 +77,56 @@
 - `analyze_market_signal` で全体を把握 → 必要に応じて各専門ツールへ
 - チャートは必ず `render_chart_svg` の `data.svg` をそのまま表示（自前描画はしない）
 - データ点が多い/レイヤ多い場合は `maxSvgBytes` や `--force-layers` で調整可能
+
+---
+
+## render_chart_svg 詳細ガイド
+
+### 返却オプションの違い
+
+| オプション | 説明 | ユースケース |
+|------------|------|--------------|
+| `preferFile: false` (デフォルト) | `maxSvgBytes` 以下なら `data.svg` を返却、超過時はファイル保存して `data.filePath` を返却 | 通常利用 |
+| `preferFile: true` | 常にファイル保存、`data.svg` は返さない。保存失敗時はエラー | ファイルとして確実に保存したい場合 |
+| `autoSave: true` | `data.svg` を返しつつ、同時にファイル保存も行う（`data.filePath` も含む） | SVG表示＋ファイル保存の両方が欲しい場合 |
+| `outputFormat: 'svg'` (デフォルト) | `data.svg` にSVG文字列を返却 | 通常のSVG表示 |
+| `outputFormat: 'base64'` | `data.base64` にBase64文字列を返却 | Claude.ai等でpresent_filesが失敗する場合の回避策 |
+| `outputFormat: 'dataUri'` | `data.base64` に `data:image/svg+xml;base64,...` 形式で返却 | HTML/Markdownへの埋め込み |
+
+### maxSvgBytes の挙動
+
+- デフォルト: 100,000 bytes
+- SVGサイズが `maxSvgBytes` を超えた場合:
+  - `preferFile: false` → ファイル保存し、`data.svg` は省略（`meta.truncated: true`）
+  - `preferFile: true` → ファイル保存のみ
+
+### 一目均衡表（Ichimoku）の自動調整
+
+一目均衡表の雲を正しく表示するには、十分なデータ期間が必要です：
+
+| 要素 | 必要期間 | 備考 |
+|------|----------|------|
+| 転換線 | 9期間 | - |
+| 基準線 | 26期間 | - |
+| 先行スパンA | 26期間 | 26日先にシフト |
+| 先行スパンB | 52期間 | 26日先にシフト |
+
+**自動調整**: `withIchimoku: true` 使用時、`limit < 60` の場合は自動的に `limit = 60` に調整されます。
+
+例: `{ withIchimoku: true, limit: 30 }` → 実際には `limit: 60` として処理
+（`meta.limit` には調整後の値が返されます）
+
+### エラーハンドリング
+
+データ不足等で指標が正しく計算できない場合、`meta.warnings` に警告メッセージが含まれます。これにより、サイレントに省略されるのではなく、問題を明示的に把握できます。
+
+```json
+{
+  "meta": {
+    "warnings": [
+      "一目均衡表の雲を完全に表示するには limit >= 60 を推奨します（現在: 30）",
+      "先行スパンBのデータが不足しています。雲が描画されません。"
+    ]
+  }
+}
+```
