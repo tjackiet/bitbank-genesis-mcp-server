@@ -255,7 +255,17 @@ registerToolWithLog(
 
 registerToolWithLog(
 	'get_candles',
-	{ description: 'ローソク足を取得（/candlestick）。OHLCVデータ。date: 1min〜1hour→YYYYMMDD, 4hour以上→YYYY。limit で本数指定。', inputSchema: GetCandlesInputSchema },
+	{ description: `ローソク足（OHLCV）を取得。
+
+【パラメータ】
+- pair: 通貨ペア（例: btc_jpy）
+- type: 時間足（1min, 5min, 15min, 30min, 1hour, 4hour, 8hour, 12hour, 1day, 1week, 1month）
+- date: 日付指定。1min〜1hour→YYYYMMDD形式、4hour以上→YYYY形式
+- limit: 取得本数
+
+【重要】バックテストを行う場合は、このツールではなく run_backtest を使用してください。
+run_backtest はデータ取得・計算・チャート描画をすべて行い、結果をワンコールで返します。
+独自にバックテストロジックを実装する必要はありません。`, inputSchema: GetCandlesInputSchema },
 	async ({ pair, type, date, limit, view }) => {
 		const result: any = await getCandles(pair, type, date, limit);
 		if (view === 'items') {
@@ -1758,7 +1768,7 @@ registerToolWithLog(
 registerToolWithLog(
 	'render_candle_pattern_diagram',
 	{
-		description: 'analyze_candle_patternsで検出されたパターンを教育用の構造図として視覚化。\n【重要】ユーザーが明示的に「図で見せて」「視覚的に確認したい」等と要求した場合のみ使用。自発的な呼び出しは避けること。分析結果のテキスト説明で十分な場合は不要。\nローソク足5本を表示し、パターン該当2本をオレンジ枠でハイライト。「前日」「確定日」ラベル（オレンジ）、関係性を示す矢印（淡いブルー）付き。初心者が直感的に理解できる構造図。\n\n【返却形式】\n- data.svg: 完全なSVG文字列\n- meta.patternName: パターン名\n\nLLMはdata.svgをアーティファクトとして表示するか、ファイルとしてユーザーに提示できます。',
+		description: 'analyze_candle_patternsで検出されたパターンを教育用の構造図として視覚化。\n【重要】ユーザーが明示的に「図で見せて」「視覚的に確認したい」等と要求した場合のみ使用。自発的な呼び出しは避けること。分析結果のテキスト説明で十分な場合は不要。\nローソク足5本を表示し、パターン該当2本をオレンジ枠でハイライト。「前日」「確定日」ラベル（オレンジ）、関係性を示す矢印（淡いブルー）付き。初心者が直感的に理解できる構造図。\n\n【返却形式】\n- data.svg: 完全なSVG文字列\n- meta.patternName: パターン名\n\n【表示方法】\ndata.svgをHTMLファイルに埋め込んで保存し、ユーザーに提示。\n※ SVGを直接Markdownに貼っても表示されないため、ファイル出力が必要。\n- Claude Desktop: /mnt/user-data/outputs/ に保存してpresent_filesで提示\n- Cursor/他環境: プロジェクト内(例: assets/)に保存してパスを案内',
 		inputSchema: z.object({
 			candles: z.array(z.object({
 				date: z.string().describe('Display date e.g. "11/6(木)"'),
@@ -1968,7 +1978,12 @@ registerToolWithLog(
 registerToolWithLog(
 	'run_backtest_sma',
 	{
-		description: `SMAクロスオーバー戦略のバックテストを実行。
+		description: `SMAクロスオーバー戦略のバックテストを実行。データ取得・計算・チャート描画をすべて行い、結果をワンコールで返します。
+
+★★★ 重要 ★★★
+このツールはチャート（SVG）を含む完全な結果を返します。
+独自にバックテストを実装したり、matplotlib等でチャートを描画する必要はありません。
+（より汎用的な run_backtest ツールも利用可能です）
 
 【戦略】
 - エントリー: sma_short > sma_long にクロス（ゴールデンクロス）
@@ -1979,14 +1994,17 @@ registerToolWithLog(
 【入力】
 - pair: 通貨ペア（例: btc_jpy）
 - timeframe: 時間軸（現状 1D のみ）
-- period: 期間（1M, 3M, 6M）
+- period: 期間（1M=約30日, 3M=約90日, 6M=約180日）
 - sma_short: 短期SMA期間（既定: 5）
 - sma_long: 長期SMA期間（既定: 20）
 - fee_bp: 片道手数料 (bp)（既定: 12）
 
 【出力】
 - サマリー: 総損益(%), トレード回数, 勝率, 最大ドローダウン(%)
-- 固定3段チャート(SVG): 価格+SMA+シグナル / エクイティ / ドローダウン
+- チャート(SVG): 価格+SMA+シグナル / エクイティ / ドローダウン
+
+【チャート表示方法】
+返却される svg をHTMLアーティファクトに埋め込んで表示してください。
 
 【注意】
 - 過去データに基づくバックテストであり、将来の成果を保証するものではありません
@@ -2038,7 +2056,12 @@ registerToolWithLog(
 registerToolWithLog(
 	'run_backtest',
 	{
-		description: `汎用バックテストを実行。複数の戦略タイプから選択可能。
+		description: `汎用バックテストを実行。データ取得・計算・チャート描画をすべて行い、結果をワンコールで返します。
+
+★★★ 重要 ★★★
+このツールはチャート（SVG）を含む完全な結果を返します。
+get_candles でデータを取得して独自にバックテストを実装したり、
+matplotlib/D3.js 等で独自にチャートを描画する必要はありません。
 
 【利用可能な戦略】
 - sma_cross: SMAクロスオーバー（params: short, long）
@@ -2050,6 +2073,12 @@ registerToolWithLog(
 - 1D: 日足（デフォルト）
 - 4H: 4時間足
 - 1H: 1時間足
+
+【期間（period）】
+- 1M: 約1ヶ月（30日相当）
+- 3M: 約3ヶ月（90日相当）
+- 6M: 約6ヶ月（180日相当）
+※ "30D" のような直接的な日数指定は不可。1M/3M/6M から選択してください。
 
 【入力例】
 {
@@ -2069,14 +2098,12 @@ registerToolWithLog(
 }
 
 【出力】
-- summary: テキストサマリー
-- chartPath: 保存されたPNGチャートのパス
+- summary: テキストサマリー（総損益, トレード数, 勝率, 最大DD）
+- svg: チャート（SVG形式、そのままアーティファクトとして表示可能）
 
-【チャート表示方法（重要）】
-chartPath が返却された場合、present_files ツールを使用してユーザーに画像を提示してください。
-例: present_files({ paths: [chartPath] })
-
-※ SVGをコンテキストに含めるとトークンを大量消費するため、デフォルトではPNGファイル保存のみ行います。
+【チャート表示方法】
+返却される svg をHTMLアーティファクトに埋め込んで表示してください。
+例: <html><body>ここにSVGを埋め込む</body></html>
 
 【注意】
 - 過去データに基づくバックテストであり、将来の成果を保証するものではありません`,

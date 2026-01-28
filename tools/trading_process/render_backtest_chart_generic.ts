@@ -89,9 +89,39 @@ function formatPct(pct: number): string {
   return `${pct >= 0 ? '+' : ''}${pct.toFixed(1)}%`;
 }
 
-function formatDateShort(isoTime: string): string {
+/**
+ * データの期間に応じて適切な日付フォーマットを選択
+ * @param spanDays データの期間（日数）
+ * @returns 'full' (YYYY-MM-DD), 'month-day' (MM/DD), 'year-month' (YYYY-MM)
+ */
+function getDateFormat(spanDays: number): 'full' | 'month-day' | 'year-month' {
+  if (spanDays <= 60) return 'month-day';      // 2ヶ月以下: MM/DD
+  if (spanDays <= 180) return 'full';           // 6ヶ月以下: YYYY-MM-DD
+  return 'year-month';                          // それ以上: YYYY-MM
+}
+
+function formatDateBySpan(isoTime: string, format: 'full' | 'month-day' | 'year-month'): string {
   const d = new Date(isoTime);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  const yyyy = d.getFullYear();
+  
+  switch (format) {
+    case 'month-day':
+      return `${mm}/${dd}`;
+    case 'full':
+      return `${yyyy}-${mm}-${dd}`;
+    case 'year-month':
+    default:
+      return `${yyyy}-${mm}`;
+  }
+}
+
+function calculateSpanDays(candles: Candle[]): number {
+  if (candles.length < 2) return 1;
+  const first = new Date(candles[0].time).getTime();
+  const last = new Date(candles[candles.length - 1].time).getTime();
+  return Math.ceil((last - first) / (1000 * 60 * 60 * 24));
 }
 
 function generateYTicks(min: number, max: number, count: number): number[] {
@@ -167,9 +197,9 @@ function renderMinimalChart(data: GenericBacktestChartData): string {
   // データ間引き（100ポイント以上なら間引く）
   const step = candles.length > 100 ? Math.ceil(candles.length / 100) : 1;
 
-  // SVG構築
+  // SVG構築（レスポンシブ: viewBox のみ指定）
   const svg: string[] = [];
-  svg.push(`<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">`);
+  svg.push(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" style="max-width:100%;height:auto;">`);
   svg.push(`<rect width="${width}" height="${height}" fill="${COLORS.background}"/>`);
 
   // タイトル
@@ -238,10 +268,12 @@ function renderMinimalChart(data: GenericBacktestChartData): string {
     svg.push(`<path d="${ddPoints.join(' ')}" fill="none" stroke="${COLORS.drawdown}" stroke-width="1"/>`);
   }
 
-  // X軸ラベル
+  // X軸ラベル（期間に応じたフォーマット）
+  const spanDays = calculateSpanDays(candles);
+  const dateFormat = getDateFormat(spanDays);
   const xLabelInterval = Math.max(1, Math.floor(candles.length / 5));
   for (let i = 0; i < candles.length; i += xLabelInterval) {
-    svg.push(`<text x="${xScale(i)}" y="${ddBottom + 12}" fill="${COLORS.textMuted}" font-size="8" text-anchor="middle">${formatDateShort(candles[i].time)}</text>`);
+    svg.push(`<text x="${xScale(i)}" y="${ddBottom + 12}" fill="${COLORS.textMuted}" font-size="8" text-anchor="middle">${formatDateBySpan(candles[i].time, dateFormat)}</text>`);
   }
 
   svg.push('</svg>');
@@ -317,9 +349,9 @@ function renderFullChart(data: GenericBacktestChartData): string {
   const ddMax = Math.max(...ddValues, 5);
   const ddYScale = (ddPositive: number) => ddTop + (ddPositive / ddMax) * (drawdownHeight - 10);
 
-  // SVG構築
+  // SVG構築（レスポンシブ: viewBox のみ指定）
   const svg: string[] = [];
-  svg.push(`<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">`);
+  svg.push(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" style="max-width:100%;height:auto;">`);
   svg.push(`<rect width="${width}" height="${height}" fill="${COLORS.background}"/>`);
 
   // タイトル
@@ -483,10 +515,12 @@ function renderFullChart(data: GenericBacktestChartData): string {
   svg.push(`<rect x="${width - margin.right + 10}" y="${posTop + 5}" width="12" height="12" fill="${COLORS.positionLong}" opacity="0.7"/>`);
   svg.push(`<text x="${width - margin.right + 28}" y="${posTop + 15}" fill="${COLORS.positionLong}" font-size="9">Long</text>`);
 
-  // X軸ラベル
+  // X軸ラベル（期間に応じたフォーマット）
+  const spanDays = calculateSpanDays(candles);
+  const dateFormat = getDateFormat(spanDays);
   const xLabelInterval = Math.max(1, Math.floor(candles.length / 8));
   for (let i = 0; i < candles.length; i += xLabelInterval) {
-    svg.push(`<text x="${xScale(i)}" y="${posBottom + 15}" fill="${COLORS.textMuted}" font-size="9" text-anchor="middle">${formatDateShort(candles[i].time)}</text>`);
+    svg.push(`<text x="${xScale(i)}" y="${posBottom + 15}" fill="${COLORS.textMuted}" font-size="9" text-anchor="middle">${formatDateBySpan(candles[i].time, dateFormat)}</text>`);
   }
 
   svg.push('</svg>');

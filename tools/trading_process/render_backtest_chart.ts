@@ -215,10 +215,10 @@ export function renderBacktestChart(data: BacktestChartData): string {
   // Y軸: 0が上端(ddTop)、-ddMaxが下端(ddBottom)
   const ddYScale = (ddPositive: number) => ddTop + (ddPositive / ddMax) * (drawdownHeight - 10);
 
-  // === SVG構築 ===
+  // === SVG構築（レスポンシブ: viewBox のみ指定）===
   const svg: string[] = [];
 
-  svg.push(`<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">`);
+  svg.push(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" style="max-width:100%;height:auto;">`);
 
   // 背景
   svg.push(`<rect width="${width}" height="${height}" fill="${COLORS.background}"/>`);

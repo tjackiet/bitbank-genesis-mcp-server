@@ -189,13 +189,20 @@ export default async function getCandles(
     } else if (needsMultiDay) {
       // 複数日の並列取得（1hour, 30min, etc.）
       // 最大同時リクエスト数を制限（API負荷対策）
-      const maxConcurrent = 10;
+      // bitbank API: レート制限があるため、控えめな設定に
+      // 3並列 + バッチ間500ms遅延 → 約6リクエスト/秒
+      const maxConcurrent = 3;
+      const batchDelayMs = 500;
       const dates = Array.from({ length: daysNeeded }, (_, i) => getDateNDaysAgo(i));
       
       const allOhlcvs: Array<[unknown, unknown, unknown, unknown, unknown, unknown]> = [];
       
-      // バッチ処理で並列取得
+      // バッチ処理で並列取得（バッチ間に遅延を入れる）
       for (let i = 0; i < dates.length; i += maxConcurrent) {
+        if (i > 0) {
+          // バッチ間の遅延（レート制限対策）
+          await new Promise(resolve => setTimeout(resolve, batchDelayMs));
+        }
         const batch = dates.slice(i, i + maxConcurrent);
         const results = await Promise.all(
           batch.map(dateStr => fetchSingleDay(chk.pair, type, dateStr))
@@ -315,6 +322,14 @@ export default async function getCandles(
       } : null,
     };
 
+    // 全件の価格範囲を計算
+    const priceRange = normalized.length > 0 ? {
+      high: Math.max(...normalized.map(c => c.high)),
+      low: Math.min(...normalized.map(c => c.low)),
+      periodStart: normalized[0].isoTime?.split('T')[0] || '',
+      periodEnd: normalized[normalized.length - 1].isoTime?.split('T')[0] || '',
+    } : undefined;
+
     const summary = formatSummary({
       pair: chk.pair,
       timeframe: String(type),
@@ -322,6 +337,7 @@ export default async function getCandles(
       totalItems,
       keyPoints,
       volumeStats,
+      priceRange,
     });
 
     const metaExtra: Record<string, unknown> = { type, count: normalized.length };

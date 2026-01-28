@@ -96,10 +96,25 @@ export default async function getFlowMetrics(
     const netVolume = buyVolume - sellVolume;
     const aggressorRatio = totalTrades > 0 ? Number((buyTrades / totalTrades).toFixed(3)) : 0;
 
+    // スパイク情報を集計（spike が null でないものをフィルタ）
+    const spikes = outBuckets.filter(b => b.spike !== null);
+    let spikeInfo = '';
+    if (spikes.length > 0) {
+      const spikeDetails = spikes.slice(0, 3).map(s => {
+        const time = s.displayTime || s.isoTime || '';
+        const level = s.spike === 'strong' ? '🚨強' : s.spike === 'warning' ? '⚠️中' : '📈弱';
+        const direction = s.cvd > 0 ? '買い' : '売り';
+        return `${time}(${level}${direction})`;
+      }).join(', ');
+      spikeInfo = ` | スパイク${spikes.length}件: ${spikeDetails}`;
+    } else {
+      spikeInfo = ' | スパイクなし';
+    }
+
     const summary = formatSummary({
       pair: chk.pair,
       latest: txs.at(-1)?.price,
-      extra: `trades=${totalTrades} buy%=${(aggressorRatio * 100).toFixed(1)} CVD=${cvd.toFixed(2)}`,
+      extra: `trades=${totalTrades} buy%=${(aggressorRatio * 100).toFixed(1)} CVD=${cvd.toFixed(2)}${spikeInfo}`,
     });
 
     const data = {

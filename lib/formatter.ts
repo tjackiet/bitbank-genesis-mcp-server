@@ -23,8 +23,10 @@ export function formatSummary(args: {
 	keyPoints?: any;
 	volumeStats?: any;
 	extra?: string;
+	// 追加: 全件の範囲情報
+	priceRange?: { high: number; low: number; periodStart: string; periodEnd: string };
 } = {}): string {
-	const { pair, timeframe, latest, totalItems, keyPoints, volumeStats, extra } = args;
+	const { pair, timeframe, latest, totalItems, keyPoints, volumeStats, extra, priceRange } = args;
 	const p = formatPair(pair ?? '');
 	const tf = timeframe ? ` [${timeframe}]` : '';
 	const isJpy = typeof pair === 'string' && pair.toLowerCase().includes('jpy');
@@ -37,6 +39,15 @@ export function formatSummary(args: {
 	if (typeof totalItems === 'number' && totalItems > 0) {
 		summary += `${tf} ローソク足${totalItems}本取得`;
 		summary += `\n⚠️ 配列は古い順: data[0]=最古、data[${totalItems - 1}]=最新`;
+		
+		// 全件の範囲情報を追加
+		if (priceRange) {
+			const formatPrice = (price: number) => price.toLocaleString('ja-JP');
+			summary += `\n\n📈 全${totalItems}件の価格範囲:`;
+			summary += `\n- 期間: ${priceRange.periodStart} 〜 ${priceRange.periodEnd}`;
+			summary += `\n- 高値: ¥${formatPrice(priceRange.high)}`;
+			summary += `\n- 安値: ¥${formatPrice(priceRange.low)}`;
+		}
 	}
 
 	// 期間別の価格推移
