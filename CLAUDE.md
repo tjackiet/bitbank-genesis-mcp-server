@@ -44,6 +44,7 @@
 
 ## メンテナンスルール
 
-- `.cursorrules` と `.claude/CLAUDE.md` は同じ内容を維持すること。
-- 片方を編集した場合は、もう一方も必ず更新する。
-  - 同期コマンド: `cp .cursorrules .claude/CLAUDE.md`
+- `CLAUDE.md`（本体）と `.cursorrules` は同じ内容を維持すること。
+- `AGENTS.md` は `CLAUDE.md` への symlink。
+- 編集時は `CLAUDE.md` を更新し、`.cursorrules` にも反映する。
+  - 同期コマンド: `cp CLAUDE.md .cursorrules`
