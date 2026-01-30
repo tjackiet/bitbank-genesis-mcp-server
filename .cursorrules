@@ -1,46 +1,100 @@
-# Cursor Rules for bitbank-mcp-server
+# CLAUDE.md - AIForge (bitbank-mcp-sandbox)
 
-## チャート生成に関するAI利用ポリシー
+## プロジェクト概要
 
-- 重要: チャート描画は必ず `tools/render_chart_svg.ts` を使用すること。
-  - AI（Claude/GPT）は独自に可視化コード（D3/Chart.js/Canvas/SVG等）を生成してはいけない。
-  - Artifact は「ツールの出力（SVG文字列）」をそのまま表示する用途に限定する。
-  - インタラクティブ可視化や独自JSの生成は本プロジェクトでは禁止。
+AIForge は bitbank 向け MCP（Model Context Protocol）サーバー。
+生データ取得・加工・テクニカル分析・チャート描画・バックテストまでを AI に提供する。
 
-## ボリンジャーバンドの描画仕様
+## 技術スタック
 
-- 軽量版（デフォルト）: BB ±2σ のみ描画。
-  - CLI例: `npx tsx tools/render_chart_svg_cli.ts <pair> <type> <limit> --bb-mode=default`
-- 完全版（オプション）: BB ±1σ, ±2σ, ±3σ を描画。
-  - CLI例: `npx tsx tools/render_chart_svg_cli.ts <pair> <type> <limit> --bb-mode=extended`
-- `--no-bb` 指定時はボリンジャーバンドを描画しない。
-- 後方互換: `--bb-mode=light` は `default`、`--bb-mode=full` は `extended` として扱われる。
+- TypeScript（ES modules, tsx で実行）
+- MCP SDK: `@modelcontextprotocol/sdk`
+- Zod: パラメータバリデーション・スキーマ自動生成
+- Sharp: 画像処理（SVG→PNG変換等）
 
-## 一目均衡表の描画仕様
+## ビルド・実行
 
-- 標準（default）: 転換線・基準線・雲（先行スパンA/B）のみ。
-- 拡張（extended）: 上記に加えて遅行スパンも描画（`--ichimoku-mode=extended`）。
-- 指定がない場合、`withIchimoku` はオフ。
+```bash
+npm install
+npm start            # tsx src/server.ts（stdio）
+npm run dev          # LOG_LEVEL=debug で起動
+npm run typecheck    # tsc --noEmit
+npm run gen:types    # 型定義自動生成
+```
 
-## SMA の描画仕様
+## ディレクトリ構成
 
-- デフォルト: SMAは描画しない。
-- オプション: `--sma=5,20,50` 等で明示的に指定した場合のみ描画する。
-- 利用可能な期間: 5, 20, 25, 50, 75, 200
+```
+src/
+  server.ts         - メインサーバー（ツール登録）
+  prompts.ts        - MCP Prompts 定義
+  schemas.ts        - Zod スキーマ（入出力）
+  system-prompt.ts  - システムプロンプト
+  http.ts           - HTTP サーバー（デバッグ用）
+  handlers/         - リクエストハンドラ
+  types/            - 型定義
+  utils/            - ユーティリティ
+tools/              - ツール実装（1ツール1ファイル）
+lib/                - 共通ライブラリ（http, validate, result, formatter, datetime, error）
+docs/               - ドキュメント
+assets/             - サンプルSVG等
+```
 
-## 実装原則
+## ツールカテゴリ
 
-- AI は「チャートを出す」要求に対し、内部実装や独自レンダラではなく、必ず以下の関数/CLIを呼ぶこと:
-  - Node API: `renderChartSvg(options)`
-  - CLI: `npx tsx tools/render_chart_svg_cli.ts <pair> <type> <limit> [--flags]`
-- Artifact の内容は `renderChartSvg` の返す `data.svg` をそのまま表示すること。
-- 大きな変更を行う場合は README の該当箇所も更新すること。
+詳細は `docs/tools.md` を参照。
+
+### データ取得（生データ）
+- get_ticker, get_tickers_jpy, get_candles, get_transactions, get_depth
+
+### データ取得（加工）
+- get_orderbook, get_orderbook_pressure, get_orderbook_statistics
+- get_flow_metrics, get_volatility_metrics
+
+### 分析
+- analyze_indicators, analyze_market_signal, detect_patterns
+- detect_macd_cross, analyze_macd_pattern, analyze_candle_patterns
+- analyze_ichimoku_snapshot, analyze_bb_snapshot, analyze_sma_snapshot
+- analyze_support_resistance, detect_whale_events
+
+### バックテスト
+- run_backtest_sma, run_backtest
+
+### 表示
+- render_chart_svg, render_depth_svg, render_candle_pattern_diagram
+
+## チャート描画ルール
+
+- チャート描画は必ず `tools/render_chart_svg.ts` を使用すること
+- AI は独自に可視化コード（D3/Chart.js/Canvas/SVG等）を生成してはいけない
+- Artifact は「ツールの出力（SVG文字列）」をそのまま表示する用途に限定
+
+### ボリンジャーバンド
+- デフォルト: ±2σ のみ（`--bb-mode=default`）
+- 拡張: ±1σ/±2σ/±3σ（`--bb-mode=extended`）
+
+### 一目均衡表
+- デフォルト: 転換線・基準線・雲のみ
+- 拡張: 遅行スパン追加（`--ichimoku-mode=extended`）
+
+### SMA
+- デフォルト: 描画しない
+- 明示指定時のみ: `--sma=5,20,50`（利用可能: 5, 20, 25, 50, 75, 200）
+
+## コーディング規約
+
+- 1ツール1ファイル（`tools/` ディレクトリ）
+- 共通ロジックは `lib/` に集約
+- Result パターン: `ok()` / `fail()` でツール結果を返却
+- エラー出力は日本語
+- `ensurePair()` でペアバリデーション必須
 
 ## 参考
 
-- BBサンプル: `assets/bb_light.svg`
-- 一目均衡表サンプル: `assets/ichimoku_sample.svg`
-- ローソク足パターンサンプル: `assets/candle_pattern_test.svg`
+- bitbank 公開 API: https://github.com/bitbankinc/bitbank-api-docs/blob/master/public-api.md
+- ツール詳細: docs/tools.md
+- BBサンプル: assets/bb_light.svg
+- 一目サンプル: assets/ichimoku_sample.svg
 
 ## メンテナンスルール
 
