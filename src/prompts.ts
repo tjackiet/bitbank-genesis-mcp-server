@@ -2083,7 +2083,7 @@ BTC/JPYは現在、[短期/中期/長期の状況を1段落で要約]。
         role: 'assistant',
         content: [{
           type: 'text',
-          text: `直近8時間で何が起きたかを **HTML アーティファクト** で視覚化してください。
+          text: `直近8時間で何が起きたかを **HTML ファイル** で視覚化してください。
 
 【使用ツール（既存Promptと同じ）】
 1. get_ticker(pair="btc_jpy") → リアルタイム現在価格
@@ -2093,7 +2093,7 @@ BTC/JPYは現在、[短期/中期/長期の状況を1段落で要約]。
 5. get_orderbook_pressure(pair="btc_jpy", bandsPct=[0.005, 0.01, 0.02]) → 板の買い/売り圧力
 
 【出力形式】
-取得したデータを使って、以下の構成の **HTML アーティファクト** を生成してください。
+取得したデータを使って、以下の構成の **HTML ファイル** を生成してください。
 
 ## 必須コンポーネント
 
@@ -2260,9 +2260,11 @@ BTC/JPYは現在、[短期/中期/長期の状況を1段落で要約]。
 </html>
 \`\`\`
 
-**重要**: 
-- テキストでの説明は不要。HTML アーティファクトのみを出力してください。
-- identifier: "morning-report-visual"、title: "直近8時間レポート" でアーティファクトを生成してください。
+**重要**:
+- \`create_file\` で \`/mnt/user-data/outputs/morning-report-visual.html\` を作成
+- \`present_files\` で提示
+- コードブロックでの出力やテキスト説明は不要
+- Tailwind CSS（CDN版）を使用
 `
         }]
       }
