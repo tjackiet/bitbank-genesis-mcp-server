@@ -185,22 +185,30 @@ export const macdCrossStrategy: Strategy = {
   getOverlays(candles: Candle[], params: Record<string, number>): Overlay[] {
     const { fast, slow, signal: signalPeriod } = { ...DEFAULT_PARAMS, ...params };
     const closes = candles.map(c => c.close);
-    const { macd, signal } = calculateMACD(closes, fast, slow, signalPeriod);
+    const { macd, signal, histogram } = calculateMACD(closes, fast, slow, signalPeriod);
 
-    // MACDは別のスケールなので、価格チャートには直接描画できない
-    // 簡易的にラインとして返す
     return [
       {
-        type: 'line',
+        type: 'line' as const,
         name: `MACD(${fast},${slow})`,
-        color: '#22c55e', // green（Closeの青と区別）
+        color: '#22c55e',
         data: macd,
+        panel: 'indicator' as const,
       },
       {
-        type: 'line',
+        type: 'line' as const,
         name: `Signal(${signalPeriod})`,
-        color: '#f97316', // orange
+        color: '#f97316',
         data: signal,
+        panel: 'indicator' as const,
+      },
+      {
+        type: 'histogram' as const,
+        name: 'Histogram',
+        positiveColor: 'rgba(34, 197, 94, 0.7)',
+        negativeColor: 'rgba(239, 68, 68, 0.7)',
+        data: histogram,
+        panel: 'indicator' as const,
       },
     ];
   },

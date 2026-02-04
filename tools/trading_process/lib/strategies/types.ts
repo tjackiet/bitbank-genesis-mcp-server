@@ -54,7 +54,26 @@ export interface OverlayMarker {
   data: Array<{ index: number; value: number; label?: string }>;
 }
 
-export type Overlay = OverlayLine | OverlayBand | OverlayMarker;
+export interface OverlayHistogram {
+  type: 'histogram';
+  name: string;
+  positiveColor: string;
+  negativeColor: string;
+  data: number[];
+}
+
+/**
+ * オーバーレイの描画先パネル
+ * - 'price': 価格チャート上に描画（デフォルト）
+ * - 'indicator': 独立したインジケータサブパネルに描画（MACD, RSI 等）
+ */
+export type OverlayPanel = 'price' | 'indicator';
+
+export type Overlay =
+  | (OverlayLine & { panel?: OverlayPanel })
+  | (OverlayBand & { panel?: OverlayPanel })
+  | (OverlayMarker & { panel?: OverlayPanel })
+  | (OverlayHistogram & { panel?: OverlayPanel });
 
 /**
  * 戦略インターフェース

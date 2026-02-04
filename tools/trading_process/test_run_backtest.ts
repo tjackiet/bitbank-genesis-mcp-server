@@ -43,12 +43,15 @@ async function main() {
     strategy: config,
   }, null, 2));
 
+  const chartDetail = process.argv[3] === 'full' ? 'full' as const : 'minimal' as const;
+
   const result = await runBacktest({
     pair: 'btc_jpy',
     period: '3M',
     strategy: config as any,
     savePng: false,   // ローカルテストでは PNG 不要
     includeSvg: true, // SVG を返す
+    chartDetail,
   });
 
   if (!result.ok) {

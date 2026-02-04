@@ -1445,6 +1445,7 @@ export const RunBacktestInputSchema = z.object({
   outputDir: z.string().optional().default('/mnt/user-data/outputs').describe('Output directory for chart files'),
   savePng: z.boolean().optional().default(true).describe('Save chart as PNG file (default: true)'),
   includeSvg: z.boolean().optional().default(false).describe('Include SVG string in response (default: false, for token saving)'),
+  chartDetail: z.enum(['minimal', 'full']).optional().default('minimal').describe('Chart detail level: minimal (equity+DD only) or full (price+indicator+equity+DD+position)'),
 });
 
 const GenericBacktestSummarySchema = z.object({
