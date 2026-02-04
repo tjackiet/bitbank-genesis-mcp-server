@@ -2,99 +2,141 @@
 
 ## プロジェクト概要
 
-AIForge は bitbank 向け MCP（Model Context Protocol）サーバー。
-生データ取得・加工・テクニカル分析・チャート描画・バックテストまでを AI に提供する。
+bitbank 暗号資産取引所の MCP (Model Context Protocol) サーバー。
+40+ のツールを通じてリアルタイム市場データ取得・テクニカル分析・チャート描画・バックテストを提供する。
 
 ## 技術スタック
 
-- TypeScript（ES modules, tsx で実行）
-- MCP SDK: `@modelcontextprotocol/sdk`
-- Zod: パラメータバリデーション・スキーマ自動生成
-- Sharp: 画像処理（SVG→PNG変換等）
+- **言語**: TypeScript 5.9（strict モード）
+- **ランタイム**: Node.js 20+（Docker は Node 22-alpine）
+- **フレームワーク**: Express 5（HTTP トランスポート用）
+- **MCP SDK**: @modelcontextprotocol/sdk
+- **バリデーション**: Zod（`src/schemas.ts` が単一ソース）
+- **CLI 実行**: tsx
+- **日時処理**: dayjs
 
-## ビルド・実行
+## よく使う bash コマンド
 
 ```bash
-npm install
-npm start            # tsx src/server.ts（stdio）
-npm run dev          # LOG_LEVEL=debug で起動
-npm run typecheck    # tsc --noEmit
-npm run gen:types    # 型定義自動生成
+# サーバー起動
+npm start                   # MCP サーバー（stdio）
+npm run dev                 # デバッグモード（LOG_LEVEL=debug）
+npm run http                # HTTP サーバー
+
+# 型生成 & チェック
+npm run gen:types           # Zod スキーマから型定義を生成
+npm run typecheck           # tsc --noEmit
+npm run build               # gen:types + typecheck
+
+# テスト
+npm test                    # tools/tests/test_get_tickers_jpy.ts を実行
+
+# 同期・生成
+npm run sync:manifest       # schemas.ts → manifest.json
+npm run sync:prompts        # server.ts の登録 → prompts.json
+
+# チャート描画 CLI
+npx tsx tools/render_chart_svg_cli.ts <pair> <type> <limit> [--flags]
+
+# PR 前に必ず実行
+npm run sync:manifest && npm run sync:prompts && npm run gen:types && npm run typecheck
 ```
 
-## ディレクトリ構成
+## 重要なファイル・ディレクトリ
 
+| パス | 役割 |
+|------|------|
+| `src/server.ts` | MCP サーバー本体（ツール・プロンプト登録） |
+| `src/schemas.ts` | Zod スキーマ定義（**単一ソース**） |
+| `src/prompts.ts` | MCP プロンプト定義 |
+| `src/http.ts` | Express HTTP トランスポート |
+| `tools/` | 各ツール実装（40+ファイル） |
+| `tools/render_chart_svg.ts` | チャート描画（**AI は必ずこれを使う**） |
+| `tools/tests/` | テストファイル |
+| `lib/` | 共有ユーティリティ |
+| `lib/validate.ts` | ペア名・リミット等のバリデーション |
+| `lib/result.ts` | `ok()` / `fail()` 結果ラッパー |
+| `lib/http.ts` | `fetchJson()` HTTP リクエスト＋リトライ |
+| `lib/logger.ts` | JSONL ロガー |
+| `lib/formatter.ts` | 価格・ペア名フォーマット |
+| `lib/datetime.ts` | 日時処理（dayjs ベース） |
+
+## コードスタイル・規約
+
+- ESLint / Prettier の設定ファイルは無い。TypeScript strict モードによる型安全を重視。
+- 全ツールは `Result<T, M>` パターン（`ok()` / `fail()`）で値を返す。
+- スキーマ変更は必ず `src/schemas.ts` を起点とする（Zod が単一ソース）。
+- ツールの入出力は Zod スキーマで検証する。
+- ログは JSONL 形式（`lib/logger.ts`）。
+- 日時処理は `lib/datetime.ts` の関数を使用（`new Date` は避ける）。
+
+## テストの実行方法
+
+```bash
+npm test
 ```
-src/
-  server.ts         - メインサーバー（ツール登録）
-  prompts.ts        - MCP Prompts 定義
-  schemas.ts        - Zod スキーマ（入出力）
-  system-prompt.ts  - システムプロンプト
-  http.ts           - HTTP サーバー（デバッグ用）
-  handlers/         - リクエストハンドラ
-  types/            - 型定義
-  utils/            - ユーティリティ
-tools/              - ツール実装（1ツール1ファイル）
-lib/                - 共通ライブラリ（http, validate, result, formatter, datetime, error）
-docs/               - ドキュメント
-assets/             - サンプルSVG等
+- テストファイル: `tools/tests/test_get_tickers_jpy.ts`
+- 現状は tsx による直接実行。専用テストフレームワーク（Jest 等）は未導入。
+
+## 開発フロー
+
+1. `src/schemas.ts` を更新（Zod スキーマ）
+2. `npm run gen:types` で型定義を生成
+3. ツール / サーバーの実装を更新
+4. `npm run typecheck` で型チェック
+5. PR 前に `sync:manifest` / `sync:prompts` / `gen:types` / `typecheck` を実行
+
+## CI (GitHub Actions)
+
+- トリガー: `main` への push / PR
+- Node 20 + npm キャッシュ
+- ステップ: `npm ci` → `gen:types` → `typecheck`
+
+## リポジトリルール
+
+- ブランチ戦略: `main` ブランチを保護。PR 経由でマージ。
+- `CLAUDE.md`（本ファイル）が正とし、`.cursorrules` へコピーで同期する。
+- `AGENTS.md` は `CLAUDE.md` への symlink。
+
+## 環境変数
+
+```bash
+PORT=3000              # HTTP サーバーポート
+LOG_DIR=./logs         # ログ出力先
+LOG_LEVEL=info         # error | warn | info | debug
+MCP_ENABLE_HTTP=1      # HTTP トランスポート有効化
 ```
 
-## ツールカテゴリ
+## セットアップ手順
 
-詳細は `docs/tools.md` を参照。
+```bash
+git clone <repo>
+cd bitbank-genesis-mcp-server
+cp .env.example .env        # 必要に応じて編集
+npm install                 # 依存インストール（postinstall で assets もコピー）
+npm run gen:types           # 型定義を生成
+npm run typecheck           # 型チェック確認
+npm start                   # サーバー起動
+```
 
-### データ取得（生データ）
-- get_ticker, get_tickers_jpy, get_candles, get_transactions, get_depth
+---
 
-### データ取得（加工）
-- get_orderbook, get_orderbook_pressure, get_orderbook_statistics
-- get_flow_metrics, get_volatility_metrics
+## チャート・可視化に関する AI 利用ポリシー
 
-### 分析
-- analyze_indicators, analyze_market_signal, detect_patterns
-- detect_macd_cross, analyze_macd_pattern, analyze_candle_patterns
-- analyze_ichimoku_snapshot, analyze_bb_snapshot, analyze_sma_snapshot
-- analyze_support_resistance, detect_whale_events
+AI（Claude / GPT）はチャートや可視化を求められた場合、**必ず本プロジェクトの描画ツールを使うこと**。
+独自に可視化コード（D3 / Chart.js / Canvas / SVG 等）を生成してはいけない。
+Artifact は「ツールの出力（SVG 文字列）」をそのまま表示する用途に限定する。
 
-### バックテスト
-- run_backtest_sma, run_backtest
+### 描画ツール一覧
 
-### 表示
-- render_chart_svg, render_depth_svg, render_candle_pattern_diagram
+| ツール | ファイル | 用途 |
+|--------|----------|------|
+| `render_chart_svg` | `tools/render_chart_svg.ts` | ローソク足・ライン・BB・一目均衡表・SMA 等メインチャート |
+| `render_depth_svg` | `tools/render_depth_svg.ts` | 板の深度チャート |
+| `render_candle_pattern_diagram` | `tools/render_candle_pattern_diagram.ts` | ローソク足パターン図解（教育用） |
 
-## チャート描画ルール
-
-- チャート描画は必ず `tools/render_chart_svg.ts` を使用すること
-- AI は独自に可視化コード（D3/Chart.js/Canvas/SVG等）を生成してはいけない
-- Artifact は「ツールの出力（SVG文字列）」をそのまま表示する用途に限定
-
-### ボリンジャーバンド
-- デフォルト: ±2σ のみ（`--bb-mode=default`）
-- 拡張: ±1σ/±2σ/±3σ（`--bb-mode=extended`）
-
-### 一目均衡表
-- デフォルト: 転換線・基準線・雲のみ
-- 拡張: 遅行スパン追加（`--ichimoku-mode=extended`）
-
-### SMA
-- デフォルト: 描画しない
-- 明示指定時のみ: `--sma=5,20,50`（利用可能: 5, 20, 25, 50, 75, 200）
-
-## コーディング規約
-
-- 1ツール1ファイル（`tools/` ディレクトリ）
-- 共通ロジックは `lib/` に集約
-- Result パターン: `ok()` / `fail()` でツール結果を返却
-- エラー出力は日本語
-- `ensurePair()` でペアバリデーション必須
-
-## 参考
-
-- bitbank 公開 API: https://github.com/bitbankinc/bitbank-api-docs/blob/master/public-api.md
-- ツール詳細: docs/tools.md
-- BBサンプル: assets/bb_light.svg
-- 一目サンプル: assets/ichimoku_sample.svg
+- BB / 一目均衡表 / SMA のオプション詳細は `tools/render_chart_svg.ts` 先頭の JSDoc を参照。
+- 大きな変更を行う場合は README の該当箇所も更新すること。
 
 ## メンテナンスルール
 
