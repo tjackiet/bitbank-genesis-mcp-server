@@ -2097,6 +2097,10 @@ matplotlib/D3.js 等で独自にチャートを描画する必要はありませ
   "strategy": { "type": "rsi" }
 }
 
+【チャート詳細度（chartDetail）— 指定がなければ必ず default を使うこと】
+- default: エクイティカーブ + ドローダウン。「損益」「plotして」「グラフ」「チャート」等の表現はすべて default。
+- full: 価格+インジケーター+エクイティ+DD+ポジションの5段構成。ユーザーが「価格チャート」「インジケーター」「エントリーポイント」等のキーワードで価格やテクニカル指標の表示を明示的に要求した場合に限り使用。
+
 【出力】
 - summary: テキストサマリー（総損益, トレード数, 勝率, 最大DD）
 - svg: チャート（SVG形式、そのままアーティファクトとして表示可能）
@@ -2120,7 +2124,7 @@ matplotlib/D3.js 等で独自にチャートを描画する必要はありませ
 			outputDir: args.outputDir,
 			savePng: args.savePng ?? false,  // デフォルト: false（ファイルシステム非共有のため）
 			includeSvg: args.includeSvg ?? true,  // デフォルト: true（SVGを返す）
-			chartDetail: args.chartDetail ?? 'minimal',  // デフォルト: 軽量チャート
+			chartDetail: args.chartDetail ?? 'default',  // デフォルト: 軽量チャート
 		});
 
 		if (!res.ok) {
