@@ -35,7 +35,7 @@ import analyzeSmaSnapshot from '../tools/analyze_sma_snapshot.js';
 import analyzeSupportResistance from '../tools/analyze_support_resistance.js';
 import analyzeCandlePatterns from '../tools/analyze_candle_patterns.js';
 import renderCandlePatternDiagram from '../tools/render_candle_pattern_diagram.js';
-import { runBacktestSma, runBacktest, getAvailableStrategies, getStrategyDefaults } from '../tools/trading_process/index.js';
+import { runBacktest, getAvailableStrategies, getStrategyDefaults } from '../tools/trading_process/index.js';
 import getTickersJpy from '../tools/get_tickers_jpy.js';
 import detectMacdCross from '../tools/detect_macd_cross.js';
 import detectWhaleEvents from '../tools/detect_whale_events.js';
@@ -43,7 +43,7 @@ import analyzeMacdPattern from './handlers/analyzeMacdPattern.js';
 import { DetectPatternsInputSchema, DetectPatternsOutputSchema } from './schemas.js';
 import getCircuitBreakInfo from '../tools/get_circuit_break_info.js';
 import { AnalyzeMarketSignalInputSchema, AnalyzeMarketSignalOutputSchema } from './schemas.js';
-import { RunBacktestSmaInputSchema, RunBacktestSmaOutputSchema, RunBacktestInputSchema, RunBacktestOutputSchema, StrategyTypeEnum } from './schemas.js';
+import { RunBacktestInputSchema, RunBacktestOutputSchema, StrategyTypeEnum } from './schemas.js';
 // typed prompt schema imports not used; prompts are registered via prompts.ts
 import { prompts as promptDefs } from './prompts.js';
 import { SYSTEM_PROMPT } from './system-prompt.js';
@@ -1975,84 +1975,6 @@ registerToolWithLog(
 );
 
 // === Trading Process: Backtest Tools ===
-registerToolWithLog(
-	'run_backtest_sma',
-	{
-		description: `SMAクロスオーバー戦略のバックテストを実行。データ取得・計算・チャート描画をすべて行い、結果をワンコールで返します。
-
-★★★ 重要 ★★★
-このツールはチャート（SVG）を含む完全な結果を返します。
-独自にバックテストを実装したり、matplotlib等でチャートを描画する必要はありません。
-（より汎用的な run_backtest ツールも利用可能です）
-
-【戦略】
-- エントリー: sma_short > sma_long にクロス（ゴールデンクロス）
-- エグジット: sma_short < sma_long にクロス（デッドクロス）
-- 執行: 翌足始値 (t+1 open)
-- 手数料: 往復で適用 (fee_bp × 2)
-
-【入力】
-- pair: 通貨ペア（例: btc_jpy）
-- timeframe: 時間軸（現状 1D のみ）
-- period: 期間（1M=約30日, 3M=約90日, 6M=約180日）
-- sma_short: 短期SMA期間（既定: 5）
-- sma_long: 長期SMA期間（既定: 20）
-- fee_bp: 片道手数料 (bp)（既定: 12）
-
-【出力】
-- サマリー: 総損益(%), トレード回数, 勝率, 最大ドローダウン(%)
-- チャート(SVG): 価格+SMA+シグナル / エクイティ / ドローダウン
-
-【チャート表示方法】
-返却される svg をHTMLアーティファクトに埋め込んで表示してください。
-
-【注意】
-- 過去データに基づくバックテストであり、将来の成果を保証するものではありません
-- グラフ構成は固定（再現性重視）`,
-		inputSchema: RunBacktestSmaInputSchema as any
-	},
-	async (args: any) => {
-		const res = await runBacktestSma(
-			args.pair,
-			args.timeframe,
-			args.period,
-			args.sma_short,
-			args.sma_long,
-			args.fee_bp,
-			args.execution
-		);
-		if (!res.ok) {
-			return { content: [{ type: 'text', text: `Error: ${res.error}` }], structuredContent: res };
-		}
-		// SVGをフォーマット
-		const summary = res.summary;
-		const svgHint = [
-			'',
-			'--- Backtest Chart (SVG) ---',
-			`identifier: backtest-sma-${args.pair}-${Date.now()}`,
-			`title: ${args.pair.toUpperCase()} SMA(${args.sma_short}/${args.sma_long}) Backtest`,
-			'type: image/svg+xml',
-			'',
-			res.svg,
-		].join('\n');
-		return {
-			content: [{ type: 'text', text: summary + svgHint }],
-			structuredContent: {
-				ok: true,
-				summary: res.summary,
-				data: res.data,
-				svg: res.svg,
-				artifactHint: {
-					renderHint: 'ARTIFACT_REQUIRED',
-					displayType: 'image/svg+xml',
-					source: 'inline_svg',
-				},
-			},
-		};
-	}
-);
-
-// === Generic Backtest Tool ===
 registerToolWithLog(
 	'run_backtest',
 	{

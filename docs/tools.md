@@ -32,7 +32,6 @@
 - analyze_support_resistance: サポート・レジスタンス自動検出（反発/反落ポイント分析）
 
 ## バックテスト
-- run_backtest_sma: SMAクロスオーバー戦略のバックテスト（データ取得〜チャート描画まで一括）
 - run_backtest: 汎用バックテスト（SMA/RSI/MACD等の複数戦略に対応）
   - 戦略指定で多様な売買ルールを検証可能
   - 結果にはトレード履歴・統計・SVGチャートを含む
@@ -73,11 +72,10 @@
 | 19 | 分析 | analyze_sma_snapshot | SMA 整列/クロス分析 | 方向判定 |
 | 20 | 分析 | analyze_support_resistance | サポート・レジスタンス自動検出 | 反発/反落分析 |
 | 21 | 分析 | detect_whale_events | 大口取引イベント推定 | 影響把握 |
-| 22 | バックテスト | run_backtest_sma | SMAクロス戦略バックテスト | チャート付き |
-| 23 | バックテスト | run_backtest | 汎用バックテスト（複数戦略対応） | SMA/RSI/MACD等 |
-| 24 | 表示 | render_chart_svg | チャート SVG 描画（指標対応） | 一目/SMA/BB/Depth |
-| 25 | 表示 | render_depth_svg | 板の深度を可視化する SVG 描画 | 買い/売り圧力の視覚化 |
-| 26 | 表示 | render_candle_pattern_diagram | 2本足パターンを SVG で視覚化 | analyze_candle_patterns と連携 |
+| 22 | バックテスト | run_backtest | 汎用バックテスト（複数戦略対応） | SMA/RSI/MACD等 |
+| 23 | 表示 | render_chart_svg | チャート SVG 描画（指標対応） | 一目/SMA/BB/Depth |
+| 24 | 表示 | render_depth_svg | 板の深度を可視化する SVG 描画 | 買い/売り圧力の視覚化 |
+| 25 | 表示 | render_candle_pattern_diagram | 2本足パターンを SVG で視覚化 | analyze_candle_patterns と連携 |
 
 ---
 

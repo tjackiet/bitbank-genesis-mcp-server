@@ -1361,15 +1361,6 @@ export const RenderCandlePatternDiagramOutputSchema = z.union([
 export const BacktestTimeframeEnum = z.enum(['1D', '4H', '1H']);
 export const BacktestPeriodEnum = z.enum(['1M', '3M', '6M']);
 
-export const RunBacktestSmaInputSchema = z.object({
-  pair: z.string().optional().default('btc_jpy').describe('Trading pair (e.g., btc_jpy)'),
-  timeframe: BacktestTimeframeEnum.optional().default('1D').describe('Candle timeframe: 1D (daily), 4H (4-hour), 1H (hourly)'),
-  period: BacktestPeriodEnum.optional().default('3M').describe('Backtest period: 1M, 3M, or 6M'),
-  sma_short: z.number().int().min(2).max(50).optional().default(5).describe('Short SMA period'),
-  sma_long: z.number().int().min(5).max(200).optional().default(20).describe('Long SMA period (must be > sma_short)'),
-  fee_bp: z.number().min(0).max(100).optional().default(12).describe('One-way fee in basis points'),
-  execution: z.literal('t+1_open').optional().default('t+1_open').describe('Execution timing (fixed: t+1_open)'),
-});
 
 const BacktestTradeSchema = z.object({
   entry_time: z.string(),
@@ -1378,13 +1369,6 @@ const BacktestTradeSchema = z.object({
   exit_price: z.number(),
   pnl_pct: z.number(),
   fee_pct: z.number(),
-});
-
-const BacktestSummarySchema = z.object({
-  total_pnl_pct: z.number(),
-  trade_count: z.number(),
-  win_rate: z.number(),
-  max_drawdown_pct: z.number(),
 });
 
 const EquityPointSchema = z.object({
@@ -1396,35 +1380,6 @@ const DrawdownPointSchema = z.object({
   time: z.string(),
   drawdown_pct: z.number(),
 });
-
-const BacktestResultDataSchema = z.object({
-  input: z.object({
-    pair: z.string(),
-    timeframe: z.string(),
-    period: z.string(),
-    sma_short: z.number(),
-    sma_long: z.number(),
-    fee_bp: z.number(),
-    execution: z.string(),
-  }),
-  summary: BacktestSummarySchema,
-  trades: z.array(BacktestTradeSchema),
-  equity_curve: z.array(EquityPointSchema),
-  drawdown_curve: z.array(DrawdownPointSchema),
-});
-
-export const RunBacktestSmaOutputSchema = z.union([
-  z.object({
-    ok: z.literal(true),
-    summary: z.string(),
-    data: BacktestResultDataSchema,
-    svg: z.string(),
-  }),
-  z.object({
-    ok: z.literal(false),
-    error: z.string(),
-  }),
-]);
 
 // === Generic Backtest Schema ===
 
