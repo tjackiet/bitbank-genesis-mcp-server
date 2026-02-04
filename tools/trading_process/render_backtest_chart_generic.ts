@@ -42,9 +42,9 @@ const OVERLAY_COLORS = [
 // === 固定レイアウト（full モード）===
 const LAYOUT_FULL = {
   width: 1000,
-  height: 850,
   margin: { top: 70, right: 120, bottom: 40, left: 80 },
   priceHeight: 250,
+  indicatorHeight: 150,
   equityHeight: 180,
   drawdownHeight: 100,
   positionHeight: 50,
@@ -282,11 +282,11 @@ function renderMinimalChart(data: GenericBacktestChartData): string {
 }
 
 /**
- * フルチャート描画（4段）
+ * フルチャート描画（4〜5段: インジケータパネルは動的追加）
  */
 function renderFullChart(data: GenericBacktestChartData): string {
   const { candles, overlays, trades, equity_curve, drawdown_curve, input, summary } = data;
-  const { width, height, margin, priceHeight, equityHeight, drawdownHeight, positionHeight, gapBetweenPanels } = LAYOUT_FULL;
+  const { width, margin, priceHeight, indicatorHeight, equityHeight, drawdownHeight, positionHeight, gapBetweenPanels } = LAYOUT_FULL;
 
   const plotWidth = width - margin.left - margin.right;
   const xScale = (i: number) => margin.left + (i / Math.max(1, candles.length - 1)) * plotWidth;
@@ -294,6 +294,11 @@ function renderFullChart(data: GenericBacktestChartData): string {
   const buyHoldEquity = calculateBuyHoldEquity(candles);
   const finalBuyHold = buyHoldEquity[buyHoldEquity.length - 1] || 0;
   const positionState = calculatePositionState(candles, trades);
+
+  // オーバーレイを price / indicator に分離
+  const priceOverlays = overlays.filter(o => o.panel !== 'indicator');
+  const indicatorOverlays = overlays.filter(o => o.panel === 'indicator');
+  const hasIndicatorPanel = indicatorOverlays.length > 0;
 
   // トレードマーカー
   const tradeEntryMarkers = trades.map(t => ({
@@ -306,25 +311,29 @@ function renderFullChart(data: GenericBacktestChartData): string {
     price: t.exit_price,
   })).filter(m => m.idx >= 0);
 
-  // パネル位置
+  // パネル位置（インジケータパネルは動的）
   const priceTop = margin.top;
   const priceBottom = priceTop + priceHeight;
-  const equityTop = priceBottom + gapBetweenPanels;
+
+  const indTop = priceBottom + (hasIndicatorPanel ? gapBetweenPanels : 0);
+  const indBottom = hasIndicatorPanel ? indTop + indicatorHeight : priceBottom;
+
+  const equityTop = (hasIndicatorPanel ? indBottom : priceBottom) + gapBetweenPanels;
   const equityBottom = equityTop + equityHeight;
   const ddTop = equityBottom + gapBetweenPanels;
   const ddBottom = ddTop + drawdownHeight;
   const posTop = ddBottom + gapBetweenPanels;
   const posBottom = posTop + positionHeight;
+  const totalHeight = posBottom + margin.bottom;
 
-  // 価格スケール
+  // 価格スケール（priceOverlays のみ使用）
   const allPrices = [
     ...candles.map(c => c.close),
     ...tradeEntryMarkers.map(m => m.price),
     ...tradeExitMarkers.map(m => m.price),
   ];
 
-  // オーバーレイからも価格を収集
-  for (const overlay of overlays) {
+  for (const overlay of priceOverlays) {
     if (overlay.type === 'line') {
       allPrices.push(...overlay.data.filter(v => !isNaN(v)));
     } else if (overlay.type === 'band') {
@@ -350,10 +359,10 @@ function renderFullChart(data: GenericBacktestChartData): string {
   const ddMax = Math.max(...ddValues, 5);
   const ddYScale = (ddPositive: number) => ddTop + (ddPositive / ddMax) * (drawdownHeight - 10);
 
-  // SVG構築（レスポンシブ: viewBox のみ指定）
+  // SVG構築（レスポンシブ: viewBox のみ指定、高さは動的）
   const svg: string[] = [];
-  svg.push(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" style="max-width:100%;height:auto;">`);
-  svg.push(`<rect width="${width}" height="${height}" fill="${COLORS.background}"/>`);
+  svg.push(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${totalHeight}" style="max-width:100%;height:auto;">`);
+  svg.push(`<rect width="${width}" height="${totalHeight}" fill="${COLORS.background}"/>`);
 
   // タイトル
   const paramsStr = Object.entries(input.strategyParams).map(([k, v]) => `${k}=${v}`).join(', ');
@@ -375,11 +384,12 @@ function renderFullChart(data: GenericBacktestChartData): string {
   const pricePath = candles.map((c, i) => `${i === 0 ? 'M' : 'L'}${xScale(i).toFixed(1)},${priceYScale(c.close).toFixed(1)}`).join(' ');
   svg.push(`<path d="${pricePath}" fill="none" stroke="${COLORS.price}" stroke-width="1.5"/>`);
 
-  // オーバーレイ描画
+  // 価格パネルのオーバーレイ描画（indicator パネルのものは除外）
   let colorIdx = 0;
   const legendItems: { color: string; name: string }[] = [{ color: COLORS.price, name: 'Close' }];
 
-  for (const overlay of overlays) {
+  for (const overlay of priceOverlays) {
+    if (overlay.type === 'histogram') continue; // histogram は indicator パネルのみ
     const color = overlay.color || OVERLAY_COLORS[colorIdx % OVERLAY_COLORS.length];
     colorIdx++;
 
@@ -402,7 +412,6 @@ function renderFullChart(data: GenericBacktestChartData): string {
       }
       legendItems.push({ color, name: overlay.name });
     } else if (overlay.type === 'band') {
-      // バンド描画（塗りつぶし + ライン）
       const upperPath: string[] = [];
       const lowerPath: string[] = [];
       let started = false;
@@ -445,7 +454,7 @@ function renderFullChart(data: GenericBacktestChartData): string {
 
   // 凡例（パネル上部に配置）
   let legendX = margin.left + 10;
-  const legendY = priceTop - 8;  // パネルの上に配置
+  const legendY = priceTop - 8;
   for (const item of legendItems) {
     svg.push(`<text x="${legendX}" y="${legendY}" fill="${item.color}" font-size="10">● ${item.name}</text>`);
     legendX += item.name.length * 7 + 30;
@@ -453,6 +462,82 @@ function renderFullChart(data: GenericBacktestChartData): string {
   svg.push(`<text x="${legendX}" y="${legendY}" fill="${COLORS.entryMarker}" font-size="10">▲ Entry</text>`);
   legendX += 60;
   svg.push(`<text x="${legendX}" y="${legendY}" fill="${COLORS.exitMarker}" font-size="10">▼ Exit</text>`);
+
+  // === インジケータサブパネル（MACD 等） ===
+  if (hasIndicatorPanel) {
+    // インジケータ値のスケール計算
+    const allIndValues: number[] = [];
+    for (const overlay of indicatorOverlays) {
+      if (overlay.type === 'line' || overlay.type === 'histogram') {
+        allIndValues.push(...overlay.data.filter(v => !isNaN(v)));
+      }
+    }
+    // ゼロを含む対称的なスケール（ヒストグラムのため）
+    const indAbsMax = Math.max(Math.abs(Math.min(...allIndValues, 0)), Math.abs(Math.max(...allIndValues, 0))) * 1.15;
+    const indMin = -indAbsMax;
+    const indMax = indAbsMax;
+    const indRange = Math.max(indMax - indMin, 1);
+    const indYScale = (v: number) => indBottom - ((v - indMin) / indRange) * indicatorHeight;
+
+    // パネルラベル + 凡例
+    const indLines = indicatorOverlays.filter(o => o.type === 'line');
+    const panelTitle = indLines.length > 0 ? 'MACD' : 'Indicator';
+    svg.push(`<text x="${margin.left}" y="${indTop - 15}" fill="${COLORS.text}" font-size="11" font-weight="bold">${panelTitle}</text>`);
+
+    let indLegendX = margin.left + 60;
+    for (const overlay of indLines) {
+      const col = overlay.type === 'line' ? overlay.color : '#888';
+      svg.push(`<text x="${indLegendX}" y="${indTop - 15}" fill="${col}" font-size="9">--- ${overlay.name}</text>`);
+      indLegendX += overlay.name.length * 7 + 40;
+    }
+
+    // ゼロライン
+    const zeroY = indYScale(0);
+    svg.push(`<line x1="${margin.left}" y1="${zeroY}" x2="${width - margin.right}" y2="${zeroY}" stroke="${COLORS.zeroline}" stroke-width="1"/>`);
+
+    // グリッド + Y軸ラベル
+    const indTicks = generateYTicks(indMin, indMax, 5);
+    for (const tick of indTicks) {
+      const y = indYScale(tick);
+      svg.push(`<line x1="${margin.left}" y1="${y}" x2="${width - margin.right}" y2="${y}" stroke="${COLORS.grid}" stroke-dasharray="2,2"/>`);
+      svg.push(`<text x="${margin.left - 5}" y="${y + 3}" fill="${COLORS.textMuted}" font-size="8" text-anchor="end">${formatPrice(tick)}</text>`);
+    }
+
+    // ヒストグラム棒の描画
+    for (const overlay of indicatorOverlays) {
+      if (overlay.type === 'histogram') {
+        const barW = Math.max(plotWidth / candles.length * 0.6, 1);
+        for (let i = 0; i < overlay.data.length; i++) {
+          const v = overlay.data[i];
+          if (isNaN(v)) continue;
+          const x = xScale(i) - barW / 2;
+          const yVal = indYScale(v);
+          const yZero = indYScale(0);
+          const barColor = v >= 0 ? overlay.positiveColor : overlay.negativeColor;
+          const barTop = Math.min(yVal, yZero);
+          const barHeight = Math.abs(yVal - yZero);
+          svg.push(`<rect x="${x.toFixed(1)}" y="${barTop.toFixed(1)}" width="${barW.toFixed(1)}" height="${Math.max(barHeight, 0.5).toFixed(1)}" fill="${barColor}"/>`);
+        }
+      }
+    }
+
+    // インジケータライン描画
+    for (const overlay of indicatorOverlays) {
+      if (overlay.type === 'line') {
+        let started = false;
+        const pathParts: string[] = [];
+        for (let i = 0; i < overlay.data.length; i++) {
+          const v = overlay.data[i];
+          if (isNaN(v)) { started = false; continue; }
+          pathParts.push(`${started ? 'L' : 'M'}${xScale(i).toFixed(1)},${indYScale(v).toFixed(1)}`);
+          started = true;
+        }
+        if (pathParts.length > 0) {
+          svg.push(`<path d="${pathParts.join(' ')}" fill="none" stroke="${overlay.color}" stroke-width="1.5"/>`);
+        }
+      }
+    }
+  }
 
   // === エクイティカーブ ===
   const equityLabelY = equityTop - 15;
