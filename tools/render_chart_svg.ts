@@ -2,6 +2,23 @@
 /**
  * Render chart as SVG or save to file depending on options.
  *
+ * ## ボリンジャーバンド (BB)
+ * - default : ±2σ のみ描画（軽量版）
+ * - extended: ±1σ, ±2σ, ±3σ を描画（完全版）
+ * - CLI: `--bb-mode=default|extended`、`--no-bb` で無効化
+ * - 後方互換: `--bb-mode=light` → default、`--bb-mode=full` → extended
+ *
+ * ## 一目均衡表 (Ichimoku)
+ * - default : 転換線・基準線・雲（先行スパン A/B）
+ * - extended: 上記＋遅行スパン
+ * - CLI: `--with-ichimoku --ichimoku-mode=default|extended`
+ * - 指定なしの場合はオフ
+ *
+ * ## SMA
+ * - デフォルトでは描画しない
+ * - CLI: `--sma=5,20,50` のように明示指定した場合のみ描画
+ * - 利用可能な期間: 5, 20, 25, 50, 75, 200
+ *
  * @returns Result<
  *   { svg?: string | null; filePath?: string | null; legend?: Record<string,string> },
  *   { pair: string; type: string; limit?: number; indicators?: string[]; bbMode: 'default'|'extended'; range?: {start:string; end:string}; sizeBytes?: number; layerCount?: number; truncated?: boolean; }>
