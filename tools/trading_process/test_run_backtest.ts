@@ -43,7 +43,7 @@ async function main() {
     strategy: config,
   }, null, 2));
 
-  const chartDetail = process.argv[3] === 'full' ? 'full' as const : 'minimal' as const;
+  const chartDetail = process.argv[3] === 'full' ? 'full' as const : 'default' as const;
 
   const result = await runBacktest({
     pair: 'btc_jpy',

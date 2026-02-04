@@ -2,7 +2,7 @@
  * render_backtest_chart_generic.ts - 汎用バックテストチャート描画
  *
  * 2つのモード:
- * - minimal: エクイティ + ドローダウンのみ（軽量、トークン節約）
+ * - default: エクイティ + ドローダウンのみ（軽量、トークン節約）
  * - full: 4段チャート（価格 + オーバーレイ + シグナル / エクイティ / ドローダウン / ポジション）
  */
 
@@ -10,7 +10,7 @@ import type { Candle, Trade, EquityPoint, DrawdownPoint } from './types.js';
 import type { Overlay } from './lib/strategies/types.js';
 import type { BacktestEngineSummary } from './lib/backtest_engine.js';
 
-export type ChartDetail = 'minimal' | 'full';
+export type ChartDetail = 'default' | 'full';
 
 // === 固定配色 ===
 const COLORS = {
@@ -52,7 +52,7 @@ const LAYOUT_FULL = {
   gapBetweenPanels: 40,
 };
 
-// === 軽量レイアウト（minimal モード）===
+// === 軽量レイアウト（default モード）===
 const LAYOUT_MINIMAL = {
   width: 700,
   height: 350,
@@ -153,10 +153,10 @@ function calculatePositionState(candles: Candle[], trades: Trade[]): ('long' | '
 /**
  * 汎用チャート描画
  * @param data チャートデータ
- * @param chartDetail 'minimal' = エクイティ+DD のみ（軽量）, 'full' = 4段チャート
+ * @param chartDetail 'default' = エクイティ+DD のみ（軽量）, 'full' = 4段チャート
  */
 export function renderBacktestChartGeneric(data: GenericBacktestChartData, chartDetail: ChartDetail = 'full'): string {
-  if (chartDetail === 'minimal') {
+  if (chartDetail === 'default') {
     return renderMinimalChart(data);
   }
   return renderFullChart(data);

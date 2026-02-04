@@ -44,7 +44,7 @@ export interface RunBacktestInput {
   savePng?: boolean;
   /** SVG 文字列を返す（デフォルト: true） */
   includeSvg?: boolean;
-  /** チャート詳細度: 'minimal' = 軽量（エクイティ+DD）, 'full' = 4段チャート（デフォルト: 'minimal'） */
+  /** チャート詳細度: 'default' = 軽量（エクイティ+DD）, 'full' = 4段チャート（デフォルト: 'default'） */
   chartDetail?: ChartDetail;
 }
 
@@ -83,7 +83,7 @@ export default async function runBacktest(input: RunBacktestInput): Promise<RunB
       outputDir = DEFAULT_OUTPUT_DIR,
       savePng = false,  // ファイルシステム非共有のためデフォルトoff
       includeSvg = true, // SVG文字列をデフォルトで返す
-      chartDetail = 'minimal', // 軽量チャートをデフォルトに
+      chartDetail = 'default', // 軽量チャートをデフォルトに
     } = input;
 
     // 戦略を取得
