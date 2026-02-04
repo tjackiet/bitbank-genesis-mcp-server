@@ -53,14 +53,18 @@ export const ALLOWED_PAIRS: Set<Pair> = new Set([
 
 export function normalizePair(raw: unknown): Pair | null {
 	if (!raw) return null;
-	return String(raw).trim().toLowerCase().replace(/[\/-]/g, '_') as Pair;
+	const s = String(raw).trim().toLowerCase();
+	// Zodバリデーション済みの場合、形式変換（BTC/JPY → btc_jpy）は不要
+	// 正規形式（xxx_yyy）以外は null を返す
+	if (!/^[a-z0-9]+_[a-z0-9]+$/.test(s)) return null;
+	return s as Pair;
 }
 
 export function ensurePair(pair: unknown):
 	| { ok: true; pair: Pair }
 	| { ok: false; error: { type: 'user' | 'internal'; message: string } } {
 	const norm = normalizePair(pair);
-	if (!norm || !/^[a-z0-9]+_[a-z0-9]+$/.test(norm)) {
+	if (!norm) {
 		return {
 			ok: false,
 			error: { type: 'user', message: `pair '${String(pair)}' が不正です（例: btc_jpy）` },
@@ -71,7 +75,7 @@ export function ensurePair(pair: unknown):
 			ok: false,
 			error: {
 				type: 'user',
-				message: `未対応のpair: '${norm}'（対応例: ${[...ALLOWED_PAIRS].join(', ')}）`,
+				message: `未対応のpair: '${norm}'（対応例: ${[...ALLOWED_PAIRS].slice(0, 5).join(', ')}...）`,
 			},
 		};
 	}

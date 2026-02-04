@@ -105,7 +105,7 @@ function formatDateBySpan(isoTime: string, format: 'full' | 'month-day' | 'year-
   const mm = String(d.getMonth() + 1).padStart(2, '0');
   const dd = String(d.getDate()).padStart(2, '0');
   const yyyy = d.getFullYear();
-  
+
   switch (format) {
     case 'month-day':
       return `${mm}/${dd}`;
@@ -210,13 +210,14 @@ function renderMinimalChart(data: GenericBacktestChartData): string {
   svg.push(`<text x="${width / 2}" y="38" fill="${COLORS.textMuted}" font-size="11" text-anchor="middle">`);
   svg.push(`${input.pair.toUpperCase()} | ${input.period} | Win: ${(summary.win_rate * 100).toFixed(0)}% | MaxDD: -${summary.max_drawdown_pct.toFixed(1)}%</text>`);
 
-  // 最終確定損益
+  // 最終確定損益 (Realized P&L)
   const finalConfirmed = equity_curve.length > 0 ? equity_curve[equity_curve.length - 1].confirmed_pct : 0;
 
   // === エクイティカーブ ===
+  // 凡例: Mark = Mark-to-Market PnL（時価評価損益）, Real = Realized PnL（確定損益）
   svg.push(`<text x="${margin.left}" y="${equityTop - 8}" fill="${COLORS.text}" font-size="10" font-weight="bold">Equity (%)</text>`);
-  svg.push(`<text x="${margin.left + 70}" y="${equityTop - 8}" fill="${COLORS.strategy}" font-size="9">評価: ${formatPct(summary.total_pnl_pct)}</text>`);
-  svg.push(`<text x="${margin.left + 150}" y="${equityTop - 8}" fill="#22c55e" font-size="9">確定: ${formatPct(finalConfirmed)}</text>`);
+  svg.push(`<text x="${margin.left + 70}" y="${equityTop - 8}" fill="${COLORS.strategy}" font-size="9">Mark: ${formatPct(summary.total_pnl_pct)}</text>`);
+  svg.push(`<text x="${margin.left + 150}" y="${equityTop - 8}" fill="#22c55e" font-size="9">Real: ${formatPct(finalConfirmed)}</text>`);
   svg.push(`<text x="${margin.left + 230}" y="${equityTop - 8}" fill="${COLORS.buyHold}" font-size="9">B&amp;H: ${formatPct(finalBuyHold)}</text>`);
 
   // グリッド
@@ -234,7 +235,7 @@ function renderMinimalChart(data: GenericBacktestChartData): string {
   }
   svg.push(`<path d="${buyHoldPoints.join(' ')}" fill="none" stroke="${COLORS.buyHold}" stroke-width="1.5"/>`);
 
-  // 確定損益ライン（点線、間引き）
+  // 確定損益ライン (Realized) - 点線、間引き
   if (equity_curve.length > 0) {
     const confirmedPoints: string[] = [];
     for (let i = 0; i < equity_curve.length; i += step) {
@@ -243,7 +244,7 @@ function renderMinimalChart(data: GenericBacktestChartData): string {
     svg.push(`<path d="${confirmedPoints.join(' ')}" fill="none" stroke="#22c55e" stroke-width="1.5" stroke-dasharray="4,2"/>`);
   }
 
-  // 評価損益ライン（実線、間引き）
+  // 評価損益ライン (Mark-to-Market) - 実線、間引き
   if (equity_curve.length > 0) {
     const strategyPoints: string[] = [];
     for (let i = 0; i < equity_curve.length; i += step) {

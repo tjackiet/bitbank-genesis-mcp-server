@@ -1,7 +1,16 @@
 /**
  * 日時変換ユーティリティ
  * 各ツールで重複していた関数を統一
+ * dayjs ベースで実装
  */
+
+import dayjs from 'dayjs';
+import utc from 'dayjs/plugin/utc.js';
+import timezone from 'dayjs/plugin/timezone.js';
+
+// プラグイン有効化
+dayjs.extend(utc);
+dayjs.extend(timezone);
 
 /**
  * タイムスタンプをISO8601形式に変換
@@ -9,8 +18,8 @@
  * @returns ISO8601文字列、無効な場合はnull
  */
 export function toIsoTime(ts: unknown): string | null {
-	const d = new Date(Number(ts));
-	return Number.isNaN(d.valueOf()) ? null : d.toISOString();
+	const d = dayjs(Number(ts));
+	return d.isValid() ? d.toISOString() : null;
 }
 
 /**
@@ -20,9 +29,8 @@ export function toIsoTime(ts: unknown): string | null {
  */
 export function toIsoMs(ms: number | null): string | null {
 	if (ms == null) return null;
-	const d = new Date(ms);
-	if (Number.isNaN(d.valueOf())) return null;
-	return d.toISOString();
+	const d = dayjs(ms);
+	return d.isValid() ? d.toISOString() : null;
 }
 
 /**
@@ -33,7 +41,8 @@ export function toIsoMs(ms: number | null): string | null {
  */
 export function toIsoWithTz(ts: number, tz: string): string | null {
 	try {
-		return new Date(ts).toLocaleString('sv-SE', { timeZone: tz, hour12: false }).replace(' ', 'T');
+		const d = dayjs(ts).tz(tz);
+		return d.isValid() ? d.format('YYYY-MM-DDTHH:mm:ss') : null;
 	} catch {
 		return null;
 	}
@@ -47,23 +56,50 @@ export function toIsoWithTz(ts: number, tz: string): string | null {
  */
 export function toDisplayTime(ts: number | undefined, tz: string = 'Asia/Tokyo'): string | null {
 	try {
-		const d = new Date(ts ?? Date.now());
-		const time = d.toLocaleTimeString('ja-JP', {
-			timeZone: tz,
-			hour12: false,
-			hour: '2-digit',
-			minute: '2-digit',
-			second: '2-digit'
-		});
-		const date = d.toLocaleDateString('ja-JP', {
-			timeZone: tz,
-			year: 'numeric',
-			month: '2-digit',
-			day: '2-digit'
-		});
+		const d = dayjs(ts ?? Date.now()).tz(tz);
+		if (!d.isValid()) return null;
 		const tzShort = tz === 'UTC' ? 'UTC' : 'JST';
-		return `${date} ${time} ${tzShort}`;
+		return `${d.format('YYYY/MM/DD HH:mm:ss')} ${tzShort}`;
 	} catch {
 		return null;
 	}
 }
+
+/**
+ * 現在時刻をISO8601形式で取得
+ * @returns ISO8601文字列
+ */
+export function nowIso(): string {
+	return dayjs().toISOString();
+}
+
+/**
+ * 現在時刻を指定タイムゾーンで取得
+ * @param tz タイムゾーン（デフォルト: 'Asia/Tokyo'）
+ * @returns dayjs インスタンス
+ */
+export function nowTz(tz: string = 'Asia/Tokyo') {
+	return dayjs().tz(tz);
+}
+
+/**
+ * N日前の日付を取得
+ * @param daysAgo 何日前か
+ * @param format 出力フォーマット（デフォルト: 'YYYYMMDD'）
+ * @returns フォーマットされた日付文字列
+ */
+export function daysAgo(daysAgo: number, format: string = 'YYYYMMDD'): string {
+	return dayjs().subtract(daysAgo, 'day').format(format);
+}
+
+/**
+ * 今日の日付を取得
+ * @param format 出力フォーマット（デフォルト: 'YYYYMMDD'）
+ * @returns フォーマットされた日付文字列
+ */
+export function today(format: string = 'YYYYMMDD'): string {
+	return dayjs().format(format);
+}
+
+// dayjs インスタンスを直接使いたい場合のエクスポート
+export { dayjs };

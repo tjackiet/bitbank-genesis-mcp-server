@@ -1,5 +1,5 @@
 import analyzeIndicators from './analyze_indicators.js';
-import { ALLOWED_PAIRS, normalizePair } from '../lib/validate.js';
+import { ALLOWED_PAIRS } from '../lib/validate.js';
 import { ok, fail } from '../lib/result.js';
 import { formatSummary } from '../lib/formatter.js';
 import { getErrorMessage } from '../lib/error.js';
@@ -24,7 +24,7 @@ export default async function detectMacdCross(
 ) {
   try {
     const universe = pairs && pairs.length
-      ? (pairs.map(normalizePair).filter((p): p is any => !!p && ALLOWED_PAIRS.has(p as any)) as string[])
+      ? pairs.filter(p => ALLOWED_PAIRS.has(p as any))
       : Array.from(ALLOWED_PAIRS.values()).filter(p => market === 'jpy' ? p.endsWith('_jpy') : true);
     const results: Array<{ pair: string; type: 'golden' | 'dead'; macd: number; signal: number; isoTime?: string | null }> = [];
     const resultsDetailed: Array<{
