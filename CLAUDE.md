@@ -1,5 +1,123 @@
 # Cursor Rules for bitbank-mcp-server
 
+## プロジェクト概要
+
+bitbank 暗号資産取引所の MCP (Model Context Protocol) サーバー。
+40+ のツールを通じてリアルタイム市場データ取得・テクニカル分析・チャート描画・バックテストを提供する。
+
+## 技術スタック
+
+- **言語**: TypeScript 5.9（strict モード）
+- **ランタイム**: Node.js 20+（Docker は Node 22-alpine）
+- **フレームワーク**: Express 5（HTTP トランスポート用）
+- **MCP SDK**: @modelcontextprotocol/sdk
+- **バリデーション**: Zod（`src/schemas.ts` が単一ソース）
+- **CLI 実行**: tsx
+
+## よく使う bash コマンド
+
+```bash
+# サーバー起動
+npm start                   # MCP サーバー（stdio）
+npm run dev                 # デバッグモード（LOG_LEVEL=debug）
+npm run http                # HTTP サーバー
+
+# 型生成 & チェック
+npm run gen:types           # Zod スキーマから型定義を生成
+npm run typecheck           # tsc --noEmit
+npm run build               # gen:types + typecheck
+
+# テスト
+npm test                    # tools/tests/test_get_tickers_jpy.ts を実行
+
+# 同期・生成
+npm run sync:manifest       # schemas.ts → manifest.json
+npm run sync:prompts        # server.ts の登録 → prompts.json
+
+# チャート描画 CLI
+npx tsx tools/render_chart_svg_cli.ts <pair> <type> <limit> [--flags]
+
+# PR 前に必ず実行
+npm run sync:manifest && npm run sync:prompts && npm run gen:types && npm run typecheck
+```
+
+## 重要なファイル・ディレクトリ
+
+| パス | 役割 |
+|------|------|
+| `src/server.ts` | MCP サーバー本体（ツール・プロンプト登録） |
+| `src/schemas.ts` | Zod スキーマ定義（**単一ソース**） |
+| `src/prompts.ts` | MCP プロンプト定義 |
+| `src/http.ts` | Express HTTP トランスポート |
+| `tools/` | 各ツール実装（40+ファイル） |
+| `tools/render_chart_svg.ts` | チャート描画（**AI は必ずこれを使う**） |
+| `tools/tests/` | テストファイル |
+| `lib/` | 共有ユーティリティ |
+| `lib/validate.ts` | ペア名・リミット等のバリデーション |
+| `lib/result.ts` | `ok()` / `fail()` 結果ラッパー |
+| `lib/http.ts` | `fetchJson()` HTTP リクエスト＋リトライ |
+| `lib/logger.ts` | JSONL ロガー |
+| `lib/formatter.ts` | 価格・ペア名フォーマット |
+
+## コードスタイル・規約
+
+- ESLint / Prettier の設定ファイルは無い。TypeScript strict モードによる型安全を重視。
+- 全ツールは `Result<T, M>` パターン（`ok()` / `fail()`）で値を返す。
+- スキーマ変更は必ず `src/schemas.ts` を起点とする（Zod が単一ソース）。
+- ツールの入出力は Zod スキーマで検証する。
+- ログは JSONL 形式（`lib/logger.ts`）。
+
+## テストの実行方法
+
+```bash
+npm test
+```
+- テストファイル: `tools/tests/test_get_tickers_jpy.ts`
+- 現状は tsx による直接実行。専用テストフレームワーク（Jest 等）は未導入。
+
+## 開発フロー
+
+1. `src/schemas.ts` を更新（Zod スキーマ）
+2. `npm run gen:types` で型定義を生成
+3. ツール / サーバーの実装を更新
+4. `npm run typecheck` で型チェック
+5. PR 前に `sync:manifest` / `sync:prompts` / `gen:types` / `typecheck` を実行
+
+## CI (GitHub Actions)
+
+- トリガー: `main` への push / PR
+- Node 20 + npm キャッシュ
+- ステップ: `npm ci` → `gen:types` → `typecheck`
+
+## リポジトリルール
+
+- ブランチ戦略: `main` ブランチを保護。PR 経由でマージ。
+- `CLAUDE.md`（本ファイル）が正とし、`.cursorrules` へコピーで同期する。
+- `AGENTS.md` は `CLAUDE.md` への symlink。
+
+## 環境変数
+
+```bash
+PORT=3000              # HTTP サーバーポート
+LOG_DIR=./logs         # ログ出力先
+LOG_LEVEL=info         # error | warn | info | debug
+MCP_ENABLE_HTTP=1      # HTTP トランスポート有効化
+```
+
+## セットアップ手順
+
+```bash
+git clone <repo>
+cd bitbank-genesis-mcp-server
+cp .env.example .env        # 必要に応じて編集
+npm install                 # 依存インストール（postinstall で assets もコピー）
+npm run gen:types           # 型定義を生成
+npm run typecheck           # 型チェック確認
+npm start                   # サーバー起動
+```
+
+---
+
 ## チャート生成に関するAI利用ポリシー
 
 - 重要: チャート描画は必ず `tools/render_chart_svg.ts` を使用すること。
