@@ -8,8 +8,8 @@
 export const MIN_CONFIDENCE: Record<string, number> = {
   triple_top: 0.7,
   triple_bottom: 0.7,
-  double_top: 0.6,
-  double_bottom: 0.6,
+  double_top: 0.65,
+  double_bottom: 0.65,
   head_and_shoulders: 0.7,
   inverse_head_and_shoulders: 0.7,
 };
