@@ -195,17 +195,21 @@ export default async function detectPatterns(
           return 'rising_wedge';
         }
       }
-      // Falling Wedge: 両ライン下向き、収束している（傾き比率は収束で判断）
+      // Falling Wedge: 両ライン下向き、上側がより急（収束）
       if (slopeHigh < -minSlope && slopeLow < -minSlope) {
-        // ★ 追加: 弱い方の傾きが強い方の30%未満なら除外（三角形扱い）
+        // 弱い方の傾きが強い方の30%未満なら除外（三角形扱い）
         const absHi = Math.abs(slopeHigh);
         const absLo = Math.abs(slopeLow);
         const weakerRatio = Math.min(absHi, absLo) / Math.max(absHi, absLo);
         if (weakerRatio < minWeakerSlopeRatio) {
           return null;
         }
-        // 両方下向きで収束していればFalling Wedge（傾き比率条件を緩和）
-        return 'falling_wedge';
+        // ★ 修正: 上側ラインの方が急でないと falling wedge ではない（平行チャネル除外）
+        // |slopeHigh| / |slopeLow| >= ratioMinFalling (1.15)
+        if (absHi >= absLo * ratioMinFalling) {
+          return 'falling_wedge';
+        }
+        return null; // 比率不足 → チャネルの可能性が高い
       }
       const slopeRatio = Math.abs(slopeLow / (slopeHigh || (slopeLow * 1e-6)));
       if (slopeRatio > 0.9 && slopeRatio < 1.1) return null;
@@ -217,7 +221,7 @@ export default async function detectPatterns(
       const gapMid = upper.valueAt(midIdx) - lower.valueAt(midIdx);
       const gapEnd = upper.valueAt(endIdx) - lower.valueAt(endIdx);
       const ratio = gapEnd / Math.max(1e-12, gapStart);
-      if (!(gapEnd > 0) || !(ratio < 0.38)) return { isConverging: false };
+      if (!(gapEnd > 0) || !(ratio < 0.30)) return { isConverging: false }; // 0.38→0.30: より明確な収束を要求
       const firstHalf = gapStart - gapMid;
       const secondHalf = gapMid - gapEnd;
       const isAccelerating = secondHalf > firstHalf * 1.2;
@@ -316,17 +320,21 @@ export default async function detectPatterns(
     // 2) Double top/bottom
     let foundDoubleTop = false, foundDoubleBottom = false;
     if (want.size === 0 || want.has('double_top') || want.has('double_bottom')) {
-      const minDistDB = 3; // ダブル系はより短期を許容
+      const minDistDB = 5; // ダブル系: 最低5本の間隔を要求（ノイズ除去）
       for (let i = 0; i < pivots.length - 3; i++) {
         const a = pivots[i];
         const b = pivots[i + 1];
         const c = pivots[i + 2];
         if (b.idx - a.idx < minDistDB || c.idx - b.idx < minDistDB) continue;
-        // サイズ下限フィルタ（3%未満は除外）
+        // サイズ下限フィルタ（3%未満は除外）+ 谷深さフィルタ（5%未満は除外）
         if (a.kind === 'H' && b.kind === 'L' && c.kind === 'H') {
           const patternHeight = Math.abs(a.price - b.price);
           const heightPct = patternHeight / Math.max(1, Math.max(a.price, b.price));
           if (heightPct < 0.03) { pushCand({ type: 'double_top', accepted: false, reason: 'pattern_too_small', idxs: [a.idx, b.idx, c.idx] }); continue; }
+          // 谷深さ: 山と谷の落差が山の5%以上必要（浅い窪みでの誤検知防止）
+          const peakAvg = (a.price + c.price) / 2;
+          const valleyDepthPct = (peakAvg - b.price) / Math.max(1, peakAvg);
+          if (valleyDepthPct < 0.05) { pushCand({ type: 'double_top', accepted: false, reason: 'valley_too_shallow', idxs: [a.idx, b.idx, c.idx] }); continue; }
         }
         // double top: H-L-H with H~H + ネックライン下抜け（終値ベース1.5%バッファ）必須
         if (a.kind === 'H' && b.kind === 'L' && c.kind === 'H' && near(a.price, c.price)) {
@@ -398,11 +406,15 @@ export default async function detectPatterns(
             });
           }
         }
-        // double bottom: L-H-L with L~L
+        // double bottom: L-H-L with L~L（サイズ下限＋山高さフィルタ）
         if (a.kind === 'L' && b.kind === 'H' && c.kind === 'L') {
           const patternHeight = Math.abs(a.price - b.price);
           const heightPct = patternHeight / Math.max(1, Math.max(a.price, b.price));
           if (heightPct < 0.03) { pushCand({ type: 'double_bottom', accepted: false, reason: 'pattern_too_small', idxs: [a.idx, b.idx, c.idx] }); continue; }
+          // 山高さ: 谷と山の落差が谷の5%以上必要（浅い突起での誤検知防止）
+          const valleyAvg = (a.price + c.price) / 2;
+          const peakHeightPct = (b.price - valleyAvg) / Math.max(1, valleyAvg);
+          if (peakHeightPct < 0.05) { pushCand({ type: 'double_bottom', accepted: false, reason: 'peak_too_shallow', idxs: [a.idx, b.idx, c.idx] }); continue; }
         }
         if (a.kind === 'L' && b.kind === 'H' && c.kind === 'L' && near(a.price, c.price)) {
           // ネックライン突破（終値ベース＋1.5%バッファ）を c 以降で確認
@@ -473,8 +485,8 @@ export default async function detectPatterns(
           }
         }
       }
-      // relaxed fallback for double top/bottom: multi-stage factors [1.5, 2.0]
-      for (const f of [1.5, 2.0]) {
+      // relaxed fallback for double top/bottom: single-stage factor 1.3（×2.0 は過剰検知の原因として削除）
+      for (const f of [1.3]) {
         if (!foundDoubleTop && (want.size === 0 || want.has('double_top'))) {
           const tolRelax = tolerancePct * f;
           const nearRelaxed = (x: number, y: number) => Math.abs(x - y) <= Math.max(x, y) * tolRelax;
@@ -482,11 +494,14 @@ export default async function detectPatterns(
             const a = pivots[i], b = pivots[i + 1], c = pivots[i + 2];
             if (!(a.kind === 'H' && b.kind === 'L' && c.kind === 'H')) continue;
             if (b.idx - a.idx < minDistDB || c.idx - b.idx < minDistDB) continue;
-            // サイズ下限フィルタ（3%未満は除外）
+            // サイズ下限フィルタ（3%未満は除外）+ 谷深さフィルタ
             {
               const patternHeight = Math.abs(a.price - b.price);
               const heightPct = patternHeight / Math.max(1, Math.max(a.price, b.price));
               if (heightPct < 0.03) { pushCand({ type: 'double_top', accepted: false, reason: 'pattern_too_small', idxs: [a.idx, b.idx, c.idx] }); continue; }
+              const peakAvg = (a.price + c.price) / 2;
+              const valleyDepthPct = (peakAvg - b.price) / Math.max(1, peakAvg);
+              if (valleyDepthPct < 0.05) { pushCand({ type: 'double_top', accepted: false, reason: 'valley_too_shallow_relaxed', idxs: [a.idx, b.idx, c.idx] }); continue; }
             }
             if (!nearRelaxed(a.price, c.price)) { pushCand({ type: 'double_top', accepted: false, reason: 'peaks_not_equal_relaxed', idxs: [a.idx, b.idx, c.idx], pts: [{ role: 'peak1', idx: a.idx, price: a.price }, { role: 'peak2', idx: c.idx, price: c.price }] }); continue; }
             // 緩和判定でもネックライン下抜け必須
@@ -510,7 +525,7 @@ export default async function detectPatterns(
               const symmetry = clamp01(1 - relDev(a.price, c.price));
               const per = periodScoreDays(start, end);
               const base = (tolMargin + symmetry + per) / 3;
-              const confidence = finalizeConf(base * 0.95, 'double_top');
+              const confidence = finalizeConf(base * 0.85, 'double_top'); // 緩和パスは大きめペナルティ
               const diagram = generatePatternDiagram(
                 'double_top',
                 [
@@ -536,11 +551,14 @@ export default async function detectPatterns(
             const a = pivots[i], b = pivots[i + 1], c = pivots[i + 2];
             if (!(a.kind === 'L' && b.kind === 'H' && c.kind === 'L')) continue;
             if (b.idx - a.idx < minDistDB || c.idx - b.idx < minDistDB) continue;
-            // サイズ下限フィルタ（3%未満は除外）
+            // サイズ下限フィルタ（3%未満は除外）+ 山高さフィルタ
             {
               const patternHeight = Math.abs(a.price - b.price);
               const heightPct = patternHeight / Math.max(1, Math.max(a.price, b.price));
               if (heightPct < 0.03) { pushCand({ type: 'double_bottom', accepted: false, reason: 'pattern_too_small', idxs: [a.idx, b.idx, c.idx] }); continue; }
+              const valleyAvg = (a.price + c.price) / 2;
+              const peakHeightPct = (b.price - valleyAvg) / Math.max(1, valleyAvg);
+              if (peakHeightPct < 0.05) { pushCand({ type: 'double_bottom', accepted: false, reason: 'peak_too_shallow_relaxed', idxs: [a.idx, b.idx, c.idx] }); continue; }
             }
             if (!nearRelaxed(a.price, c.price)) { pushCand({ type: 'double_bottom', accepted: false, reason: 'valleys_not_equal_relaxed', idxs: [a.idx, b.idx, c.idx], pts: [{ role: 'valley1', idx: a.idx, price: a.price }, { role: 'valley2', idx: c.idx, price: c.price }] }); continue; }
             // 緩和判定でもネックライン突破必須
@@ -564,7 +582,7 @@ export default async function detectPatterns(
               const symmetry = clamp01(1 - relDev(a.price, c.price));
               const per = periodScoreDays(start, end);
               const base = (tolMargin + symmetry + per) / 3;
-              const confidence = finalizeConf(base * 0.95, 'double_bottom');
+              const confidence = finalizeConf(base * 0.85, 'double_bottom'); // 緩和パスは大きめペナルティ
               const diagram = generatePatternDiagram(
                 'double_bottom',
                 [
@@ -1471,15 +1489,15 @@ export default async function detectPatterns(
         if (highsIn.length < 4 || lowsIn.length < 4) continue;
         const upper = lrWithR2(highsIn.map(s => ({ x: s.index, y: s.price })));
         const lower = lrWithR2(lowsIn.map(s => ({ x: s.index, y: s.price })));
-        if (upper.r2 < 0.25 || lower.r2 < 0.25) {
-          // Debug: R^2不足で却下
+        if (upper.r2 < 0.40 || lower.r2 < 0.40) {
+          // Debug: R^2不足で却下（0.25→0.40 に引き上げ: フィットの悪い回帰線を除外）
           const dbgType = (upper.slope < 0 && lower.slope < 0) ? 'falling_wedge' : ((upper.slope > 0 && lower.slope > 0) ? 'rising_wedge' : 'triangle_symmetrical');
           debugCandidates.push({
             type: dbgType as any,
             accepted: false,
             reason: 'r2_below_threshold',
             indices: [w.startIdx, w.endIdx],
-            details: { r2High: upper.r2, r2Low: lower.r2, slopeHigh: upper.slope, slopeLow: lower.slope, r2MinRequired: 0.25 }
+            details: { r2High: upper.r2, r2Low: lower.r2, slopeHigh: upper.slope, slopeLow: lower.slope, r2MinRequired: 0.40 }
           });
           continue;
         }
@@ -1740,25 +1758,25 @@ export default async function detectPatterns(
           insideScore: insideRatio,
           durationScore: calcDurationScoreEx(w.endIdx - w.startIdx, params),
         });
-        // 最低交互性の基準を一時無効化
-        // {
-        //   const minAlternation = 0.3;
-        //   if (Number(alternation ?? 0) < minAlternation) {
-        //     debugCandidates.push({
-        //       type: wedgeType as any,
-        //       accepted: false,
-        //       reason: 'insufficient_alternation',
-        //       indices: [w.startIdx, w.endIdx],
-        //       details: {
-        //         alternation: Number((alternation ?? 0).toFixed(3)),
-        //         minRequired: minAlternation,
-        //         upperTouches: Number(touches?.upperQuality ?? 0),
-        //         lowerTouches: Number(touches?.lowerQuality ?? 0),
-        //       }
-        //     });
-        //     continue;
-        //   }
-        // }
+        // 最低交互性チェック（再有効化: 上下タッチの交互性が低い場合は除外）
+        {
+          const minAlternation = 0.25; // 0.3→0.25 に下げて適度な閾値に
+          if (Number(alternation ?? 0) < minAlternation) {
+            debugCandidates.push({
+              type: wedgeType as any,
+              accepted: false,
+              reason: 'insufficient_alternation',
+              indices: [w.startIdx, w.endIdx],
+              details: {
+                alternation: Number((alternation ?? 0).toFixed(3)),
+                minRequired: minAlternation,
+                upperTouches: Number(touches?.upperQuality ?? 0),
+                lowerTouches: Number(touches?.lowerQuality ?? 0),
+              }
+            });
+            continue;
+          }
+        }
         if (score < (params.minScore ?? 0.6)) {
           debugCandidates.push({
             type: wedgeType as any,
