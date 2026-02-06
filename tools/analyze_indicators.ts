@@ -13,6 +13,63 @@ import type {
   GetIndicatorsMeta,
 } from '../src/types/domain.d.ts';
 
+// --- Result cache for analyzeIndicators ---
+// Same pair/type/limit within TTL → skip redundant API call & computation.
+// This is especially effective when snapshot tools (BB/SMA/Ichimoku) are
+// called sequentially for the same pair.
+
+const CACHE_TTL_MS = 30_000; // 30 seconds
+const CACHE_MAX_ENTRIES = 20;
+
+interface CacheEntry {
+  result: Result<GetIndicatorsData, GetIndicatorsMeta>;
+  fetchCount: number;
+  ts: number;
+}
+
+const indicatorCache = new Map<string, CacheEntry>();
+
+function cacheKey(pair: string, type: string): string {
+  return `${pair}:${type}`;
+}
+
+function getFromCache(
+  pair: string,
+  type: string,
+  fetchCount: number,
+): Result<GetIndicatorsData, GetIndicatorsMeta> | null {
+  const key = cacheKey(pair, type);
+  const entry = indicatorCache.get(key);
+  if (!entry) return null;
+  if (Date.now() - entry.ts > CACHE_TTL_MS) {
+    indicatorCache.delete(key);
+    return null;
+  }
+  // Reuse if cached data has at least as many candles as requested
+  if (entry.fetchCount >= fetchCount) return entry.result;
+  return null;
+}
+
+function setCache(
+  pair: string,
+  type: string,
+  fetchCount: number,
+  result: Result<GetIndicatorsData, GetIndicatorsMeta>,
+): void {
+  const key = cacheKey(pair, type);
+  // Evict oldest if at capacity
+  if (indicatorCache.size >= CACHE_MAX_ENTRIES && !indicatorCache.has(key)) {
+    const oldest = indicatorCache.keys().next().value;
+    if (oldest != null) indicatorCache.delete(oldest);
+  }
+  indicatorCache.set(key, { result, fetchCount, ts: Date.now() });
+}
+
+/** Clear the indicator cache (useful for testing). */
+export function clearIndicatorCache(): void {
+  indicatorCache.clear();
+}
+
 // --- Indicators implementations ---
 
 export function sma(values: number[], period: number = 25): NumericSeries {
@@ -302,6 +359,10 @@ export default async function analyzeIndicators(
   const indicatorKeys = ['SMA_5', 'SMA_20', 'SMA_25', 'SMA_50', 'SMA_75', 'SMA_200', 'RSI_14', 'BB_20', 'ICHIMOKU'] as const;
   const fetchCount = getFetchCount(displayCount, indicatorKeys as unknown as any);
 
+  // Check cache before fetching & computing
+  const cached = getFromCache(chk.pair, String(type), fetchCount);
+  if (cached) return cached;
+
   const candlesResult = await getCandles(chk.pair, type as any, undefined as any, fetchCount);
   if (!candlesResult.ok) return fail(candlesResult.summary.replace(/^Error: /, ''), candlesResult.meta.errorType as any);
 
@@ -450,7 +511,12 @@ export default async function analyzeIndicators(
 
   const parsedData = GetIndicatorsDataSchema.parse(data);
   const parsedMeta = GetIndicatorsMetaSchema.parse(meta);
-  return GetIndicatorsOutputSchema.parse(ok(summary, parsedData, parsedMeta)) as unknown as Result<GetIndicatorsData, GetIndicatorsMeta>;
+  const result = GetIndicatorsOutputSchema.parse(ok(summary, parsedData, parsedMeta)) as unknown as Result<GetIndicatorsData, GetIndicatorsMeta>;
+
+  // Store in cache for subsequent calls with same pair/type
+  setCache(chk.pair, String(type), fetchCount, result);
+
+  return result;
 }
 
 
