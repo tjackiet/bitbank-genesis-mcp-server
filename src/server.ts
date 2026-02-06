@@ -11,20 +11,14 @@ import analyzeIndicators from '../tools/analyze_indicators.js';
 import renderChartSvg from '../tools/render_chart_svg.js';
 import renderDepthSvg from '../tools/render_depth_svg.js';
 import detectPatterns from '../tools/detect_patterns.js';
-import getDepth from '../tools/get_depth.js';
 import { logToolRun, logError } from '../lib/logger.js';
 // schemas.ts を単一のソースとして参照し、型は z.infer に委譲
 import { RenderChartSvgInputSchema, RenderChartSvgOutputSchema, GetTickerInputSchema, GetOrderbookInputSchema, GetCandlesInputSchema, GetIndicatorsInputSchema } from './schemas.js';
-import { GetDepthInputSchema } from './schemas.js';
 import { GetVolMetricsInputSchema, GetVolMetricsOutputSchema } from './schemas.js';
 // removed GetMarketSummary schemas
 import { GetTransactionsInputSchema } from './schemas.js';
-import { GetOrderbookPressureInputSchema } from './schemas.js';
 import getTransactions from '../tools/get_transactions.js';
 import getFlowMetrics from '../tools/get_flow_metrics.js';
-// get_depth_diff removed in favor of get_orderbook_statistics
-import getOrderbookPressure from '../tools/get_orderbook_pressure.js';
-import getOrderbookStatistics from '../tools/orderbook_statistics.js';
 import getVolatilityMetrics from '../tools/get_volatility_metrics.js';
 // removed get_market_summary tool
 import analyzeMarketSignal from '../tools/analyze_market_signal.js';
@@ -94,10 +88,6 @@ const respond = (result: unknown): ToolReturn => {
 		...(isPlainObject(result) ? { structuredContent: result } : {}),
 	};
 };
-
-// === In-memory lightweight tracking buffer for depth_diff (per pair) ===
-type TrackedOrder = { id: string; side: 'bid' | 'ask'; price: number; size: number; firstTs: number; lastTs: number };
-const depthTrackByPair: Map<string, { nextId: number; active: TrackedOrder[] }> = new Map();
 
 function registerToolWithLog<S extends z.ZodTypeAny, R = unknown>(
 	name: string,
@@ -227,27 +217,15 @@ registerToolWithLog(
 
 registerToolWithLog(
 	'get_orderbook',
-	{ description: '板情報の取得（/depth APIのラッパー）。上位N層を正規化・累計サイズ計算して返す。生データが必要な場合は get_depth を使用。opN=1-200。view=summary|detailed|full。', inputSchema: GetOrderbookInputSchema },
-	async ({ pair, opN, view }: any) => {
-		const res: any = await getOrderbook(pair, opN);
-		if (!res?.ok) return res;
-		if (view === 'summary') return res;
-		const ob = res?.data?.normalized;
-		const top = (levels: any[], n: number) => levels.slice(0, n).map((l) => `${l.price}: ${l.size}`).join('\n');
-		const sum = (levels: any[], n: number) => levels.slice(0, n).reduce((a, b) => a + (b.size || 0), 0);
-		const n = Number(opN ?? res?.meta?.topN ?? 10);
-		const bidVol = sum(ob?.bids ?? [], n);
-		const askVol = sum(ob?.asks ?? [], n);
-		const ratio = askVol > 0 ? (bidVol / askVol).toFixed(2) : '∞';
-		let text = `${String(pair).toUpperCase()} Orderbook (top ${n})\nBest Bid: ${ob?.bestBid} | Best Ask: ${ob?.bestAsk} | Spread: ${ob?.spread}`;
-		text += `\n\nTop ${n} Bids:\n${top(ob?.bids ?? [], n)}`;
-		text += `\n\nTop ${n} Asks:\n${top(ob?.asks ?? [], n)}`;
-		text += `\n\nTotals: bid=${bidVol.toFixed(4)} ask=${askVol.toFixed(4)} | Buy/Sell Ratio=${ratio}`;
-		if (view === 'full') {
-			const full = `\n\n--- FULL BIDS ---\n${(ob?.bids ?? []).map((l: any) => `${l.price}: ${l.size} (cum ${l.cumSize})`).join('\n')}\n\n--- FULL ASKS ---\n${(ob?.asks ?? []).map((l: any) => `${l.price}: ${l.size} (cum ${l.cumSize})`).join('\n')}`;
-			text += full;
-		}
-		return { content: [{ type: 'text', text }], structuredContent: res as Record<string, unknown> };
+	{ description: `板情報の統合ツール（単一の /depth API呼出しで全モードをカバー）。
+
+【mode 一覧】
+- summary（デフォルト）: 上位N層の正規化＋累計サイズ＋spread。topN=1-200。
+- pressure: 帯域(±0.1%/0.5%/1%等)別の買い/売り圧力バランス。bandsPct で帯域を指定。
+- statistics: 範囲分析(±0.5%/1%/2%)＋流動性ゾーン＋大口注文＋総合評価。ranges, priceZones で指定。
+- raw: 生の bids/asks 配列＋壁ゾーン自動推定。`, inputSchema: GetOrderbookInputSchema },
+	async ({ pair, mode, topN, bandsPct, ranges, priceZones }: any) => {
+		return getOrderbook({ pair, mode, topN, bandsPct, ranges, priceZones });
 	}
 );
 
@@ -612,34 +590,7 @@ registerToolWithLog(
 	}
 );
 
-registerToolWithLog(
-	'get_depth',
-	{ description: '板の生データ取得（/depth API直接）。差分計算・壁検出・圧力分析の元データ。正規化データが必要な場合は get_orderbook を使用。view=summary|sample|full。sampleNで表示件数指定。', inputSchema: GetDepthInputSchema },
-	async ({ pair, view, sampleN }: any) => {
-		const res: any = await getDepth(pair);
-		if (!res?.ok) return res;
-		if (view === 'summary') return res;
-		const asks: any[] = Array.isArray(res?.data?.asks) ? res.data.asks : [];
-		const bids: any[] = Array.isArray(res?.data?.bids) ? res.data.bids : [];
-		const n = Number(sampleN ?? 10);
-		const fmt = (levels: any[]) => levels.map(([p, s]) => `${Number(p).toLocaleString()} : ${Number(s)}`).join('\n');
-		const topAsks = view === 'sample' ? asks.slice(0, n) : asks;
-		const topBids = view === 'sample' ? bids.slice(0, n) : bids;
-		const sumQty = (levels: any[]) => levels.reduce((a, b) => a + Number(b?.[1] ?? 0), 0);
-		const bestAsk = topAsks[0]?.[0] != null ? Number(topAsks[0][0]) : null;
-		const bestBid = topBids[0]?.[0] != null ? Number(topBids[0][0]) : null;
-		const spread = bestAsk != null && bestBid != null ? bestAsk - bestBid : null;
-		let text = `${String(pair).toUpperCase()} Depth`;
-		if (view === 'sample') {
-			text += `\nBest Bid: ${bestBid ?? 'n/a'} | Best Ask: ${bestAsk ?? 'n/a'}${spread != null ? ` | Spread: ${spread}` : ''}`;
-			text += `\nTotals (top ${n}): bids=${sumQty(topBids).toFixed(4)} asks=${sumQty(topAsks).toFixed(4)}`;
-		}
-		text += `\n\nTop ${view === 'sample' ? n : topBids.length} Bids:\n${fmt(topBids)}`;
-		text += `\n\nTop ${view === 'sample' ? n : topAsks.length} Asks:\n${fmt(topAsks)}`;
-		return { content: [{ type: 'text', text }], structuredContent: res as Record<string, unknown> };
-	}
-);
-
+// get_depth removed — consolidated into get_orderbook (mode=raw)
 // render_chart_html は当面サポート外のため未登録
 
 registerToolWithLog(
@@ -691,293 +642,8 @@ registerToolWithLog(
 		return { content: [{ type: 'text', text }], structuredContent: res as Record<string, unknown> };
 	}
 );
-// get_depth_diff removed
-
-/*
-registerToolWithLog(
-	'get_depth_diff',
-	{ description: 'Depth diff between two REST snapshots.', inputSchema: z.object({}) as any },
-	async () => ({ ok: false, summary: 'Removed: use get_orderbook_statistics', data: {}, meta: { errorType: 'deprecated' } })
-);
-*/
-
-/* legacy handler retained above for reference */
-/*
-	const res: any = await getDepthDiff(pair, delayMs, maxLevels);
-	if (!res?.ok) return res;
-	if (view === 'summary') return res;
-	const agg = res?.data?.aggregates || {};
-	const asks = res?.data?.asks || {};
-	const bids = res?.data?.bids || {};
-	const abs = (n: number) => Math.abs(Number(n || 0));
-	const flt = (arr: any[], key: 'size' | 'delta') => (arr || []).filter((x) => abs(x?.[key]) >= (minDeltaBTC || 0)).sort((a, b) => abs(b[key]) - abs(a[key])).slice(0, topN || 5);
-	const fmt = (x: any, side: 'ask' | 'bid', kind: 'added' | 'removed' | 'changed', extra?: string) => {
-		const sign = kind === 'removed' ? '-' : (kind === 'changed' ? (x.delta >= 0 ? '+' : '') : '+');
-		const qty = kind === 'changed' ? x.delta : x.size;
-		return `${Number(x.price).toLocaleString()}円 ${sign}${Number(qty).toFixed(2)} BTC (${side})${extra ? ` ${extra}` : ''}`;
-	};
-	const sigAsksAdded = flt(asks.added, 'size');
-	const sigBidsAdded = flt(bids.added, 'size');
-	const sigAsksRemoved = flt(asks.removed, 'size');
-	const sigBidsRemoved = flt(bids.removed, 'size');
-	const sigAsksChanged = flt(asks.changed, 'delta');
-	const sigBidsChanged = flt(bids.changed, 'delta');
-
-	// Optional trade cross-reference (basic)
-	let tradeNoteMap = new Map<string, string>();
-	const startTs = Number(res?.data?.prev?.timestamp ?? 0);
-	const endTs = Number(res?.data?.curr?.timestamp ?? 0);
-	if (enrichWithTradeData && endTs > startTs) {
-		try {
-			const txRes: any = await getTransactions(pair, 200, undefined as any);
-			const txs: any[] = Array.isArray(txRes?.data?.normalized) ? txRes.data.normalized : [];
-			const within = txs.filter((t: any) => Number(t.timestampMs) >= startTs && Number(t.timestampMs) <= endTs);
-			const tol = 0.001; // 0.1%
-			function matchVol(price: number) {
-				return within.filter((t: any) => Math.abs(Number(t.price) - price) / Math.max(1, price) < tol).reduce((s, t) => s + Number(t.amount || 0), 0);
-			}
-			const allSig = [
-				...sigAsksRemoved.map((x: any) => ({ x, side: 'ask', kind: 'removed' })),
-				...sigBidsRemoved.map((x: any) => ({ x, side: 'bid', kind: 'removed' })),
-				...sigAsksChanged.map((x: any) => ({ x, side: 'ask', kind: 'changed' })),
-				...sigBidsChanged.map((x: any) => ({ x, side: 'bid', kind: 'changed' })),
-			];
-			for (const it of allSig) {
-				const vol = matchVol(Number(it.x.price));
-				const key = `${it.kind}:${it.side}:${it.x.price}:${it.x.delta ?? it.x.size}`;
-				tradeNoteMap.set(key, vol > 0 ? `✅ 約定: ${vol.toFixed(2)} BTC` : '❌ 約定なし');
-			}
-		} catch { }
-	}
-
-	const toIsoJst = (ts: number) => {
-		try { return new Date(ts).toLocaleString('ja-JP', { timeZone: tz || 'Asia/Tokyo', hour12: false }); } catch { return new Date(ts).toISOString(); }
-	};
-	let text = `=== ${String(pair).toUpperCase()} 板変化 (${Number(delayMs) / 1000}s) ===\n`;
-	if (startTs && endTs) {
-		text += `📅 ${toIsoJst(startTs)} → ${toIsoJst(endTs)}\n   (Unix: ${startTs} → ${endTs})\n`;
-	}
-
-	// Movement detection within snapshot (removed -> added near price with similar size)
-	const priceTolRel = 0.001; // 0.1%
-	const sizeTolRel = 0.05; // 5%
-	function findMove(remArr: any[], addArr: any[]) {
-		const moves: Array<{ side: 'bid' | 'ask'; from: any; to: any }> = [];
-		for (const r of remArr) {
-			const cand = addArr.find((a) => Math.abs(a.size - r.size) / Math.max(1e-12, r.size) <= sizeTolRel && Math.abs(a.price - r.price) / Math.max(1, r.price) <= priceTolRel);
-			if (cand) moves.push({ side: addArr === sigBidsAdded ? 'bid' : 'ask', from: r, to: cand });
-		}
-		return moves;
-	}
-	const bidMoves = findMove(sigBidsRemoved, sigBidsAdded);
-	const askMoves = findMove(sigAsksRemoved, sigAsksAdded);
-
-	// Lifetime tracking across calls (LRU-like simple list)
-	const track = depthTrackByPair.get(pair) || { nextId: 1, active: [] as TrackedOrder[] };
-	depthTrackByPair.set(pair, track);
-	const nowTs = endTs || Date.now();
-	function attachLifetimeExtra(side: 'bid' | 'ask', item: any, kind: 'added' | 'removed') {
-		if (kind === 'added') {
-			if ((item.size || 0) >= (minTrackingSizeBTC || 1)) {
-				track.active.push({ id: `T${track.nextId++}`, side, price: Number(item.price), size: Number(item.size), firstTs: nowTs, lastTs: nowTs });
-			}
-			return undefined;
-		}
-		// removed: try match existing
-		const idx = track.active.findIndex((o) => o.side === side && Math.abs(o.size - Number(item.size)) / Math.max(1e-12, o.size) <= sizeTolRel && Math.abs(o.price - Number(item.price)) / Math.max(1, o.price) <= priceTolRel);
-		if (idx >= 0) {
-			const o = track.active[idx];
-			const lifetimeSec = ((nowTs - o.firstTs) / 1000).toFixed(1);
-			track.active.splice(idx, 1);
-			return `| 存在: ${lifetimeSec}s`;
-		}
-		return undefined;
-	}
-	const tilt = agg.bidNetDelta - agg.askNetDelta;
-	text += `${tilt >= 0 ? '🟢 買い圧力優勢' : '🔴 売り圧力優勢'}: bid ${agg.bidNetDelta} BTC, ask ${agg.askNetDelta} BTC`;
-	text += `\n\n📊 主要な変化:`;
-	const moveDur = startTs && endTs ? `${((endTs - startTs) / 1000).toFixed(1)}s` : '';
-	const moveLines = [
-		...bidMoves.map((m: any) => {
-			const key = `removed:bid:${m.from.price}:${m.from.size}`;
-			const note = tradeNoteMap.get(key);
-			return `[移動] ${Number(m.from.price).toLocaleString()}円 → ${Number(m.to.price).toLocaleString()}円 | ${Number(m.to.size).toFixed(2)} BTC (bid)${moveDur ? ` | ${moveDur}` : ''}${note ? ` \n       └─ ${note}` : ''}`;
-		}),
-		...askMoves.map((m: any) => {
-			const key = `removed:ask:${m.from.price}:${m.from.size}`;
-			const note = tradeNoteMap.get(key);
-			return `[移動] ${Number(m.from.price).toLocaleString()}円 → ${Number(m.to.price).toLocaleString()}円 | ${Number(m.to.size).toFixed(2)} BTC (ask)${moveDur ? ` | ${moveDur}` : ''}${note ? ` \n       └─ ${note}` : ''}`;
-		}),
-	];
-	const lines = [
-		...moveLines,
-		...sigAsksAdded.map((x: any) => {
-			attachLifetimeExtra('ask', x, 'added');
-			return `[追加] ${fmt(x, 'ask', 'added')}`;
-		}),
-		...sigBidsAdded.map((x: any) => {
-			attachLifetimeExtra('bid', x, 'added');
-			return `[追加] ${fmt(x, 'bid', 'added')}`;
-		}),
-		...sigAsksRemoved.map((x: any) => {
-			const key = `removed:ask:${x.price}:${x.size}`;
-			const life = attachLifetimeExtra('ask', x, 'removed');
-			const extra = [tradeNoteMap.get(key), life].filter(Boolean).join(' ');
-			return `[削除] ${fmt(x, 'ask', 'removed', extra)}`;
-		}),
-		...sigBidsRemoved.map((x: any) => {
-			const key = `removed:bid:${x.price}:${x.size}`;
-			const life = attachLifetimeExtra('bid', x, 'removed');
-			const extra = [tradeNoteMap.get(key), life].filter(Boolean).join(' ');
-			return `[削除] ${fmt(x, 'bid', 'removed', extra)}`;
-		}),
-		...sigAsksChanged.map((x: any) => {
-			const key = `changed:ask:${x.price}:${x.delta}`;
-			return `[増減] ${fmt(x, 'ask', 'changed', tradeNoteMap.get(key))}`;
-		}),
-		...sigBidsChanged.map((x: any) => {
-			const key = `changed:bid:${x.price}:${x.delta}`;
-			return `[増減] ${fmt(x, 'bid', 'changed', tradeNoteMap.get(key))}`;
-		}),
-	];
-	text += `\n` + (lines.length ? lines.join('\n') : '該当なし');
-	// optional: enrich with trades and simple tracking hints
-	if (enrichWithTradeData) {
-		text += `\n\n🧾 約定照合: （簡易）観測期間内の実約定を参照して大口変化の相関を示します（詳細は別ツール推奨）`;
-		// 提示のみ（実装は get_transactions を別途連携する拡張余地）
-	}
-	if (trackLargeOrders) {
-		text += `\n\n🛰️ 追跡対象: ${minTrackingSizeBTC}BTC 以上の大口を優先的に監視（試験的）`;
-	}
-	if (view === 'full') {
-		const dump = (title: string, arr: any[], side: 'ask' | 'bid', kind: 'added' | 'removed' | 'changed') => `\n\n--- ${title} (${side}) ---\n` + (arr || []).map((x) => fmt(x, side, kind)).join('\n');
-		text += dump('ADDED', asks.added, 'ask', 'added');
-		text += dump('REMOVED', asks.removed, 'ask', 'removed');
-		text += dump('CHANGED', asks.changed, 'ask', 'changed');
-		text += dump('ADDED', bids.added, 'bid', 'added');
-		text += dump('REMOVED', bids.removed, 'bid', 'removed');
-		text += dump('CHANGED', bids.changed, 'bid', 'changed');
-	}
-	return { content: [{ type: 'text', text }], structuredContent: res as Record<string, unknown> };
-}
-);
-*/
-
-registerToolWithLog(
-	'get_orderbook_pressure',
-	{ description: '板の買い/売り圧力バランスを評価（/depth APIベース）。bandsPct で帯域（±0.1%/0.5%/1%等）を指定。センチメント判定付き。', inputSchema: GetOrderbookPressureInputSchema },
-	async ({ pair, delayMs, bandsPct, normalize, weightScheme }: any) => {
-		const res: any = await getOrderbookPressure(pair, delayMs, bandsPct);
-		if (!res?.ok) return res;
-		const bands: any[] = Array.isArray(res?.data?.bands) ? res.data.bands : [];
-		if (bands.length === 0) return res;
-		// derive volumes/score from tool output
-		const rows = bands.map((b) => ({ pct: Number(b.widthPct), buy: Number(b.baseBidSize || 0), sell: Number(b.baseAskSize || 0), score: Number(b.netDeltaPct || 0) }));
-		// normalization (optional): midvol across central bands (±0.2%〜0.5%)
-		const central = rows.filter(r => r.pct >= 0.002 && r.pct <= 0.005);
-		const sel = central.length ? central : rows.slice(0, Math.min(2, rows.length));
-		const midVolume = sel.length ? (sel.reduce((s, r) => s + (r.buy + r.sell), 0) / sel.length) : 0;
-		const epsNorm = 1e-9;
-		const normScale = Math.max(epsNorm, midVolume);
-		const normMode = String(normalize || 'none');
-		const useNorm = normMode === 'midvol';
-		const normInfo = { mode: useNorm ? 'midvol' : 'none', scale: useNorm ? Number(normScale.toFixed(6)) : null } as const;
-		// weights for overall (closest bands first)
-		const sorted = [...rows].sort((a, b) => a.pct - b.pct);
-		let weights: number[];
-		if ((weightScheme || 'byDistance') === 'equal') {
-			weights = sorted.map(() => 1 / Math.max(1, sorted.length));
-		} else {
-			// distance-based: decreasing weights normalized to sum=1
-			const raw = sorted.map((_, i) => 1 / (i + 1));
-			const sum = raw.reduce((s, v) => s + v, 0) || 1;
-			weights = raw.map(v => v / sum);
-		}
-		const overall = sorted.reduce((s, r, i) => s + (r.score * (weights[i] || 0)), 0);
-		const s = overall;
-		const sentiment = s <= -0.30 ? 'sell' : s <= -0.10 ? 'slightly_sell' : (Math.abs(s) < 0.10 ? 'neutral' : (s >= 0.30 ? 'buy' : 'slightly_buy'));
-		// nearby wall from smallest band (pressure threshold logic)
-		const nearest = sorted[0];
-		const nearestPressure = nearest ? nearest.score : 0;
-		const threshold = 0.10;
-		const nearbyWall = nearest ? (nearestPressure > threshold ? 'bid' : (nearestPressure < -threshold ? 'ask' : 'none')) : 'none';
-		// cliff score: thickness gap between first and second band (0-1 approx)
-		const cliffScore = (() => {
-			if (sorted.length < 2) return 0;
-			const v1 = (sorted[0].buy + sorted[0].sell);
-			const v2 = (sorted[1].buy + sorted[1].sell);
-			const tot = v1 + v2;
-			if (tot <= 0) return 0;
-			const d = Math.abs(v1 - v2) / tot;
-			return Number(d.toFixed(2));
-		})();
-		// distance label + implication
-		const getDistanceLabel = (pct: number) => (pct <= 0.002 ? '直近' : (pct <= 0.006 ? '短期' : '中期'));
-		const generateImplication = (score: number, pct: number) => {
-			const distance = getDistanceLabel(pct);
-			const absScore = Math.abs(score);
-			if (absScore < 0.05) return `${distance}では均衡`;
-			if (score > 0) {
-				if (absScore > 0.20) return pct <= 0.002 ? `${distance}に強い買い壁（サポート）` : `${distance}的に厚い買い板（下支え期待）`;
-				return `${distance}ではやや買い優勢`;
-			} else {
-				if (absScore > 0.20) return pct <= 0.002 ? `${distance}に強い売り壁（反発抵抗）` : `${distance}的に厚い売り板（上値重い）`;
-				return `${distance}ではやや売り優勢`;
-			}
-		};
-
-		// format lines per band
-		const bandLines = rows
-			.sort((a, b) => a.pct - b.pct)
-			.map((r) => {
-				const imp = generateImplication(r.score, r.pct);
-				return `±${(r.pct * 100).toFixed(1)}%: 買${r.buy.toFixed(2)} BTC / 売${r.sell.toFixed(2)} BTC (圧力${r.score >= 0 ? '+' : ''}${r.score.toFixed(2)}) - ${imp}`;
-			});
-		const mid = res?.data?.bands?.[0]?.baseMid ?? null;
-		// spread in bps (fetch best bid/ask quickly)
-		let spreadBpsStr = 'n/a bps';
-		try {
-			const dres: any = await getDepth(pair);
-			if (dres?.ok) {
-				const bestAsk = Number(dres?.data?.asks?.[0]?.[0]);
-				const bestBid = Number(dres?.data?.bids?.[0]?.[0]);
-				if (Number.isFinite(bestAsk) && Number.isFinite(bestBid) && mid != null) {
-					const spreadAbs = bestAsk - bestBid;
-					const spreadRatio = spreadAbs / Number(mid);
-					const spreadBpsVal = spreadRatio * 10000;
-					const fmtBps = (x: number) => (Math.abs(x) < 1 ? x.toFixed(3) : x.toFixed(1));
-					spreadBpsStr = `${fmtBps(spreadBpsVal)}bps`;
-				}
-			}
-		} catch { }
-		// JST timestamp for snapshot
-		const nowJst = (() => {
-			try {
-				return new Date().toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo', hour12: false }).replace(/\//g, '/');
-			} catch { return new Date().toISOString(); }
-		})();
-		const text = [
-			`📸 ${nowJst} JST 時点`,
-			`${String(pair).toUpperCase()} ${mid != null ? Math.round(mid).toLocaleString() + '円' : ''}`.trim(),
-			`全体圧力: ${s >= 0 ? '+' : ''}${s.toFixed(2)} (${sentiment.replace('_', ' ')})`,
-			`正規化: ${normInfo.mode}${normInfo.scale != null ? ` (scale=${normInfo.scale})` : ''} | weight=${(weightScheme || 'byDistance')}`,
-			'',
-			'【帯域別】',
-			...bandLines,
-			'',
-			`市場構造: スプレッド ${spreadBpsStr}、近接壁=${nearbyWall}、段差スコア ${cliffScore}`,
-			'→ 瞬時の買い/売り偏りを要約（静的評価）'
-		].join('\n');
-		return { content: [{ type: 'text', text }], structuredContent: { ...res, data: { ...res.data, normalization: normInfo, weights: { scheme: (weightScheme || 'byDistance'), values: weights } } } as Record<string, unknown> };
-	}
-);
-
-// New: orderbook statistics (swing/long-term investors)
-registerToolWithLog(
-	'get_orderbook_statistics',
-	{ description: '板の厚み・流動性分布・大口注文の統計分析（/depth APIベース）。ranges(%)とpriceZones(分割数)で範囲指定。市場構造の定量把握用。', inputSchema: z.object({ pair: z.string().default('btc_jpy'), ranges: z.array(z.number()).optional().default([0.5, 1.0, 2.0]), priceZones: z.number().int().min(2).max(50).optional().default(10) }) as any },
-	async ({ pair, ranges, priceZones }: any) => getOrderbookStatistics(pair, ranges, priceZones)
-);
+// get_depth_diff / get_orderbook_pressure / get_orderbook_statistics removed
+// — consolidated into get_orderbook (mode=summary/pressure/statistics/raw)
 
 registerToolWithLog(
 	'get_volatility_metrics',

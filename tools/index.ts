@@ -6,8 +6,6 @@ import renderChartSvg from './render_chart_svg.js';
 import getDepth from './get_depth.js';
 import getTransactions from './get_transactions.js';
 import getFlowMetrics from './get_flow_metrics.js';
-// get_depth_diff removed in favor of get_orderbook_statistics
-import getOrderbookPressure from './get_orderbook_pressure.js';
 import getVolatilityMetrics from './get_volatility_metrics.js';
 import detectWhaleEvents from './detect_whale_events.js';
 import analyzeCandlePatterns from './analyze_candle_patterns.js';
@@ -22,11 +20,8 @@ export {
   getDepth,
   getTransactions,
   getFlowMetrics,
-  getOrderbookPressure,
   getVolatilityMetrics,
   detectWhaleEvents,
   analyzeCandlePatterns,
   renderCandlePatternDiagram,
 };
-
-
