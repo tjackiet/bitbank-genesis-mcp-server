@@ -291,7 +291,7 @@ run_backtest はデータ取得・計算・チャート描画をすべて行い�
 
 registerToolWithLog(
 	'analyze_indicators',
-	{ description: 'テクニカル指標を用いて値動きを分析（ローソク足 /candlestick を入力）。SMA/RSI/BB/一目/MACD。分析には十分な limit を指定（例: 日足200本）。', inputSchema: GetIndicatorsInputSchema },
+	{ description: 'テクニカル指標を用いて値動きを分析（ローソク足 /candlestick を入力）。SMA/RSI/BB/一目/MACD。分析には十分な limit を指定（例: 日足200本）。\n\n【重要】バックテストを行う場合は、このツールではなく run_backtest を使用してください。run_backtest はデータ取得・計算・チャート描画をすべて行い、結果をワンコールで返します。', inputSchema: GetIndicatorsInputSchema },
 	async ({ pair, type, limit }) => {
 		const res: any = await analyzeIndicators(pair, type, limit);
 		if (!res?.ok) return res;
@@ -1213,7 +1213,7 @@ registerToolWithLog(
 registerToolWithLog(
 	'render_depth_svg',
 	{
-		description: '板の深さ(Depth)チャートをSVGで生成します。軽量・専用実装で meta.pair/type を常に含みます。\n\n使い方:\nrender_depth_svg({ pair: \"btc_jpy\", type: \"1day\", depth: { levels: 200 }, preferFile: true })', inputSchema: (await import('zod')).z.object({
+		description: '板の深さ(Depth)チャートをSVGで生成します。軽量・専用実装で meta.pair/type を常に含みます。\n\n【返却形式】\n- data.svg: 完全なSVG文字列\n- data.filePath: ファイル保存時のパス\n- meta.pair/type: 銘柄と時間軸\n\n【チャート表示方法（重要）】\nClaude.aiでチャートを表示するには、HTMLファイルにSVGを埋め込んで提示してください。\nSVGファイルを直接 present_files で提示しても、ダウンロードリンクになるだけで画像として表示されません。\n\n手順:\n1. render_depth_svg を呼び出し、data.svg を取得\n2. create_file でHTMLファイル（SVG埋め込み）を /mnt/user-data/outputs/ に保存\n3. present_files でHTMLファイルを提示\n\n※ autoSave のデフォルト保存先（/assets）はClaude.ai環境では書き込み不可。HTMLファイル埋め込み方式を推奨。\n※ SVGファイル単体の present_files は非推奨（表示されない）\n\n使い方:\nrender_depth_svg({ pair: \"btc_jpy\", type: \"1day\", depth: { levels: 200 } })', inputSchema: (await import('zod')).z.object({
 			pair: (await import('zod')).z.string().default('btc_jpy'),
 			type: (await import('zod')).z.string().default('1day'),
 			depth: (await import('zod')).z.object({ levels: (await import('zod')).z.number().int().min(10).max(1000).optional().default(200) }).optional().default({ levels: 200 }),
@@ -1250,7 +1250,7 @@ registerToolWithLog(
 
 registerToolWithLog(
 	'detect_patterns',
-	{ description: '古典的チャートパターン（ダブルトップ/ヘッドアンドショルダーズ/三角持ち合い/ウェッジ等）を統合検出します。\n\n🆕 統合版: 形成中（forming）と完成済み（completed）の両方を1回で取得可能。\n\n【オプション】\n- includeForming: true → 形成中パターンを含める（status=forming/near_completion）\n- includeCompleted: true → 完成済みパターンを含める（status=completed）\n- requireCurrentInPattern + currentRelevanceDays: 鮮度フィルタ（N日以内のみ）\n\n【出力】\n- content: 検出名・パターン整合度・期間・ステータス\n- ウェッジ: breakoutDirection（up/down）とoutcome（success/failure）を含む\n- 視覚確認: structuredContent.data.overlays を render_chart_svg.overlays に渡す\n\nview=summary|detailed|full（既定=detailed）。', inputSchema: DetectPatternsInputSchema },
+	{ description: '古典的チャートパターン（ダブルトップ/ヘッドアンドショルダーズ/三角持ち合い/ウェッジ等）を統合検出します。\n\n🆕 統合版: 形成中（forming）と完成済み（completed）の両方を1回で取得可能。\n\n【オプション】\n- includeForming: true → 形成中パターンを含める（status=forming/near_completion）\n- includeCompleted: true → 完成済みパターンを含める（status=completed）\n- requireCurrentInPattern + currentRelevanceDays: 鮮度フィルタ（N日以内のみ）\n\n【パターン別推奨パラメータ】\n- pennant/flag: swingDepth≈5, minBarsBetweenSwings≈3（短期の旗型パターン向け）\n- triangle/wedge: swingDepth≈10, tolerancePct≈0.03（中期の収束パターン向け）\n- double_top/double_bottom: tolerancePct≈0.02（価格水準の一致精度重視）\n\n【出力】\n- content: 検出名・パターン整合度・期間・ステータス\n- ウェッジ: breakoutDirection（up/down）とoutcome（success/failure）を含む\n- 視覚確認: structuredContent.data.overlays を render_chart_svg.overlays に渡す\n\nview=summary|detailed|full（既定=detailed）。', inputSchema: DetectPatternsInputSchema },
 	async ({ pair, type, limit, patterns, swingDepth, tolerancePct, minBarsBetweenSwings, view, requireCurrentInPattern, currentRelevanceDays }: any) => {
 		const out = await detectPatterns(pair, type, limit, { patterns, swingDepth, tolerancePct, minBarsBetweenSwings, requireCurrentInPattern, currentRelevanceDays });
 		const res = DetectPatternsOutputSchema.parse(out as any);
@@ -1759,7 +1759,7 @@ registerToolWithLog(
 registerToolWithLog(
 	'analyze_candle_patterns',
 	{
-		description: '2本足ローソクパターン検出（包み線・はらみ線・毛抜き・かぶせ線・切り込み線）。BTC/JPY日足の直近5日間から短期反転パターンを検出し、過去180日間の統計（勝率・平均リターン）を付与。初心者向けに自然言語で解説。未確定ローソク対応。\n【視覚化】ユーザーが図での確認を希望した場合、本ツールの結果を render_candle_pattern_diagram に渡してSVG構造図を生成できる。',
+		description: '2本足ローソクパターン検出（包み線・はらみ線・毛抜き・かぶせ線・切り込み線）。BTC/JPY日足の直近5日間から短期反転パターンを検出し、過去180日間の統計（勝率・平均リターン）を付与。初心者向けに自然言語で解説。未確定ローソク対応。\n\n【パラメータ制約】\npair: btc_jpy 固定、timeframe: 1day 固定（現時点ではBTC/JPY日足のみ統計データ蓄積済みのため）。他ペア/時間軸は統計精度が不十分なため非対応。\n\n【視覚化】ユーザーが図での確認を希望した場合、本ツールの結果を render_candle_pattern_diagram に渡してSVG構造図を生成できる。',
 		inputSchema: (await import('./schemas.js')).AnalyzeCandlePatternsInputSchema as any
 	},
 	async (args: any) => analyzeCandlePatterns(args)
@@ -1768,7 +1768,7 @@ registerToolWithLog(
 registerToolWithLog(
 	'render_candle_pattern_diagram',
 	{
-		description: 'analyze_candle_patternsで検出されたパターンを教育用の構造図として視覚化。\n【重要】ユーザーが明示的に「図で見せて」「視覚的に確認したい」等と要求した場合のみ使用。自発的な呼び出しは避けること。分析結果のテキスト説明で十分な場合は不要。\nローソク足5本を表示し、パターン該当2本をオレンジ枠でハイライト。「前日」「確定日」ラベル（オレンジ）、関係性を示す矢印（淡いブルー）付き。初心者が直感的に理解できる構造図。\n\n【返却形式】\n- data.svg: 完全なSVG文字列\n- meta.patternName: パターン名\n\n【表示方法】\ndata.svgをHTMLファイルに埋め込んで保存し、ユーザーに提示。\n※ SVGを直接Markdownに貼っても表示されないため、ファイル出力が必要。\n- Claude Desktop: /mnt/user-data/outputs/ に保存してpresent_filesで提示\n- Cursor/他環境: プロジェクト内(例: assets/)に保存してパスを案内',
+		description: 'analyze_candle_patternsで検出されたパターンを教育用の構造図として視覚化。\n【重要】ユーザーが明示的に「図で見せて」「視覚的に確認したい」等と要求した場合のみ使用。自発的な呼び出しは避けること。分析結果のテキスト説明で十分な場合は不要。\nローソク足5本を表示し、パターン該当2本をオレンジ枠でハイライト。「前日」「確定日」ラベル（オレンジ）、関係性を示す矢印（淡いブルー）付き。初心者が直感的に理解できる構造図。\n\n【返却形式】\n- data.svg: 完全なSVG文字列\n- meta.patternName: パターン名\n\n【表示方法】\ndata.svgをHTMLファイルに埋め込んで保存し、ユーザーに提示。\n※ SVGを直接Markdownに貼っても表示されないため、ファイル出力が必要。\n- Claude.ai: /mnt/user-data/outputs/ に保存してpresent_filesで提示\n- Cursor/他環境: プロジェクト内(例: assets/)に保存してパスを案内',
 		inputSchema: z.object({
 			candles: z.array(z.object({
 				date: z.string().describe('Display date e.g. "11/6(木)"'),
@@ -2021,7 +2021,7 @@ matplotlib/D3.js 等で独自にチャートを描画する必要はありませ
 
 【チャート詳細度（chartDetail）— 指定がなければ必ず default を使うこと】
 - default: エクイティカーブ + ドローダウン。「損益」「plotして」「グラフ」「チャート」等の表現はすべて default。
-- full: 価格+インジケーター+エクイティ+DD+ポジションの5段構成。ユーザーが「価格チャート」「インジケーター」「エントリーポイント」等のキーワードで価格やテクニカル指標の表示を明示的に要求した場合に限り使用。
+- full: 価格+インジケーター+エクイティ+DD+ポジションの5段構成。ユーザーが価格推移やシグナルの視覚的確認を求めた場合に使用（例：「売買タイミングを見せて」「エントリーポイントを表示」「価格チャートも含めて」等）。
 
 【出力】
 - summary: テキストサマリー（総損益, トレード数, 勝率, 最大DD）
