@@ -20,7 +20,6 @@ import { GetVolMetricsInputSchema, GetVolMetricsOutputSchema } from './schemas.j
 // removed GetMarketSummary schemas
 import { GetTransactionsInputSchema } from './schemas.js';
 import { GetOrderbookPressureInputSchema } from './schemas.js';
-import { GetCircuitBreakInfoInputSchema } from './schemas.js';
 import getTransactions from '../tools/get_transactions.js';
 import getFlowMetrics from '../tools/get_flow_metrics.js';
 // get_depth_diff removed in favor of get_orderbook_statistics
@@ -41,7 +40,6 @@ import detectMacdCross from '../tools/detect_macd_cross.js';
 import detectWhaleEvents from '../tools/detect_whale_events.js';
 import analyzeMacdPattern from './handlers/analyzeMacdPattern.js';
 import { DetectPatternsInputSchema, DetectPatternsOutputSchema } from './schemas.js';
-import getCircuitBreakInfo from '../tools/get_circuit_break_info.js';
 import { AnalyzeMarketSignalInputSchema, AnalyzeMarketSignalOutputSchema } from './schemas.js';
 import { RunBacktestInputSchema, RunBacktestOutputSchema, StrategyTypeEnum } from './schemas.js';
 // typed prompt schema imports not used; prompts are registered via prompts.ts
@@ -1101,12 +1099,6 @@ registerToolWithLog(
 			return `${Number(v).toFixed(2)}`;
 		}
 	}
-);
-
-registerToolWithLog(
-	'get_circuit_break_info',
-	{ description: 'Circuit break / auction info is currently unsupported (no public source). Do not call. Returns ok=false with reason=unsupported.', inputSchema: GetCircuitBreakInfoInputSchema },
-	async ({ pair }: any) => getCircuitBreakInfo(pair)
 );
 
 registerToolWithLog(

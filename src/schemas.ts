@@ -591,26 +591,6 @@ export const GetTickersJpyOutputSchema = z.union([
   z.object({ ok: z.literal(false), summary: z.string(), data: z.object({}).passthrough(), meta: z.object({ errorType: z.string() }).passthrough() }),
 ]);
 
-// === Circuit Break Info ===
-export const GetCircuitBreakInfoInputSchema = z.object({
-  pair: z.string().optional().default('btc_jpy'),
-});
-
-export const CircuitBreakInfoSchema = z.object({
-  mode: z.enum(['normal', 'halted', 'auction', 'unknown']).nullable(),
-  estimated_itayose_price: z.number().nullable().optional(),
-  estimated_itayose_amount: z.number().nullable().optional(),
-  reopen_timestamp: z.number().int().nullable().optional(),
-  reopen_isoTime: z.string().nullable().optional(),
-});
-
-export const GetCircuitBreakInfoDataSchemaOut = z.object({ info: CircuitBreakInfoSchema });
-export const GetCircuitBreakInfoMetaSchemaOut = z.object({ pair: z.string(), fetchedAt: z.string(), source: z.enum(['official', 'none', 'placeholder']).optional(), updatedAt: z.string().optional() });
-export const GetCircuitBreakInfoOutputSchema = z.union([
-  z.object({ ok: z.literal(true), summary: z.string(), data: GetCircuitBreakInfoDataSchemaOut, meta: GetCircuitBreakInfoMetaSchemaOut }),
-  z.object({ ok: z.literal(false), summary: z.string(), data: z.object({}).passthrough(), meta: z.object({ errorType: z.string() }).passthrough() }),
-]);
-
 export const GetCandlesInputSchema = z.object({
   pair: z.string(),
   type: CandleTypeEnum,
