@@ -239,7 +239,7 @@ export default async function analyzeMarketSignal(
       }
       const buyContribAbs = Math.abs(breakdown.buyPressure.contribution);
       if (buyContribAbs > 0.25) {
-        actions.push({ priority: 'medium', tool: 'get_orderbook_pressure', reason: `板圧力寄与が大(${breakdown.buyPressure.contribution.toFixed(2)})。帯域別分析推奨`, suggestedParams: { bandsPct: [0.001, 0.005, 0.01] } });
+        actions.push({ priority: 'medium', tool: 'get_orderbook', reason: `板圧力寄与が大(${breakdown.buyPressure.contribution.toFixed(2)})。帯域別分析推奨`, suggestedParams: { mode: 'pressure', bandsPct: [0.001, 0.005, 0.01] } });
       }
       if (Math.abs(scoreVal) < 0.3) {
         actions.push({ priority: 'medium', tool: 'detect_forming_chart_patterns', reason: `スコア中立圏(${scoreVal.toFixed(3)})。レンジ・パターン形成可能性`, suggestedParams: { view: 'detailed' } });

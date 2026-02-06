@@ -996,8 +996,8 @@ MACD（中央が0、左が弱気・右が強気）:
           text: `BTCの板の状況を詳しく見て
 
 【使用ツール】
-1) get_orderbook_statistics (pair=btc_jpy, ranges=[0.5,1,2], priceZones=10)
-2) get_depth (pair=btc_jpy, view=sample, sampleN=20)  ※必要に応じて
+1) get_orderbook (pair=btc_jpy, mode=statistics, ranges=[0.5,1,2], priceZones=10)
+2) get_orderbook (pair=btc_jpy, mode=raw)  ※必要に応じて
 
 【分析方針】
 1. 流動性分布
@@ -1143,10 +1143,10 @@ MACD（中央が0、左が弱気・右が強気）:
    - 出力: 各レベルの価格・強度（★1-3）・接触回数・接触日時・直近崩壊情報
    - 重要: このツールの出力（content）をそのまま使用。独自計算は不要
 
-2. **get_depth** (pair=btc_jpy, view=sample, sampleN=30)
+2. **get_orderbook** (pair=btc_jpy, mode=raw)
    - 目的: 現在の板の詳細分布を取得
 
-3. **get_orderbook_pressure** (pair=btc_jpy, bandsPct=[0.005, 0.01, 0.02], weightScheme=byDistance)
+3. **get_orderbook** (pair=btc_jpy, mode=pressure, bandsPct=[0.005, 0.01, 0.02])
    - 目的: ±0.5%/1%/2%の各帯域での買い/売り圧力を定量化
 
 ### 任意ツール（必要に応じて）
@@ -1183,8 +1183,8 @@ MACD（中央が0、左が弱気・右が強気）:
 ### Step 2: 現在の板情報と照合
 
 **やること**:
-1. \`get_depth\`の結果から、Step 1で検出された価格帯に大口注文が集中しているか確認
-2. \`get_orderbook_pressure\`で各帯域の買い/売り優勢度を取得
+1. \`get_orderbook(mode=raw)\`の結果から、Step 1で検出された価格帯に大口注文が集中しているか確認
+2. \`get_orderbook(mode=pressure)\`で各帯域の買い/売り優勢度を取得
 3. 整合性を評価:
    - ✅ ツール検出レベル + 現在の板厚い = 信頼性高い
    - ⚠️ ツール検出レベル + 現在の板薄い = 機能しないリスク
@@ -1192,7 +1192,7 @@ MACD（中央が0、左が弱気・右が強気）:
 
 **【板情報の活用（重要）】**
 
-\`get_depth\` と \`get_orderbook_pressure\` で取得したデータを活用してください。ただし、bitbank APIの仕様上、通常±5-6%程度までの板しか存在しないことを理解した上で分析してください。
+\`get_orderbook(mode=raw)\` と \`get_orderbook(mode=pressure)\` で取得したデータを活用してください。ただし、bitbank APIの仕様上、通常±5-6%程度までの板しか存在しないことを理解した上で分析してください。
 
 1. **第1サポート/レジスタンス（現在価格±3%以内）**
    - ±0.5%/±1%/±2%の板厚から直接評価
@@ -1200,7 +1200,7 @@ MACD（中央が0、左が弱気・右が強気）:
    - 例：「13,600,000円±0.5%に買い注文10.5 BTC」
 
 2. **第2サポート/レジスタンス（現在価格から3-5%程度）**
-   - \`get_depth\` の範囲内であれば、該当価格帯の板を集計して記載
+   - \`get_orderbook(mode=raw)\` の範囲内であれば、該当価格帯の板を集計して記載
    - 範囲外の場合：「取得範囲外（bitbank板は通常±5%程度まで）のため板情報なし」
    - この場合、過去の反応頻度と強度のみで評価
 
@@ -1571,7 +1571,7 @@ MACD（中央が0、左が弱気・右が強気）:
 2. get_candles(pair="btc_jpy", type="1hour", limit=24) → 直近24時間の1時間足（出来高棒グラフ用）
 3. get_flow_metrics(pair="btc_jpy", limit=300, bucketMs=60000) → 急騰/急落スパイク、売買バランス
 4. analyze_support_resistance(pair="btc_jpy", lookbackDays=90, topN=3) → サポート/レジスタンスライン
-5. get_orderbook_pressure(pair="btc_jpy", bandsPct=[0.005, 0.01, 0.02]) → 板の買い/売り圧力
+5. get_orderbook(pair="btc_jpy", mode=pressure, bandsPct=[0.005, 0.01, 0.02]) → 板の買い/売り圧力
 
 【出力形式】
 取得したデータを使って、以下の構成の **HTML ファイル** を生成してください。

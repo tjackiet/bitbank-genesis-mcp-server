@@ -9,12 +9,13 @@
 - get_tickers_jpy: JPYペアの一括取得（価格・出来高・変化率、ホワイトリストフィルタ済み）
 - get_candles: ローソク足（OHLCV; 任意本数）
 - get_transactions: 約定履歴（サイド/アグレッサー）
-- get_depth: 板の生データ（全層）— 差分・圧力の元
 
 ## データ取得（加工）
-- get_orderbook: 板（上位 N 層）正規化・累計計算。詳細モードで統計付き
-- get_orderbook_pressure: 価格帯ごとの買い/売り圧力比
-- get_orderbook_statistics: 板の厚み・流動性分布・偏りの統計
+- get_orderbook: 板情報の統合ツール（mode で分析粒度を切替え）
+  - mode=summary: 上位N層の正規化・累計サイズ・spread（デフォルト）
+  - mode=pressure: 帯域別(±0.1%/0.5%/1%等)の買い/売り圧力バランス
+  - mode=statistics: 板の厚み・流動性分布・大口注文・総合評価
+  - mode=raw: 生の bids/asks 配列＋壁ゾーン自動推定
 - get_flow_metrics: CVD / アグレッサー比 / スパイク検知でフロー優勢度を把握
 - get_volatility_metrics: RV/ATR などのボラティリティ算出・比較
 
@@ -41,9 +42,9 @@
   - 返却 `data.svg` を `image/svg+xml` としてそのまま表示（自前描画は不可）
   - Claude で LLM がうまくアーティファクトを出力できない場合は、以下のプロンプトを加えるのがおすすめです。
     - 「identifier と title を追加して、アーティファクトとして表示して」
-- render_depth_svg: 板（Depth）の厚みを可視化する SVG チャート描画 
+- render_depth_svg: 板（Depth）の厚みを可視化する SVG チャート描画
 - render_candle_pattern_diagram: 2本足パターン（包み線/はらみ線等）を SVG で視覚化
-  - analyze_candle_patterns の検出結果を入力として使用 
+  - analyze_candle_patterns の検出結果を入力として使用
 
 ---
 
@@ -55,10 +56,10 @@
 | 2 | 生データ | get_tickers_jpy | JPYペアの一括取得（価格・出来高・変化率） | 比較・ランキング |
 | 3 | 生データ | get_candles | ローソク足（OHLCV; 最新 N 本） | 時間軸/本数指定 |
 | 4 | 生データ | get_transactions | 約定履歴（サイド/アグレッサー） | CVD 素材 |
-| 5 | 生データ | get_depth | 板の生データ（全層） | 差分・圧力の元 |
-| 6 | 加工 | get_orderbook | 板（上位 N 層）正規化・累計 | 板の詳細把握 |
-| 7 | 加工 | get_orderbook_pressure | 価格帯ごとの買い/売り圧力比 | バランス可視化 |
-| 8 | 加工 | get_orderbook_statistics | 板の厚み・流動性分布・偏り | 安定度評価 |
+| 5 | 加工 | get_orderbook (mode=summary) | 板（上位 N 層）正規化・累計 | デフォルト |
+| 6 | 加工 | get_orderbook (mode=pressure) | 帯域別の買い/売り圧力比 | バランス可視化 |
+| 7 | 加工 | get_orderbook (mode=statistics) | 板の厚み・流動性分布・偏り | 安定度評価 |
+| 8 | 加工 | get_orderbook (mode=raw) | 板の生データ（全層）＋壁ゾーン推定 | 差分・圧力の元 |
 | 9 | 加工 | get_flow_metrics | CVD/アグレッサー比/スパイク | 流れ把握 |
 | 10 | 加工 | get_volatility_metrics | RV/ATR など | 銘柄比較 |
 | 11 | 分析 | analyze_indicators | 指標: SMA/RSI/BB/一目/MACD | 値動き分析 |
