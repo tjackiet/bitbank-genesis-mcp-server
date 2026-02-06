@@ -17,10 +17,19 @@
         "pair": {
           "type": "unknown"
         },
-        "opN": {
+        "mode": {
           "type": "unknown"
         },
-        "view": {
+        "topN": {
+          "type": "unknown"
+        },
+        "bandsPct": {
+          "type": "unknown"
+        },
+        "ranges": {
+          "type": "unknown"
+        },
+        "priceZones": {
           "type": "unknown"
         }
       }

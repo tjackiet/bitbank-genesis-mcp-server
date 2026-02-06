@@ -418,66 +418,7 @@ export const GetDepthOutputSchema = z.union([
   z.object({ ok: z.literal(false), summary: z.string(), data: z.object({}).passthrough(), meta: z.object({ errorType: z.string() }).passthrough() }),
 ]);
 
-// Depth (raw) input schema
-export const GetDepthInputSchema = z.object({
-  pair: z.string().optional().default('btc_jpy'),
-  view: z.enum(['summary', 'sample', 'full']).optional().default('summary'),
-  sampleN: z.number().int().min(1).max(50).optional().default(10),
-});
-
-// === Depth Diff (simple REST-based) ===
-// Deprecated: get_depth_diff is removed in favor of get_orderbook_statistics
-
-const DepthDeltaSchema = z.object({ price: z.number(), delta: z.number(), from: z.number().nullable(), to: z.number().nullable() });
-const DepthSideDiffSchema = z.object({
-  added: z.array(z.object({ price: z.number(), size: z.number() })),
-  removed: z.array(z.object({ price: z.number(), size: z.number() })),
-  changed: z.array(DepthDeltaSchema),
-});
-
-export const GetDepthDiffDataSchemaOut = z.object({
-  prev: z.object({ timestamp: z.number().int(), sequenceId: z.number().int().nullable().optional() }),
-  curr: z.object({ timestamp: z.number().int(), sequenceId: z.number().int().nullable().optional() }),
-  asks: DepthSideDiffSchema,
-  bids: DepthSideDiffSchema,
-  aggregates: z.object({ bidNetDelta: z.number(), askNetDelta: z.number(), totalNetDelta: z.number() }),
-});
-export const GetDepthDiffMetaSchemaOut = z.object({ pair: z.string(), fetchedAt: z.string(), delayMs: z.number().int() });
-export const GetDepthDiffOutputSchema = z.union([
-  z.object({ ok: z.literal(true), summary: z.string(), data: GetDepthDiffDataSchemaOut, meta: GetDepthDiffMetaSchemaOut }),
-  z.object({ ok: z.literal(false), summary: z.string(), data: z.object({}).passthrough(), meta: z.object({ errorType: z.string() }).passthrough() }),
-]);
-
-// === Orderbook Pressure (derived from Depth Diff) ===
-export const GetOrderbookPressureInputSchema = z.object({
-  pair: z.string().optional().default('btc_jpy'),
-  delayMs: z.number().int().min(100).max(5000).optional().default(1000),
-  bandsPct: z.array(z.number().positive()).optional().default([0.001, 0.005, 0.01]),
-  normalize: z.enum(['none', 'midvol']).optional().default('none'),
-  weightScheme: z.enum(['equal', 'byDistance']).optional().default('byDistance'),
-});
-
-const PressureBandSchema = z.object({
-  widthPct: z.number(),
-  baseMid: z.number().nullable(),
-  baseBidSize: z.number(),
-  baseAskSize: z.number(),
-  bidDelta: z.number(),
-  askDelta: z.number(),
-  netDelta: z.number(),
-  netDeltaPct: z.number().nullable(),
-  tag: z.enum(['notice', 'warning', 'strong']).nullable(),
-});
-
-export const GetOrderbookPressureDataSchemaOut = z.object({
-  bands: z.array(PressureBandSchema),
-  aggregates: z.object({ netDelta: z.number(), strongestTag: z.enum(['notice', 'warning', 'strong']).nullable() }),
-});
-export const GetOrderbookPressureMetaSchemaOut = z.object({ pair: z.string(), fetchedAt: z.string(), delayMs: z.number().int() });
-export const GetOrderbookPressureOutputSchema = z.union([
-  z.object({ ok: z.literal(true), summary: z.string(), data: GetOrderbookPressureDataSchemaOut, meta: GetOrderbookPressureMetaSchemaOut }),
-  z.object({ ok: z.literal(false), summary: z.string(), data: z.object({}).passthrough(), meta: z.object({ errorType: z.string() }).passthrough() }),
-]);
+// Depth Diff / Orderbook Pressure schemas removed — consolidated into get_orderbook (mode=raw/pressure/statistics)
 
 // === Transactions ===
 export const TransactionItemSchema = z.object({
@@ -545,9 +486,16 @@ export const GetTickerInputSchema = z.object({
 });
 
 export const GetOrderbookInputSchema = z.object({
-  pair: z.string(),
-  opN: z.number().int().min(1).max(200).optional().default(10),
-  view: z.enum(['summary', 'detailed', 'full']).optional().default('summary'),
+  pair: z.string().optional().default('btc_jpy'),
+  mode: z.enum(['summary', 'pressure', 'statistics', 'raw']).optional().default('summary'),
+  /** summary mode: 上位N層 (1-200) */
+  topN: z.number().int().min(1).max(200).optional().default(10),
+  /** pressure mode: 帯域幅 (例: [0.001, 0.005, 0.01]) */
+  bandsPct: z.array(z.number().positive()).optional().default([0.001, 0.005, 0.01]),
+  /** statistics mode: 範囲% (例: [0.5, 1.0, 2.0]) */
+  ranges: z.array(z.number().positive()).optional().default([0.5, 1.0, 2.0]),
+  /** statistics mode: 価格ゾーン分割数 */
+  priceZones: z.number().int().min(2).max(50).optional().default(10),
 });
 
 export const GetTransactionsInputSchema = z.object({
