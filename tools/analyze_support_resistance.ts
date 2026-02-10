@@ -193,37 +193,40 @@ function findPriceLevels(
 function detectRecentBreak(
   level: number,
   type: 'support' | 'resistance',
-  candles: Array<{ isoTime: string; open: number; high: number; low: number; close: number }>,
+  candles: Array<{ isoTime: string; open: number; high: number; low: number; close: number; volume?: number }>,
   recentDays: number = 7
 ): { date: string; price: number; breakPct: number } | undefined {
-  const now = new Date();
-  const recentCutoff = new Date(now.getTime() - recentDays * 24 * 60 * 60 * 1000);
-  const recentCandles = candles.filter(c => new Date(c.isoTime) >= recentCutoff);
+  const recentCutoff = dayjs().subtract(recentDays, 'day');
+  const recentCandles = candles.filter(c => dayjs(c.isoTime).isAfter(recentCutoff));
 
-  for (const candle of recentCandles) {
-    if (type === 'support') {
-      // 終値ベースで判定（ヒゲのみの突破はテストとして除外）
-      if (candle.close < level * 0.99) {
-        const breakPct = ((candle.close - level) / level) * 100;
-        return {
-          date: candle.isoTime.split('T')[0],
-          price: candle.close,
-          breakPct
-        };
-      }
-    } else {
-      // 終値ベースで判定（ヒゲのみの突破はテストとして除外）
-      if (candle.close > level * 1.01) {
-        const breakPct = ((candle.close - level) / level) * 100;
-        return {
-          date: candle.isoTime.split('T')[0],
-          price: candle.close,
-          breakPct
-        };
-      }
+  // 偽ブレイクアウト検出用の平均出来高
+  const avgVolume = candles.reduce((sum, c) => sum + (c.volume || 0), 0) / (candles.length || 1);
+
+  for (let i = 0; i < recentCandles.length; i++) {
+    const candle = recentCandles[i];
+    // 終値ベースで判定（ヒゲのみの突破はテストとして除外）
+    const isBreak = type === 'support'
+      ? candle.close < level * 0.99
+      : candle.close > level * 1.01;
+    if (!isBreak) continue;
+
+    // 低出来高の突破 → 翌日の終値で確認（偽ブレイクアウト防止）
+    if (avgVolume > 0 && (candle.volume || 0) < avgVolume) {
+      const next = recentCandles[i + 1];
+      const nextConfirms = next && (type === 'support'
+        ? next.close < level * 0.99
+        : next.close > level * 1.01);
+      if (!nextConfirms) continue;
     }
+
+    const breakPct = ((candle.close - level) / level) * 100;
+    return {
+      date: candle.isoTime.split('T')[0],
+      price: candle.close,
+      breakPct
+    };
   }
-  
+
   return undefined;
 }
 
@@ -231,9 +234,8 @@ function detectNewSupport(
   candles: Array<{ isoTime: string; open: number; high: number; low: number; close: number; volume?: number }>,
   recentDays: number = 10
 ): Array<{ price: number; date: string; volumeBoost: boolean; note: string }> {
-  const now = new Date();
-  const recentCutoff = new Date(now.getTime() - recentDays * 24 * 60 * 60 * 1000);
-  const recentCandles = candles.filter(c => new Date(c.isoTime) >= recentCutoff);
+  const recentCutoff = dayjs().subtract(recentDays, 'day');
+  const recentCandles = candles.filter(c => dayjs(c.isoTime).isAfter(recentCutoff));
   
   const newSupports: Array<{ price: number; date: string; volumeBoost: boolean; note: string }> = [];
   
@@ -727,7 +729,7 @@ export default async function analyzeSupportResistance(
     contentText += `A. 従来型: ピボット検出（左右5本）→ ${(tolerance * 100).toFixed(1)}%クラスタリング → タッチ2回以上、直近7日で崩壊なし\n`;
     contentText += `B. 新形成: 安値2日以上切り上げ + 以降割れなし（出来高1.5倍以上で強度+1）\n`;
     contentText += `C. 転換型: 崩壊したサポート→レジスタンス転換、突破したレジスタンス→サポート転換\n`;
-    contentText += `- 崩壊判定: 終値ベース（ヒゲのみの突破はテストとして除外）\n`;
+    contentText += `- 崩壊判定: 終値ベース + 出来高確認（低出来高の突破は翌日確認を要求）\n`;
     contentText += `- 強度判定: 接触回数 × 直近性スコア（半減期30日）× 反発幅（2%以上で+1）× 出来高を総合評価\n`;
     contentText += `- 転換型の強化: プルバック確認時に強度★→★★\n`;
 
