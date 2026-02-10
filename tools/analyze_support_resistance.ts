@@ -3,6 +3,7 @@ import { ok, fail } from '../lib/result.js';
 import { createMeta, ensurePair } from '../lib/validate.js';
 import { formatSummary } from '../lib/formatter.js';
 import { getErrorMessage } from '../lib/error.js';
+import { dayjs } from '../lib/datetime.js';
 import { AnalyzeSupportResistanceOutputSchema } from '../src/schemas.js';
 
 export interface AnalyzeSupportResistanceOptions {
@@ -36,61 +37,154 @@ export interface SupportResistanceLevel {
   note?: string; // 補足説明
 }
 
-function roundToLevel(price: number, step: number = 50000): number {
-  return Math.round(price / step) * step;
+/** スイングポイント（ピボット）を検出: 左右 depth 本より高値/安値が突出した足 */
+function detectSwingPoints(
+  candles: Array<{ isoTime: string; open: number; high: number; low: number; close: number }>,
+  depth: number = 5
+): {
+  swingHighs: Array<{ index: number; date: string; price: number; bounceStrength: number }>;
+  swingLows: Array<{ index: number; date: string; price: number; bounceStrength: number }>;
+} {
+  const swingHighs: Array<{ index: number; date: string; price: number; bounceStrength: number }> = [];
+  const swingLows: Array<{ index: number; date: string; price: number; bounceStrength: number }> = [];
+
+  for (let i = depth; i < candles.length - depth; i++) {
+    // スイングハイ: 左右 depth 本より高値が高い
+    let isSwingHigh = true;
+    for (let j = i - depth; j <= i + depth; j++) {
+      if (j === i) continue;
+      if (candles[j].high >= candles[i].high) {
+        isSwingHigh = false;
+        break;
+      }
+    }
+    if (isSwingHigh) {
+      swingHighs.push({
+        index: i,
+        date: candles[i].isoTime.split('T')[0],
+        price: candles[i].high,
+        bounceStrength: ((candles[i].high - candles[i].close) / candles[i].high) * 100
+      });
+    }
+
+    // スイングロー: 左右 depth 本より安値が低い
+    let isSwingLow = true;
+    for (let j = i - depth; j <= i + depth; j++) {
+      if (j === i) continue;
+      if (candles[j].low <= candles[i].low) {
+        isSwingLow = false;
+        break;
+      }
+    }
+    if (isSwingLow) {
+      swingLows.push({
+        index: i,
+        date: candles[i].isoTime.split('T')[0],
+        price: candles[i].low,
+        bounceStrength: ((candles[i].close - candles[i].low) / candles[i].low) * 100
+      });
+    }
+  }
+
+  return { swingHighs, swingLows };
 }
 
+/** 近接するスイングポイントを %ベースでクラスタリング（凝集型） */
+function clusterSwingPoints(
+  points: Array<{ date: string; price: number; bounceStrength: number }>,
+  tolerance: number
+): Array<{ level: number; points: Array<{ date: string; price: number; bounceStrength: number }> }> {
+  if (points.length === 0) return [];
+
+  const sorted = [...points].sort((a, b) => a.price - b.price);
+  const clusters: Array<{ prices: number[]; points: Array<{ date: string; price: number; bounceStrength: number }> }> = [];
+  let current = { prices: [sorted[0].price], points: [sorted[0]] };
+
+  for (let i = 1; i < sorted.length; i++) {
+    const avg = current.prices.reduce((a, b) => a + b, 0) / current.prices.length;
+    if (Math.abs(sorted[i].price - avg) / avg <= tolerance) {
+      current.prices.push(sorted[i].price);
+      current.points.push(sorted[i]);
+    } else {
+      clusters.push(current);
+      current = { prices: [sorted[i].price], points: [sorted[i]] };
+    }
+  }
+  clusters.push(current);
+
+  return clusters.map(c => ({
+    level: Math.round(c.prices.reduce((a, b) => a + b, 0) / c.prices.length),
+    points: c.points
+  }));
+}
+
+/** スイングポイントベースで S/R レベルを検出し、各レベルのタッチ回数をカウント */
 function findPriceLevels(
   candles: Array<{ isoTime: string; open: number; high: number; low: number; close: number }>,
-  currentPrice: number,
   tolerance: number,
-  recentDays: number
+  depth: number = 5
 ): { supports: Map<number, TouchEvent[]>; resistances: Map<number, TouchEvent[]> } {
+  if (candles.length < 2 * depth + 1) {
+    return { supports: new Map(), resistances: new Map() };
+  }
+
+  const { swingHighs, swingLows } = detectSwingPoints(candles, depth);
+
+  const supportClusters = clusterSwingPoints(
+    swingLows.map(p => ({ date: p.date, price: p.price, bounceStrength: p.bounceStrength })),
+    tolerance
+  );
+  const resistanceClusters = clusterSwingPoints(
+    swingHighs.map(p => ({ date: p.date, price: p.price, bounceStrength: p.bounceStrength })),
+    tolerance
+  );
+
+  // 各サポートレベルに対してゾーン内のタッチを全ローソク足からカウント
   const supports = new Map<number, TouchEvent[]>();
+  for (const cluster of supportClusters) {
+    const zoneMin = cluster.level * (1 - tolerance);
+    const zoneMax = cluster.level * (1 + tolerance);
+    const touches: TouchEvent[] = [];
+    const seenDates = new Set<string>();
+
+    for (const candle of candles) {
+      const date = candle.isoTime.split('T')[0];
+      if (seenDates.has(date)) continue;
+      if (candle.low >= zoneMin && candle.low <= zoneMax && candle.close > candle.low) {
+        touches.push({
+          date,
+          price: candle.low,
+          bounceStrength: ((candle.close - candle.low) / candle.low) * 100,
+          type: 'support'
+        });
+        seenDates.add(date);
+      }
+    }
+    supports.set(cluster.level, touches);
+  }
+
+  // 各レジスタンスレベルに対してゾーン内のタッチを全ローソク足からカウント
   const resistances = new Map<number, TouchEvent[]>();
-  
-  const now = new Date();
-  const recentCutoff = new Date(now.getTime() - recentDays * 24 * 60 * 60 * 1000);
+  for (const cluster of resistanceClusters) {
+    const zoneMin = cluster.level * (1 - tolerance);
+    const zoneMax = cluster.level * (1 + tolerance);
+    const touches: TouchEvent[] = [];
+    const seenDates = new Set<string>();
 
-  for (const candle of candles) {
-    const candleDate = new Date(candle.isoTime);
-    if (candleDate < recentCutoff) continue;
-
-    // サポート判定：安値での反発
-    const lowLevel = roundToLevel(candle.low);
-    const lowBounce = ((candle.close - candle.low) / candle.low) * 100;
-    
-    if (lowBounce > 0.3) { // 0.3%以上の下ヒゲまたは反発
-      const event: TouchEvent = {
-        date: candle.isoTime.split('T')[0],
-        price: candle.low,
-        bounceStrength: lowBounce,
-        type: 'support'
-      };
-      
-      if (!supports.has(lowLevel)) {
-        supports.set(lowLevel, []);
+    for (const candle of candles) {
+      const date = candle.isoTime.split('T')[0];
+      if (seenDates.has(date)) continue;
+      if (candle.high >= zoneMin && candle.high <= zoneMax && candle.close < candle.high) {
+        touches.push({
+          date,
+          price: candle.high,
+          bounceStrength: ((candle.high - candle.close) / candle.high) * 100,
+          type: 'resistance'
+        });
+        seenDates.add(date);
       }
-      supports.get(lowLevel)!.push(event);
     }
-
-    // レジスタンス判定：高値での反落
-    const highLevel = roundToLevel(candle.high);
-    const highReject = ((candle.high - candle.close) / candle.high) * 100;
-    
-    if (highReject > 0.3) { // 0.3%以上の上ヒゲまたは反落
-      const event: TouchEvent = {
-        date: candle.isoTime.split('T')[0],
-        price: candle.high,
-        bounceStrength: highReject,
-        type: 'resistance'
-      };
-      
-      if (!resistances.has(highLevel)) {
-        resistances.set(highLevel, []);
-      }
-      resistances.get(highLevel)!.push(event);
-    }
+    resistances.set(cluster.level, touches);
   }
 
   return { supports, resistances };
@@ -99,35 +193,40 @@ function findPriceLevels(
 function detectRecentBreak(
   level: number,
   type: 'support' | 'resistance',
-  candles: Array<{ isoTime: string; open: number; high: number; low: number; close: number }>,
+  candles: Array<{ isoTime: string; open: number; high: number; low: number; close: number; volume?: number }>,
   recentDays: number = 7
 ): { date: string; price: number; breakPct: number } | undefined {
-  const now = new Date();
-  const recentCutoff = new Date(now.getTime() - recentDays * 24 * 60 * 60 * 1000);
-  const recentCandles = candles.filter(c => new Date(c.isoTime) >= recentCutoff);
+  const recentCutoff = dayjs().subtract(recentDays, 'day');
+  const recentCandles = candles.filter(c => dayjs(c.isoTime).isAfter(recentCutoff));
 
-  for (const candle of recentCandles) {
-    if (type === 'support') {
-      if (candle.low < level * 0.99) { // 1%以上下回った
-        const breakPct = ((candle.low - level) / level) * 100;
-        return {
-          date: candle.isoTime.split('T')[0],
-          price: candle.low,
-          breakPct
-        };
-      }
-    } else {
-      if (candle.high > level * 1.01) { // 1%以上上回った
-        const breakPct = ((candle.high - level) / level) * 100;
-        return {
-          date: candle.isoTime.split('T')[0],
-          price: candle.high,
-          breakPct
-        };
-      }
+  // 偽ブレイクアウト検出用の平均出来高
+  const avgVolume = candles.reduce((sum, c) => sum + (c.volume || 0), 0) / (candles.length || 1);
+
+  for (let i = 0; i < recentCandles.length; i++) {
+    const candle = recentCandles[i];
+    // 終値ベースで判定（ヒゲのみの突破はテストとして除外）
+    const isBreak = type === 'support'
+      ? candle.close < level * 0.99
+      : candle.close > level * 1.01;
+    if (!isBreak) continue;
+
+    // 低出来高の突破 → 翌日の終値で確認（偽ブレイクアウト防止）
+    if (avgVolume > 0 && (candle.volume || 0) < avgVolume) {
+      const next = recentCandles[i + 1];
+      const nextConfirms = next && (type === 'support'
+        ? next.close < level * 0.99
+        : next.close > level * 1.01);
+      if (!nextConfirms) continue;
     }
+
+    const breakPct = ((candle.close - level) / level) * 100;
+    return {
+      date: candle.isoTime.split('T')[0],
+      price: candle.close,
+      breakPct
+    };
   }
-  
+
   return undefined;
 }
 
@@ -135,9 +234,8 @@ function detectNewSupport(
   candles: Array<{ isoTime: string; open: number; high: number; low: number; close: number; volume?: number }>,
   recentDays: number = 10
 ): Array<{ price: number; date: string; volumeBoost: boolean; note: string }> {
-  const now = new Date();
-  const recentCutoff = new Date(now.getTime() - recentDays * 24 * 60 * 60 * 1000);
-  const recentCandles = candles.filter(c => new Date(c.isoTime) >= recentCutoff);
+  const recentCutoff = dayjs().subtract(recentDays, 'day');
+  const recentCandles = candles.filter(c => dayjs(c.isoTime).isAfter(recentCutoff));
   
   const newSupports: Array<{ price: number; date: string; volumeBoost: boolean; note: string }> = [];
   
@@ -170,7 +268,7 @@ function detectNewSupport(
         }
         
         newSupports.push({
-          price: roundToLevel(current.low),
+          price: current.low,
           date: current.isoTime.split('T')[0],
           volumeBoost,
           note
@@ -208,38 +306,78 @@ function detectRoleReversal(
   return { newResistances, newSupports };
 }
 
-function calculateStrength(
-  touchCount: number,
-  recentCount: number,
-  hasRecentBreak: boolean,
-  volumeBoost: boolean = false,
-  formationType: 'traditional' | 'new_formation' | 'role_reversal' = 'traditional'
-): number {
+/** タッチの直近性スコアを計算（半減期ベースの指数減衰） */
+function computeRecencyScore(touches: TouchEvent[], referenceDate: string, halfLifeDays: number = 30): number {
+  const ref = dayjs(referenceDate);
+  return touches.reduce((score, t) => {
+    const daysAgo = Math.max(0, ref.diff(dayjs(t.date), 'day'));
+    return score + Math.exp(-0.693 * daysAgo / halfLifeDays);
+  }, 0);
+}
+
+/** ロールリバーサル後のプルバック確認 */
+function hasPullbackConfirmation(
+  level: number,
+  type: 'support_to_resistance' | 'resistance_to_support',
+  breakDate: string,
+  candles: Array<{ isoTime: string; open: number; high: number; low: number; close: number }>,
+  tolerance: number
+): boolean {
+  const breakIdx = candles.findIndex(c => c.isoTime.split('T')[0] >= breakDate);
+  if (breakIdx < 0) return false;
+  const afterBreak = candles.slice(breakIdx + 1);
+
+  if (type === 'support_to_resistance') {
+    // 旧サポート崩壊 → レジスタンス転換: 高値がレベル付近に達したが終値はレベル以下
+    return afterBreak.some(c =>
+      c.high >= level * (1 - tolerance) && c.close < level
+    );
+  } else {
+    // 旧レジスタンス突破 → サポート転換: 安値がレベル付近に達したが終値はレベル以上
+    return afterBreak.some(c =>
+      c.low <= level * (1 + tolerance) && c.close > level
+    );
+  }
+}
+
+function calculateStrength(opts: {
+  touchCount: number;
+  recencyScore: number;
+  avgBounceStrength: number;
+  hasRecentBreak: boolean;
+  volumeBoost: boolean;
+  formationType: 'traditional' | 'new_formation' | 'role_reversal';
+  pullbackConfirmed: boolean;
+}): number {
+  const { touchCount, recencyScore, avgBounceStrength, hasRecentBreak, volumeBoost, formationType, pullbackConfirmed } = opts;
   let strength = 1;
-  
+
   if (formationType === 'new_formation') {
     // 新形成は基本★★
     strength = 2;
     if (volumeBoost) strength = 3;
   } else if (formationType === 'role_reversal') {
-    // ロールリバーサルは基本★（検証待ち）
-    strength = 1;
+    // ロールリバーサルは基本★、プルバック確認で★★
+    strength = pullbackConfirmed ? 2 : 1;
   } else {
     // 従来型：接触回数ベース
     if (touchCount >= 5) strength = 3;
     else if (touchCount >= 3) strength = 2;
     else strength = 1;
-    
-    // 直近の接触で強化
-    if (recentCount >= 2 && touchCount >= 3) strength = Math.min(3, strength + 1);
-    
+
+    // 直近性スコアで強化（半減期30日、スコア1.5 ≈ 直近2回相当）
+    if (recencyScore >= 1.5 && touchCount >= 3) strength = Math.min(3, strength + 1);
+
+    // 反発の大きさで強化（平均反発2%以上）
+    if (avgBounceStrength >= 2.0 && strength < 3) strength += 1;
+
     // 出来高補強
     if (volumeBoost && strength < 3) strength += 1;
-    
+
     // 直近崩壊で減格
     if (hasRecentBreak && strength > 1) strength -= 1;
   }
-  
+
   return Math.max(1, Math.min(3, strength));
 }
 
@@ -274,7 +412,7 @@ export default async function analyzeSupportResistance(
     const currentPrice = currentCandle.close;
 
     // 価格レベル検出
-    const { supports, resistances } = findPriceLevels(candles, currentPrice, tolerance, lookbackDays);
+    const { supports, resistances } = findPriceLevels(candles, tolerance);
 
     // 新サポート形成の検出
     const newSupports = detectNewSupport(candles, 10);
@@ -319,21 +457,21 @@ export default async function analyzeSupportResistance(
       if (Math.abs(pctFromCurrent) > 20) continue;
       if (touches.length < 2) continue;
 
-      const recentTouches = touches.filter(t => {
-        const touchDate = new Date(t.date);
-        const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-        return touchDate >= thirtyDaysAgo;
-      });
+      const recencyScore = computeRecencyScore(touches, currentCandle.isoTime);
+      const avgBounce = touches.reduce((sum, t) => sum + t.bounceStrength, 0) / (touches.length || 1);
 
       const recentBreak = detectRecentBreak(level, 'support', candles, 7);
       if (recentBreak) continue; // 直近7日で崩壊したものは除外
-      
+
       const volumeBoost = touches.some(t => {
         const candle = candles.find((c: any) => c.isoTime.split('T')[0] === t.date);
         return candle && (candle.volume || 0) > avgVolume * 1.5;
       });
 
-      const strength = calculateStrength(touches.length, recentTouches.length, false, volumeBoost, 'traditional');
+      const strength = calculateStrength({
+        touchCount: touches.length, recencyScore, avgBounceStrength: avgBounce,
+        hasRecentBreak: false, volumeBoost, formationType: 'traditional', pullbackConfirmed: false
+      });
 
       supportLevels.push({
         price: level,
@@ -356,7 +494,11 @@ export default async function analyzeSupportResistance(
       const isDuplicate = supportLevels.some(s => Math.abs(s.price - newSup.price) < newSup.price * tolerance);
       if (isDuplicate) continue;
       
-      const strength = calculateStrength(0, 0, false, newSup.volumeBoost, 'new_formation');
+      const strength = calculateStrength({
+        touchCount: 0, recencyScore: 0, avgBounceStrength: 0,
+        hasRecentBreak: false, volumeBoost: newSup.volumeBoost,
+        formationType: 'new_formation', pullbackConfirmed: false
+      });
       
       supportLevels.push({
         price: newSup.price,
@@ -376,11 +518,20 @@ export default async function analyzeSupportResistance(
     for (const [level, note] of roleReversalSupports.entries()) {
       const pctFromCurrent = ((level - currentPrice) / currentPrice) * 100;
       if (pctFromCurrent >= 0 || Math.abs(pctFromCurrent) > 20) continue;
-      
+
       const isDuplicate = supportLevels.some(s => Math.abs(s.price - level) < level * tolerance);
       if (isDuplicate) continue;
-      
-      const strength = calculateStrength(0, 0, false, false, 'role_reversal');
+
+      const breakInfo = brokenResistances.get(level);
+      const pullbackConfirmed = breakInfo ? hasPullbackConfirmation(
+        level, 'resistance_to_support', breakInfo.date, candles, tolerance
+      ) : false;
+
+      const strength = calculateStrength({
+        touchCount: 0, recencyScore: 0, avgBounceStrength: 0,
+        hasRecentBreak: false, volumeBoost: false,
+        formationType: 'role_reversal', pullbackConfirmed
+      });
       
       supportLevels.push({
         price: level,
@@ -406,21 +557,21 @@ export default async function analyzeSupportResistance(
       if (Math.abs(pctFromCurrent) > 20) continue;
       if (touches.length < 2) continue;
 
-      const recentTouches = touches.filter(t => {
-        const touchDate = new Date(t.date);
-        const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-        return touchDate >= thirtyDaysAgo;
-      });
+      const recencyScore = computeRecencyScore(touches, currentCandle.isoTime);
+      const avgBounce = touches.reduce((sum, t) => sum + t.bounceStrength, 0) / (touches.length || 1);
 
       const recentBreak = detectRecentBreak(level, 'resistance', candles, 7);
       if (recentBreak) continue; // 直近7日で突破されたものは除外
-      
+
       const volumeBoost = touches.some(t => {
         const candle = candles.find((c: any) => c.isoTime.split('T')[0] === t.date);
         return candle && (candle.volume || 0) > avgVolume * 1.5;
       });
 
-      const strength = calculateStrength(touches.length, recentTouches.length, false, volumeBoost, 'traditional');
+      const strength = calculateStrength({
+        touchCount: touches.length, recencyScore, avgBounceStrength: avgBounce,
+        hasRecentBreak: false, volumeBoost, formationType: 'traditional', pullbackConfirmed: false
+      });
 
       resistanceLevels.push({
         price: level,
@@ -439,11 +590,20 @@ export default async function analyzeSupportResistance(
     for (const [level, note] of newResistances.entries()) {
       const pctFromCurrent = ((level - currentPrice) / currentPrice) * 100;
       if (pctFromCurrent <= 0 || Math.abs(pctFromCurrent) > 20) continue;
-      
+
       const isDuplicate = resistanceLevels.some(r => Math.abs(r.price - level) < level * tolerance);
       if (isDuplicate) continue;
-      
-      const strength = calculateStrength(0, 0, false, false, 'role_reversal');
+
+      const breakInfo = brokenSupports.get(level);
+      const pullbackConfirmed = breakInfo ? hasPullbackConfirmation(
+        level, 'support_to_resistance', breakInfo.date, candles, tolerance
+      ) : false;
+
+      const strength = calculateStrength({
+        touchCount: 0, recencyScore: 0, avgBounceStrength: 0,
+        hasRecentBreak: false, volumeBoost: false,
+        formationType: 'role_reversal', pullbackConfirmed
+      });
       
       resistanceLevels.push({
         price: level,
@@ -508,10 +668,18 @@ export default async function analyzeSupportResistance(
         // ロールリバーサル
         if (type === 'support') {
           text += `  - 背景: ${level.note || '以前に上抜けした価格帯。現在は「上抜け後の下支え」として機能する可能性'}\n`;
-          text += `  - 注意: 転換直後で信頼性未確認、再割れリスクあり（強度★）\n`;
+          if (level.strength >= 2) {
+            text += `  - 確認: プルバック後に価格がレベル上で維持（信頼性向上）\n`;
+          } else {
+            text += `  - 注意: プルバック未確認、再割れリスクあり\n`;
+          }
         } else {
           text += `  - 背景: ${level.note || '以前に崩壊した価格帯。現在は「戻り売りポイント」として機能する可能性'}\n`;
-          text += `  - 注意: 転換直後で信頼性未確認、再突破される可能性あり（強度★）\n`;
+          if (level.strength >= 2) {
+            text += `  - 確認: プルバック後に価格がレベル下で維持（信頼性向上）\n`;
+          } else {
+            text += `  - 注意: プルバック未確認、再突破される可能性あり\n`;
+          }
         }
       } else {
         // 従来型
@@ -558,11 +726,12 @@ export default async function analyzeSupportResistance(
     }
 
     contentText += `\n【判定ロジック】\n`;
-    contentText += `A. 従来型: 過去90日で反発/反落2回以上、直近7日で崩壊なし\n`;
+    contentText += `A. 従来型: ピボット検出（左右5本）→ ${(tolerance * 100).toFixed(1)}%クラスタリング → タッチ2回以上、直近7日で崩壊なし\n`;
     contentText += `B. 新形成: 安値2日以上切り上げ + 以降割れなし（出来高1.5倍以上で強度+1）\n`;
     contentText += `C. 転換型: 崩壊したサポート→レジスタンス転換、突破したレジスタンス→サポート転換\n`;
-    contentText += `- 強度判定: 接触回数・直近の維持・出来高を総合評価\n`;
-    contentText += `- 直近7日で崩壊/突破した価格帯は従来型から除外、転換型候補へ\n`;
+    contentText += `- 崩壊判定: 終値ベース + 出来高確認（低出来高の突破は翌日確認を要求）\n`;
+    contentText += `- 強度判定: 接触回数 × 直近性スコア（半減期30日）× 反発幅（2%以上で+1）× 出来高を総合評価\n`;
+    contentText += `- 転換型の強化: プルバック確認時に強度★→★★\n`;
 
     const summary = formatSummary({
       pair: chk.pair,
@@ -577,8 +746,7 @@ export default async function analyzeSupportResistance(
       supports: topSupports,
       resistances: topResistances,
       detectionCriteria: {
-        supportBounceMin: 0.3,
-        resistanceRejectMin: 0.3,
+        swingDepth: 5,
         recentBreakWindow: 7,
         tolerance
       }
