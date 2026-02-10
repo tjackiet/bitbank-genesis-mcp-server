@@ -36,61 +36,154 @@ export interface SupportResistanceLevel {
   note?: string; // 補足説明
 }
 
-function roundToLevel(price: number, step: number = 50000): number {
-  return Math.round(price / step) * step;
+/** スイングポイント（ピボット）を検出: 左右 depth 本より高値/安値が突出した足 */
+function detectSwingPoints(
+  candles: Array<{ isoTime: string; open: number; high: number; low: number; close: number }>,
+  depth: number = 5
+): {
+  swingHighs: Array<{ index: number; date: string; price: number; bounceStrength: number }>;
+  swingLows: Array<{ index: number; date: string; price: number; bounceStrength: number }>;
+} {
+  const swingHighs: Array<{ index: number; date: string; price: number; bounceStrength: number }> = [];
+  const swingLows: Array<{ index: number; date: string; price: number; bounceStrength: number }> = [];
+
+  for (let i = depth; i < candles.length - depth; i++) {
+    // スイングハイ: 左右 depth 本より高値が高い
+    let isSwingHigh = true;
+    for (let j = i - depth; j <= i + depth; j++) {
+      if (j === i) continue;
+      if (candles[j].high >= candles[i].high) {
+        isSwingHigh = false;
+        break;
+      }
+    }
+    if (isSwingHigh) {
+      swingHighs.push({
+        index: i,
+        date: candles[i].isoTime.split('T')[0],
+        price: candles[i].high,
+        bounceStrength: ((candles[i].high - candles[i].close) / candles[i].high) * 100
+      });
+    }
+
+    // スイングロー: 左右 depth 本より安値が低い
+    let isSwingLow = true;
+    for (let j = i - depth; j <= i + depth; j++) {
+      if (j === i) continue;
+      if (candles[j].low <= candles[i].low) {
+        isSwingLow = false;
+        break;
+      }
+    }
+    if (isSwingLow) {
+      swingLows.push({
+        index: i,
+        date: candles[i].isoTime.split('T')[0],
+        price: candles[i].low,
+        bounceStrength: ((candles[i].close - candles[i].low) / candles[i].low) * 100
+      });
+    }
+  }
+
+  return { swingHighs, swingLows };
 }
 
+/** 近接するスイングポイントを %ベースでクラスタリング（凝集型） */
+function clusterSwingPoints(
+  points: Array<{ date: string; price: number; bounceStrength: number }>,
+  tolerance: number
+): Array<{ level: number; points: Array<{ date: string; price: number; bounceStrength: number }> }> {
+  if (points.length === 0) return [];
+
+  const sorted = [...points].sort((a, b) => a.price - b.price);
+  const clusters: Array<{ prices: number[]; points: Array<{ date: string; price: number; bounceStrength: number }> }> = [];
+  let current = { prices: [sorted[0].price], points: [sorted[0]] };
+
+  for (let i = 1; i < sorted.length; i++) {
+    const avg = current.prices.reduce((a, b) => a + b, 0) / current.prices.length;
+    if (Math.abs(sorted[i].price - avg) / avg <= tolerance) {
+      current.prices.push(sorted[i].price);
+      current.points.push(sorted[i]);
+    } else {
+      clusters.push(current);
+      current = { prices: [sorted[i].price], points: [sorted[i]] };
+    }
+  }
+  clusters.push(current);
+
+  return clusters.map(c => ({
+    level: Math.round(c.prices.reduce((a, b) => a + b, 0) / c.prices.length),
+    points: c.points
+  }));
+}
+
+/** スイングポイントベースで S/R レベルを検出し、各レベルのタッチ回数をカウント */
 function findPriceLevels(
   candles: Array<{ isoTime: string; open: number; high: number; low: number; close: number }>,
-  currentPrice: number,
   tolerance: number,
-  recentDays: number
+  depth: number = 5
 ): { supports: Map<number, TouchEvent[]>; resistances: Map<number, TouchEvent[]> } {
+  if (candles.length < 2 * depth + 1) {
+    return { supports: new Map(), resistances: new Map() };
+  }
+
+  const { swingHighs, swingLows } = detectSwingPoints(candles, depth);
+
+  const supportClusters = clusterSwingPoints(
+    swingLows.map(p => ({ date: p.date, price: p.price, bounceStrength: p.bounceStrength })),
+    tolerance
+  );
+  const resistanceClusters = clusterSwingPoints(
+    swingHighs.map(p => ({ date: p.date, price: p.price, bounceStrength: p.bounceStrength })),
+    tolerance
+  );
+
+  // 各サポートレベルに対してゾーン内のタッチを全ローソク足からカウント
   const supports = new Map<number, TouchEvent[]>();
+  for (const cluster of supportClusters) {
+    const zoneMin = cluster.level * (1 - tolerance);
+    const zoneMax = cluster.level * (1 + tolerance);
+    const touches: TouchEvent[] = [];
+    const seenDates = new Set<string>();
+
+    for (const candle of candles) {
+      const date = candle.isoTime.split('T')[0];
+      if (seenDates.has(date)) continue;
+      if (candle.low >= zoneMin && candle.low <= zoneMax && candle.close > candle.low) {
+        touches.push({
+          date,
+          price: candle.low,
+          bounceStrength: ((candle.close - candle.low) / candle.low) * 100,
+          type: 'support'
+        });
+        seenDates.add(date);
+      }
+    }
+    supports.set(cluster.level, touches);
+  }
+
+  // 各レジスタンスレベルに対してゾーン内のタッチを全ローソク足からカウント
   const resistances = new Map<number, TouchEvent[]>();
-  
-  const now = new Date();
-  const recentCutoff = new Date(now.getTime() - recentDays * 24 * 60 * 60 * 1000);
+  for (const cluster of resistanceClusters) {
+    const zoneMin = cluster.level * (1 - tolerance);
+    const zoneMax = cluster.level * (1 + tolerance);
+    const touches: TouchEvent[] = [];
+    const seenDates = new Set<string>();
 
-  for (const candle of candles) {
-    const candleDate = new Date(candle.isoTime);
-    if (candleDate < recentCutoff) continue;
-
-    // サポート判定：安値での反発
-    const lowLevel = roundToLevel(candle.low);
-    const lowBounce = ((candle.close - candle.low) / candle.low) * 100;
-    
-    if (lowBounce > 0.3) { // 0.3%以上の下ヒゲまたは反発
-      const event: TouchEvent = {
-        date: candle.isoTime.split('T')[0],
-        price: candle.low,
-        bounceStrength: lowBounce,
-        type: 'support'
-      };
-      
-      if (!supports.has(lowLevel)) {
-        supports.set(lowLevel, []);
+    for (const candle of candles) {
+      const date = candle.isoTime.split('T')[0];
+      if (seenDates.has(date)) continue;
+      if (candle.high >= zoneMin && candle.high <= zoneMax && candle.close < candle.high) {
+        touches.push({
+          date,
+          price: candle.high,
+          bounceStrength: ((candle.high - candle.close) / candle.high) * 100,
+          type: 'resistance'
+        });
+        seenDates.add(date);
       }
-      supports.get(lowLevel)!.push(event);
     }
-
-    // レジスタンス判定：高値での反落
-    const highLevel = roundToLevel(candle.high);
-    const highReject = ((candle.high - candle.close) / candle.high) * 100;
-    
-    if (highReject > 0.3) { // 0.3%以上の上ヒゲまたは反落
-      const event: TouchEvent = {
-        date: candle.isoTime.split('T')[0],
-        price: candle.high,
-        bounceStrength: highReject,
-        type: 'resistance'
-      };
-      
-      if (!resistances.has(highLevel)) {
-        resistances.set(highLevel, []);
-      }
-      resistances.get(highLevel)!.push(event);
-    }
+    resistances.set(cluster.level, touches);
   }
 
   return { supports, resistances };
@@ -108,20 +201,22 @@ function detectRecentBreak(
 
   for (const candle of recentCandles) {
     if (type === 'support') {
-      if (candle.low < level * 0.99) { // 1%以上下回った
-        const breakPct = ((candle.low - level) / level) * 100;
+      // 終値ベースで判定（ヒゲのみの突破はテストとして除外）
+      if (candle.close < level * 0.99) {
+        const breakPct = ((candle.close - level) / level) * 100;
         return {
           date: candle.isoTime.split('T')[0],
-          price: candle.low,
+          price: candle.close,
           breakPct
         };
       }
     } else {
-      if (candle.high > level * 1.01) { // 1%以上上回った
-        const breakPct = ((candle.high - level) / level) * 100;
+      // 終値ベースで判定（ヒゲのみの突破はテストとして除外）
+      if (candle.close > level * 1.01) {
+        const breakPct = ((candle.close - level) / level) * 100;
         return {
           date: candle.isoTime.split('T')[0],
-          price: candle.high,
+          price: candle.close,
           breakPct
         };
       }
@@ -170,7 +265,7 @@ function detectNewSupport(
         }
         
         newSupports.push({
-          price: roundToLevel(current.low),
+          price: current.low,
           date: current.isoTime.split('T')[0],
           volumeBoost,
           note
@@ -274,7 +369,7 @@ export default async function analyzeSupportResistance(
     const currentPrice = currentCandle.close;
 
     // 価格レベル検出
-    const { supports, resistances } = findPriceLevels(candles, currentPrice, tolerance, lookbackDays);
+    const { supports, resistances } = findPriceLevels(candles, tolerance);
 
     // 新サポート形成の検出
     const newSupports = detectNewSupport(candles, 10);
@@ -558,11 +653,11 @@ export default async function analyzeSupportResistance(
     }
 
     contentText += `\n【判定ロジック】\n`;
-    contentText += `A. 従来型: 過去90日で反発/反落2回以上、直近7日で崩壊なし\n`;
+    contentText += `A. 従来型: ピボット検出（左右5本）→ ${(tolerance * 100).toFixed(1)}%クラスタリング → タッチ2回以上、直近7日で崩壊なし\n`;
     contentText += `B. 新形成: 安値2日以上切り上げ + 以降割れなし（出来高1.5倍以上で強度+1）\n`;
     contentText += `C. 転換型: 崩壊したサポート→レジスタンス転換、突破したレジスタンス→サポート転換\n`;
+    contentText += `- 崩壊判定: 終値ベース（ヒゲのみの突破はテストとして除外）\n`;
     contentText += `- 強度判定: 接触回数・直近の維持・出来高を総合評価\n`;
-    contentText += `- 直近7日で崩壊/突破した価格帯は従来型から除外、転換型候補へ\n`;
 
     const summary = formatSummary({
       pair: chk.pair,
@@ -577,8 +672,7 @@ export default async function analyzeSupportResistance(
       supports: topSupports,
       resistances: topResistances,
       detectionCriteria: {
-        supportBounceMin: 0.3,
-        resistanceRejectMin: 0.3,
+        swingDepth: 5,
         recentBreakWindow: 7,
         tolerance
       }

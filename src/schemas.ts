@@ -1098,8 +1098,7 @@ export const AnalyzeSupportResistanceDataSchemaOut = z.object({
   supports: z.array(SupportResistanceLevelSchema),
   resistances: z.array(SupportResistanceLevelSchema),
   detectionCriteria: z.object({
-    supportBounceMin: z.number(),
-    resistanceRejectMin: z.number(),
+    swingDepth: z.number().int(),
     recentBreakWindow: z.number().int(),
     tolerance: z.number(),
   }),
