@@ -204,7 +204,10 @@ function generateSummaryText(data: GenericBacktestChartData): string {
   lines.push(`Excess Return: ${summary.excess_return_pct >= 0 ? '+' : ''}${summary.excess_return_pct.toFixed(2)}%`);
   lines.push(`Trades: ${summary.trade_count}`);
   lines.push(`Win Rate: ${(summary.win_rate * 100).toFixed(1)}%`);
+  lines.push(`Avg P&L/Trade: ${summary.avg_pnl_pct >= 0 ? '+' : ''}${summary.avg_pnl_pct.toFixed(2)}%`);
   lines.push(`Max Drawdown: -${summary.max_drawdown_pct.toFixed(2)}%`);
+  lines.push(`Profit Factor: ${summary.profit_factor != null ? summary.profit_factor.toFixed(2) : 'N/A (no losses)'}`);
+  lines.push(`Sharpe Ratio: ${summary.sharpe_ratio != null ? summary.sharpe_ratio.toFixed(2) : 'N/A'}`);
 
   if (trades.length > 0) {
     lines.push('');

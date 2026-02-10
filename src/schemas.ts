@@ -1337,6 +1337,9 @@ const GenericBacktestSummarySchema = z.object({
   max_drawdown_pct: z.number(),
   buy_hold_pnl_pct: z.number(),
   excess_return_pct: z.number(),
+  profit_factor: z.number().nullable().describe('Profit Factor (gross profit / gross loss). null if no losing trades'),
+  sharpe_ratio: z.number().nullable().describe('Annualized Sharpe Ratio (daily returns, sqrt(365))'),
+  avg_pnl_pct: z.number().describe('Average P&L per trade [%]'),
 });
 
 export const RunBacktestOutputSchema = z.union([

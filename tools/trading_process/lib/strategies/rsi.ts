@@ -24,7 +24,7 @@ const DEFAULT_PARAMS = {
  * @param period RSI期間
  * @returns RSI配列（0-100、先頭period個はNaN）
  */
-function calculateRSI(closes: number[], period: number): number[] {
+export function calculateRSI(closes: number[], period: number): number[] {
   const result: number[] = new Array(closes.length).fill(NaN);
 
   if (closes.length < period + 1) {
