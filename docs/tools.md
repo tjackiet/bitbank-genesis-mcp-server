@@ -94,10 +94,24 @@
 
 | 戦略 | 概要 | 主要パラメータ |
 |------|------|----------------|
-| sma_cross | SMAクロスオーバー | short, long |
+| sma_cross | SMAクロスオーバー | short, long + フィルター |
 | rsi | RSI売られすぎ/買われすぎ | period, overbought, oversold |
 | macd_cross | MACDクロスオーバー | fast, slow, signal + フィルター |
 | bb_breakout | ボリンジャーバンドブレイクアウト | period, stddev |
+
+### sma_cross エントリーフィルター
+
+買いシグナル（ゴールデンクロス）にのみフィルターが適用されます。売り（デッドクロス）はフィルターなしで常に通します。
+
+| パラメータ | 型 | デフォルト | 説明 |
+|------------|-----|-----------|------|
+| short | number | 5 | 短期SMA期間 |
+| long | number | 20 | 長期SMA期間 |
+| sma_filter_period | number | 0（無効） | 価格がSMA(N)より上の場合のみ買い（例: 200） |
+| rsi_filter_period | number | 0（無効） | RSI計算期間（例: 14） |
+| rsi_filter_max | number | 100（無効） | RSIがこの値未満の場合のみ買い（例: 70） |
+
+フィルター有効時、チャートのオーバーレイに SMA フィルターライン（purple）/ RSI ライン（lavender）が自動追加されます。
 
 ### macd_cross エントリーフィルター
 
@@ -115,7 +129,27 @@
 ### 入力例
 
 ```json
-// SMA200トレンドフィルター付き
+// sma_cross + SMA200トレンドフィルター
+{
+  "pair": "btc_jpy",
+  "period": "6M",
+  "strategy": {
+    "type": "sma_cross",
+    "params": { "short": 5, "long": 20, "sma_filter_period": 200 }
+  }
+}
+
+// sma_cross + RSI70未満フィルター
+{
+  "pair": "btc_jpy",
+  "period": "3M",
+  "strategy": {
+    "type": "sma_cross",
+    "params": { "rsi_filter_period": 14, "rsi_filter_max": 70 }
+  }
+}
+
+// macd_cross + SMA200トレンドフィルター
 {
   "pair": "btc_jpy",
   "period": "6M",
