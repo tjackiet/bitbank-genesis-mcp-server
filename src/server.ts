@@ -1645,6 +1645,10 @@ matplotlib/D3.js 等で独自にチャートを描画する必要はありませ
 
 【利用可能な戦略】
 - sma_cross: SMAクロスオーバー（params: short, long）
+  - エントリーフィルター（買いシグナルのみ適用、売りはフィルターなし）:
+    - sma_filter_period: SMAトレンドフィルター（例: 200 → 価格がSMA200より上の場合のみ買い）
+    - rsi_filter_period: RSI計算期間（例: 14）
+    - rsi_filter_max: RSIがこの値未満の場合のみ買い（例: 70）
 - rsi: RSI売られすぎ/買われすぎ（params: period, overbought, oversold）
 - macd_cross: MACDクロスオーバー（params: fast, slow, signal）
   - エントリーフィルター（買いシグナルのみ適用、売りはフィルターなし）:
@@ -1680,6 +1684,26 @@ matplotlib/D3.js 等で独自にチャートを描画する必要はありませ
   "timeframe": "1H",
   "period": "1M",
   "strategy": { "type": "rsi" }
+}
+
+// SMA 5/20 + SMA200トレンドフィルター（価格がSMA200より上の場合のみ買い）
+{
+  "pair": "btc_jpy",
+  "period": "6M",
+  "strategy": {
+    "type": "sma_cross",
+    "params": { "short": 5, "long": 20, "sma_filter_period": 200 }
+  }
+}
+
+// SMA 5/20 + RSIフィルター（RSI<70のみ買い）
+{
+  "pair": "btc_jpy",
+  "period": "3M",
+  "strategy": {
+    "type": "sma_cross",
+    "params": { "short": 5, "long": 20, "rsi_filter_period": 14, "rsi_filter_max": 70 }
+  }
 }
 
 // MACD + SMA200トレンドフィルター
