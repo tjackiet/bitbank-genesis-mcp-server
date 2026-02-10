@@ -127,6 +127,27 @@ AI（Claude / GPT）はチャートや可視化を求められた場合、**必�
 独自に可視化コード（D3 / Chart.js / Canvas / SVG 等）を生成してはいけない。
 Artifact は「ツールの出力（SVG 文字列）」をそのまま表示する用途に限定する。
 
+### Cursor での出力形式
+
+Cursor では **PNG 出力 + ワークスペース内保存** を推奨する。
+
+| 設定 | 推奨値 | 理由 |
+|------|--------|------|
+| `savePng` | `true` | SVGはコード表示、文字化けリスクあり |
+| `outputDir` | ワークスペース内のパス | ワークスペース外はリンク化されない |
+| `chartDetail` | `"default"` or `"full"` | fullはエントリーポイント可視化 |
+
+**重要**: ワークスペース外（例: `/Users/.../assets/`）に保存するとパスがクリックできない。必ずワークスペース内に保存すること。
+
+```
+出力例:
+outputDir: "/Users/toshikitanaka/bitbank-mcp-sandbox/outputs"
+  ↓
+backtest_btcjpy_1D_macd_cross_2026-02-10.png
+  ↓
+パスクリック → Cursor内蔵プレビューで即表示
+```
+
 ### 描画ツール一覧
 
 | ツール | ファイル | 用途 |

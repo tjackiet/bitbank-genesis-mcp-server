@@ -35,7 +35,8 @@
 ## バックテスト
 - run_backtest: 汎用バックテスト（SMA/RSI/MACD等の複数戦略に対応）
   - 戦略指定で多様な売買ルールを検証可能
-  - 結果にはトレード履歴・統計・SVGチャートを含む
+  - 結果にはトレード履歴・統計（Profit Factor, Sharpe Ratio, Avg P&L/Trade）・SVGチャートを含む
+  - macd_cross 戦略はエントリーフィルター対応（SMAトレンド/ゼロライン/RSI）
 
 ## 視覚化
 - render_chart_svg: ローソク/折れ線/一目/BB/SMA/Depth を SVG で描画
@@ -84,6 +85,93 @@
 - `analyze_market_signal` で全体を把握 → 必要に応じて各専門ツールへ
 - チャートは必ず `render_chart_svg` の `data.svg` をそのまま表示（自前描画はしない）
 - データ点が多い/レイヤ多い場合は `maxSvgBytes` や `--force-layers` で調整可能
+
+---
+
+## run_backtest 詳細ガイド
+
+### 利用可能な戦略
+
+| 戦略 | 概要 | 主要パラメータ |
+|------|------|----------------|
+| sma_cross | SMAクロスオーバー | short, long |
+| rsi | RSI売られすぎ/買われすぎ | period, overbought, oversold |
+| macd_cross | MACDクロスオーバー | fast, slow, signal + フィルター |
+| bb_breakout | ボリンジャーバンドブレイクアウト | period, stddev |
+
+### macd_cross エントリーフィルター
+
+買いシグナル（ゴールデンクロス）にのみフィルターが適用されます。売り（デッドクロス）はフィルターなしで常に通します。
+
+| パラメータ | 型 | デフォルト | 説明 |
+|------------|-----|-----------|------|
+| sma_filter_period | number | 0（無効） | 価格がSMA(N)より上の場合のみ買い（例: 200） |
+| zero_line_filter | number | 0（なし） | -1: MACD≤0で買い（反転狙い）, 1: MACD≥0で買い（トレンド継続） |
+| rsi_filter_period | number | 0（無効） | RSI計算期間（例: 14） |
+| rsi_filter_max | number | 100（無効） | RSIがこの値未満の場合のみ買い（例: 70） |
+
+フィルター有効時、チャートのオーバーレイに SMA ライン（price パネル）/ RSI ライン（indicator パネル）が自動追加されます。
+
+### 入力例
+
+```json
+// SMA200トレンドフィルター付き
+{
+  "pair": "btc_jpy",
+  "period": "6M",
+  "strategy": {
+    "type": "macd_cross",
+    "params": { "sma_filter_period": 200 }
+  }
+}
+
+// ゼロライン以下でのみ買い（反転狙い）
+{
+  "pair": "btc_jpy",
+  "period": "6M",
+  "strategy": {
+    "type": "macd_cross",
+    "params": { "zero_line_filter": -1 }
+  }
+}
+
+// RSI70未満フィルター付き
+{
+  "pair": "btc_jpy",
+  "period": "3M",
+  "strategy": {
+    "type": "macd_cross",
+    "params": { "rsi_filter_period": 14, "rsi_filter_max": 70 }
+  }
+}
+
+// 全部盛り
+{
+  "pair": "btc_jpy",
+  "period": "6M",
+  "strategy": {
+    "type": "macd_cross",
+    "params": {
+      "sma_filter_period": 200,
+      "zero_line_filter": -1,
+      "rsi_filter_period": 14,
+      "rsi_filter_max": 70
+    }
+  }
+}
+```
+
+### 出力指標
+
+| 指標 | 説明 |
+|------|------|
+| total_pnl_pct | 総損益 [%] |
+| trades | トレード数 |
+| win_rate | 勝率 [%] |
+| max_drawdown_pct | 最大ドローダウン [%] |
+| avg_pnl_pct | 1トレードあたり平均損益 [%] |
+| profit_factor | Profit Factor（総利益 / 総損失）。全勝時は null |
+| sharpe_ratio | 年率換算 Sharpe Ratio（日次リターン × √365） |
 
 ---
 

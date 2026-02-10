@@ -1647,6 +1647,11 @@ matplotlib/D3.js 等で独自にチャートを描画する必要はありませ
 - sma_cross: SMAクロスオーバー（params: short, long）
 - rsi: RSI売られすぎ/買われすぎ（params: period, overbought, oversold）
 - macd_cross: MACDクロスオーバー（params: fast, slow, signal）
+  - エントリーフィルター（買いシグナルのみ適用、売りはフィルターなし）:
+    - sma_filter_period: SMAトレンドフィルター（例: 200 → 価格がSMA200より上の場合のみ買い）
+    - zero_line_filter: -1=MACD≤0で買い（反転狙い）, 1=MACD≥0で買い（トレンド継続）
+    - rsi_filter_period: RSI計算期間（例: 14）
+    - rsi_filter_max: RSIがこの値未満の場合のみ買い（例: 70）
 - bb_breakout: ボリンジャーバンドブレイクアウト（params: period, stddev）
 
 【時間軸】
@@ -1677,12 +1682,32 @@ matplotlib/D3.js 等で独自にチャートを描画する必要はありませ
   "strategy": { "type": "rsi" }
 }
 
+// MACD + SMA200トレンドフィルター
+{
+  "pair": "btc_jpy",
+  "period": "6M",
+  "strategy": {
+    "type": "macd_cross",
+    "params": { "sma_filter_period": 200 }
+  }
+}
+
+// MACD + ゼロライン以下でのみ買い（反転狙い）
+{
+  "pair": "btc_jpy",
+  "period": "6M",
+  "strategy": {
+    "type": "macd_cross",
+    "params": { "zero_line_filter": -1 }
+  }
+}
+
 【チャート詳細度（chartDetail）— 指定がなければ必ず default を使うこと】
 - default: エクイティカーブ + ドローダウン。「損益」「plotして」「グラフ」「チャート」等の表現はすべて default。
 - full: 価格+インジケーター+エクイティ+DD+ポジションの5段構成。ユーザーが価格推移やシグナルの視覚的確認を求めた場合に使用（例：「売買タイミングを見せて」「エントリーポイントを表示」「価格チャートも含めて」等）。
 
 【出力】
-- summary: テキストサマリー（総損益, トレード数, 勝率, 最大DD）
+- summary: テキストサマリー（総損益, トレード数, 勝率, 最大DD, Avg P&L/Trade, Profit Factor, Sharpe Ratio）
 - svg: チャート（SVG形式、そのままアーティファクトとして表示可能）
 
 【チャート表示方法】
