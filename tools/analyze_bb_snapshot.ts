@@ -1,8 +1,7 @@
 import analyzeIndicators from './analyze_indicators.js';
-import { ok, fail } from '../lib/result.js';
+import { ok, fail, failFromError } from '../lib/result.js';
 import { createMeta, ensurePair } from '../lib/validate.js';
 import { formatSummary } from '../lib/formatter.js';
-import { getErrorMessage } from '../lib/error.js';
 import { AnalyzeBbSnapshotOutputSchema } from '../src/schemas.js';
 
 export default async function analyzeBbSnapshot(
@@ -174,7 +173,7 @@ export default async function analyzeBbSnapshot(
     const meta = createMeta(chk.pair, { type, count: indRes.data.normalized.length, mode, extra: { timeseries: timeseries ? { last_30_candles: timeseries } : undefined, metadata: { calculation_params: { period: 20, std_dev_multiplier: 2 }, data_quality: 'complete', last_updated: new Date().toISOString() } } });
     return AnalyzeBbSnapshotOutputSchema.parse(ok(summaryBase, data as any, meta as any)) as any;
   } catch (e: unknown) {
-    return AnalyzeBbSnapshotOutputSchema.parse(fail(getErrorMessage(e) || 'internal error', 'internal')) as any;
+    return failFromError(e, { schema: AnalyzeBbSnapshotOutputSchema }) as any;
   }
 }
 

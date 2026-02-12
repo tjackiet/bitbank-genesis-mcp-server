@@ -1,8 +1,7 @@
 import getCandles from './get_candles.js';
-import { ok, fail } from '../lib/result.js';
+import { ok, fail, failFromError } from '../lib/result.js';
 import { createMeta, ensurePair } from '../lib/validate.js';
 import { formatSummary } from '../lib/formatter.js';
-import { getErrorMessage } from '../lib/error.js';
 import { dayjs } from '../lib/datetime.js';
 import { AnalyzeSupportResistanceOutputSchema } from '../src/schemas.js';
 
@@ -768,9 +767,7 @@ export default async function analyzeSupportResistance(
     }) as any;
 
   } catch (err: unknown) {
-    return AnalyzeSupportResistanceOutputSchema.parse(
-      fail(getErrorMessage(err) || 'Analysis error', 'internal')
-    ) as any;
+    return failFromError(err, { schema: AnalyzeSupportResistanceOutputSchema, defaultMessage: 'Analysis error' }) as any;
   }
 }
 

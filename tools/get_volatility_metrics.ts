@@ -1,8 +1,7 @@
 import getCandles from './get_candles.js';
-import { ok, fail } from '../lib/result.js';
+import { ok, fail, failFromError } from '../lib/result.js';
 import { ensurePair, validateLimit, createMeta } from '../lib/validate.js';
 import { formatSummary } from '../lib/formatter.js';
-import { getErrorMessage } from '../lib/error.js';
 import { stddev } from '../lib/math.js';
 import { GetVolMetricsOutputSchema } from '../src/schemas.js';
 
@@ -234,7 +233,7 @@ export default async function getVolatilityMetrics(
     const meta = createMeta(chk.pair, { type, count: candles.length });
     return GetVolMetricsOutputSchema.parse(ok(summary, data as any, meta as any)) as any;
   } catch (e: unknown) {
-    return GetVolMetricsOutputSchema.parse(fail(getErrorMessage(e) || 'internal error', 'internal')) as any;
+    return failFromError(e, { schema: GetVolMetricsOutputSchema }) as any;
   }
 }
 

@@ -6,8 +6,7 @@
  * 5日間のローソク足を並べて表示する構成です。
  */
 
-import { ok, fail } from '../lib/result.js';
-import { getErrorMessage } from '../lib/error.js';
+import { ok, fail, failFromError } from '../lib/result.js';
 import {
   RenderCandlePatternDiagramInputSchema,
   RenderCandlePatternDiagramOutputSchema,
@@ -291,9 +290,7 @@ export default async function renderCandlePatternDiagram(
 
     return RenderCandlePatternDiagramOutputSchema.parse(result);
   } catch (e: unknown) {
-    return RenderCandlePatternDiagramOutputSchema.parse(
-      fail(getErrorMessage(e) || 'Unknown error', 'internal')
-    );
+    return failFromError(e, { schema: RenderCandlePatternDiagramOutputSchema, defaultMessage: 'Unknown error' });
   }
 }
 

@@ -12,11 +12,10 @@
  */
 
 import { ensurePair, validateLimit, createMeta } from '../lib/validate.js';
-import { ok, fail } from '../lib/result.js';
+import { ok, fail, failFromError } from '../lib/result.js';
 import { formatSummary, formatTimestampJST } from '../lib/formatter.js';
 import { toIsoTime } from '../lib/datetime.js';
 import { fetchJson, BITBANK_API_BASE } from '../lib/http.js';
-import { getErrorMessage, isAbortError } from '../lib/error.js';
 import type { OrderbookLevelWithCum } from '../src/types/domain.d.ts';
 
 export type OrderbookMode = 'summary' | 'pressure' | 'statistics' | 'raw';
@@ -405,8 +404,6 @@ export default async function getOrderbook(params: GetOrderbookParams | string =
     const meta = createMeta(chk.pair, { mode, topN });
     return ok(result.text, result.data as any, meta as any);
   } catch (err: unknown) {
-    const isAbort = isAbortError(err);
-    const message = isAbort ? `タイムアウト (${timeoutMs}ms)` : getErrorMessage(err) || 'ネットワークエラー';
-    return fail(message, isAbort ? 'timeout' : 'network');
+    return failFromError(err, { timeoutMs, defaultType: 'network', defaultMessage: 'ネットワークエラー' });
   }
 }
