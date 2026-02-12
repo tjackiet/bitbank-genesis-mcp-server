@@ -1,8 +1,7 @@
 import analyzeIndicators from './analyze_indicators.js';
-import { ok, fail } from '../lib/result.js';
+import { ok, fail, failFromError } from '../lib/result.js';
 import { createMeta, ensurePair } from '../lib/validate.js';
 import { formatSummary } from '../lib/formatter.js';
-import { getErrorMessage } from '../lib/error.js';
 import { avg } from '../lib/math.js';
 import { AnalyzeIchimokuSnapshotOutputSchema } from '../src/schemas.js';
 
@@ -322,7 +321,7 @@ export default async function analyzeIchimokuSnapshot(
     const text = lines.join('\n');
     return AnalyzeIchimokuSnapshotOutputSchema.parse(ok(text, data as any, meta as any)) as any;
   } catch (e: unknown) {
-    return AnalyzeIchimokuSnapshotOutputSchema.parse(fail(getErrorMessage(e) || 'internal error', 'internal')) as any;
+    return failFromError(e, { schema: AnalyzeIchimokuSnapshotOutputSchema }) as any;
   }
 }
 

@@ -17,7 +17,7 @@
  */
 
 import getCandles from './get_candles.js';
-import { ok, fail } from '../lib/result.js';
+import { ok, fail, failFromError } from '../lib/result.js';
 import { createMeta } from '../lib/validate.js';
 import {
   AnalyzeCandlePatternsInputSchema,
@@ -1003,10 +1003,7 @@ export default async function analyzeCandlePatterns(
 
     return AnalyzeCandlePatternsOutputSchema.parse(result);
   } catch (e: unknown) {
-    const message = e instanceof Error ? e.message : String(e);
-    return AnalyzeCandlePatternsOutputSchema.parse(
-      fail(message || 'Unknown error', 'internal')
-    );
+    return failFromError(e, { schema: AnalyzeCandlePatternsOutputSchema, defaultMessage: 'Unknown error' });
   }
 }
 

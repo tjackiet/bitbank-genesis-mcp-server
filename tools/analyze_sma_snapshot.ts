@@ -1,8 +1,7 @@
 import analyzeIndicators from './analyze_indicators.js';
-import { ok, fail } from '../lib/result.js';
+import { ok, fail, failFromError } from '../lib/result.js';
 import { createMeta, ensurePair } from '../lib/validate.js';
 import { formatSummary } from '../lib/formatter.js';
-import { getErrorMessage } from '../lib/error.js';
 import { AnalyzeSmaSnapshotOutputSchema } from '../src/schemas.js';
 
 export default async function analyzeSmaSnapshot(
@@ -182,7 +181,7 @@ export default async function analyzeSmaSnapshot(
     const meta = createMeta(chk.pair, { type, count: indRes.data.normalized.length, periods });
     return AnalyzeSmaSnapshotOutputSchema.parse(ok(summaryText, data as any, meta as any)) as any;
   } catch (e: unknown) {
-    return AnalyzeSmaSnapshotOutputSchema.parse(fail(getErrorMessage(e) || 'internal error', 'internal')) as any;
+    return failFromError(e, { schema: AnalyzeSmaSnapshotOutputSchema }) as any;
   }
 }
 

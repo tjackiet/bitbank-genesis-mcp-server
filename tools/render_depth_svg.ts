@@ -2,9 +2,8 @@
 import fs from 'fs/promises';
 import path from 'path';
 import getDepth from './get_depth.js';
-import { ok, fail } from '../lib/result.js';
+import { ok, fail, failFromError } from '../lib/result.js';
 import { formatPair } from '../lib/formatter.js';
-import { getErrorMessage } from '../lib/error.js';
 import type { Result, Pair } from '../src/types/domain.d.ts';
 
 type RenderData = { svg?: string; filePath?: string; summary?: Record<string, any> };
@@ -187,7 +186,7 @@ export default async function renderDepthSvg(args: {
     // inline
     return ok<RenderData, RenderMeta>(`${formatPair(pair)} depth chart rendered`, { svg: finalSvg, filePath: undefined, summary }, meta);
   } catch (e: unknown) {
-    return fail(getErrorMessage(e) || 'failed to render depth', 'internal');
+    return failFromError(e, { defaultMessage: 'failed to render depth' }) as any;
   }
 }
 
