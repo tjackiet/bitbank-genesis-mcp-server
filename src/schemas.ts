@@ -14,6 +14,30 @@ export const CandleTypeEnum = z.enum([
   '1month',
 ]);
 
+// ── Shared base schemas ──
+
+/** pair + fetchedAt: 全 Meta スキーマの共通ベース */
+export const BaseMetaSchema = z.object({ pair: z.string(), fetchedAt: z.string() });
+
+/** pair デフォルト入力: z.string().optional().default('btc_jpy') */
+export const BasePairInputSchema = z.object({ pair: z.string().optional().default('btc_jpy') });
+
+/** 全ツール共通のエラー分岐 */
+export const FailResultSchema = z.object({
+  ok: z.literal(false),
+  summary: z.string(),
+  data: z.object({}).passthrough(),
+  meta: z.object({ errorType: z.string() }).passthrough(),
+});
+
+/** ok/fail Result union を生成するヘルパー */
+export function toolResultSchema<D extends z.ZodTypeAny, M extends z.ZodTypeAny>(data: D, meta: M) {
+  return z.union([
+    z.object({ ok: z.literal(true), summary: z.string(), data, meta }),
+    FailResultSchema,
+  ]);
+}
+
 export const RenderChartSvgInputSchema = z
   .object({
     pair: z.string().optional().default('btc_jpy'),
@@ -300,9 +324,7 @@ export const GetIndicatorsDataSchema = z.object({
   }),
 });
 
-export const GetIndicatorsMetaSchema = z.object({
-  pair: z.string(),
-  fetchedAt: z.string(),
+export const GetIndicatorsMetaSchema = BaseMetaSchema.extend({
   type: CandleTypeEnum.or(z.string()),
   count: z.number(),
   requiredCount: z.number(),
@@ -325,11 +347,8 @@ export const TickerNormalizedSchema = z.object({
 });
 
 export const GetTickerDataSchemaOut = z.object({ raw: z.unknown(), normalized: TickerNormalizedSchema });
-export const GetTickerMetaSchemaOut = z.object({ pair: z.string(), fetchedAt: z.string() });
-export const GetTickerOutputSchema = z.union([
-  z.object({ ok: z.literal(true), summary: z.string(), data: GetTickerDataSchemaOut, meta: GetTickerMetaSchemaOut }),
-  z.object({ ok: z.literal(false), summary: z.string(), data: z.object({}).passthrough(), meta: z.object({ errorType: z.string() }).passthrough() }),
-]);
+export const GetTickerMetaSchemaOut = BaseMetaSchema;
+export const GetTickerOutputSchema = toolResultSchema(GetTickerDataSchemaOut, GetTickerMetaSchemaOut);
 
 // Orderbook
 export const OrderbookLevelSchema = z.object({ price: z.number(), size: z.number() });
@@ -346,11 +365,8 @@ export const OrderbookNormalizedSchema = z.object({
   isoTime: z.string().nullable(),
 });
 export const GetOrderbookDataSchemaOut = z.object({ raw: z.unknown(), normalized: OrderbookNormalizedSchema });
-export const GetOrderbookMetaSchemaOut = z.object({ pair: z.string(), fetchedAt: z.string(), topN: z.number(), count: z.number() });
-export const GetOrderbookOutputSchema = z.union([
-  z.object({ ok: z.literal(true), summary: z.string(), data: GetOrderbookDataSchemaOut, meta: GetOrderbookMetaSchemaOut }),
-  z.object({ ok: z.literal(false), summary: z.string(), data: z.object({}).passthrough(), meta: z.object({ errorType: z.string() }).passthrough() }),
-]);
+export const GetOrderbookMetaSchemaOut = BaseMetaSchema.extend({ topN: z.number(), count: z.number() });
+export const GetOrderbookOutputSchema = toolResultSchema(GetOrderbookDataSchemaOut, GetOrderbookMetaSchemaOut);
 
 // Candles
 export const KeyPointSchema = z.object({
@@ -381,17 +397,11 @@ export const GetCandlesDataSchemaOut = z.object({
   keyPoints: KeyPointsSchema.optional(),
   volumeStats: VolumeStatsSchema.nullable().optional(),
 });
-export const GetCandlesMetaSchemaOut = z.object({ pair: z.string(), fetchedAt: z.string(), type: CandleTypeEnum.or(z.string()), count: z.number() });
-export const GetCandlesOutputSchema = z.union([
-  z.object({ ok: z.literal(true), summary: z.string(), data: GetCandlesDataSchemaOut, meta: GetCandlesMetaSchemaOut }),
-  z.object({ ok: z.literal(false), summary: z.string(), data: z.object({}).passthrough(), meta: z.object({ errorType: z.string() }).passthrough() }),
-]);
+export const GetCandlesMetaSchemaOut = BaseMetaSchema.extend({ type: CandleTypeEnum.or(z.string()), count: z.number() });
+export const GetCandlesOutputSchema = toolResultSchema(GetCandlesDataSchemaOut, GetCandlesMetaSchemaOut);
 
 // Indicators
-export const GetIndicatorsOutputSchema = z.union([
-  z.object({ ok: z.literal(true), summary: z.string(), data: GetIndicatorsDataSchema, meta: GetIndicatorsMetaSchema }),
-  z.object({ ok: z.literal(false), summary: z.string(), data: z.object({}).passthrough(), meta: z.object({ errorType: z.string() }).passthrough() }),
-]);
+export const GetIndicatorsOutputSchema = toolResultSchema(GetIndicatorsDataSchema, GetIndicatorsMetaSchema);
 
 // Depth (raw depth for analysis/visualization)
 export const DepthLevelTupleSchema = z.tuple([z.string(), z.string()]);
@@ -412,11 +422,8 @@ export const GetDepthDataSchemaOut = z.object({
     })
     .optional(),
 });
-export const GetDepthMetaSchemaOut = z.object({ pair: z.string(), fetchedAt: z.string() });
-export const GetDepthOutputSchema = z.union([
-  z.object({ ok: z.literal(true), summary: z.string(), data: GetDepthDataSchemaOut, meta: GetDepthMetaSchemaOut }),
-  z.object({ ok: z.literal(false), summary: z.string(), data: z.object({}).passthrough(), meta: z.object({ errorType: z.string() }).passthrough() }),
-]);
+export const GetDepthMetaSchemaOut = BaseMetaSchema;
+export const GetDepthOutputSchema = toolResultSchema(GetDepthDataSchemaOut, GetDepthMetaSchemaOut);
 
 // Depth Diff / Orderbook Pressure schemas removed — consolidated into get_orderbook (mode=raw/pressure/statistics)
 
@@ -430,11 +437,8 @@ export const TransactionItemSchema = z.object({
 });
 
 export const GetTransactionsDataSchemaOut = z.object({ raw: z.unknown(), normalized: z.array(TransactionItemSchema) });
-export const GetTransactionsMetaSchemaOut = z.object({ pair: z.string(), fetchedAt: z.string(), count: z.number().int(), source: z.enum(['latest', 'by_date']) });
-export const GetTransactionsOutputSchema = z.union([
-  z.object({ ok: z.literal(true), summary: z.string(), data: GetTransactionsDataSchemaOut, meta: GetTransactionsMetaSchemaOut }),
-  z.object({ ok: z.literal(false), summary: z.string(), data: z.object({}).passthrough(), meta: z.object({ errorType: z.string() }).passthrough() }),
-]);
+export const GetTransactionsMetaSchemaOut = BaseMetaSchema.extend({ count: z.number().int(), source: z.enum(['latest', 'by_date']) });
+export const GetTransactionsOutputSchema = toolResultSchema(GetTransactionsDataSchemaOut, GetTransactionsMetaSchemaOut);
 
 // === Flow Metrics (derived from recent transactions) ===
 export const FlowBucketSchema = z.object({
@@ -466,9 +470,7 @@ export const GetFlowMetricsDataSchemaOut = z.object({
   series: z.object({ buckets: z.array(FlowBucketSchema) }),
 });
 
-export const GetFlowMetricsMetaSchemaOut = z.object({
-  pair: z.string(),
-  fetchedAt: z.string(),
+export const GetFlowMetricsMetaSchemaOut = BaseMetaSchema.extend({
   count: z.number().int(),
   bucketMs: z.number().int(),
   timezone: z.string().optional(),
@@ -476,17 +478,11 @@ export const GetFlowMetricsMetaSchemaOut = z.object({
   serverTime: z.string().optional(),
 });
 
-export const GetFlowMetricsOutputSchema = z.union([
-  z.object({ ok: z.literal(true), summary: z.string(), data: GetFlowMetricsDataSchemaOut, meta: GetFlowMetricsMetaSchemaOut }),
-  z.object({ ok: z.literal(false), summary: z.string(), data: z.object({}).passthrough(), meta: z.object({ errorType: z.string() }).passthrough() }),
-]);
+export const GetFlowMetricsOutputSchema = toolResultSchema(GetFlowMetricsDataSchemaOut, GetFlowMetricsMetaSchemaOut);
 
-export const GetTickerInputSchema = z.object({
-  pair: z.string().optional().default('btc_jpy'),
-});
+export const GetTickerInputSchema = BasePairInputSchema;
 
-export const GetOrderbookInputSchema = z.object({
-  pair: z.string().optional().default('btc_jpy'),
+export const GetOrderbookInputSchema = BasePairInputSchema.extend({
   mode: z.enum(['summary', 'pressure', 'statistics', 'raw']).optional().default('summary'),
   /** summary mode: 上位N層 (1-200) */
   topN: z.number().int().min(1).max(200).optional().default(10),
@@ -498,8 +494,7 @@ export const GetOrderbookInputSchema = z.object({
   priceZones: z.number().int().min(2).max(50).optional().default(10),
 });
 
-export const GetTransactionsInputSchema = z.object({
-  pair: z.string().optional().default('btc_jpy'),
+export const GetTransactionsInputSchema = BasePairInputSchema.extend({
   limit: z.number().int().min(1).max(1000).optional().default(100),
   date: z.string().regex(/^\d{8}$/).optional().describe('YYYYMMDD; omit for latest'),
   minAmount: z.number().positive().optional(),
@@ -509,8 +504,7 @@ export const GetTransactionsInputSchema = z.object({
   view: z.enum(['summary', 'items']).optional().default('summary'),
 });
 
-export const GetFlowMetricsInputSchema = z.object({
-  pair: z.string().optional().default('btc_jpy'),
+export const GetFlowMetricsInputSchema = BasePairInputSchema.extend({
   limit: z.number().int().min(1).max(2000).optional().default(100),
   date: z.string().regex(/^\d{8}$/).optional().describe('YYYYMMDD; omit for latest'),
   bucketMs: z.number().int().min(1000).max(3600_000).optional().default(60_000),
@@ -536,7 +530,7 @@ export const TickerJpyItemSchema = z.object({
 });
 export const GetTickersJpyOutputSchema = z.union([
   z.object({ ok: z.literal(true), summary: z.string(), data: z.array(TickerJpyItemSchema), meta: z.object({ cache: z.object({ hit: z.boolean(), key: z.string() }).optional(), ts: z.string() }).passthrough() }),
-  z.object({ ok: z.literal(false), summary: z.string(), data: z.object({}).passthrough(), meta: z.object({ errorType: z.string() }).passthrough() }),
+  FailResultSchema,
 ]);
 
 export const GetCandlesInputSchema = z.object({
@@ -550,8 +544,7 @@ export const GetCandlesInputSchema = z.object({
   view: z.enum(['full', 'items']).optional().default('full'),
 });
 
-export const GetIndicatorsInputSchema = z.object({
-  pair: z.string().optional().default('btc_jpy'),
+export const GetIndicatorsInputSchema = BasePairInputSchema.extend({
   type: CandleTypeEnum.optional().default('1day'),
   limit: z.number().int().min(1).max(1000).optional(),
 });
@@ -577,8 +570,7 @@ export const PatternTypeEnum = z.enum([
   'flag',
 ]);
 
-export const DetectPatternsInputSchema = z.object({
-  pair: z.string().optional().default('btc_jpy'),
+export const DetectPatternsInputSchema = BasePairInputSchema.extend({
   type: CandleTypeEnum.optional().default('1day'),
   limit: z.number().int().min(20).max(365).optional().default(90),
   patterns: z.array(PatternTypeEnum).optional().describe(
@@ -696,7 +688,7 @@ export const DetectPatternsOutputSchema = z.union([
         .optional(),
     }),
   }),
-  z.object({ ok: z.literal(false), summary: z.string(), data: z.object({}).passthrough(), meta: z.object({ errorType: z.string() }).passthrough() }),
+  FailResultSchema,
 ]);
 
 // === Volatility Metrics ===
@@ -753,17 +745,12 @@ export const GetVolMetricsDataSchemaOut = z.object({
   tags: z.array(z.string()),
 });
 
-export const GetVolMetricsMetaSchemaOut = z.object({
-  pair: z.string(),
-  fetchedAt: z.string(),
+export const GetVolMetricsMetaSchemaOut = BaseMetaSchema.extend({
   type: CandleTypeEnum.or(z.string()),
   count: z.number().int(),
 });
 
-export const GetVolMetricsOutputSchema = z.union([
-  z.object({ ok: z.literal(true), summary: z.string(), data: GetVolMetricsDataSchemaOut, meta: GetVolMetricsMetaSchemaOut }),
-  z.object({ ok: z.literal(false), summary: z.string(), data: z.object({}).passthrough(), meta: z.object({ errorType: z.string() }).passthrough() }),
-]);
+export const GetVolMetricsOutputSchema = toolResultSchema(GetVolMetricsDataSchemaOut, GetVolMetricsMetaSchemaOut);
 
 // === Market Summary (tickers + volatility snapshot) ===
 export const MarketSummaryItemSchema = z.object({
@@ -864,16 +851,12 @@ export const AnalyzeMarketSignalDataSchemaOut = z.object({
     indicators: z.object({ latest: z.unknown(), trend: TrendLabelEnum }),
   }),
 });
-export const AnalyzeMarketSignalMetaSchemaOut = z.object({ pair: z.string(), fetchedAt: z.string(), type: CandleTypeEnum.or(z.string()), windows: z.array(z.number()), bucketMs: z.number().int(), flowLimit: z.number().int() });
-export const AnalyzeMarketSignalOutputSchema = z.union([
-  z.object({ ok: z.literal(true), summary: z.string(), data: AnalyzeMarketSignalDataSchemaOut, meta: AnalyzeMarketSignalMetaSchemaOut }),
-  z.object({ ok: z.literal(false), summary: z.string(), data: z.object({}).passthrough(), meta: z.object({ errorType: z.string() }).passthrough() }),
-]);
-export const AnalyzeMarketSignalInputSchema = z.object({ pair: z.string().optional().default('btc_jpy'), type: CandleTypeEnum.optional().default('1day'), flowLimit: z.number().int().optional().default(300), bucketMs: z.number().int().optional().default(60_000), windows: z.array(z.number().int()).optional().default([14, 20, 30]) });
+export const AnalyzeMarketSignalMetaSchemaOut = BaseMetaSchema.extend({ type: CandleTypeEnum.or(z.string()), windows: z.array(z.number()), bucketMs: z.number().int(), flowLimit: z.number().int() });
+export const AnalyzeMarketSignalOutputSchema = toolResultSchema(AnalyzeMarketSignalDataSchemaOut, AnalyzeMarketSignalMetaSchemaOut);
+export const AnalyzeMarketSignalInputSchema = BasePairInputSchema.extend({ type: CandleTypeEnum.optional().default('1day'), flowLimit: z.number().int().optional().default(300), bucketMs: z.number().int().optional().default(60_000), windows: z.array(z.number().int()).optional().default([14, 20, 30]) });
 
 // === Ichimoku numeric snapshot (no visual assumptions) ===
-export const AnalyzeIchimokuSnapshotInputSchema = z.object({
-  pair: z.string().optional().default('btc_jpy'),
+export const AnalyzeIchimokuSnapshotInputSchema = BasePairInputSchema.extend({
   type: CandleTypeEnum.optional().default('1day'),
   limit: z.number().int().min(60).max(365).optional().default(120),
   lookback: z.number().int().min(2).max(120).optional().default(10),
@@ -940,21 +923,15 @@ export const AnalyzeIchimokuSnapshotDataSchemaOut = z.object({
   tags: z.array(z.string()),
 });
 
-export const AnalyzeIchimokuSnapshotMetaSchemaOut = z.object({
-  pair: z.string(),
-  fetchedAt: z.string(),
+export const AnalyzeIchimokuSnapshotMetaSchemaOut = BaseMetaSchema.extend({
   type: CandleTypeEnum.or(z.string()),
   count: z.number().int(),
 });
 
-export const AnalyzeIchimokuSnapshotOutputSchema = z.union([
-  z.object({ ok: z.literal(true), summary: z.string(), data: AnalyzeIchimokuSnapshotDataSchemaOut, meta: AnalyzeIchimokuSnapshotMetaSchemaOut }),
-  z.object({ ok: z.literal(false), summary: z.string(), data: z.object({}).passthrough(), meta: z.object({ errorType: z.string() }).passthrough() }),
-]);
+export const AnalyzeIchimokuSnapshotOutputSchema = toolResultSchema(AnalyzeIchimokuSnapshotDataSchemaOut, AnalyzeIchimokuSnapshotMetaSchemaOut);
 
 // === BB snapshot ===
-export const AnalyzeBbSnapshotInputSchema = z.object({
-  pair: z.string().optional().default('btc_jpy'),
+export const AnalyzeBbSnapshotInputSchema = BasePairInputSchema.extend({
   type: CandleTypeEnum.optional().default('1day'),
   limit: z.number().int().min(40).max(365).optional().default(120),
   mode: z.enum(['default', 'extended']).optional().default('default')
@@ -1002,9 +979,7 @@ export const AnalyzeBbSnapshotDataSchemaOut = z.union([
   AnalyzeBbSnapshotDataSchemaStructured,
 ]);
 
-export const AnalyzeBbSnapshotMetaSchemaOut = z.object({
-  pair: z.string(),
-  fetchedAt: z.string(),
+export const AnalyzeBbSnapshotMetaSchemaOut = BaseMetaSchema.extend({
   type: CandleTypeEnum.or(z.string()),
   count: z.number().int(),
   mode: z.enum(['default', 'extended']),
@@ -1012,14 +987,10 @@ export const AnalyzeBbSnapshotMetaSchemaOut = z.object({
   extra: z.object({}).passthrough().optional(),
 });
 
-export const AnalyzeBbSnapshotOutputSchema = z.union([
-  z.object({ ok: z.literal(true), summary: z.string(), data: AnalyzeBbSnapshotDataSchemaOut, meta: AnalyzeBbSnapshotMetaSchemaOut }),
-  z.object({ ok: z.literal(false), summary: z.string(), data: z.object({}).passthrough(), meta: z.object({ errorType: z.string() }).passthrough() }),
-]);
+export const AnalyzeBbSnapshotOutputSchema = toolResultSchema(AnalyzeBbSnapshotDataSchemaOut, AnalyzeBbSnapshotMetaSchemaOut);
 
 // === SMA snapshot ===
-export const AnalyzeSmaSnapshotInputSchema = z.object({
-  pair: z.string().optional().default('btc_jpy'),
+export const AnalyzeSmaSnapshotInputSchema = BasePairInputSchema.extend({
   type: CandleTypeEnum.optional().default('1day'),
   limit: z.number().int().min(200).max(365).optional().default(220),
   periods: z.array(z.number().int()).optional().default([25, 75, 200])
@@ -1055,16 +1026,12 @@ export const AnalyzeSmaSnapshotDataSchemaOut = z.object({
   })).optional(),
 }).passthrough();
 
-export const AnalyzeSmaSnapshotMetaSchemaOut = z.object({ pair: z.string(), fetchedAt: z.string(), type: CandleTypeEnum.or(z.string()), count: z.number().int(), periods: z.array(z.number().int()) });
+export const AnalyzeSmaSnapshotMetaSchemaOut = BaseMetaSchema.extend({ type: CandleTypeEnum.or(z.string()), count: z.number().int(), periods: z.array(z.number().int()) });
 
-export const AnalyzeSmaSnapshotOutputSchema = z.union([
-  z.object({ ok: z.literal(true), summary: z.string(), data: AnalyzeSmaSnapshotDataSchemaOut, meta: AnalyzeSmaSnapshotMetaSchemaOut }),
-  z.object({ ok: z.literal(false), summary: z.string(), data: z.object({}).passthrough(), meta: z.object({ errorType: z.string() }).passthrough() }),
-]);
+export const AnalyzeSmaSnapshotOutputSchema = toolResultSchema(AnalyzeSmaSnapshotDataSchemaOut, AnalyzeSmaSnapshotMetaSchemaOut);
 
 // === Support Resistance Analysis ===
-export const AnalyzeSupportResistanceInputSchema = z.object({
-  pair: z.string().optional().default('btc_jpy'),
+export const AnalyzeSupportResistanceInputSchema = BasePairInputSchema.extend({
   lookbackDays: z.number().int().min(30).max(200).optional().default(90),
   topN: z.number().int().min(1).max(5).optional().default(3),
   tolerance: z.number().min(0.001).max(0.05).optional().default(0.015),
@@ -1104,9 +1071,7 @@ export const AnalyzeSupportResistanceDataSchemaOut = z.object({
   }),
 }).passthrough();
 
-export const AnalyzeSupportResistanceMetaSchemaOut = z.object({
-  pair: z.string(),
-  fetchedAt: z.string(),
+export const AnalyzeSupportResistanceMetaSchemaOut = BaseMetaSchema.extend({
   lookbackDays: z.number().int(),
   topN: z.number().int(),
   supportCount: z.number().int(),
@@ -1115,7 +1080,7 @@ export const AnalyzeSupportResistanceMetaSchemaOut = z.object({
 
 export const AnalyzeSupportResistanceOutputSchema = z.union([
   z.object({ ok: z.literal(true), summary: z.string(), content: z.array(z.object({ type: z.literal('text'), text: z.string() })).optional(), data: AnalyzeSupportResistanceDataSchemaOut, meta: AnalyzeSupportResistanceMetaSchemaOut }),
-  z.object({ ok: z.literal(false), summary: z.string(), data: z.object({}).passthrough(), meta: z.object({ errorType: z.string() }).passthrough() }),
+  FailResultSchema,
 ]);
 
 // === Candle Patterns (2-bar patterns: engulfing, harami, etc.) ===
@@ -1200,9 +1165,7 @@ export const AnalyzeCandlePatternsDataSchemaOut = z.object({
   summary: z.string(),
 });
 
-export const AnalyzeCandlePatternsMetaSchemaOut = z.object({
-  pair: z.string(),
-  fetchedAt: z.string(),
+export const AnalyzeCandlePatternsMetaSchemaOut = BaseMetaSchema.extend({
   timeframe: z.string(),
   as_of: z.string().nullable().describe('Original input value (ISO or YYYYMMDD)'),
   date: z.string().nullable().describe('YYYYMMDD normalized, null for latest'),
@@ -1220,12 +1183,7 @@ export const AnalyzeCandlePatternsOutputSchema = z.union([
     data: AnalyzeCandlePatternsDataSchemaOut,
     meta: AnalyzeCandlePatternsMetaSchemaOut,
   }),
-  z.object({
-    ok: z.literal(false),
-    summary: z.string(),
-    data: z.object({}).passthrough(),
-    meta: z.object({ errorType: z.string() }).passthrough(),
-  }),
+  FailResultSchema,
 ]);
 
 // === Candle Pattern Diagram (2-bar pattern visualization) ===
@@ -1268,20 +1226,7 @@ export const RenderCandlePatternDiagramMetaSchemaOut = z.object({
   patternName: z.string().nullable(),
 });
 
-export const RenderCandlePatternDiagramOutputSchema = z.union([
-  z.object({
-    ok: z.literal(true),
-    summary: z.string(),
-    data: RenderCandlePatternDiagramDataSchemaOut,
-    meta: RenderCandlePatternDiagramMetaSchemaOut,
-  }),
-  z.object({
-    ok: z.literal(false),
-    summary: z.string(),
-    data: z.object({}).passthrough(),
-    meta: z.object({ errorType: z.string() }).passthrough(),
-  }),
-]);
+export const RenderCandlePatternDiagramOutputSchema = toolResultSchema(RenderCandlePatternDiagramDataSchemaOut, RenderCandlePatternDiagramMetaSchemaOut);
 
 // === Trading Process: Backtest Schemas ===
 
