@@ -2,6 +2,8 @@
  * 板データ（depth）の分析ユーティリティ
  */
 
+import { avg as mathAvg, stddev } from './math.js';
+
 export type DepthZone = { low: number; high: number; label: string; color?: string };
 
 /**
@@ -13,8 +15,8 @@ export function estimateZones(
 ): DepthZone[] {
   if (!levels.length) return [];
   const qtys = levels.map(([, s]) => s);
-  const avg = qtys.reduce((a, b) => a + b, 0) / qtys.length;
-  const stdev = Math.sqrt(qtys.reduce((a, b) => a + Math.pow(b - avg, 2), 0) / qtys.length) || 0;
+  const avg = mathAvg(qtys) ?? 0;
+  const stdev = stddev(qtys);
   const thr = avg + stdev * 2;
   const zones: DepthZone[] = [];
   for (const [p, s] of levels) {

@@ -4,6 +4,7 @@ import analyzeIndicators from './analyze_indicators.js';
 import { ensurePair, createMeta } from '../lib/validate.js';
 import { ok, fail, failFromError, failFromValidation } from '../lib/result.js';
 import { formatSummary } from '../lib/formatter.js';
+import { slidingMean } from '../lib/math.js';
 import { AnalyzeMarketSignalOutputSchema } from '../src/schemas.js';
 
 type AnalyzeOpts = {
@@ -96,23 +97,12 @@ export default async function analyzeMarketSignal(
       else smaPosition = 'mixed';
     }
     // Recent cross detection for 25/75 using normalized closes (fallback if indicator series not available)
-    function simpleSMA(values: number[], window: number): number[] {
-      const out: number[] = [];
-      if (!Number.isFinite(window) || window <= 1) return out;
-      let sum = 0;
-      for (let i = 0; i < values.length; i++) {
-        sum += values[i];
-        if (i >= window) sum -= values[i - window];
-        if (i >= window - 1) out.push(sum / window);
-      }
-      return out;
-    }
     let recentCross: { type: 'golden_cross' | 'death_cross'; pair: '25/75'; barsAgo: number } | null = null;
     try {
       const closes: number[] = Array.isArray((indRes?.data as any)?.normalized) ? ((indRes as any).data.normalized as any[]).map((c: any) => Number(c?.close)).filter((v) => Number.isFinite(v)) : [];
       if (closes.length >= 80) {
-        const sma25Series = simpleSMA(closes, 25);
-        const sma75Series = simpleSMA(closes, 75);
+        const sma25Series = slidingMean(closes, 25);
+        const sma75Series = slidingMean(closes, 75);
         const m = Math.min(sma25Series.length, sma75Series.length);
         const off = closes.length - m; // alignment offset to original closes indices
         for (let j = m - 1; j >= 1; j--) {

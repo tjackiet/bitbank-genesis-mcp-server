@@ -2,7 +2,7 @@ import getCandles from './get_candles.js';
 import { ok, fail, failFromError, failFromValidation } from '../lib/result.js';
 import { ensurePair, validateLimit, createMeta } from '../lib/validate.js';
 import { formatSummary } from '../lib/formatter.js';
-import { stddev } from '../lib/math.js';
+import { stddev, slidingStddev, slidingMean } from '../lib/math.js';
 import { GetVolMetricsOutputSchema } from '../src/schemas.js';
 
 type Candle = { open: number; high: number; low: number; close: number; isoTime?: string | null };
@@ -41,38 +41,6 @@ function safeLog(x: number): number {
 }
 
 
-function slidingStddev(values: number[], window: number): number[] {
-  const out: number[] = [];
-  if (window <= 1) return out;
-  let sum = 0;
-  let sumsq = 0;
-  for (let i = 0; i < values.length; i++) {
-    const v = values[i];
-    sum += v; sumsq += v * v;
-    if (i >= window) {
-      const old = values[i - window];
-      sum -= old; sumsq -= old * old;
-    }
-    if (i >= window - 1) {
-      const n = window;
-      const mean = sum / n;
-      const variance = Math.max(0, sumsq / n - mean * mean);
-      out.push(Math.sqrt(variance));
-    }
-  }
-  return out;
-}
-
-function slidingMean(values: number[], window: number): number[] {
-  const out: number[] = [];
-  let sum = 0;
-  for (let i = 0; i < values.length; i++) {
-    sum += values[i];
-    if (i >= window) sum -= values[i - window];
-    if (i >= window - 1) out.push(sum / window);
-  }
-  return out;
-}
 
 export default async function getVolatilityMetrics(
   pair: string,
