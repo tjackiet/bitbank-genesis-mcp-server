@@ -1,18 +1,11 @@
 import getFlowMetrics from './get_flow_metrics.js';
+import { runCli, parseArgs, intArg } from './lib/cli-utils.js';
 
-async function main() {
-  const [pairArg, limitArg, bucketArg, dateArg] = process.argv.slice(2);
-  const pair = (pairArg || 'btc_jpy') as string;
-  const limit = limitArg ? parseInt(limitArg, 10) : 100;
-  const bucketMs = bucketArg ? parseInt(bucketArg, 10) : 60_000;
-  const date = dateArg;
-
-  const res = await getFlowMetrics(pair, limit, date as any, bucketMs);
-  console.log(JSON.stringify(res, null, 2));
-  if (!res?.ok) process.exit(1);
-}
-
-main();
-
-
-
+runCli(() => {
+  const { positional } = parseArgs();
+  const pair = positional[0] || 'btc_jpy';
+  const limit = intArg(positional[1], 100);
+  const bucketMs = intArg(positional[2], 60_000);
+  const date = positional[3];
+  return getFlowMetrics(pair, limit, date, bucketMs);
+});

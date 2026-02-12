@@ -1,27 +1,27 @@
 #!/usr/bin/env tsx
 import renderChartSvg from './render_chart_svg.js';
-import type { RenderChartSvgOptions } from '../src/types/domain.d.ts';
+import { parseArgs, intArg } from './lib/cli-utils.js';
+import type { RenderChartSvgOptions, ChartStyle, BbMode, IchimokuMode, Pair } from '../src/types/domain.d.ts';
 
 async function main() {
-	const args = process.argv.slice(2);
-	const positionalArgs = args.filter((arg) => !arg.startsWith('--'));
-	const flagArgs = new Set(args.filter((arg) => arg.startsWith('--')));
+	const { positional, flags } = parseArgs();
 
-	const pair = positionalArgs[0] || 'btc_jpy';
-	const type = positionalArgs[1] || '1day';
-	const limit = positionalArgs[2] ? parseInt(positionalArgs[2], 10) : 60;
+	const pair = (positional[0] || 'btc_jpy') as Pair;
+	const type = positional[1] || '1day';
+	const limit = intArg(positional[2], 60);
 
-	const withIchimoku = flagArgs.has('--with-ichimoku');
-	const noSma = flagArgs.has('--no-sma');
-	const noBb = flagArgs.has('--no-bb');
-	const smaOnly = flagArgs.has('--sma-only');
-	const bbOnly = flagArgs.has('--bb-only');
-	const ichimokuOnly = flagArgs.has('--ichimoku-only');
-	const candlesOnly = flagArgs.has('--candles-only');
+	const withIchimoku = flags['with-ichimoku'] === true;
+	const noSma = flags['no-sma'] === true;
+	const noBb = flags['no-bb'] === true;
+	const smaOnly = flags['sma-only'] === true;
+	const bbOnly = flags['bb-only'] === true;
+	const ichimokuOnly = flags['ichimoku-only'] === true;
+	const candlesOnly = flags['candles-only'] === true;
 
-	const options: RenderChartSvgOptions = {
-		pair: pair as any,
-		type: type as any,
+	// forceLayers / depth は型定義外だが render_chart_svg が内部で参照する
+	const options: RenderChartSvgOptions & Record<string, unknown> = {
+		pair,
+		type,
 		limit,
 		// 既定はロウソクのみ（インジケータは明示されたときだけ）
 		withSMA: noSma ? [] : [],
@@ -30,54 +30,47 @@ async function main() {
 	};
 
 	// Heuristic override flags
-	if (flagArgs.has('--force-layers') || flagArgs.has('--no-auto-lighten')) {
-		(options as any).forceLayers = true;
+	if (flags['force-layers'] === true || flags['no-auto-lighten'] === true) {
+		options.forceLayers = true;
 	}
 
-	const modeFlag = args.find((a) => a.startsWith('--ichimoku-mode='));
-	if (modeFlag) {
-		const mode = modeFlag.split('=')[1];
-		(options as any).ichimoku = { mode };
+	if (typeof flags['ichimoku-mode'] === 'string') {
+		options.ichimoku = { mode: flags['ichimoku-mode'] as IchimokuMode };
 		options.withIchimoku = true;
 	}
 
 	// Style: --style=candles|line|depth
-	const styleFlag = args.find((a) => a.startsWith('--style='));
-	if (styleFlag) {
-		const style = styleFlag.split('=')[1];
+	if (typeof flags.style === 'string') {
+		const style = flags.style;
 		if (style === 'candles' || style === 'line' || style === 'depth') {
-			(options as any).style = style as any;
+			options.style = style as ChartStyle;
 		}
 	}
 
 	// Depth options: --depth-levels=200
-	const depthLevelsFlag = args.find((a) => a.startsWith('--depth-levels='));
-	if (depthLevelsFlag) {
-		const levels = parseInt(depthLevelsFlag.split('=')[1] || '200', 10);
-		(options as any).depth = { levels } as any;
-	}
-
-	// BollingerBands モード: --bb-mode=default|extended（後方互換で light/full も受け付け）
-	const bbModeFlag = args.find((a) => a.startsWith('--bb-mode='));
-	if (bbModeFlag) {
-		const bbMode = bbModeFlag.split('=')[1];
-		const normalized = bbMode === 'light' ? 'default' : bbMode === 'full' ? 'extended' : bbMode;
-		if (normalized === 'default' || normalized === 'extended') {
-			(options as any).bbMode = normalized as any;
+	if (typeof flags['depth-levels'] === 'string') {
+		const levels = parseInt(flags['depth-levels'], 10);
+		if (Number.isFinite(levels)) {
+			options.depth = { levels };
 		}
 	}
 
-	const smaFlag = args.find((a) => a.startsWith('--sma='));
-	if (smaFlag) {
-		const list = smaFlag.split('=')[1];
-		if (list && list.length > 0) {
-			const periods = list
-				.split(',')
-				.map((v) => parseInt(v.trim(), 10))
-				.filter((n) => Number.isFinite(n) && n > 0);
-			if (periods.length > 0) {
-				options.withSMA = periods;
-			}
+	// BollingerBands モード: --bb-mode=default|extended（後方互換で light/full も受け付け）
+	if (typeof flags['bb-mode'] === 'string') {
+		const bbMode = flags['bb-mode'];
+		const normalized = bbMode === 'light' ? 'default' : bbMode === 'full' ? 'extended' : bbMode;
+		if (normalized === 'default' || normalized === 'extended') {
+			options.bbMode = normalized as BbMode;
+		}
+	}
+
+	if (typeof flags.sma === 'string' && flags.sma.length > 0) {
+		const periods = flags.sma
+			.split(',')
+			.map((v) => parseInt(v.trim(), 10))
+			.filter((n) => Number.isFinite(n) && n > 0);
+		if (periods.length > 0) {
+			options.withSMA = periods;
 		}
 	}
 
@@ -95,7 +88,7 @@ async function main() {
 		options.withIchimoku = true;
 		options.withBB = false;
 		options.withSMA = [];
-		if (!(options as any).ichimoku) (options as any).ichimoku = { mode: 'default' };
+		if (!options.ichimoku) options.ichimoku = { mode: 'default' };
 	}
 	if (candlesOnly) {
 		options.withBB = false;
@@ -104,8 +97,8 @@ async function main() {
 	}
 
 	// --- 自動判定 ---
-	const hasSmaFlag = Boolean(smaFlag);
-	const hasBbMode = Boolean(bbModeFlag);
+	const hasSmaFlag = typeof flags.sma === 'string';
+	const hasBbMode = typeof flags['bb-mode'] === 'string';
 	if (options.withIchimoku) {
 		options.withBB = false;
 		options.withSMA = [];
@@ -120,10 +113,11 @@ async function main() {
 
 	const result = await renderChartSvg(options);
 	if (result.ok) {
-		if ((result.data as any).filePath) {
-			console.error(`Chart saved to ${(result.data as any).filePath}`);
+		const data = result.data as Record<string, unknown>;
+		if (data.filePath) {
+			console.error(`Chart saved to ${data.filePath}`);
 		}
-		console.log((result.data as any).svg);
+		console.log(data.svg);
 	} else {
 		console.error('Failed to generate chart:', result.summary);
 		process.exit(1);

@@ -8,9 +8,11 @@
  */
 
 import analyzeCandlePatterns from './analyze_candle_patterns.js';
+import { parseArgs } from './lib/cli-utils.js';
 
 async function main() {
-  const dateArg = process.argv[2]; // YYYYMMDD, ISO, or undefined
+  const { positional } = parseArgs();
+  const dateArg = positional[0]; // YYYYMMDD, ISO, or undefined
 
   console.log('🕯️  Running analyze_candle_patterns...');
   if (dateArg) {
@@ -41,8 +43,9 @@ async function main() {
     console.log(JSON.stringify(result.meta, null, 2));
   } else {
     console.error('❌ Error:', result.summary);
+    process.exit(1);
   }
 }
 
-main().catch(console.error);
+main().catch((err) => { console.error(err); process.exit(1); });
 

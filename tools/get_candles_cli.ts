@@ -1,7 +1,9 @@
 import getCandles from './get_candles.js';
+import { runCli, parseArgs, intArg } from './lib/cli-utils.js';
 
-async function main() {
-  const [pair, type, date, limitStr] = process.argv.slice(2);
+runCli(() => {
+  const { positional } = parseArgs();
+  const [pair, type, date, limitStr] = positional;
 
   if (!pair || !type) {
     console.error('Usage: tsx tools/get_candles_cli.ts <pair> <type> [date:YYYY|YYYYMMDD] [limit]');
@@ -10,16 +12,6 @@ async function main() {
     process.exit(1);
   }
 
-  try {
-    const limit = limitStr ? parseInt(limitStr, 10) : undefined;
-    const result = await getCandles(pair, type as any, date as any, limit as any);
-    console.log(JSON.stringify(result, null, 2));
-  } catch (error) {
-    console.error('Error fetching candles:', error);
-    process.exit(1);
-  }
-}
-
-main();
-
-
+  const limit = intArg(limitStr, 200);
+  return getCandles(pair, type, date, limit);
+});
