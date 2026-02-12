@@ -1,5 +1,5 @@
 import getCandles from './get_candles.js';
-import { ok, fail, failFromError } from '../lib/result.js';
+import { ok, fail, failFromError, failFromValidation } from '../lib/result.js';
 import { createMeta, ensurePair } from '../lib/validate.js';
 import { formatSummary } from '../lib/formatter.js';
 import { dayjs } from '../lib/datetime.js';
@@ -385,11 +385,7 @@ export default async function analyzeSupportResistance(
   { lookbackDays = 90, topN = 3, tolerance = 0.015 }: AnalyzeSupportResistanceOptions = {}
 ) {
   const chk = ensurePair(pair);
-  if (!chk.ok) {
-    return AnalyzeSupportResistanceOutputSchema.parse(
-      fail(chk.error.message, chk.error.type)
-    ) as any;
-  }
+  if (!chk.ok) return failFromValidation(chk, AnalyzeSupportResistanceOutputSchema) as any;
 
   try {
     // ローソク足データ取得

@@ -1,5 +1,5 @@
 import getCandles from './get_candles.js';
-import { ok, fail, failFromError } from '../lib/result.js';
+import { ok, fail, failFromError, failFromValidation } from '../lib/result.js';
 import { ensurePair, validateLimit, createMeta } from '../lib/validate.js';
 import { formatSummary } from '../lib/formatter.js';
 import { stddev } from '../lib/math.js';
@@ -82,9 +82,9 @@ export default async function getVolatilityMetrics(
   opts?: { useLogReturns?: boolean; annualize?: boolean; tz?: string; cacheTtlMs?: number }
 ) {
   const chk = ensurePair(pair);
-  if (!chk.ok) return GetVolMetricsOutputSchema.parse(fail(chk.error.message, chk.error.type)) as any;
+  if (!chk.ok) return failFromValidation(chk, GetVolMetricsOutputSchema) as any;
   const lim = validateLimit(limit, 20, 500);
-  if (!lim.ok) return GetVolMetricsOutputSchema.parse(fail(lim.error.message, lim.error.type)) as any;
+  if (!lim.ok) return failFromValidation(lim, GetVolMetricsOutputSchema) as any;
 
   try {
     const cRes: any = await getCandles(chk.pair, type, undefined as any, lim.value);

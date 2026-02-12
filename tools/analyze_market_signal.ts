@@ -2,7 +2,7 @@ import getFlowMetrics from './get_flow_metrics.js';
 import getVolatilityMetrics from './get_volatility_metrics.js';
 import analyzeIndicators from './analyze_indicators.js';
 import { ensurePair, createMeta } from '../lib/validate.js';
-import { ok, fail, failFromError } from '../lib/result.js';
+import { ok, fail, failFromError, failFromValidation } from '../lib/result.js';
 import { formatSummary } from '../lib/formatter.js';
 import { AnalyzeMarketSignalOutputSchema } from '../src/schemas.js';
 
@@ -21,7 +21,7 @@ export default async function analyzeMarketSignal(
   opts: AnalyzeOpts = {}
 ) {
   const chk = ensurePair(pair);
-  if (!chk.ok) return AnalyzeMarketSignalOutputSchema.parse(fail(chk.error.message, chk.error.type)) as any;
+  if (!chk.ok) return failFromValidation(chk, AnalyzeMarketSignalOutputSchema) as any;
 
   const type = opts.type || '1day';
   const flowLimit = Math.max(50, Math.min(opts.flowLimit ?? 300, 2000));

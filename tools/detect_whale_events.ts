@@ -1,6 +1,6 @@
 import getDepth from './get_depth.js';
 import getCandles from './get_candles.js';
-import { ok, fail, failFromError } from '../lib/result.js';
+import { ok, fail, failFromError, failFromValidation } from '../lib/result.js';
 import { ensurePair, createMeta } from '../lib/validate.js';
 
 type Lookback = '30min' | '1hour' | '2hour';
@@ -31,7 +31,7 @@ export default async function detectWhaleEvents(
   minSize: number = 0.5
 ) {
   const chk = ensurePair(pair);
-  if (!chk.ok) return fail(chk.error.message, chk.error.type);
+  if (!chk.ok) return failFromValidation(chk);
 
   const cacheKey = `${chk.pair}:${lookback}:${minSize}`;
   const hit = cache.get(cacheKey);

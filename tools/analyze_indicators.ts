@@ -1,6 +1,6 @@
 import getCandles from './get_candles.js';
 import { ensurePair, createMeta } from '../lib/validate.js';
-import { ok, fail } from '../lib/result.js';
+import { ok, fail, failFromValidation } from '../lib/result.js';
 import { formatSummary } from '../lib/formatter.js';
 import { getFetchCount } from '../lib/indicator_buffer.js';
 import { GetIndicatorsDataSchema, GetIndicatorsMetaSchema, GetIndicatorsOutputSchema } from '../src/schemas.js';
@@ -352,7 +352,7 @@ export default async function analyzeIndicators(
   limit: number | null = null
 ): Promise<Result<GetIndicatorsData, GetIndicatorsMeta>> {
   const chk = ensurePair(pair);
-  if (!chk.ok) return fail(chk.error.message, chk.error.type);
+  if (!chk.ok) return failFromValidation(chk) as any;
 
   const displayCount = limit || 60;
 

@@ -12,7 +12,7 @@
  */
 
 import { ensurePair, validateLimit, createMeta } from '../lib/validate.js';
-import { ok, fail, failFromError } from '../lib/result.js';
+import { ok, fail, failFromError, failFromValidation } from '../lib/result.js';
 import { formatSummary, formatTimestampJST } from '../lib/formatter.js';
 import { toIsoTime } from '../lib/datetime.js';
 import { fetchJson, BITBANK_API_BASE } from '../lib/http.js';
@@ -362,11 +362,11 @@ export default async function getOrderbook(params: GetOrderbookParams | string =
   } = opts;
 
   const chk = ensurePair(pair);
-  if (!chk.ok) return fail(chk.error.message, chk.error.type);
+  if (!chk.ok) return failFromValidation(chk);
 
   if (mode === 'summary') {
     const limitCheck = validateLimit(topN, 1, 200, 'topN');
-    if (!limitCheck.ok) return fail(limitCheck.error.message, limitCheck.error.type);
+    if (!limitCheck.ok) return failFromValidation(limitCheck);
   }
 
   // ─── 単一 API 呼出し ───

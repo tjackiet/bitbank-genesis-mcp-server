@@ -1,6 +1,6 @@
 import { fetchJson, BITBANK_API_BASE } from '../lib/http.js';
 import { ensurePair, validateLimit, validateDate, createMeta } from '../lib/validate.js';
-import { ok, fail, failFromError } from '../lib/result.js';
+import { ok, fail, failFromError, failFromValidation } from '../lib/result.js';
 import { GetCandlesOutputSchema } from '../src/schemas.js';
 import { formatSummary } from '../lib/formatter.js';
 import { toIsoTime } from '../lib/datetime.js';
@@ -121,14 +121,14 @@ export default async function getCandles(
   limit: number = 200
 ): Promise<Result<GetCandlesData, GetCandlesMeta>> {
   const chk = ensurePair(pair);
-  if (!chk.ok) return fail(chk.error.message, chk.error.type);
+  if (!chk.ok) return failFromValidation(chk) as any;
 
   if (!TYPES.has(type)) {
     return fail(`type は ${[...TYPES].join(', ')} から選択してください（指定値: ${String(type)}）`, 'user');
   }
 
   const dateCheck = validateDate(date, String(type));
-  if (!dateCheck.ok) return fail(dateCheck.error.message, dateCheck.error.type);
+  if (!dateCheck.ok) return failFromValidation(dateCheck) as any;
 
   // 複数年取得が必要かどうかを判定
   const isYearlyType = YEARLY_TYPES.has(type);
@@ -156,7 +156,7 @@ export default async function getCandles(
   // 複数年/複数日取得の場合は上限を緩和
   const maxLimit = needsMultiYear ? 5000 : (needsMultiDay ? 10000 : 1000);
   const limitCheck = validateLimit(limit, 1, maxLimit);
-  if (!limitCheck.ok) return fail(limitCheck.error.message, limitCheck.error.type);
+  if (!limitCheck.ok) return failFromValidation(limitCheck) as any;
 
   let ohlcvs: unknown[] = [];
   let json: unknown = null;
