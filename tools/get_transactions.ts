@@ -1,4 +1,4 @@
-import { fetchJson, BITBANK_API_BASE } from '../lib/http.js';
+import { fetchJson, BITBANK_API_BASE, DEFAULT_RETRIES } from '../lib/http.js';
 import { ensurePair, validateLimit, createMeta } from '../lib/validate.js';
 import { ok, fail, failFromError, failFromValidation } from '../lib/result.js';
 import { formatPair } from '../lib/formatter.js';
@@ -90,7 +90,7 @@ export default async function getTransactions(
     : `${BITBANK_API_BASE}/${chk.pair}/transactions`;
 
   try {
-    const json: unknown = await fetchJson(url, { timeoutMs: 4000, retries: 2 });
+    const json: unknown = await fetchJson(url, { timeoutMs: 4000, retries: DEFAULT_RETRIES });
     const jsonObj = json as { data?: { transactions?: TxnRaw[] } };
     const arr: TxnRaw[] = (jsonObj?.data?.transactions ?? []) as TxnRaw[];
 

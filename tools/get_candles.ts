@@ -1,4 +1,4 @@
-import { fetchJson, BITBANK_API_BASE } from '../lib/http.js';
+import { fetchJson, BITBANK_API_BASE, DEFAULT_RETRIES } from '../lib/http.js';
 import { ensurePair, validateLimit, validateDate, createMeta } from '../lib/validate.js';
 import { ok, fail, failFromError, failFromValidation } from '../lib/result.js';
 import { GetCandlesOutputSchema } from '../src/schemas.js';
@@ -74,7 +74,7 @@ async function fetchSingleYear(
 ): Promise<Array<[unknown, unknown, unknown, unknown, unknown, unknown]>> {
   const url = `${BITBANK_API_BASE}/${pair}/candlestick/${type}/${year}`;
   try {
-    const json: unknown = await fetchJson(url, { timeoutMs: 8000, retries: 2 });
+    const json: unknown = await fetchJson(url, { timeoutMs: 8000, retries: DEFAULT_RETRIES });
     const jsonObj = json as { data?: { candlestick?: Array<{ ohlcv?: unknown[] }> } };
     const cs = jsonObj?.data?.candlestick?.[0];
     const ohlcvs = cs?.ohlcv ?? [];
@@ -93,7 +93,7 @@ async function fetchSingleDay(
 ): Promise<Array<[unknown, unknown, unknown, unknown, unknown, unknown]>> {
   const url = `${BITBANK_API_BASE}/${pair}/candlestick/${type}/${dateStr}`;
   try {
-    const json: unknown = await fetchJson(url, { timeoutMs: 8000, retries: 2 });
+    const json: unknown = await fetchJson(url, { timeoutMs: 8000, retries: DEFAULT_RETRIES });
     const jsonObj = json as { data?: { candlestick?: Array<{ ohlcv?: unknown[] }> } };
     const cs = jsonObj?.data?.candlestick?.[0];
     const ohlcvs = cs?.ohlcv ?? [];
@@ -224,7 +224,7 @@ export default async function getCandles(
     } else {
       // 従来の単一リクエスト
       const url = `${BITBANK_API_BASE}/${chk.pair}/candlestick/${type}/${dateCheck.value}`;
-      json = await fetchJson(url, { timeoutMs: 5000, retries: 2 });
+      json = await fetchJson(url, { timeoutMs: 5000, retries: DEFAULT_RETRIES });
       const jsonObj = json as { data?: { candlestick?: Array<{ ohlcv?: unknown[] }> } };
       const cs = jsonObj?.data?.candlestick?.[0];
       ohlcvs = cs?.ohlcv ?? [];
