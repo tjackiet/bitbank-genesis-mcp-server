@@ -1,5 +1,5 @@
 import { ensurePair, createMeta } from '../lib/validate.js';
-import { fetchJson, BITBANK_API_BASE } from '../lib/http.js';
+import { fetchJson, BITBANK_API_BASE, DEFAULT_RETRIES } from '../lib/http.js';
 import { ok, fail, failFromError, failFromValidation } from '../lib/result.js';
 import { formatSummary, formatTimestampJST } from '../lib/formatter.js';
 import { estimateZones } from '../lib/depth-analysis.js';
@@ -16,7 +16,7 @@ export default async function getDepth(
 
   const url = `${BITBANK_API_BASE}/${chk.pair}/depth`;
   try {
-    const json: unknown = await fetchJson(url, { timeoutMs, retries: 2 });
+    const json: unknown = await fetchJson(url, { timeoutMs, retries: DEFAULT_RETRIES });
     const jsonObj = json as { data?: Record<string, unknown> };
     const d = jsonObj?.data ?? {};
     const asks = Array.isArray(d.asks) ? d.asks.slice(0, maxLevels) : [];

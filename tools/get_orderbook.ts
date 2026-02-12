@@ -15,7 +15,7 @@ import { ensurePair, validateLimit, createMeta } from '../lib/validate.js';
 import { ok, fail, failFromError, failFromValidation } from '../lib/result.js';
 import { formatSummary, formatTimestampJST } from '../lib/formatter.js';
 import { toIsoTime } from '../lib/datetime.js';
-import { fetchJson, BITBANK_API_BASE } from '../lib/http.js';
+import { fetchJson, BITBANK_API_BASE, DEFAULT_RETRIES } from '../lib/http.js';
 import { estimateZones } from '../lib/depth-analysis.js';
 import type { OrderbookLevelWithCum } from '../src/types/domain.d.ts';
 
@@ -355,7 +355,7 @@ export default async function getOrderbook(params: GetOrderbookParams | string =
   // ─── 単一 API 呼出し ───
   const url = `${BITBANK_API_BASE}/${chk.pair}/depth`;
   try {
-    const json: unknown = await fetchJson(url, { timeoutMs, retries: 2 });
+    const json: unknown = await fetchJson(url, { timeoutMs, retries: DEFAULT_RETRIES });
     const jsonObj = json as { data?: Record<string, unknown> };
     const d = jsonObj?.data ?? {};
     const rawAsks: RawLevel[] = Array.isArray(d.asks) ? (d.asks as RawLevel[]).slice(0, maxLevels) : [];

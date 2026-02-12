@@ -1,12 +1,15 @@
 /** bitbank Public API ベースURL */
 export const BITBANK_API_BASE = 'https://public.bitbank.cc';
 
+/** fetchJson のデフォルトリトライ回数（初回 + N回） */
+export const DEFAULT_RETRIES = 2;
+
 export interface FetchJsonOptions {
   timeoutMs?: number;
   retries?: number;
 }
 
-export async function fetchJson<T = unknown>(url: string, { timeoutMs = 2500, retries = 2 }: FetchJsonOptions = {}): Promise<T> {
+export async function fetchJson<T = unknown>(url: string, { timeoutMs = 2500, retries = DEFAULT_RETRIES }: FetchJsonOptions = {}): Promise<T> {
   let lastErr: unknown;
   for (let i = 0; i <= retries; i++) {
     const ctrl = new AbortController();
