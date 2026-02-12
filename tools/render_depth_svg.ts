@@ -4,6 +4,7 @@ import path from 'path';
 import getDepth from './get_depth.js';
 import { ok, fail, failFromError } from '../lib/result.js';
 import { formatPair } from '../lib/formatter.js';
+import { toDisplayTime, nowIso } from '../lib/datetime.js';
 import type { Result, Pair } from '../src/types/domain.d.ts';
 
 type RenderData = { svg?: string; filePath?: string; summary?: Record<string, any> };
@@ -117,9 +118,7 @@ export default async function renderDepthSvg(args: {
       </g>`;
 
     // 注釈（タイトル、タイムスタンプ、比率など）
-    const nowJst = (() => {
-      try { return new Date().toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo', hour12: false }); } catch { return new Date().toISOString(); }
-    })();
+    const nowJst = toDisplayTime(undefined) ?? nowIso();
     // ±1%集計
     const band = 0.01;
     const bidBand = bidsSorted.filter(([p]) => p >= mid * (1 - band));
@@ -175,7 +174,7 @@ export default async function renderDepthSvg(args: {
       bidDepth: Number(bidDepth.toFixed(4)),
       askDepth: Number(askDepth.toFixed(4)),
       ratio: Number.isFinite(ratio) ? Number(ratio.toFixed(2)) : null,
-      timestamp: new Date().toISOString(),
+      timestamp: nowIso(),
     };
 
     if (preferFile || autoSave) {

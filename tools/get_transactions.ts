@@ -2,7 +2,7 @@ import { fetchJson, BITBANK_API_BASE, DEFAULT_RETRIES } from '../lib/http.js';
 import { ensurePair, validateLimit, createMeta } from '../lib/validate.js';
 import { ok, fail, failFromError, failFromValidation } from '../lib/result.js';
 import { formatPair, formatPrice } from '../lib/formatter.js';
-import { toIsoMs } from '../lib/datetime.js';
+import { toIsoMs, dayjs } from '../lib/datetime.js';
 import { GetTransactionsOutputSchema } from '../src/schemas.js';
 
 type TxnRaw = Record<string, unknown>;
@@ -40,8 +40,7 @@ function formatTransactionsSummary(
   const fmtPx = (price: number) => formatPrice(price, pair);
 
   const formatTime = (ms: number): string => {
-    const d = new Date(ms);
-    return d.toLocaleTimeString('ja-JP', { timeZone: 'Asia/Tokyo', hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    return dayjs(ms).tz('Asia/Tokyo').format('HH:mm:ss');
   };
 
   lines.push(`${pairDisplay} 直近取引 ${transactions.length}件`);

@@ -2,6 +2,7 @@ import analyzeIndicators from '../../tools/analyze_indicators.js';
 import { ok, fail } from '../../lib/result.js';
 import { formatSummary } from '../../lib/formatter.js';
 import { getErrorMessage } from '../../lib/error.js';
+import { dayjs } from '../../lib/datetime.js';
 
 type AnalyzeInput = {
   pair: string;
@@ -70,7 +71,7 @@ export default async function analyzeMacdPattern({
     if (status !== 'forming_golden' && status !== 'forming_dead' && crossedRecently) status = 'crossed_recently';
 
     // 2) history analysis within historyDays
-    const msCut = Date.now() - historyDays * 86400000;
+    const msCut = dayjs().subtract(historyDays, 'day').valueOf();
     const crosses: Array<{ idx: number; type: 'golden' | 'dead'; date: string | null; histogram: number | null; price: number | null }> = [];
     for (let i = 1; i < n; i++) {
       const prevDiff = (macd[i - 1] ?? null) != null && (signal[i - 1] ?? null) != null ? (macd[i - 1] as number) - (signal[i - 1] as number) : null;
@@ -80,7 +81,7 @@ export default async function analyzeMacdPattern({
       const isDead = prevDiff >= 0 && currDiff < 0;
       if (!isGolden && !isDead) continue;
       const dateStr = candles[i]?.isoTime || null;
-      const ts = dateStr ? Date.parse(dateStr) : NaN;
+      const ts = dateStr ? dayjs(dateStr).valueOf() : NaN;
       if (!Number.isFinite(ts) || ts < msCut) continue;
       crosses.push({ idx: i, type: isGolden ? 'golden' : 'dead', date: dateStr, histogram: hist[i] ?? null, price: candles[i]?.close ?? null });
     }
@@ -138,7 +139,7 @@ export default async function analyzeMacdPattern({
       const fmt = (v: any, d = 2) => (v == null ? 'n/a' : Number(v).toFixed(d));
       const estDate = (() => {
         if (estimatedCrossDays == null) return '不明';
-        try { return new Date(Date.now() + Math.max(0, Math.round(estimatedCrossDays)) * 86400000).toISOString().slice(0, 10); } catch { return '不明'; }
+        try { return dayjs().add(Math.max(0, Math.round(estimatedCrossDays)), 'day').format('YYYY-MM-DD'); } catch { return '不明'; }
       })();
       lines.push(`${crossType}クロス形成中: 完成度${compStr}、推定クロス日 ${estDate}（あと${days}）`);
       lines.push(`- ヒストグラム: ${fmt(hNow, 2)} (直近5本: [${histogramTrend.map(v => v == null ? 'n/a' : String(v)).join(', ')}])`);

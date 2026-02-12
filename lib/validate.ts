@@ -1,4 +1,5 @@
 import type { Pair } from '../src/types/domain.d.ts';
+import { nowIso } from './datetime.js';
 
 // bitbank 公式ペアリスト（アクティブなもののみ）
 // 参考: https://github.com/bitbankinc/bitbank-api-docs/blob/master/pairs.md
@@ -151,7 +152,7 @@ export function validateDate(
 export function createMeta(pair: Pair, additional: Record<string, unknown> = {}) {
 	return {
 		pair,
-		fetchedAt: new Date().toISOString(),
+		fetchedAt: nowIso(),
 		...additional,
 	};
 }

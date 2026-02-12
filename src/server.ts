@@ -14,6 +14,7 @@ import detectPatterns from '../tools/detect_patterns.js';
 import { logToolRun, logError } from '../lib/logger.js';
 import { stddev } from '../lib/math.js';
 import { formatPriceJPY, formatPercent, formatCurrency, formatCurrencyShort, formatPrice as fmtPrice, formatVolumeJPY } from '../lib/formatter.js';
+import { toDisplayTime, toIsoTime, nowIso } from '../lib/datetime.js';
 // schemas.ts を単一のソースとして参照し、型は z.infer に委譲
 import { RenderChartSvgInputSchema, RenderChartSvgOutputSchema, GetTickerInputSchema, GetOrderbookInputSchema, GetCandlesInputSchema, GetIndicatorsInputSchema } from './schemas.js';
 import { GetVolMetricsInputSchema, GetVolMetricsOutputSchema } from './schemas.js';
@@ -277,9 +278,7 @@ registerToolWithLog(
 		const candles: any[] = Array.isArray(res?.data?.normalized) ? res.data.normalized : [];
 		const close = candles.at(-1)?.close ?? null;
 		const prev = candles.at(-2)?.close ?? null;
-		const nowJst = (() => {
-			try { return new Date().toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo', hour12: false }).replace(/\//g, '-'); } catch { return new Date().toISOString(); }
-		})();
+		const nowJst = toDisplayTime(undefined) ?? nowIso();
 		const fmtJPY = formatPriceJPY;
 		const fmtPct = (v: number | null | undefined, digits = 1) => formatPercent(v, { sign: true, digits });
 		const vsCurPct = (ref?: number | null) => {
@@ -739,8 +738,8 @@ registerToolWithLog(
 		if (view === 'full') {
 			const series = res?.data?.series || {};
 			const tsArr: number[] = Array.isArray(series.ts) ? series.ts : [];
-			const firstIso = tsArr.length ? new Date(tsArr[0]).toISOString() : 'n/a';
-			const lastIso = tsArr.length ? new Date(tsArr[tsArr.length - 1]).toISOString() : 'n/a';
+			const firstIso = tsArr.length ? (toIsoTime(tsArr[0]) ?? 'n/a') : 'n/a';
+			const lastIso = tsArr.length ? (toIsoTime(tsArr[tsArr.length - 1]) ?? 'n/a') : 'n/a';
 			const cArr: number[] = Array.isArray(series.close) ? series.close : [];
 			const minClose = cArr.length ? Math.min(...cArr) : null;
 			const maxClose = cArr.length ? Math.max(...cArr) : null;
@@ -1067,8 +1066,8 @@ registerToolWithLog(
 			const ends = pats.map(p => toTs(p?.range?.end)).filter((x: number) => Number.isFinite(x));
 			const starts = pats.map(p => toTs(p?.range?.start)).filter((x: number) => Number.isFinite(x));
 			if (starts.length && ends.length) {
-				const startIso = new Date(Math.min(...starts)).toISOString().slice(0, 10);
-				const endIso = new Date(Math.max(...ends)).toISOString().slice(0, 10);
+				const startIso = (toIsoTime(Math.min(...starts)) ?? '').slice(0, 10);
+				const endIso = (toIsoTime(Math.max(...ends)) ?? '').slice(0, 10);
 				const days = Math.max(1, Math.round((Math.max(...ends) - Math.min(...starts)) / 86400000));
 				// prepend detection window line in summary/detailed
 				if (view === 'summary') {
@@ -1191,7 +1190,7 @@ registerToolWithLog(
 			const in90 = within(90 * 86400000);
 			const starts = pats.map(p => toTs(p?.range?.start)).filter((x: number) => Number.isFinite(x));
 			const ends = pats.map(p => toTs(p?.range?.end)).filter((x: number) => Number.isFinite(x));
-			const periodLine = (starts.length && ends.length) ? `検出対象期間: ${new Date(Math.min(...starts)).toISOString().slice(0, 10)} ~ ${new Date(Math.max(...ends)).toISOString().slice(0, 10)} (${Math.max(1, Math.round((Math.max(...ends) - Math.min(...starts)) / 86400000))}日間)` : '';
+			const periodLine = (starts.length && ends.length) ? `検出対象期間: ${(toIsoTime(Math.min(...starts)) ?? '').slice(0, 10)} ~ ${(toIsoTime(Math.max(...ends)) ?? '').slice(0, 10)} (${Math.max(1, Math.round((Math.max(...ends) - Math.min(...starts)) / 86400000))}日間)` : '';
 			const text = `${hdr}（${typeSummary || '分類なし'}、直近30日: ${in30}件、直近90日: ${in90}件）\n${periodLine}\n検討パターン: ${(patterns && patterns.length) ? patterns.join(', ') : '既定セット'}\n※形成中は includeForming=true を指定してください。\n詳細は structuredContent.data.patterns を参照。`;
 			return { content: [{ type: 'text', text }], structuredContent: res as any };
 		}

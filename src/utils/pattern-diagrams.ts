@@ -1,3 +1,5 @@
+import { dayjs } from '../../lib/datetime.js';
+
 export interface PatternDiagramData {
   svg: string;
   artifact: {
@@ -38,11 +40,8 @@ function getPatternLabel(patternType: string): string {
 
 function formatDateShort(iso?: string): string {
   if (!iso) return '';
-  // Expect ISO like 2025-09-01T...
-  const d = new Date(iso);
-  const m = d.getUTCMonth() + 1;
-  const day = d.getUTCDate();
-  return `${m}/${day}`;
+  const d = dayjs(iso).utc();
+  return `${d.month() + 1}/${d.date()}`;
 }
 
 function formatDateIsoShort(iso?: string): string {

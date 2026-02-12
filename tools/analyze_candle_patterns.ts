@@ -20,6 +20,7 @@ import getCandles from './get_candles.js';
 import { ok, fail, failFromError } from '../lib/result.js';
 import { createMeta } from '../lib/validate.js';
 import { formatPrice as fmtPrice } from '../lib/formatter.js';
+import { dayjs, nowIso, toIsoTime, today } from '../lib/datetime.js';
 import {
   AnalyzeCandlePatternsInputSchema,
   AnalyzeCandlePatternsOutputSchema,
@@ -631,15 +632,14 @@ function formatPrice(price: number): string {
 // ----- ヘルパー: 曜日取得 -----
 function getDayOfWeek(isoDate: string): string {
   const days = ['日', '月', '火', '水', '木', '金', '土'];
-  const d = new Date(isoDate);
-  return days[d.getUTCDay()];
+  return days[dayjs(isoDate).utc().day()];
 }
 
 // ----- ヘルパー: 日付フォーマット (MM/DD(曜)) -----
 function formatDateWithDay(isoDate: string): string {
-  const d = new Date(isoDate);
-  const m = d.getUTCMonth() + 1;
-  const day = d.getUTCDate();
+  const d = dayjs(isoDate).utc();
+  const m = d.month() + 1;
+  const day = d.date();
   const dow = getDayOfWeek(isoDate);
   return `${m}/${day}(${dow})`;
 }
@@ -857,12 +857,11 @@ export default async function analyzeCandlePatterns(
       const year = targetDate.slice(0, 4);
       const month = targetDate.slice(4, 6);
       const day = targetDate.slice(6, 8);
-      const targetDateObj = new Date(`${year}-${month}-${day}T23:59:59.999Z`);
+      const targetDateMs = dayjs.utc(`${year}-${month}-${day}`).endOf('day').valueOf();
 
       allCandles = allCandles.filter((c) => {
         if (!c.isoTime) return false;
-        const candleDate = new Date(c.isoTime);
-        return candleDate <= targetDateObj;
+        return dayjs(c.isoTime).valueOf() <= targetDateMs;
       });
     }
 
@@ -880,14 +879,13 @@ export default async function analyzeCandlePatterns(
     // 日足確定判定:
     // - 過去日付指定時: すべて確定済み（is_partial = false）
     // - 最新データ時: 最新の日足が今日のデータなら未確定
-    const now = new Date();
-    const todayStr = now.toISOString().split('T')[0];
+    const todayStr = today('YYYY-MM-DD');
     const lastCandleTime = windowCandles[windowCandles.length - 1]?.isoTime?.split('T')[0];
     const isLastPartial = !isHistoricalQuery && lastCandleTime === todayStr;
 
     // WindowCandle形式に変換
     const formattedWindowCandles: WindowCandle[] = windowCandles.map((c, idx) => ({
-      timestamp: c.isoTime || new Date(c.time || 0).toISOString(),
+      timestamp: c.isoTime || toIsoTime(c.time || 0) || '',
       open: c.open,
       high: c.high,
       low: c.low,
@@ -973,7 +971,7 @@ export default async function analyzeCandlePatterns(
     const data = {
       pair,
       timeframe,
-      snapshot_time: new Date().toISOString(),
+      snapshot_time: nowIso(),
       window: {
         from: formattedWindowCandles[0]?.timestamp?.split('T')[0] || '',
         to: formattedWindowCandles[formattedWindowCandles.length - 1]?.timestamp?.split('T')[0] || '',

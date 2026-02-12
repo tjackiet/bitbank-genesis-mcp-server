@@ -22,6 +22,7 @@ import {
   relDev,
   marginFromRelDev,
 } from './patterns/regression.js';
+import { dayjs } from '../lib/datetime.js';
 
 /**
  * detect_patterns - チャートパターン検出（完成済み＋形成中）
@@ -287,7 +288,7 @@ export default async function detectPatterns(
     // (visual scale filters were reverted to previous behavior)
     const periodScoreDays = (startIso?: string, endIso?: string) => {
       if (!startIso || !endIso) return 0.7;
-      const d = Math.abs(new Date(endIso).getTime() - new Date(startIso).getTime()) / 86400000;
+      const d = Math.abs(dayjs(endIso).diff(dayjs(startIso), 'day', true));
       if (d < 5) return 0.6;
       if (d < 15) return 0.8;
       if (d < 30) return 0.9;

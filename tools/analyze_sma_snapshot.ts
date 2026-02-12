@@ -2,6 +2,7 @@ import analyzeIndicators from './analyze_indicators.js';
 import { ok, fail, failFromError, failFromValidation } from '../lib/result.js';
 import { createMeta, ensurePair } from '../lib/validate.js';
 import { formatSummary } from '../lib/formatter.js';
+import { today } from '../lib/datetime.js';
 import { AnalyzeSmaSnapshotOutputSchema } from '../src/schemas.js';
 
 export default async function analyzeSmaSnapshot(
@@ -61,7 +62,7 @@ export default async function analyzeSmaSnapshot(
         if ((prev <= 0 && curr > 0) || (prev >= 0 && curr < 0)) {
           const type = curr > 0 ? 'golden_cross' : 'dead_cross';
           const barsAgo = (n - 1) - i;
-          const date = String(candles[i]?.isoTime || '').slice(0, 10) || new Date().toISOString().slice(0, 10);
+          const date = String(candles[i]?.isoTime || '').slice(0, 10) || today('YYYY-MM-DD');
           recentCrosses.push({ type, pair: [a, b], barsAgo, date });
         }
       }

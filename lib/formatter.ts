@@ -1,4 +1,4 @@
-import { toDisplayTime } from './datetime.js';
+import { toDisplayTime, dayjs } from './datetime.js';
 
 export function formatPair(pair: string): string {
 	return (pair || '').toUpperCase().replace('_', '/');
@@ -12,7 +12,7 @@ export function formatPair(pair: string): string {
  */
 export function formatTimestampJST(ts?: number, tz: string = 'Asia/Tokyo'): string {
 	const result = toDisplayTime(ts, tz);
-	return result ?? new Date(ts ?? Date.now()).toISOString();
+	return result ?? dayjs(ts).toISOString();
 }
 
 /**

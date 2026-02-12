@@ -8,6 +8,7 @@
 
 import type { Candle, Trade, EquityPoint, DrawdownPoint } from './types.js';
 import type { Overlay } from './lib/strategies/types.js';
+import { dayjs } from '../../lib/datetime.js';
 import type { BacktestEngineSummary } from './lib/backtest_engine.js';
 
 export type ChartDetail = 'default' | 'full';
@@ -101,26 +102,22 @@ function getDateFormat(spanDays: number): 'full' | 'month-day' | 'year-month' {
 }
 
 function formatDateBySpan(isoTime: string, format: 'full' | 'month-day' | 'year-month'): string {
-  const d = new Date(isoTime);
-  const mm = String(d.getMonth() + 1).padStart(2, '0');
-  const dd = String(d.getDate()).padStart(2, '0');
-  const yyyy = d.getFullYear();
-
+  const d = dayjs(isoTime);
   switch (format) {
     case 'month-day':
-      return `${mm}/${dd}`;
+      return d.format('MM/DD');
     case 'full':
-      return `${yyyy}-${mm}-${dd}`;
+      return d.format('YYYY-MM-DD');
     case 'year-month':
     default:
-      return `${yyyy}-${mm}`;
+      return d.format('YYYY-MM');
   }
 }
 
 function calculateSpanDays(candles: Candle[]): number {
   if (candles.length < 2) return 1;
-  const first = new Date(candles[0].time).getTime();
-  const last = new Date(candles[candles.length - 1].time).getTime();
+  const first = dayjs(candles[0].time).valueOf();
+  const last = dayjs(candles[candles.length - 1].time).valueOf();
   return Math.ceil((last - first) / (1000 * 60 * 60 * 24));
 }
 

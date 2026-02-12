@@ -1,23 +1,20 @@
 import fs from 'fs';
 import path from 'path';
 import readline from 'readline';
+import { dayjs } from '../lib/datetime.js';
 
 const LOG_DIR = process.env.LOG_DIR || './logs';
+
+const DURATION_UNITS: Record<string, 'day' | 'hour' | 'minute' | 'second'> = { d: 'day', h: 'hour', m: 'minute', s: 'second' };
 
 function parseDuration(durationStr: string | null): Date | null {
   if (!durationStr) return null;
   const match = durationStr.match(/^(\d+)([dhms])$/);
   if (!match) return null;
   const value = parseInt(match[1], 10);
-  const unit = match[2];
-  const now = new Date();
-  switch (unit) {
-    case 'd': now.setDate(now.getDate() - value); break;
-    case 'h': now.setHours(now.getHours() - value); break;
-    case 'm': now.setMinutes(now.getMinutes() - value); break;
-    case 's': now.setSeconds(now.getSeconds() - value); break;
-  }
-  return now;
+  const unit = DURATION_UNITS[match[2]];
+  if (!unit) return null;
+  return dayjs().subtract(value, unit).toDate();
 }
 
 interface LogStats {
@@ -36,7 +33,7 @@ async function processLogFile(filePath: string, stats: LogStats, startTime: Date
   for await (const line of rl) {
     try {
       const log = JSON.parse(line);
-      if (startTime && new Date(log.ts) < startTime) continue;
+      if (startTime && dayjs(log.ts).toDate() < startTime) continue;
       if (log.type !== 'tool_run') continue;
       stats.total++;
       if (log.result?.ok) stats.success++; else {
