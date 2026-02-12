@@ -19,6 +19,7 @@
 import getCandles from './get_candles.js';
 import { ok, fail, failFromError } from '../lib/result.js';
 import { createMeta } from '../lib/validate.js';
+import { formatPrice as fmtPrice } from '../lib/formatter.js';
 import {
   AnalyzeCandlePatternsInputSchema,
   AnalyzeCandlePatternsOutputSchema,
@@ -624,7 +625,7 @@ function generateSummary(
 
 // ----- ヘルパー: 金額フォーマット -----
 function formatPrice(price: number): string {
-  return `¥${Math.round(price).toLocaleString('ja-JP')}`;
+  return fmtPrice(Math.round(price));
 }
 
 // ----- ヘルパー: 曜日取得 -----

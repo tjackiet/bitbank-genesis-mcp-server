@@ -13,6 +13,7 @@ import renderDepthSvg from '../tools/render_depth_svg.js';
 import detectPatterns from '../tools/detect_patterns.js';
 import { logToolRun, logError } from '../lib/logger.js';
 import { stddev } from '../lib/math.js';
+import { formatPriceJPY, formatPercent, formatCurrency, formatCurrencyShort, formatPrice as fmtPrice, formatVolumeJPY } from '../lib/formatter.js';
 // schemas.ts を単一のソースとして参照し、型は z.infer に委譲
 import { RenderChartSvgInputSchema, RenderChartSvgOutputSchema, GetTickerInputSchema, GetOrderbookInputSchema, GetCandlesInputSchema, GetIndicatorsInputSchema } from './schemas.js';
 import { GetVolMetricsInputSchema, GetVolMetricsOutputSchema } from './schemas.js';
@@ -279,8 +280,8 @@ registerToolWithLog(
 		const nowJst = (() => {
 			try { return new Date().toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo', hour12: false }).replace(/\//g, '-'); } catch { return new Date().toISOString(); }
 		})();
-		const fmtJPY = (v: any) => (v == null ? 'n/a' : `${Math.round(Number(v)).toLocaleString()}円`);
-		const fmtPct = (v: number | null | undefined, digits = 1) => (v == null || !Number.isFinite(v) ? 'n/a' : `${(v >= 0 ? '+' : '')}${Number(v).toFixed(digits)}%`);
+		const fmtJPY = formatPriceJPY;
+		const fmtPct = (v: number | null | undefined, digits = 1) => formatPercent(v, { sign: true, digits });
 		const vsCurPct = (ref?: number | null) => {
 			if (close == null || ref == null || !Number.isFinite(close) || !Number.isFinite(ref) || ref === 0) return 'n/a';
 			const pct = ((ref - close) / Math.abs(close)) * 100;
@@ -695,10 +696,10 @@ registerToolWithLog(
 
 		// beginner view (plain language for non-experts)
 		if (view === 'beginner') {
-			const rvPct = rvAnn != null ? `${(rvAnn * 100).toFixed(0)}%` : 'n/a';
-			const atrJpy = atrAbs != null ? `${Math.round(Number(atrAbs)).toLocaleString()}円` : 'n/a';
-			const atrPctStr = atrPct != null ? `${(atrPct * 100).toFixed(1)}%` : 'n/a';
-			const closeStr = lastClose != null ? `${Math.round(Number(lastClose)).toLocaleString()}円` : 'n/a';
+			const rvPct = formatPercent(rvAnn, { multiply: true, digits: 0 });
+			const atrJpy = formatPriceJPY(atrAbs);
+			const atrPctStr = formatPercent(atrPct, { multiply: true });
+			const closeStr = formatPriceJPY(lastClose);
 			const lines = [
 				`${String(pair).toUpperCase()} [${String(type)}] 現在価格: ${closeStr}`,
 				`・年間のおおよその動き: 約${rvPct}（1年でこのくらい上下しやすい目安）`,
@@ -746,25 +747,13 @@ registerToolWithLog(
 			const retArr: number[] = Array.isArray(series.ret) ? series.ret : [];
 			const mean = retArr.length ? (retArr.reduce((s, v) => s + v, 0) / retArr.length) : null;
 			const std = retArr.length ? stddev(retArr) : null;
-			text += `\n\n【Series】\nTotal: ${meta.sampleSize ?? cArr.length} candles\nFirst: ${firstIso} , Last: ${lastIso}\nClose range: ${minClose != null ? Number(minClose).toLocaleString() : 'n/a'} - ${maxClose != null ? Number(maxClose).toLocaleString() : 'n/a'} JPY\nReturns: mean=${mean != null ? (mean * 100).toFixed(2) + '%' : 'n/a'}, std=${std != null ? (std * 100).toFixed(2) + '%' : 'n/a'}${ann ? ' (base interval)' : ''}`;
+			text += `\n\n【Series】\nTotal: ${meta.sampleSize ?? cArr.length} candles\nFirst: ${firstIso} , Last: ${lastIso}\nClose range: ${minClose != null ? Number(minClose).toLocaleString() : 'n/a'} - ${maxClose != null ? Number(maxClose).toLocaleString() : 'n/a'} JPY\nReturns: mean=${formatPercent(mean, { multiply: true, digits: 2 })}, std=${formatPercent(std, { multiply: true, digits: 2 })}${ann ? ' (base interval)' : ''}`;
 		}
 		return { content: [{ type: 'text', text }], structuredContent: { ...res, data: { ...res.data, tags: tagsAll } } as Record<string, unknown> };
 
-		function fmtPct(x: any) { return x == null ? 'n/a' : `${Number(x * 100).toFixed(1)}%`; }
-		function fmtCurrency(p: any, v: any) {
-			if (v == null) return 'n/a';
-			const isJpy = typeof p === 'string' && p.toLowerCase().includes('jpy');
-			return isJpy ? `${Number(v).toLocaleString()} JPY` : `${Number(v).toFixed(2)}`;
-		}
-		function fmtCurrencyShort(p: any, v: any) {
-			if (v == null) return 'n/a';
-			const isJpy = typeof p === 'string' && p.toLowerCase().includes('jpy');
-			if (isJpy) {
-				const n = Number(v);
-				return n >= 1000 ? `${Math.round(n / 1000)}k JPY` : `${n.toLocaleString()} JPY`;
-			}
-			return `${Number(v).toFixed(2)}`;
-		}
+		function fmtPct(x: any) { return formatPercent(x, { multiply: true }); }
+		function fmtCurrency(p: any, v: any) { return formatCurrency(v, p); }
+		function fmtCurrencyShort(p: any, v: any) { return formatCurrencyShort(v, p); }
 	}
 );
 
@@ -1506,17 +1495,8 @@ registerToolWithLog(
 		const items: any[] = Array.isArray(res?.data) ? res.data : [];
 
 		// フォーマット関数
-		const formatVolume = (volumeInJPY: number | null | undefined) => {
-			if (volumeInJPY == null || !Number.isFinite(volumeInJPY)) return 'n/a';
-			if (volumeInJPY >= 100_000_000) {
-				return `${(volumeInJPY / 100_000_000).toFixed(1)}億円`;
-			}
-			return `${Math.round(volumeInJPY / 10_000)}万円`;
-		};
-		const formatPrice = (price: number | null | undefined) => {
-			if (price == null || !Number.isFinite(price)) return 'N/A';
-			return `¥${Number(price).toLocaleString('ja-JP')}`;
-		};
+		const formatVolume = formatVolumeJPY;
+		const formatPrice = fmtPrice;
 
 		// normalize numeric fields（open/high/low 追加）
 		const norm = items.map((it: any) => {
@@ -1555,7 +1535,7 @@ registerToolWithLog(
 
 		if (view === 'ranked') {
 			const lines = ranked.map((r, i) => {
-				const chg = r.changeN == null ? 'n/a' : `${r.changeN > 0 ? '+' : ''}${r.changeN.toFixed(2)}%`;
+				const chg = formatPercent(r.changeN, { sign: true, digits: 2 });
 				const px = formatPrice(r.lastN);
 				const volTxt = formatVolume(r.volumeInJPY);
 				return `${i + 1}. ${String(r.pair).toUpperCase().replace('_', '/')} ${chg}（${px}、出来高${volTxt}）`;
@@ -1584,9 +1564,7 @@ registerToolWithLog(
 		for (const it of top5) {
 			const pairDisplay = String(it.pair).toUpperCase().replace('_', '/');
 			const priceStr = formatPrice(it.lastN);
-			const changeStr = it.changeN != null
-				? `${it.changeN >= 0 ? '+' : ''}${it.changeN.toFixed(2)}%`
-				: 'n/a';
+			const changeStr = formatPercent(it.changeN, { sign: true, digits: 2 });
 			const volStr = formatVolume(it.volumeInJPY);
 			lines.push(`${pairDisplay}: ${priceStr} (${changeStr}) 出来高${volStr}`);
 		}

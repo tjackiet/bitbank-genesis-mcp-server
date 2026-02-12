@@ -15,6 +15,79 @@ export function formatTimestampJST(ts?: number, tz: string = 'Asia/Tokyo'): stri
 	return result ?? new Date(ts ?? Date.now()).toISOString();
 }
 
+/**
+ * 価格フォーマット（¥プレフィックス、ペア依存）
+ * JPY ペア → ¥123,456  /  non-JPY → 0.123456
+ * pair 省略時は JPY として扱う
+ */
+export function formatPrice(value: number | null | undefined, pair?: string): string {
+	if (value == null || !Number.isFinite(Number(value))) return 'N/A';
+	const n = Number(value);
+	const jpy = !pair || (typeof pair === 'string' && pair.toLowerCase().includes('jpy'));
+	if (jpy) return `¥${n.toLocaleString('ja-JP')}`;
+	return n.toLocaleString('ja-JP');
+}
+
+/**
+ * 価格フォーマット（円サフィックス、四捨五入）
+ * → 123,456円
+ */
+export function formatPriceJPY(value: number | null | undefined): string {
+	if (value == null || !Number.isFinite(Number(value))) return 'n/a';
+	return `${Math.round(Number(value)).toLocaleString()}円`;
+}
+
+/**
+ * 通貨フォーマット（JPY/非JPY対応、スペース＋通貨コード）
+ * JPY → 123,456 JPY  /  非JPY → 0.12
+ */
+export function formatCurrency(value: number | null | undefined, pair?: string): string {
+	if (value == null) return 'n/a';
+	const jpy = !pair || (typeof pair === 'string' && pair.toLowerCase().includes('jpy'));
+	return jpy ? `${Number(value).toLocaleString()} JPY` : `${Number(value).toFixed(2)}`;
+}
+
+/**
+ * 通貨フォーマット短縮形（大きな値はk表示）
+ * JPY ≥1000 → 12k JPY  /  JPY <1000 → 123 JPY  /  非JPY → 0.12
+ */
+export function formatCurrencyShort(value: number | null | undefined, pair?: string): string {
+	if (value == null) return 'n/a';
+	const jpy = !pair || (typeof pair === 'string' && pair.toLowerCase().includes('jpy'));
+	if (jpy) {
+		const n = Number(value);
+		return n >= 1000 ? `${Math.round(n / 1000)}k JPY` : `${n.toLocaleString()} JPY`;
+	}
+	return `${Number(value).toFixed(2)}`;
+}
+
+/**
+ * パーセンテージフォーマット
+ * @param value 数値
+ * @param opts.digits 小数桁数（デフォルト: 1）
+ * @param opts.sign 正数に+を付けるか（デフォルト: false）
+ * @param opts.multiply 100倍するか（デフォルト: false）。0-1小数→%変換に使う
+ */
+export function formatPercent(
+	value: number | null | undefined,
+	opts: { digits?: number; sign?: boolean; multiply?: boolean } = {},
+): string {
+	if (value == null || !Number.isFinite(Number(value))) return 'n/a';
+	const { digits = 1, sign = false, multiply = false } = opts;
+	const v = multiply ? Number(value) * 100 : Number(value);
+	const prefix = sign && v >= 0 ? '+' : '';
+	return `${prefix}${v.toFixed(digits)}%`;
+}
+
+/**
+ * 出来高フォーマット（日本円単位、億円/万円）
+ */
+export function formatVolumeJPY(value: number | null | undefined): string {
+	if (value == null || !Number.isFinite(value)) return 'n/a';
+	if (value >= 100_000_000) return `${(value / 100_000_000).toFixed(1)}億円`;
+	return `${Math.round(value / 10_000)}万円`;
+}
+
 export function formatSummary(args: {
 	pair?: string;
 	timeframe?: string;
@@ -42,11 +115,10 @@ export function formatSummary(args: {
 		
 		// 全件の範囲情報を追加
 		if (priceRange) {
-			const formatPrice = (price: number) => price.toLocaleString('ja-JP');
 			summary += `\n\n📈 全${totalItems}件の価格範囲:`;
 			summary += `\n- 期間: ${priceRange.periodStart} 〜 ${priceRange.periodEnd}`;
-			summary += `\n- 高値: ¥${formatPrice(priceRange.high)}`;
-			summary += `\n- 安値: ¥${formatPrice(priceRange.low)}`;
+			summary += `\n- 高値: ${formatPrice(priceRange.high)}`;
+			summary += `\n- 安値: ${formatPrice(priceRange.low)}`;
 		}
 	}
 
@@ -54,33 +126,31 @@ export function formatSummary(args: {
 	if (keyPoints && keyPoints.today) {
 		summary += '\n\n📊 期間別の価格推移:';
 
-		const formatPrice = (price: number) => price.toLocaleString('ja-JP');
-		const formatChange = (pct: number | null) => {
+		const fmtChange = (pct: number | null) => {
 			if (pct === null) return '';
-			const sign = pct >= 0 ? '+' : '';
-			return ` → 変化率 ${sign}${pct.toFixed(1)}%`;
+			return ` → 変化率 ${formatPercent(pct, { sign: true })}`;
 		};
 
 		// 今日
 		const today = keyPoints.today;
-		summary += `\n- 今日 (${today.date || '不明'}, data[${today.index}]): ¥${formatPrice(today.close)}`;
+		summary += `\n- 今日 (${today.date || '不明'}, data[${today.index}]): ${formatPrice(today.close)}`;
 
 		// 7日前
 		if (keyPoints.sevenDaysAgo) {
 			const sd = keyPoints.sevenDaysAgo;
-			summary += `\n- 7日前 (${sd.date || '不明'}, data[${sd.index}]): ¥${formatPrice(sd.close)}${formatChange(sd.changePct)}`;
+			summary += `\n- 7日前 (${sd.date || '不明'}, data[${sd.index}]): ${formatPrice(sd.close)}${fmtChange(sd.changePct)}`;
 		}
 
 		// 30日前
 		if (keyPoints.thirtyDaysAgo) {
 			const td = keyPoints.thirtyDaysAgo;
-			summary += `\n- 30日前 (${td.date || '不明'}, data[${td.index}]): ¥${formatPrice(td.close)}${formatChange(td.changePct)}`;
+			summary += `\n- 30日前 (${td.date || '不明'}, data[${td.index}]): ${formatPrice(td.close)}${fmtChange(td.changePct)}`;
 		}
 
 		// 90日前
 		if (keyPoints.ninetyDaysAgo) {
 			const nd = keyPoints.ninetyDaysAgo;
-			summary += `\n- 90日前 (${nd.date || '不明'}, data[${nd.index}]): ¥${formatPrice(nd.close)}${formatChange(nd.changePct)}`;
+			summary += `\n- 90日前 (${nd.date || '不明'}, data[${nd.index}]): ${formatPrice(nd.close)}${fmtChange(nd.changePct)}`;
 		}
 
 		// 出来高情報

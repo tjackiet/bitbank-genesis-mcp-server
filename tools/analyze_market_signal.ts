@@ -3,7 +3,7 @@ import getVolatilityMetrics from './get_volatility_metrics.js';
 import analyzeIndicators from './analyze_indicators.js';
 import { ensurePair, createMeta } from '../lib/validate.js';
 import { ok, fail, failFromError, failFromValidation } from '../lib/result.js';
-import { formatSummary } from '../lib/formatter.js';
+import { formatSummary, formatPercent, formatPriceJPY } from '../lib/formatter.js';
 import { slidingMean } from '../lib/math.js';
 import { AnalyzeMarketSignalOutputSchema } from '../src/schemas.js';
 
@@ -331,16 +331,16 @@ export default async function analyzeMarketSignal(
     // Enrich summary with brief human-readable lines (SMA and states, next actions)
     // Build rich content for human readability
     const score100 = Math.round(score * 100);
-    const priceNowStr = latestClose != null ? `${Math.round(latestClose).toLocaleString()}円` : 'n/a';
-    const fmtPctStr = (v?: number | null) => (v == null ? 'n/a' : `${v >= 0 ? '+' : ''}${v.toFixed(2)}%`);
+    const priceNowStr = formatPriceJPY(latestClose);
+    const fmtPctStr = (v?: number | null) => formatPercent(v, { sign: true, digits: 2 });
     const relToNow = (sma?: number | null) => {
       if (sma == null || latestClose == null || latestClose === 0) return 'n/a';
       const rel = (sma - latestClose) / latestClose * 100;
-      return `${rel >= 0 ? '+' : ''}${rel.toFixed(2)}%${rel >= 0 ? '上' : '下'}`;
+      return `${formatPercent(rel, { sign: true, digits: 2 })}${rel >= 0 ? '上' : '下'}`;
     };
-    const sma25Line = sma25 != null ? `${Math.round(sma25).toLocaleString()}円（現在より${relToNow(sma25)}）` : 'n/a';
-    const sma75Line = sma75 != null ? `${Math.round(sma75).toLocaleString()}円（現在より${relToNow(sma75)}）` : 'n/a';
-    const sma200Line = sma200 != null ? `${Math.round(sma200).toLocaleString()}円（現在より${relToNow(sma200)}）` : 'n/a';
+    const sma25Line = sma25 != null ? `${formatPriceJPY(sma25)}（現在より${relToNow(sma25)}）` : 'n/a';
+    const sma75Line = sma75 != null ? `${formatPriceJPY(sma75)}（現在より${relToNow(sma75)}）` : 'n/a';
+    const sma200Line = sma200 != null ? `${formatPriceJPY(sma200)}（現在より${relToNow(sma200)}）` : 'n/a';
     const arrangementStr = smaArrangement === 'bullish' ? '上向き（短期 > 長期）' : (smaArrangement === 'bearish' ? '下向き（短期 < 長期）' : '混在');
     const buyLabel = buyPressure > 0.2 ? '買い優勢' : (buyPressure > 0.05 ? 'やや買い優勢' : (buyPressure < -0.2 ? '売り優勢' : (buyPressure < -0.05 ? 'やや売り優勢' : '拮抗')));
     const cvdLabel = cvdState === 'up' ? '上昇中' : (cvdState === 'down' ? '下降中' : '横ばい');

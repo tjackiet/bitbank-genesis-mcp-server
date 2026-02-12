@@ -1,7 +1,7 @@
 import { fetchJson, BITBANK_API_BASE, DEFAULT_RETRIES } from '../lib/http.js';
 import { ensurePair, validateLimit, createMeta } from '../lib/validate.js';
 import { ok, fail, failFromError, failFromValidation } from '../lib/result.js';
-import { formatPair } from '../lib/formatter.js';
+import { formatPair, formatPrice } from '../lib/formatter.js';
 import { toIsoMs } from '../lib/datetime.js';
 import { GetTransactionsOutputSchema } from '../src/schemas.js';
 
@@ -37,9 +37,7 @@ function formatTransactionsSummary(
   const baseCurrency = pair.split('_')[0]?.toUpperCase() ?? '';
   const lines: string[] = [];
 
-  const formatPrice = (price: number): string => {
-    return isJpy ? `¥${price.toLocaleString('ja-JP')}` : price.toLocaleString('ja-JP');
-  };
+  const fmtPx = (price: number) => formatPrice(price, pair);
 
   const formatTime = (ms: number): string => {
     const d = new Date(ms);
@@ -50,7 +48,7 @@ function formatTransactionsSummary(
 
   if (transactions.length > 0) {
     const latestTxn = transactions[transactions.length - 1];
-    lines.push(`最新約定: ${formatPrice(latestTxn.price)}`);
+    lines.push(`最新約定: ${fmtPx(latestTxn.price)}`);
 
     // 買い/売り比率
     const total = buys + sells;

@@ -1,7 +1,7 @@
 import { ensurePair, createMeta } from '../lib/validate.js';
 import { fetchJson, BITBANK_API_BASE, DEFAULT_RETRIES } from '../lib/http.js';
 import { ok, fail, failFromError, failFromValidation } from '../lib/result.js';
-import { formatPair } from '../lib/formatter.js';
+import { formatPair, formatPrice, formatPercent } from '../lib/formatter.js';
 import { toIsoTime } from '../lib/datetime.js';
 import { GetTickerOutputSchema } from '../src/schemas.js';
 import type { Result, GetTickerData, GetTickerMeta } from '../src/types/domain.d.ts';
@@ -28,31 +28,23 @@ function formatTickerSummary(pair: string, d: Record<string, unknown>): string {
   // 通貨単位
   const baseCurrency = pair.split('_')[0]?.toUpperCase() ?? '';
 
-  // 価格フォーマット
-  const formatPrice = (price: number | null): string => {
-    if (price === null) return 'N/A';
-    if (isJpy) {
-      return `¥${price.toLocaleString('ja-JP')}`;
-    }
-    return price.toLocaleString('ja-JP');
-  };
+  // 価格フォーマット（ペア依存）
+  const fmtPx = (v: number | null) => formatPrice(v, pair);
 
   // 変動率計算
   let changeStr = '';
   if (last !== null && open !== null && open !== 0) {
     const changePct = ((last - open) / open) * 100;
-    const sign = changePct >= 0 ? '+' : '';
-    changeStr = `${sign}${changePct.toFixed(2)}%`;
+    changeStr = formatPercent(changePct, { sign: true, digits: 2 });
   }
 
   // スプレッド計算
   let spreadStr = '';
   if (buy !== null && sell !== null) {
-    const spread = sell - buy;
-    spreadStr = isJpy ? `¥${spread.toLocaleString('ja-JP')}` : spread.toLocaleString('ja-JP');
+    spreadStr = fmtPx(sell - buy);
   }
 
-  // 出来高フォーマット
+  // 出来高フォーマット（通貨ベース単位なのでカスタム）
   const formatVolume = (v: number | null): string => {
     if (v === null) return 'N/A';
     if (v >= 1000) {
@@ -63,13 +55,13 @@ function formatTickerSummary(pair: string, d: Record<string, unknown>): string {
 
   // サマリ構築
   const lines: string[] = [];
-  lines.push(`${pairDisplay} 現在値: ${formatPrice(last)}`);
-  lines.push(`24h: 始値 ${formatPrice(open)} / 高値 ${formatPrice(high)} / 安値 ${formatPrice(low)}`);
+  lines.push(`${pairDisplay} 現在値: ${fmtPx(last)}`);
+  lines.push(`24h: 始値 ${fmtPx(open)} / 高値 ${fmtPx(high)} / 安値 ${fmtPx(low)}`);
   if (changeStr) {
     lines.push(`24h変動: ${changeStr}`);
   }
   lines.push(`出来高: ${formatVolume(vol)}`);
-  lines.push(`Bid: ${formatPrice(buy)} / Ask: ${formatPrice(sell)}${spreadStr ? `（スプレッド: ${spreadStr}）` : ''}`);
+  lines.push(`Bid: ${fmtPx(buy)} / Ask: ${fmtPx(sell)}${spreadStr ? `（スプレッド: ${spreadStr}）` : ''}`);
 
   return lines.join('\n');
 }
