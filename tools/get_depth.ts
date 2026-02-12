@@ -2,6 +2,7 @@ import { ensurePair, createMeta } from '../lib/validate.js';
 import { fetchJson, BITBANK_API_BASE } from '../lib/http.js';
 import { ok, fail, failFromError, failFromValidation } from '../lib/result.js';
 import { formatSummary, formatTimestampJST } from '../lib/formatter.js';
+import { estimateZones } from '../lib/depth-analysis.js';
 import { GetDepthOutputSchema } from '../src/schemas.js';
 
 export interface GetDepthOptions { timeoutMs?: number; maxLevels?: number }
@@ -30,24 +31,6 @@ export default async function getDepth(
       latest: mid ?? undefined,
       extra: `levels: bids=${bids.length} asks=${asks.length}`,
     });
-
-    // ゾーン自動推定（簡易）：各サイドの上位Nレベルで閾値以上を帯にする
-    function estimateZones(levels: Array<[number, number]>, side: 'bid' | 'ask'): Array<{ low: number; high: number; label: string; color?: string }> {
-      if (!levels.length) return [];
-      const qtys = levels.map(([, s]) => s);
-      const avg = qtys.reduce((a, b) => a + b, 0) / qtys.length;
-      const stdev = Math.sqrt(qtys.reduce((a, b) => a + Math.pow(b - avg, 2), 0) / qtys.length) || 0;
-      const thr = avg + stdev * 2; // 強めの閾値
-      const zones: Array<{ low: number; high: number; label: string; color?: string }> = [];
-      for (const [p, s] of levels) {
-        if (s >= thr) {
-          const pad = (p as number) * 0.001; // 0.1%幅
-          if (side === 'bid') zones.push({ low: (p as number) - pad, high: (p as number) + pad, label: 'bid wall', color: 'rgba(34,197,94,0.08)' });
-          else zones.push({ low: (p as number) - pad, high: (p as number) + pad, label: 'ask wall', color: 'rgba(249,115,22,0.08)' });
-        }
-      }
-      return zones.slice(0, 5); // 多すぎないように上位数本
-    }
 
     const data = {
       asks,

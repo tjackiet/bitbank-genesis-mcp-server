@@ -16,6 +16,7 @@ import { ok, fail, failFromError, failFromValidation } from '../lib/result.js';
 import { formatSummary, formatTimestampJST } from '../lib/formatter.js';
 import { toIsoTime } from '../lib/datetime.js';
 import { fetchJson, BITBANK_API_BASE } from '../lib/http.js';
+import { estimateZones } from '../lib/depth-analysis.js';
 import type { OrderbookLevelWithCum } from '../src/types/domain.d.ts';
 
 export type OrderbookMode = 'summary' | 'pressure' | 'statistics' | 'raw';
@@ -276,24 +277,6 @@ function buildRaw(pair: string, rawJson: Record<string, unknown>, bidsRaw: RawLe
   const bestAsk = asksRaw[0]?.[0] != null ? Number(asksRaw[0][0]) : null;
   const bestBid = bidsRaw[0]?.[0] != null ? Number(bidsRaw[0][0]) : null;
   const mid = bestBid != null && bestAsk != null ? Number(((Number(bestBid) + Number(bestAsk)) / 2).toFixed(2)) : null;
-
-  // ゾーン自動推定（簡易）：上位50レベルでSTDev閾値以上を帯にする
-  function estimateZones(levels: NumLevel[], side: 'bid' | 'ask'): Array<{ low: number; high: number; label: string; color?: string }> {
-    if (!levels.length) return [];
-    const qtys = levels.map(([, s]) => s);
-    const avg = qtys.reduce((a, b) => a + b, 0) / qtys.length;
-    const stdev = Math.sqrt(qtys.reduce((a, b) => a + Math.pow(b - avg, 2), 0) / qtys.length) || 0;
-    const thr = avg + stdev * 2;
-    const zones: Array<{ low: number; high: number; label: string; color?: string }> = [];
-    for (const [p, s] of levels) {
-      if (s >= thr) {
-        const pad = p * 0.001;
-        if (side === 'bid') zones.push({ low: p - pad, high: p + pad, label: 'bid wall', color: 'rgba(34,197,94,0.08)' });
-        else zones.push({ low: p - pad, high: p + pad, label: 'ask wall', color: 'rgba(249,115,22,0.08)' });
-      }
-    }
-    return zones.slice(0, 5);
-  }
 
   const bidsNum: NumLevel[] = bidsRaw.map(([p, s]) => [Number(p), Number(s)]);
   const asksNum: NumLevel[] = asksRaw.map(([p, s]) => [Number(p), Number(s)]);
