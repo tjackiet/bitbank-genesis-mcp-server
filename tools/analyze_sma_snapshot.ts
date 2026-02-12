@@ -1,5 +1,5 @@
 import analyzeIndicators from './analyze_indicators.js';
-import { ok, fail, failFromError } from '../lib/result.js';
+import { ok, fail, failFromError, failFromValidation } from '../lib/result.js';
 import { createMeta, ensurePair } from '../lib/validate.js';
 import { formatSummary } from '../lib/formatter.js';
 import { AnalyzeSmaSnapshotOutputSchema } from '../src/schemas.js';
@@ -11,7 +11,7 @@ export default async function analyzeSmaSnapshot(
   periods: number[] = [25, 75, 200]
 ) {
   const chk = ensurePair(pair);
-  if (!chk.ok) return AnalyzeSmaSnapshotOutputSchema.parse(fail(chk.error.message, chk.error.type)) as any;
+  if (!chk.ok) return failFromValidation(chk, AnalyzeSmaSnapshotOutputSchema) as any;
   try {
     const indRes: any = await analyzeIndicators(chk.pair, type as any, Math.max(Math.max(...periods, 200), limit));
     if (!indRes?.ok) return AnalyzeSmaSnapshotOutputSchema.parse(fail(indRes?.summary || 'indicators failed', (indRes?.meta as any)?.errorType || 'internal')) as any;

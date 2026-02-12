@@ -1,5 +1,5 @@
 import analyzeIndicators from './analyze_indicators.js';
-import { ok, fail, failFromError } from '../lib/result.js';
+import { ok, fail, failFromError, failFromValidation } from '../lib/result.js';
 import { createMeta, ensurePair } from '../lib/validate.js';
 import { formatSummary } from '../lib/formatter.js';
 import { avg } from '../lib/math.js';
@@ -12,7 +12,7 @@ export default async function analyzeIchimokuSnapshot(
   lookback: number = 10
 ) {
   const chk = ensurePair(pair);
-  if (!chk.ok) return AnalyzeIchimokuSnapshotOutputSchema.parse(fail(chk.error.message, chk.error.type)) as any;
+  if (!chk.ok) return failFromValidation(chk, AnalyzeIchimokuSnapshotOutputSchema) as any;
 
   try {
     const indRes = await analyzeIndicators(chk.pair, type, Math.max(100, limit));

@@ -1,6 +1,6 @@
 import { fetchJson, BITBANK_API_BASE } from '../lib/http.js';
 import { ensurePair, validateLimit, createMeta } from '../lib/validate.js';
-import { ok, fail, failFromError } from '../lib/result.js';
+import { ok, fail, failFromError, failFromValidation } from '../lib/result.js';
 import { formatPair } from '../lib/formatter.js';
 import { toIsoMs } from '../lib/datetime.js';
 import { GetTransactionsOutputSchema } from '../src/schemas.js';
@@ -80,10 +80,10 @@ export default async function getTransactions(
   date?: string
 ) {
   const chk = ensurePair(pair);
-  if (!chk.ok) return GetTransactionsOutputSchema.parse(fail(chk.error.message, chk.error.type)) as any;
+  if (!chk.ok) return failFromValidation(chk, GetTransactionsOutputSchema) as any;
 
   const lim = validateLimit(limit, 1, 1000);
-  if (!lim.ok) return GetTransactionsOutputSchema.parse(fail(lim.error.message, lim.error.type)) as any;
+  if (!lim.ok) return failFromValidation(lim, GetTransactionsOutputSchema) as any;
 
   const url = date && /\d{8}/.test(String(date))
     ? `${BITBANK_API_BASE}/${chk.pair}/transactions/${date}`

@@ -1,6 +1,6 @@
 import { ensurePair, createMeta } from '../lib/validate.js';
 import { fetchJson, BITBANK_API_BASE } from '../lib/http.js';
-import { ok, fail, failFromError } from '../lib/result.js';
+import { ok, fail, failFromError, failFromValidation } from '../lib/result.js';
 import { formatSummary, formatTimestampJST } from '../lib/formatter.js';
 import { GetDepthOutputSchema } from '../src/schemas.js';
 
@@ -11,7 +11,7 @@ export default async function getDepth(
   { timeoutMs = 3000, maxLevels = 200 }: GetDepthOptions = {}
 ) {
   const chk = ensurePair(pair);
-  if (!chk.ok) return fail(chk.error.message, chk.error.type);
+  if (!chk.ok) return failFromValidation(chk);
 
   const url = `${BITBANK_API_BASE}/${chk.pair}/depth`;
   try {

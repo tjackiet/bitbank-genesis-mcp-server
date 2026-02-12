@@ -1,5 +1,5 @@
 import getTransactions from './get_transactions.js';
-import { ok, fail, failFromError } from '../lib/result.js';
+import { ok, fail, failFromError, failFromValidation } from '../lib/result.js';
 import { createMeta, ensurePair, validateLimit } from '../lib/validate.js';
 import { formatSummary } from '../lib/formatter.js';
 import { toIsoWithTz, toDisplayTime } from '../lib/datetime.js';
@@ -15,9 +15,9 @@ export default async function getFlowMetrics(
   tz: string = 'Asia/Tokyo'
 ) {
   const chk = ensurePair(pair);
-  if (!chk.ok) return GetFlowMetricsOutputSchema.parse(fail(chk.error.message, chk.error.type)) as any;
+  if (!chk.ok) return failFromValidation(chk, GetFlowMetricsOutputSchema) as any;
   const lim = validateLimit(limit, 1, 2000);
-  if (!lim.ok) return GetFlowMetricsOutputSchema.parse(fail(lim.error.message, lim.error.type)) as any;
+  if (!lim.ok) return failFromValidation(lim, GetFlowMetricsOutputSchema) as any;
 
   try {
     const txRes = await getTransactions(chk.pair, lim.value, date);

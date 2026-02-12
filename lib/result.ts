@@ -68,4 +68,18 @@ export function failFromError(err: unknown, opts: FailFromErrorOptions = {}): Re
 	return (schema ? schema.parse(result) : result) as ReturnType<typeof fail>;
 }
 
+/**
+ * ensurePair / validateLimit / validateDate の失敗結果から fail() を生成する共通ヘルパー。
+ *
+ * @param result - バリデーション関数の失敗結果 ({ error: { message, type } })
+ * @param schema - Zod スキーマ（指定時は schema.parse() でラップ）
+ */
+export function failFromValidation(
+	result: { error: { message: string; type: string } },
+	schema?: { parse: (v: unknown) => unknown },
+): FailResult {
+	const f = fail(result.error.message, result.error.type);
+	return (schema ? schema.parse(f) : f) as FailResult;
+}
+
 
