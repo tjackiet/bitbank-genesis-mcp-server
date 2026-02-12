@@ -12,6 +12,7 @@ import renderChartSvg from '../tools/render_chart_svg.js';
 import renderDepthSvg from '../tools/render_depth_svg.js';
 import detectPatterns from '../tools/detect_patterns.js';
 import { logToolRun, logError } from '../lib/logger.js';
+import { stddev } from '../lib/math.js';
 // schemas.ts を単一のソースとして参照し、型は z.infer に委譲
 import { RenderChartSvgInputSchema, RenderChartSvgOutputSchema, GetTickerInputSchema, GetOrderbookInputSchema, GetCandlesInputSchema, GetIndicatorsInputSchema } from './schemas.js';
 import { GetVolMetricsInputSchema, GetVolMetricsOutputSchema } from './schemas.js';
@@ -744,7 +745,7 @@ registerToolWithLog(
 			const maxClose = cArr.length ? Math.max(...cArr) : null;
 			const retArr: number[] = Array.isArray(series.ret) ? series.ret : [];
 			const mean = retArr.length ? (retArr.reduce((s, v) => s + v, 0) / retArr.length) : null;
-			const std = retArr.length ? Math.sqrt(retArr.reduce((s, v) => s + Math.pow(v - (mean as number), 2), 0) / retArr.length) : null;
+			const std = retArr.length ? stddev(retArr) : null;
 			text += `\n\n【Series】\nTotal: ${meta.sampleSize ?? cArr.length} candles\nFirst: ${firstIso} , Last: ${lastIso}\nClose range: ${minClose != null ? Number(minClose).toLocaleString() : 'n/a'} - ${maxClose != null ? Number(maxClose).toLocaleString() : 'n/a'} JPY\nReturns: mean=${mean != null ? (mean * 100).toFixed(2) + '%' : 'n/a'}, std=${std != null ? (std * 100).toFixed(2) + '%' : 'n/a'}${ann ? ' (base interval)' : ''}`;
 		}
 		return { content: [{ type: 'text', text }], structuredContent: { ...res, data: { ...res.data, tags: tagsAll } } as Record<string, unknown> };
