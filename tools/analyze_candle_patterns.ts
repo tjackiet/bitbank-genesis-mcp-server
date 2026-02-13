@@ -27,6 +27,7 @@ import {
   CandlePatternTypeEnum,
 } from '../src/schemas.js';
 import type { Candle, Pair } from '../src/types/domain.d.ts';
+import { isBullish, isBearish, bodySize, bodyTop, bodyBottom } from '../lib/candle-utils.js';
 
 // ----- 型定義 -----
 type CandlePatternType = typeof CandlePatternTypeEnum._type;
@@ -94,41 +95,7 @@ const PATTERN_DIRECTIONS: Record<CandlePatternType, 'bullish' | 'bearish'> = {
 };
 
 // ----- ヘルパー関数 -----
-
-/**
- * ローソク足が陽線かどうか
- */
-function isBullish(c: Candle): boolean {
-  return c.close > c.open;
-}
-
-/**
- * ローソク足が陰線かどうか
- */
-function isBearish(c: Candle): boolean {
-  return c.close < c.open;
-}
-
-/**
- * 実体の大きさを取得
- */
-function bodySize(c: Candle): number {
-  return Math.abs(c.close - c.open);
-}
-
-/**
- * 実体の上端
- */
-function bodyTop(c: Candle): number {
-  return Math.max(c.open, c.close);
-}
-
-/**
- * 実体の下端
- */
-function bodyBottom(c: Candle): number {
-  return Math.min(c.open, c.close);
-}
+// isBullish, isBearish, bodySize, bodyTop, bodyBottom → lib/candle-utils.ts
 
 /**
  * トレンド判定（直前n本の終値で判定）
