@@ -3,10 +3,11 @@ import getCandles from './get_candles.js';
 import { ok, fail, failFromError, failFromValidation } from '../lib/result.js';
 import { ensurePair, createMeta } from '../lib/validate.js';
 import { nowIso } from '../lib/datetime.js';
+import { TtlCache } from '../lib/cache.js';
 
 type Lookback = '30min' | '1hour' | '2hour';
 
-const cache = new Map<string, { ts: number; data: unknown }>();
+const cache = new TtlCache<unknown>({ ttlMs: 60_000 });
 
 function extractLargeOrders(levels: Array<[number, number]>, minSize: number) {
   return (levels || [])
@@ -36,7 +37,7 @@ export default async function detectWhaleEvents(
 
   const cacheKey = `${chk.pair}:${lookback}:${minSize}`;
   const hit = cache.get(cacheKey);
-  if (hit && Date.now() - hit.ts < 60_000) return hit.data;
+  if (hit) return hit;
 
   try {
     const dep = await getDepth(chk.pair, { maxLevels: 200 });
@@ -131,7 +132,7 @@ export default async function detectWhaleEvents(
     };
 
     const out = ok(text, data as any, createMeta(chk.pair, { fetchedAt: nowIso() })) as any;
-    cache.set(cacheKey, { ts: Date.now(), data: out });
+    cache.set(cacheKey, out);
     return out;
   } catch (e: unknown) {
     return failFromError(e);

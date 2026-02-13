@@ -6,11 +6,12 @@ import { BITBANK_API_BASE } from '../lib/http.js';
 import { ALLOWED_PAIRS } from '../lib/validate.js';
 import { nowIso } from '../lib/datetime.js';
 import { GetTickersJpyOutputSchema } from '../src/schemas.js';
+import { TtlCache } from '../lib/cache.js';
 
 type Item = { pair: string; sell: string; buy: string; high: string; low: string; open: string; last: string; vol: string; timestamp: number };
 
-const CACHE_TTL_MS = 10_000;
-let cache: { ts: number; data: Item[] } | null = null;
+const CACHE_KEY = 'tickers_jpy';
+const tickerCache = new TtlCache<Item[]>({ ttlMs: 10_000, maxEntries: 1 });
 
 // === Auto mode (official pairs sync) ===
 let dynamicPairs: Set<string> | null = null;
@@ -80,11 +81,13 @@ async function filterByMode(items: Item[], timeoutMs: number, retries: number, r
 }
 
 export default async function getTickersJpy(opts?: { bypassCache?: boolean }) {
-  const now = Date.now();
-  if (!opts?.bypassCache && cache && now - cache.ts < CACHE_TTL_MS) {
-    return GetTickersJpyOutputSchema.parse(
-      ok('tickers_jpy (cache)', cache.data, { cache: { hit: true, key: 'tickers_jpy' }, ts: nowIso() })
-    );
+  if (!opts?.bypassCache) {
+    const cached = tickerCache.get(CACHE_KEY);
+    if (cached) {
+      return GetTickersJpyOutputSchema.parse(
+        ok('tickers_jpy (cache)', cached, { cache: { hit: true, key: CACHE_KEY }, ts: nowIso() })
+      );
+    }
   }
 
   const url = String(process.env.TICKERS_JPY_URL || `${BITBANK_API_BASE}/tickers_jpy`);
@@ -119,7 +122,7 @@ export default async function getTickersJpy(opts?: { bypassCache?: boolean }) {
           : null;
         return { ...it, change24h: change as any, change24hPct: change as any } as Item & { change24h?: number; change24hPct?: number };
       });
-      cache = { ts: now, data };
+      tickerCache.set(CACHE_KEY, data);
       const ms = Date.now() - t0;
       const payloadBytes = Buffer.byteLength(JSON.stringify(dataRaw));
       return GetTickersJpyOutputSchema.parse(
@@ -163,7 +166,7 @@ export default async function getTickersJpy(opts?: { bypassCache?: boolean }) {
         : null;
       return { ...it, change24h: change as any, change24hPct: change as any } as Item & { change24h?: number; change24hPct?: number };
     });
-    cache = { ts: now, data };
+    tickerCache.set(CACHE_KEY, data);
     const ms = Date.now() - t0;
     const payloadBytes = Buffer.byteLength(JSON.stringify(dataRaw));
     // ロギングはサーバ側集約。ここではsummaryに最小指標を含める
