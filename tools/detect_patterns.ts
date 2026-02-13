@@ -1,6 +1,5 @@
 import analyzeIndicators from './analyze_indicators.js';
 import { ok, fail, failFromError } from '../lib/result.js';
-import { avg as avgRaw, median as medianRaw } from '../lib/math.js';
 import { DetectPatternsInputSchema, DetectPatternsOutputSchema, PatternTypeEnum } from '../src/schemas.js';
 import { generatePatternDiagram } from '../src/utils/pattern-diagrams.js';
 import {
@@ -23,6 +22,25 @@ import {
   marginFromRelDev,
 } from './patterns/regression.js';
 import { dayjs } from '../lib/datetime.js';
+import { pushCand, type CandDebugEntry } from './patterns/types.js';
+import {
+  calcATR,
+  detectWedgeBreak,
+  generateWindows,
+  determineWedgeType,
+  checkConvergenceEx,
+  evaluateTouchesEx,
+  calcAlternationScoreEx,
+  calcInsideRatioEx,
+  calcDurationScoreEx,
+  calculatePatternScoreEx,
+  periodScoreDays,
+  finalizeConf,
+  deduplicatePatterns,
+  globalDedup,
+} from './patterns/helpers.js';
+import { findUpperTrendline, findLowerTrendline } from './patterns/trendline.js';
+import { buildStatistics } from './patterns/aftermath.js';
 
 /**
  * detect_patterns - チャートパターン検出（完成済み＋形成中）
@@ -86,235 +104,21 @@ export default async function detectPatterns(
     // 1) Swing points（patterns/swing.ts から）
     const pivots = detectSwingPoints(candles as Candle[], { swingDepth, strictPivots });
 
-    // helper（patterns/regression.ts から）
+    // helper（patterns/regression.ts + patterns/helpers.ts から）
     const near = (a: number, b: number) => nearFn(a, b, tolerancePct);
     const pct = pctFn;
-    // lrWithR2 は linearRegressionWithR2 のエイリアス
     const lrWithR2 = linearRegressionWithR2;
-    // ATR計算（ブレイク検出用）
-    function calcATR(from: number, to: number, period: number = 14): number {
-      const start = Math.max(1, from);
-      const end = Math.max(start + 1, to);
-      const tr: number[] = [];
-      for (let i = start; i <= end; i++) {
-        const hi = Number(candles[i]?.high ?? NaN);
-        const lo = Number(candles[i]?.low ?? NaN);
-        const pc = Number(candles[i - 1]?.close ?? NaN);
-        if (!Number.isFinite(hi) || !Number.isFinite(lo) || !Number.isFinite(pc)) continue;
-        const r1 = hi - lo;
-        const r2 = Math.abs(hi - pc);
-        const r3 = Math.abs(lo - pc);
-        tr.push(Math.max(r1, r2, r3));
-      }
-      if (!tr.length) return 0;
-      const n = Math.min(period, tr.length);
-      const slice = tr.slice(-n);
-      return slice.reduce((s, v) => s + v, 0) / slice.length;
-    }
-    // ウェッジのブレイク検出（持続的なブレイクの開始位置を検出）
-    function detectWedgeBreak(
-      wedgeType: 'falling_wedge' | 'rising_wedge',
-      upper: { valueAt: (x: number) => number },
-      lower: { valueAt: (x: number) => number },
-      startIdx: number,
-      endIdx: number,
-      lastIdx: number,
-      atr: number
-    ): { detected: boolean; breakIdx: number; breakIsoTime: string | null; breakPrice: number | null } {
-      // パターン形成がある程度進んでから（最低20本または期間の30%経過後）スキャン開始
-      const patternBars = endIdx - startIdx;
-      const scanStart = startIdx + Math.max(20, Math.floor(patternBars * 0.3));
-      const scanEnd = Math.max(endIdx, lastIdx);
-
-      // 最初にブレイクが発生した位置を記録（一度ブレイクしたらリセットしない）
-      let firstBreakIdx = -1;
-
-      for (let i = scanStart; i <= scanEnd; i++) {
-        const close = Number(candles[i]?.close ?? NaN);
-        if (!Number.isFinite(close)) continue;
-
-        const uLine = upper.valueAt(i);
-        const lLine = lower.valueAt(i);
-        if (!Number.isFinite(uLine) || !Number.isFinite(lLine)) continue;
-
-        if (wedgeType === 'falling_wedge') {
-          // 下側ラインを実体ベースで下抜け（ATR * 0.5 バッファ）
-          if (close < lLine - atr * 0.5) {
-            if (firstBreakIdx === -1) {
-              firstBreakIdx = i;
-              break; // 最初のブレイクを見つけたら終了
-            }
-          }
-        } else {
-          // 上側ラインを実体ベースで上抜け（ATR * 0.5 バッファ）
-          if (close > uLine + atr * 0.5) {
-            if (firstBreakIdx === -1) {
-              firstBreakIdx = i;
-              break; // 最初のブレイクを見つけたら終了
-            }
-          }
-        }
-      }
-
-      if (firstBreakIdx !== -1) {
-        return {
-          detected: true,
-          breakIdx: firstBreakIdx,
-          breakIsoTime: (candles[firstBreakIdx] as any)?.isoTime ?? null,
-          breakPrice: Number(candles[firstBreakIdx]?.close ?? NaN),
-        };
-      }
-      return { detected: false, breakIdx: -1, breakIsoTime: null, breakPrice: null };
-    }
-    function generateWindows(totalBars: number, minSize: number, maxSize: number, step: number): Array<{ startIdx: number; endIdx: number }> {
-      const out: Array<{ startIdx: number; endIdx: number }> = [];
-      for (let size = minSize; size <= maxSize; size += step) {
-        for (let start = 0; start + size < totalBars; start += step) {
-          out.push({ startIdx: start, endIdx: start + size });
-        }
-      }
-      return out;
-    }
-    function determineWedgeType(slopeHigh: number, slopeLow: number, params: any): 'rising_wedge' | 'falling_wedge' | null {
-      const minSlope = params?.minSlope ?? 0.0001;
-      const maxSlope = params?.maxSlope ?? Infinity; // do not hard-reject by absolute slope magnitude
-      const ratioMinRising = (params?.slopeRatioMinRising ?? 1.20);
-      const ratioMinFalling = (params?.slopeRatioMinFalling ?? (params?.slopeRatioMin ?? 1.15));
-      // ★ 追加: 弱い方のラインが強い方の何%以上の傾きを持つべきか
-      // これにより「片方だけ傾いている」パターン（三角形）を除外
-      const minWeakerSlopeRatio = params?.minWeakerSlopeRatio ?? 0.3;
-
-      // Rising Wedge: 両ライン上向き、下側がより急
-      if (slopeHigh > minSlope && slopeLow > minSlope) {
-        // ★ 追加: 上側の傾きが下側の30%未満なら除外
-        // → 「上は水平、下だけ上向き」= Ascending Triangle に近い
-        if (slopeHigh < slopeLow * minWeakerSlopeRatio) {
-          return null;
-        }
-        if (Math.abs(slopeLow) >= Math.abs(slopeHigh) * ratioMinRising) {
-          return 'rising_wedge';
-        }
-      }
-      // Falling Wedge: 両ライン下向き、上側がより急（収束）
-      if (slopeHigh < -minSlope && slopeLow < -minSlope) {
-        // 弱い方の傾きが強い方の30%未満なら除外（三角形扱い）
-        const absHi = Math.abs(slopeHigh);
-        const absLo = Math.abs(slopeLow);
-        const weakerRatio = Math.min(absHi, absLo) / Math.max(absHi, absLo);
-        if (weakerRatio < minWeakerSlopeRatio) {
-          return null;
-        }
-        // ★ 修正: 上側ラインの方が急でないと falling wedge ではない（平行チャネル除外）
-        // |slopeHigh| / |slopeLow| >= ratioMinFalling (1.15)
-        if (absHi >= absLo * ratioMinFalling) {
-          return 'falling_wedge';
-        }
-        return null; // 比率不足 → チャネルの可能性が高い
-      }
-      const slopeRatio = Math.abs(slopeLow / (slopeHigh || (slopeLow * 1e-6)));
-      if (slopeRatio > 0.9 && slopeRatio < 1.1) return null;
-      return null;
-    }
-    function checkConvergenceEx(upper: any, lower: any, startIdx: number, endIdx: number) {
-      const midIdx = Math.floor((startIdx + endIdx) / 2);
-      const gapStart = upper.valueAt(startIdx) - lower.valueAt(startIdx);
-      const gapMid = upper.valueAt(midIdx) - lower.valueAt(midIdx);
-      const gapEnd = upper.valueAt(endIdx) - lower.valueAt(endIdx);
-      const ratio = gapEnd / Math.max(1e-12, gapStart);
-      if (!(gapEnd > 0) || !(ratio < 0.30)) return { isConverging: false }; // 0.38→0.30: より明確な収束を要求
-      const firstHalf = gapStart - gapMid;
-      const secondHalf = gapMid - gapEnd;
-      const isAccelerating = secondHalf > firstHalf * 1.2;
-      const score = Math.max(0, Math.min(1, 0.5 * (1 - ratio) + 0.3 * 1 + 0.2 * (isAccelerating ? 1 : 0)));
-      return { isConverging: true, gapStart, gapMid, gapEnd, ratio, isAccelerating, score };
-    }
-    function evaluateTouchesEx(candles: any[], upper: any, lower: any, startIdx: number, endIdx: number) {
-      // 価格比率ベースのタッチ判定（ラインの0.5%以内をタッチと判定）
-      const touchThresholdPct = 0.005; // 0.5%（バランス調整）
-      const upperTouches: any[] = [], lowerTouches: any[] = [];
-      for (let i = startIdx; i <= endIdx; i++) {
-        const c = candles[i]; if (!c) continue;
-        const u = upper.valueAt(i), l = lower.valueAt(i);
-        // 上限ライン: ラインの0.5%以内
-        const thrUp = Math.abs(u) * touchThresholdPct;
-        const distU = Math.abs(c?.high - u);
-        if (distU < thrUp && c?.high <= u + thrUp) upperTouches.push({ index: i, distance: distU, isBreak: false }); else if (c?.high > u + thrUp) upperTouches.push({ index: i, distance: distU, isBreak: true });
-        // 下限ライン: ラインの0.5%以内
-        const thrLo = Math.abs(l) * touchThresholdPct;
-        const distL = Math.abs(c?.low - l);
-        if (distL < thrLo && c?.low >= l - thrLo) lowerTouches.push({ index: i, distance: distL, isBreak: false }); else if (c?.low < l - thrLo) lowerTouches.push({ index: i, distance: distL, isBreak: true });
-      }
-      const upQ = upperTouches.filter(t => !t.isBreak).length;
-      const loQ = lowerTouches.filter(t => !t.isBreak).length;
-      const score = Math.max(0, Math.min(1, (upQ + loQ) / 8));
-      return { upperTouches, lowerTouches, upperQuality: upQ, lowerQuality: loQ, score };
-    }
-    function calcAlternationScoreEx(touches: any) {
-      const all = [...touches.upperTouches.map((t: any) => ({ ...t, type: 'upper' })), ...touches.lowerTouches.map((t: any) => ({ ...t, type: 'lower' }))].sort((a, b) => a.index - b.index);
-      if (all.length < 2) return 0;
-      let alternations = 0;
-      for (let i = 1; i < all.length; i++) { if (all[i].type !== all[i - 1].type) alternations++; }
-      return Math.max(0, Math.min(1, alternations / Math.max(1, all.length - 1)));
-    }
-    function calcInsideRatioEx(candles: any[], upper: any, lower: any, startIdx: number, endIdx: number) {
-      let inside = 0, total = 0;
-      for (let i = startIdx; i <= endIdx; i++) {
-        const c = candles[i]; if (!c) continue; total++;
-        const u = upper.valueAt(i), l = lower.valueAt(i);
-        if (c.high <= u && c.low >= l) inside++;
-      }
-      return total ? inside / total : 0;
-    }
-    function calcDurationScoreEx(bars: number, params: any) {
-      const min = params?.windowSizeMin ?? 25, max = params?.windowSizeMax ?? 90;
-      if (bars < min) return 0;
-      if (bars > max) return 0;
-      const mid = (min + max) / 2;
-      const dist = Math.abs(bars - mid) / Math.max(1, (max - min) / 2);
-      return Math.max(0, Math.min(1, 1 - dist));
-    }
-    function calculatePatternScoreEx(components: any, weights?: any) {
-      // Emphasize touch count; slightly reduce fit/converge; keep others modest.
-      const w = weights || { fit: 0.25, converge: 0.25, touch: 0.35, alternation: 0.07, inside: 0.05, duration: 0.03 };
-      return (
-        w.fit * components.fitScore +
-        w.converge * components.convergeScore +
-        w.touch * components.touchScore +
-        w.alternation * components.alternationScore +
-        w.inside * components.insideScore +
-        w.duration * components.durationScore
-      );
-    }
-    // (visual scale filters were reverted to previous behavior)
-    const periodScoreDays = (startIso?: string, endIso?: string) => {
-      if (!startIso || !endIso) return 0.7;
-      const d = Math.abs(dayjs(endIso).diff(dayjs(startIso), 'day', true));
-      if (d < 5) return 0.6;
-      if (d < 15) return 0.8;
-      if (d < 30) return 0.9;
-      return 0.7;
-    };
-    const finalizeConf = (base: number, type: string) => {
-      const adj = (type === 'head_and_shoulders' || type === 'inverse_head_and_shoulders') ? 1.1
-        : (type === 'triple_top' || type === 'triple_bottom') ? 1.05
-          : (type.startsWith('triangle') || type === 'pennant' || type === 'flag') ? 0.95
-            : 1.0;
-      const v = Math.min(1, Math.max(0, base * adj));
-      return Math.round(v * 100) / 100;
-    };
     const push = (arr: any[], item: any) => { arr.push(item); };
     // debug buffers
     const debugSwings = pivots.map(p => ({ idx: p.idx, price: p.price, kind: p.kind, isoTime: (candles[p.idx] as any)?.isoTime }));
-    const debugCandidates: Array<{ type: string; accepted: boolean; reason?: string; indices?: number[]; points?: Array<{ role: string; idx: number; price: number; isoTime?: string }>; details?: any }> = [];
-    const pushCand = (arg: { type: string; accepted: boolean; reason?: string; idxs?: number[]; pts?: Array<{ role: string; idx: number; price: number }> }) => {
-      const points = (arg.pts || []).map(p => ({ ...p, isoTime: (candles[p.idx] as any)?.isoTime }));
-      debugCandidates.push({ type: arg.type, accepted: arg.accepted, reason: arg.reason, indices: arg.idxs, points });
-    };
+    const debugCandidates: CandDebugEntry[] = [];
+    const ctx = { candles, pivots, allPeaks: filterPeaks(pivots), allValleys: filterValleys(pivots), tolerancePct, minDist, want, includeForming, debugCandidates };
+    const pcand = (arg: Parameters<typeof pushCand>[1]) => pushCand(ctx, arg);
 
     let patterns: any[] = [];
 
     // convenience lists for relaxed passes（patterns/swing.ts から）
-    const allPeaks = filterPeaks(pivots);
+    const allPeaks = ctx.allPeaks;
     const allValleys = filterValleys(pivots);
 
     // 2) Double top/bottom
@@ -330,11 +134,11 @@ export default async function detectPatterns(
         if (a.kind === 'H' && b.kind === 'L' && c.kind === 'H') {
           const patternHeight = Math.abs(a.price - b.price);
           const heightPct = patternHeight / Math.max(1, Math.max(a.price, b.price));
-          if (heightPct < 0.03) { pushCand({ type: 'double_top', accepted: false, reason: 'pattern_too_small', idxs: [a.idx, b.idx, c.idx] }); continue; }
+          if (heightPct < 0.03) { pcand({ type: 'double_top', accepted: false, reason: 'pattern_too_small', idxs: [a.idx, b.idx, c.idx] }); continue; }
           // 谷深さ: 山と谷の落差が山の5%以上必要（浅い窪みでの誤検知防止）
           const peakAvg = (a.price + c.price) / 2;
           const valleyDepthPct = (peakAvg - b.price) / Math.max(1, peakAvg);
-          if (valleyDepthPct < 0.05) { pushCand({ type: 'double_top', accepted: false, reason: 'valley_too_shallow', idxs: [a.idx, b.idx, c.idx] }); continue; }
+          if (valleyDepthPct < 0.05) { pcand({ type: 'double_top', accepted: false, reason: 'valley_too_shallow', idxs: [a.idx, b.idx, c.idx] }); continue; }
         }
         // double top: H-L-H with H~H + ネックライン下抜け（終値ベース1.5%バッファ）必須
         if (a.kind === 'H' && b.kind === 'L' && c.kind === 'H' && near(a.price, c.price)) {
@@ -376,7 +180,7 @@ export default async function detectPatterns(
               );
               push(patterns, { type: 'double_top', confidence, range: { start, end }, pivots: [a, b, c], neckline, breakout: { idx: breakoutIdx, price: Number(candles[breakoutIdx]?.close ?? NaN) }, structureDiagram: diagram });
               foundDoubleTop = true;
-              pushCand({
+              pcand({
                 type: 'double_top',
                 accepted: true,
                 idxs: [a.idx, b.idx, c.idx, breakoutIdx],
@@ -390,14 +194,14 @@ export default async function detectPatterns(
             }
           } else {
             // ネックライン未下抜け → 完成パターンとしては不採用（forming側で扱う）
-            pushCand({ type: 'double_top', accepted: false, reason: 'no_breakout', idxs: [a.idx, b.idx, c.idx], pts: [{ role: 'peak1', idx: a.idx, price: a.price }, { role: 'valley', idx: b.idx, price: b.price }, { role: 'peak2', idx: c.idx, price: c.price }] });
+            pcand({ type: 'double_top', accepted: false, reason: 'no_breakout', idxs: [a.idx, b.idx, c.idx], pts: [{ role: 'peak1', idx: a.idx, price: a.price }, { role: 'valley', idx: b.idx, price: b.price }, { role: 'peak2', idx: c.idx, price: c.price }] });
           }
         } else if (a.kind === 'H' && b.kind === 'L' && c.kind === 'H') {
           // reject reason for debugging
           const diffAbs = Math.abs(a.price - c.price);
           const diffPct = diffAbs / Math.max(1, Math.max(a.price, c.price));
           if (diffPct > tolerancePct) {
-            pushCand({
+            pcand({
               type: 'double_top',
               accepted: false,
               reason: 'peaks_not_equal',
@@ -410,11 +214,11 @@ export default async function detectPatterns(
         if (a.kind === 'L' && b.kind === 'H' && c.kind === 'L') {
           const patternHeight = Math.abs(a.price - b.price);
           const heightPct = patternHeight / Math.max(1, Math.max(a.price, b.price));
-          if (heightPct < 0.03) { pushCand({ type: 'double_bottom', accepted: false, reason: 'pattern_too_small', idxs: [a.idx, b.idx, c.idx] }); continue; }
+          if (heightPct < 0.03) { pcand({ type: 'double_bottom', accepted: false, reason: 'pattern_too_small', idxs: [a.idx, b.idx, c.idx] }); continue; }
           // 山高さ: 谷と山の落差が谷の5%以上必要（浅い突起での誤検知防止）
           const valleyAvg = (a.price + c.price) / 2;
           const peakHeightPct = (b.price - valleyAvg) / Math.max(1, valleyAvg);
-          if (peakHeightPct < 0.05) { pushCand({ type: 'double_bottom', accepted: false, reason: 'peak_too_shallow', idxs: [a.idx, b.idx, c.idx] }); continue; }
+          if (peakHeightPct < 0.05) { pcand({ type: 'double_bottom', accepted: false, reason: 'peak_too_shallow', idxs: [a.idx, b.idx, c.idx] }); continue; }
         }
         if (a.kind === 'L' && b.kind === 'H' && c.kind === 'L' && near(a.price, c.price)) {
           // ネックライン突破（終値ベース＋1.5%バッファ）を c 以降で確認
@@ -465,17 +269,17 @@ export default async function detectPatterns(
                 structureDiagram: diagram
               });
               foundDoubleBottom = true;
-              pushCand({ type: 'double_bottom', accepted: true, idxs: [a.idx, b.idx, c.idx], pts: [{ role: 'valley1', idx: a.idx, price: a.price }, { role: 'peak', idx: b.idx, price: b.price }, { role: 'valley2', idx: c.idx, price: c.price }] });
+              pcand({ type: 'double_bottom', accepted: true, idxs: [a.idx, b.idx, c.idx], pts: [{ role: 'valley1', idx: a.idx, price: a.price }, { role: 'peak', idx: b.idx, price: b.price }, { role: 'valley2', idx: c.idx, price: c.price }] });
             }
           } else {
             // ネックライン未突破 → 完成パターンとしては不採用（forming側で扱う）
-            pushCand({ type: 'double_bottom', accepted: false, reason: 'no_breakout', idxs: [a.idx, b.idx, c.idx], pts: [{ role: 'valley1', idx: a.idx, price: a.price }, { role: 'peak', idx: b.idx, price: b.price }, { role: 'valley2', idx: c.idx, price: c.price }] });
+            pcand({ type: 'double_bottom', accepted: false, reason: 'no_breakout', idxs: [a.idx, b.idx, c.idx], pts: [{ role: 'valley1', idx: a.idx, price: a.price }, { role: 'peak', idx: b.idx, price: b.price }, { role: 'valley2', idx: c.idx, price: c.price }] });
           }
         } else if (a.kind === 'L' && b.kind === 'H' && c.kind === 'L') {
           const diffAbs = Math.abs(a.price - c.price);
           const diffPct = diffAbs / Math.max(1, Math.max(a.price, c.price));
           if (diffPct > tolerancePct) {
-            pushCand({
+            pcand({
               type: 'double_bottom',
               accepted: false,
               reason: 'valleys_not_equal',
@@ -498,12 +302,12 @@ export default async function detectPatterns(
             {
               const patternHeight = Math.abs(a.price - b.price);
               const heightPct = patternHeight / Math.max(1, Math.max(a.price, b.price));
-              if (heightPct < 0.03) { pushCand({ type: 'double_top', accepted: false, reason: 'pattern_too_small', idxs: [a.idx, b.idx, c.idx] }); continue; }
+              if (heightPct < 0.03) { pcand({ type: 'double_top', accepted: false, reason: 'pattern_too_small', idxs: [a.idx, b.idx, c.idx] }); continue; }
               const peakAvg = (a.price + c.price) / 2;
               const valleyDepthPct = (peakAvg - b.price) / Math.max(1, peakAvg);
-              if (valleyDepthPct < 0.05) { pushCand({ type: 'double_top', accepted: false, reason: 'valley_too_shallow_relaxed', idxs: [a.idx, b.idx, c.idx] }); continue; }
+              if (valleyDepthPct < 0.05) { pcand({ type: 'double_top', accepted: false, reason: 'valley_too_shallow_relaxed', idxs: [a.idx, b.idx, c.idx] }); continue; }
             }
-            if (!nearRelaxed(a.price, c.price)) { pushCand({ type: 'double_top', accepted: false, reason: 'peaks_not_equal_relaxed', idxs: [a.idx, b.idx, c.idx], pts: [{ role: 'peak1', idx: a.idx, price: a.price }, { role: 'peak2', idx: c.idx, price: c.price }] }); continue; }
+            if (!nearRelaxed(a.price, c.price)) { pcand({ type: 'double_top', accepted: false, reason: 'peaks_not_equal_relaxed', idxs: [a.idx, b.idx, c.idx], pts: [{ role: 'peak1', idx: a.idx, price: a.price }, { role: 'peak2', idx: c.idx, price: c.price }] }); continue; }
             // 緩和判定でもネックライン下抜け必須
             const necklinePrice = b.price;
             const breakoutBuffer = 0.015;
@@ -540,7 +344,7 @@ export default async function detectPatterns(
               foundDoubleTop = true;
               break;
             } else {
-              pushCand({ type: 'double_top', accepted: false, reason: 'no_breakout_relaxed', idxs: [a.idx, b.idx, c.idx], pts: [{ role: 'peak1', idx: a.idx, price: a.price }, { role: 'valley', idx: b.idx, price: b.price }, { role: 'peak2', idx: c.idx, price: c.price }] });
+              pcand({ type: 'double_top', accepted: false, reason: 'no_breakout_relaxed', idxs: [a.idx, b.idx, c.idx], pts: [{ role: 'peak1', idx: a.idx, price: a.price }, { role: 'valley', idx: b.idx, price: b.price }, { role: 'peak2', idx: c.idx, price: c.price }] });
             }
           }
         }
@@ -555,12 +359,12 @@ export default async function detectPatterns(
             {
               const patternHeight = Math.abs(a.price - b.price);
               const heightPct = patternHeight / Math.max(1, Math.max(a.price, b.price));
-              if (heightPct < 0.03) { pushCand({ type: 'double_bottom', accepted: false, reason: 'pattern_too_small', idxs: [a.idx, b.idx, c.idx] }); continue; }
+              if (heightPct < 0.03) { pcand({ type: 'double_bottom', accepted: false, reason: 'pattern_too_small', idxs: [a.idx, b.idx, c.idx] }); continue; }
               const valleyAvg = (a.price + c.price) / 2;
               const peakHeightPct = (b.price - valleyAvg) / Math.max(1, valleyAvg);
-              if (peakHeightPct < 0.05) { pushCand({ type: 'double_bottom', accepted: false, reason: 'peak_too_shallow_relaxed', idxs: [a.idx, b.idx, c.idx] }); continue; }
+              if (peakHeightPct < 0.05) { pcand({ type: 'double_bottom', accepted: false, reason: 'peak_too_shallow_relaxed', idxs: [a.idx, b.idx, c.idx] }); continue; }
             }
-            if (!nearRelaxed(a.price, c.price)) { pushCand({ type: 'double_bottom', accepted: false, reason: 'valleys_not_equal_relaxed', idxs: [a.idx, b.idx, c.idx], pts: [{ role: 'valley1', idx: a.idx, price: a.price }, { role: 'valley2', idx: c.idx, price: c.price }] }); continue; }
+            if (!nearRelaxed(a.price, c.price)) { pcand({ type: 'double_bottom', accepted: false, reason: 'valleys_not_equal_relaxed', idxs: [a.idx, b.idx, c.idx], pts: [{ role: 'valley1', idx: a.idx, price: a.price }, { role: 'valley2', idx: c.idx, price: c.price }] }); continue; }
             // 緩和判定でもネックライン突破必須
             const necklinePrice = b.price;
             const breakoutBuffer = 0.015;
@@ -597,73 +401,12 @@ export default async function detectPatterns(
               foundDoubleBottom = true;
               break;
             } else {
-              pushCand({ type: 'double_bottom', accepted: false, reason: 'no_breakout_relaxed', idxs: [a.idx, b.idx, c.idx], pts: [{ role: 'valley1', idx: a.idx, price: a.price }, { role: 'peak', idx: b.idx, price: b.price }, { role: 'valley2', idx: c.idx, price: c.price }] });
+              pcand({ type: 'double_bottom', accepted: false, reason: 'no_breakout_relaxed', idxs: [a.idx, b.idx, c.idx], pts: [{ role: 'valley1', idx: a.idx, price: a.price }, { role: 'peak', idx: b.idx, price: b.price }, { role: 'valley2', idx: c.idx, price: c.price }] });
             }
           }
         }
       }
-      // --- 重複パターンの排除（同型で期間重複>50%の中から最良を採用） ---
-      function deduplicatePatterns(arr: any[]): any[] {
-        const result: any[] = [];
-        for (const pattern of arr) {
-          if (!pattern?.type || !pattern?.range?.start || !pattern?.range?.end) { result.push(pattern); continue; }
-          const overlapping = result.filter((existing: any) => {
-            if (existing?.type !== pattern.type) return false;
-            const existingStart = Date.parse(existing.range.start);
-            const existingEnd = Date.parse(existing.range.end);
-            const patternStart = Date.parse(pattern.range.start);
-            const patternEnd = Date.parse(pattern.range.end);
-            if (!Number.isFinite(existingStart) || !Number.isFinite(existingEnd) || !Number.isFinite(patternStart) || !Number.isFinite(patternEnd)) return false;
-            const overlapStart = Math.max(existingStart, patternStart);
-            const overlapEnd = Math.min(existingEnd, patternEnd);
-            const overlapDuration = Math.max(0, overlapEnd - overlapStart);
-            const existingDuration = Math.max(1, existingEnd - existingStart);
-            const patternDuration = Math.max(1, patternEnd - patternStart);
-            const minDuration = Math.min(existingDuration, patternDuration);
-            return overlapDuration / minDuration > 0.5;
-          });
-          if (overlapping.length === 0) {
-            result.push(pattern);
-          } else {
-            const allCandidates = [...overlapping, pattern];
-            // 1) 鮮度: range.end が最も遅い
-            const maxEndTime = Math.max(...allCandidates.map((p: any) => Date.parse(p.range.end)));
-            let best = allCandidates.filter((p: any) => Date.parse(p.range.end) === maxEndTime);
-            // 2) パターン整合度
-            if (best.length > 1) {
-              const maxConfidence = Math.max(...best.map((p: any) => Number(p.confidence ?? 0)));
-              best = best.filter((p: any) => Number(p.confidence ?? 0) === maxConfidence);
-            }
-            // 3) 規模（高さ）
-            if (best.length > 1) {
-              const getHeight = (p: any) => {
-                const piv = Array.isArray(p?.pivots) ? p.pivots : [];
-                if (p?.type === 'double_top' && piv.length >= 3) {
-                  const peak = Math.max(Number(piv[0]?.price ?? 0), Number(piv[2]?.price ?? 0));
-                  const valley = Number(piv[1]?.price ?? peak);
-                  return Math.max(0, peak - valley);
-                }
-                if (p?.type === 'double_bottom' && piv.length >= 3) {
-                  const valley = Math.min(Number(piv[0]?.price ?? Infinity), Number(piv[2]?.price ?? Infinity));
-                  const peak = Number(piv[1]?.price ?? valley);
-                  return Math.max(0, peak - valley);
-                }
-                return 0;
-              };
-              const maxHeight = Math.max(...best.map(getHeight));
-              best = best.filter((p: any) => getHeight(p) === maxHeight);
-            }
-            const chosen = best[0];
-            const toRemove = overlapping.filter((p: any) => p !== chosen);
-            for (const rem of toRemove) {
-              const idx = result.indexOf(rem);
-              if (idx >= 0) result.splice(idx, 1);
-            }
-            if (!result.includes(chosen)) result.push(chosen);
-          }
-        }
-        return result;
-      }
+      // --- 重複パターンの排除（patterns/helpers.ts へ抽出済み） ---
       patterns = deduplicatePatterns(patterns);
     }
 
@@ -1804,8 +1547,8 @@ export default async function detectPatterns(
 
         // ブレイク検出
         const lastIdx = candles.length - 1;
-        const atr = calcATR(w.startIdx, w.endIdx, 14);
-        const breakInfo = detectWedgeBreak(wedgeType, upper, lower, w.startIdx, w.endIdx, lastIdx, atr);
+        const atr = calcATR(candles, w.startIdx, w.endIdx, 14);
+        const breakInfo = detectWedgeBreak(candles, wedgeType, upper, lower, w.startIdx, w.endIdx, lastIdx, atr);
 
 
         // 終点: ブレイクが検出された場合はブレイク日、そうでなければウィンドウ終端
@@ -1912,146 +1655,7 @@ export default async function detectPatterns(
       const swingHighs = pivots.filter(p => p.kind === 'H').map(p => ({ idx: p.idx, price: p.price }));
       const swingLows = pivots.filter(p => p.kind === 'L').map(p => ({ idx: p.idx, price: p.price }));
 
-      // 2点を結ぶ直線を作成
-      function makeLine(p1: { idx: number; price: number }, p2: { idx: number; price: number }) {
-        const slope = (p2.price - p1.price) / Math.max(1, p2.idx - p1.idx);
-        const intercept = p1.price - slope * p1.idx;
-        return {
-          slope,
-          intercept,
-          valueAt: (idx: number) => slope * idx + intercept,
-          p1,
-          p2
-        };
-      }
-
-      // 上側トレンドライン候補を生成
-      function findUpperTrendline(highs: { idx: number; price: number }[], startIdx: number, endIdx: number, tolerance: number, maxTouchGap = 25) {
-        const inRange = highs.filter(h => h.idx >= startIdx && h.idx <= endIdx);
-        if (inRange.length < 2) return null;
-
-        const firstThird = inRange.filter(h => h.idx < startIdx + (endIdx - startIdx) / 3);
-        const lastThird = inRange.filter(h => h.idx > endIdx - (endIdx - startIdx) / 3);
-
-        if (firstThird.length === 0 || lastThird.length === 0) return null;
-
-        let bestLine: ReturnType<typeof makeLine> | null = null;
-        let bestScore = -Infinity;
-
-        for (const p1 of firstThird) {
-          for (const p2 of lastThird) {
-            if (p1.idx >= p2.idx) continue;
-
-            const line = makeLine(p1, p2);
-
-            let valid = true;
-            let violations = 0;
-            for (const h of inRange) {
-              const lineValue = line.valueAt(h.idx);
-              if (h.price > lineValue + tolerance) {
-                violations++;
-                if (violations > 1) { valid = false; break; }
-              }
-            }
-
-            if (valid) {
-              const touchPoints: number[] = [];
-              for (const h of inRange) {
-                const lineValue = line.valueAt(h.idx);
-                if (Math.abs(h.price - lineValue) <= tolerance) {
-                  touchPoints.push(h.idx);
-                }
-              }
-
-              if (touchPoints.length >= 2) {
-                touchPoints.sort((a, b) => a - b);
-                let maxGap = 0;
-                for (let i = 1; i < touchPoints.length; i++) {
-                  const gap = touchPoints[i] - touchPoints[i - 1];
-                  if (gap > maxGap) maxGap = gap;
-                }
-                if (maxGap > maxTouchGap) {
-                  valid = false;
-                }
-              }
-
-              if (valid && touchPoints.length >= 2) {
-                const score = touchPoints.length + (line.slope < 0 ? 1 : 0);
-                if (score > bestScore) {
-                  bestScore = score;
-                  bestLine = line;
-                }
-              }
-            }
-          }
-        }
-
-        return bestLine;
-      }
-
-      // 下側トレンドライン候補を生成
-      function findLowerTrendline(lows: { idx: number; price: number }[], startIdx: number, endIdx: number, tolerance: number, maxTouchGap = 25) {
-        const inRange = lows.filter(l => l.idx >= startIdx && l.idx <= endIdx);
-        if (inRange.length < 2) return null;
-
-        const firstThird = inRange.filter(l => l.idx < startIdx + (endIdx - startIdx) / 3);
-        const lastThird = inRange.filter(l => l.idx > endIdx - (endIdx - startIdx) / 3);
-
-        if (firstThird.length === 0 || lastThird.length === 0) return null;
-
-        let bestLine: ReturnType<typeof makeLine> | null = null;
-        let bestScore = -Infinity;
-
-        for (const p1 of firstThird) {
-          for (const p2 of lastThird) {
-            if (p1.idx >= p2.idx) continue;
-
-            const line = makeLine(p1, p2);
-
-            let valid = true;
-            let violations = 0;
-            for (const l of inRange) {
-              const lineValue = line.valueAt(l.idx);
-              if (l.price < lineValue - tolerance) {
-                violations++;
-                if (violations > 1) { valid = false; break; }
-              }
-            }
-
-            if (valid) {
-              const touchPoints: number[] = [];
-              for (const l of inRange) {
-                const lineValue = line.valueAt(l.idx);
-                if (Math.abs(l.price - lineValue) <= tolerance) {
-                  touchPoints.push(l.idx);
-                }
-              }
-
-              if (touchPoints.length >= 2) {
-                touchPoints.sort((a, b) => a - b);
-                let maxGap = 0;
-                for (let i = 1; i < touchPoints.length; i++) {
-                  const gap = touchPoints[i] - touchPoints[i - 1];
-                  if (gap > maxGap) maxGap = gap;
-                }
-                if (maxGap > maxTouchGap) {
-                  valid = false;
-                }
-              }
-
-              if (valid && touchPoints.length >= 2) {
-                const score = touchPoints.length + (line.slope < 0 ? 1 : 0);
-                if (score > bestScore) {
-                  bestScore = score;
-                  bestLine = line;
-                }
-              }
-            }
-          }
-        }
-
-        return bestLine;
-      }
+      // makeLine / findUpperTrendline / findLowerTrendline は patterns/trendline.ts からインポート済み
 
       // ウィンドウを生成して検出
       for (let size = windowSizeMin; size <= windowSizeMax; size += windowStep) {
@@ -2644,48 +2248,8 @@ export default async function detectPatterns(
       }
     }
 
-    // 5b) Global deduplication across types by time overlap and confidence
-    {
-      function toMs(iso?: string): number {
-        try { const t = Date.parse(String(iso)); return Number.isFinite(t) ? t : NaN; } catch { return NaN; }
-      }
-      function overlapRatio(aStart: string, aEnd: string, bStart: string, bEnd: string): number {
-        const as = toMs(aStart), ae = toMs(aEnd), bs = toMs(bStart), be = toMs(bEnd);
-        if (!Number.isFinite(as) || !Number.isFinite(ae) || !Number.isFinite(bs) || !Number.isFinite(be)) return 0;
-        const os = Math.max(as, bs);
-        const oe = Math.min(ae, be);
-        const ov = Math.max(0, oe - os);
-        const ad = Math.max(1, ae - as);
-        const bd = Math.max(1, be - bs);
-        const minD = Math.min(ad, bd);
-        return ov / minD;
-      }
-      const dedupThreshold = 0.70;
-      const out: any[] = [];
-      for (const p of patterns) {
-        const sameTypeIdx = out.findIndex(q =>
-          String(q?.type) === String(p?.type) &&
-          overlapRatio(String(q?.range?.start), String(q?.range?.end ?? q?.range?.current), String(p?.range?.start), String(p?.range?.end ?? p?.range?.current)) >= dedupThreshold
-        );
-        if (sameTypeIdx < 0) {
-          out.push(p);
-        } else {
-          const existing = out[sameTypeIdx];
-          const eConf = Number(existing?.confidence ?? 0);
-          const pConf = Number(p?.confidence ?? 0);
-          if (pConf > eConf) {
-            out[sameTypeIdx] = p;
-          } else if (pConf === eConf) {
-            const eEnd = toMs(existing?.range?.end ?? existing?.range?.current);
-            const pEnd = toMs(p?.range?.end ?? p?.range?.current);
-            if (Number.isFinite(pEnd) && Number.isFinite(eEnd) && pEnd > eEnd) {
-              out[sameTypeIdx] = p;
-            }
-          }
-        }
-      }
-      patterns = out;
-    }
+    // 5b) Global deduplication across types（patterns/helpers.ts へ抽出済み）
+    patterns = globalDedup(patterns);
 
     // 6) Triple Top / Triple Bottom (厳しめの等高/等安＋等間隔に近い)
     {
@@ -2710,12 +2274,12 @@ export default async function detectPatterns(
               const v2cands = allValleys.filter((v: any) => v.idx > b.idx && v.idx < c.idx);
               const v1 = v1cands.length ? v1cands.reduce((m: any, v: any) => v.price < m.price ? v : m) : null;
               const v2 = v2cands.length ? v2cands.reduce((m: any, v: any) => v.price < m.price ? v : m) : null;
-              if (!(v1 && v2)) { pushCand({ type: 'triple_top', accepted: false, reason: 'valleys_missing', idxs: [a.idx, b.idx, c.idx] }); continue; }
+              if (!(v1 && v2)) { pcand({ type: 'triple_top', accepted: false, reason: 'valleys_missing', idxs: [a.idx, b.idx, c.idx] }); continue; }
               const valleysNear = Math.abs(v1.price - v2.price) / Math.max(1, Math.max(v1.price, v2.price)) <= tolerancePct;
               const necklineSlopeLimit = 0.02;
               const necklineSlope = Math.abs(v1.price - v2.price) / Math.max(1, Math.max(v1.price, v2.price));
               const necklineValid = necklineSlope <= necklineSlopeLimit;
-              if (!(valleysNear && necklineValid)) { pushCand({ type: 'triple_top', accepted: false, reason: !valleysNear ? 'valleys_not_equal' : 'neckline_slope_excess', idxs: [a.idx, b.idx, c.idx] }); continue; }
+              if (!(valleysNear && necklineValid)) { pcand({ type: 'triple_top', accepted: false, reason: !valleysNear ? 'valleys_not_equal' : 'neckline_slope_excess', idxs: [a.idx, b.idx, c.idx] }); continue; }
               const devs = [relDev(a.price, b.price), relDev(b.price, c.price), relDev(a.price, c.price)];
               const tolMargin = clamp01(1 - (devs.reduce((s, v) => s + v, 0) / devs.length) / Math.max(1e-12, tolerancePct));
               const span = Math.max(a.price, b.price, c.price) - Math.min(a.price, b.price, c.price);
@@ -2741,9 +2305,9 @@ export default async function detectPatterns(
               );
               if (confidence >= (MIN_CONFIDENCE['triple_top'] ?? 0)) {
                 push(patterns, { type: 'triple_top', confidence, range: { start, end }, pivots: [a, b, c], ...(neckline ? { neckline } : {}), ...(diagram ? { structureDiagram: diagram } : {}) });
-                pushCand({ type: 'triple_top', accepted: true, idxs: [a.idx, b.idx, c.idx], pts: [{ role: 'peak1', idx: a.idx, price: a.price }, { role: 'peak2', idx: b.idx, price: b.price }, { role: 'peak3', idx: c.idx, price: c.price }] });
+                pcand({ type: 'triple_top', accepted: true, idxs: [a.idx, b.idx, c.idx], pts: [{ role: 'peak1', idx: a.idx, price: a.price }, { role: 'peak2', idx: b.idx, price: b.price }, { role: 'peak3', idx: c.idx, price: c.price }] });
               } else {
-                pushCand({ type: 'triple_top', accepted: false, reason: 'confidence_below_min', idxs: [a.idx, b.idx, c.idx] });
+                pcand({ type: 'triple_top', accepted: false, reason: 'confidence_below_min', idxs: [a.idx, b.idx, c.idx] });
               }
             }
           }
@@ -2770,13 +2334,13 @@ export default async function detectPatterns(
               const p2cands = allPeaks.filter((v: any) => v.idx > b.idx && v.idx < c.idx);
               const p1 = p1cands.length ? p1cands.reduce((m: any, v: any) => v.price > m.price ? v : m) : null;
               const p2 = p2cands.length ? p2cands.reduce((m: any, v: any) => v.price > m.price ? v : m) : null;
-              if (!(p1 && p2)) { pushCand({ type: 'triple_bottom', accepted: false, reason: 'peaks_missing', idxs: [a.idx, b.idx, c.idx] }); continue; }
+              if (!(p1 && p2)) { pcand({ type: 'triple_bottom', accepted: false, reason: 'peaks_missing', idxs: [a.idx, b.idx, c.idx] }); continue; }
               const peaksNear = Math.abs(p1.price - p2.price) / Math.max(1, Math.max(p1.price, p2.price)) <= tolerancePct;
               const necklineSlopeLimit = 0.02;
               const necklineSlope = Math.abs(p1.price - p2.price) / Math.max(1, Math.max(p1.price, p2.price));
               const necklineValid = necklineSlope <= necklineSlopeLimit;
               if (!(valleyNearStrict && valleySpreadValid && peaksNear && necklineValid)) {
-                pushCand({ type: 'triple_bottom', accepted: false, reason: !valleyNearStrict ? 'valleys_not_equal' : (!valleySpreadValid ? 'valley_spread_excess' : (!peaksNear ? 'peaks_not_equal' : 'neckline_slope_excess')), idxs: [a.idx, b.idx, c.idx] });
+                pcand({ type: 'triple_bottom', accepted: false, reason: !valleyNearStrict ? 'valleys_not_equal' : (!valleySpreadValid ? 'valley_spread_excess' : (!peaksNear ? 'peaks_not_equal' : 'neckline_slope_excess')), idxs: [a.idx, b.idx, c.idx] });
                 continue;
               }
               const devs = [relDev(a.price, b.price), relDev(b.price, c.price), relDev(a.price, c.price)];
@@ -2804,9 +2368,9 @@ export default async function detectPatterns(
               );
               if (confidence >= (MIN_CONFIDENCE['triple_bottom'] ?? 0)) {
                 push(patterns, { type: 'triple_bottom', confidence, range: { start, end }, pivots: [a, b, c], ...(neckline ? { neckline } : {}), ...(diagram ? { structureDiagram: diagram } : {}) });
-                pushCand({ type: 'triple_bottom', accepted: true, idxs: [a.idx, b.idx, c.idx], pts: [{ role: 'valley1', idx: a.idx, price: a.price }, { role: 'valley2', idx: b.idx, price: b.price }, { role: 'valley3', idx: c.idx, price: c.price }] });
+                pcand({ type: 'triple_bottom', accepted: true, idxs: [a.idx, b.idx, c.idx], pts: [{ role: 'valley1', idx: a.idx, price: a.price }, { role: 'valley2', idx: b.idx, price: b.price }, { role: 'valley3', idx: c.idx, price: c.price }] });
               } else {
-                pushCand({ type: 'triple_bottom', accepted: false, reason: 'confidence_below_min', idxs: [a.idx, b.idx, c.idx] });
+                pcand({ type: 'triple_bottom', accepted: false, reason: 'confidence_below_min', idxs: [a.idx, b.idx, c.idx] });
               }
             }
           }
@@ -2821,7 +2385,7 @@ export default async function detectPatterns(
             for (let i = 0; i <= hs.length - 3 && !placed; i++) {
               const a = hs[i], b = hs[i + 1], c = hs[i + 2];
               if ((b.idx - a.idx) < minDist || (c.idx - b.idx) < minDist) continue;
-              if (!(nearTriple(a.price, b.price) && nearTriple(b.price, c.price))) { pushCand({ type: 'triple_top', accepted: false, reason: 'peaks_not_equal_relaxed', idxs: [a.idx, b.idx, c.idx], pts: [{ role: 'peak1', idx: a.idx, price: a.price }, { role: 'peak2', idx: b.idx, price: b.price }, { role: 'peak3', idx: c.idx, price: c.price }] }); continue; }
+              if (!(nearTriple(a.price, b.price) && nearTriple(b.price, c.price))) { pcand({ type: 'triple_top', accepted: false, reason: 'peaks_not_equal_relaxed', idxs: [a.idx, b.idx, c.idx], pts: [{ role: 'peak1', idx: a.idx, price: a.price }, { role: 'peak2', idx: b.idx, price: b.price }, { role: 'peak3', idx: c.idx, price: c.price }] }); continue; }
               const start = candles[a.idx].isoTime, end = candles[c.idx].isoTime;
               if (!start || !end) continue;
               const devs = [relDev(a.price, b.price), relDev(b.price, c.price), relDev(a.price, c.price)];
@@ -2838,10 +2402,10 @@ export default async function detectPatterns(
               const v2 = v2cands.length ? v2cands.reduce((m: any, v: any) => v.price < m.price ? v : m) : null;
               const nlAvg = (v1 && v2) ? ((Number(v1.price) + Number(v2.price)) / 2) : null;
               // Additional strictness in relaxed path as well
-              if (!(v1 && v2)) { pushCand({ type: 'triple_top', accepted: false, reason: 'valleys_missing_relaxed', idxs: [a.idx, b.idx, c.idx] }); continue; }
+              if (!(v1 && v2)) { pcand({ type: 'triple_top', accepted: false, reason: 'valleys_missing_relaxed', idxs: [a.idx, b.idx, c.idx] }); continue; }
               const necklineSlopeLimit = 0.02;
               const necklineSlope = Math.abs(v1.price - v2.price) / Math.max(1, Math.max(v1.price, v2.price));
-              if (necklineSlope > necklineSlopeLimit) { pushCand({ type: 'triple_top', accepted: false, reason: 'neckline_slope_excess_relaxed', idxs: [a.idx, b.idx, c.idx] }); continue; }
+              if (necklineSlope > necklineSlopeLimit) { pcand({ type: 'triple_top', accepted: false, reason: 'neckline_slope_excess_relaxed', idxs: [a.idx, b.idx, c.idx] }); continue; }
               let diagram: any = undefined;
               const neckline = (v1 && v2) ? [{ x: a.idx, y: nlAvg }, { x: c.idx, y: nlAvg }] : undefined as any;
               if (v1 && v2) {
@@ -2861,7 +2425,7 @@ export default async function detectPatterns(
               if (confidence >= (MIN_CONFIDENCE['triple_top'] ?? 0)) {
                 push(patterns, { type: 'triple_top', confidence, range: { start, end }, pivots: [a, b, c], ...(neckline ? { neckline } : {}), ...(diagram ? { structureDiagram: diagram } : {}), _fallback: `relaxed_triple_x${f}` });
               } else {
-                pushCand({ type: 'triple_top', accepted: false, reason: 'confidence_below_min_relaxed', idxs: [a.idx, b.idx, c.idx] });
+                pcand({ type: 'triple_top', accepted: false, reason: 'confidence_below_min_relaxed', idxs: [a.idx, b.idx, c.idx] });
               }
               placed = true;
             }
@@ -2872,7 +2436,7 @@ export default async function detectPatterns(
             for (let i = 0; i <= ls.length - 3 && !placed; i++) {
               const a = ls[i], b = ls[i + 1], c = ls[i + 2];
               if ((b.idx - a.idx) < minDist || (c.idx - b.idx) < minDist) continue;
-              if (!(nearTriple(a.price, b.price) && nearTriple(b.price, c.price))) { pushCand({ type: 'triple_bottom', accepted: false, reason: 'valleys_not_equal_relaxed', idxs: [a.idx, b.idx, c.idx], pts: [{ role: 'valley1', idx: a.idx, price: a.price }, { role: 'valley2', idx: b.idx, price: b.price }, { role: 'valley3', idx: c.idx, price: c.price }] }); continue; }
+              if (!(nearTriple(a.price, b.price) && nearTriple(b.price, c.price))) { pcand({ type: 'triple_bottom', accepted: false, reason: 'valleys_not_equal_relaxed', idxs: [a.idx, b.idx, c.idx], pts: [{ role: 'valley1', idx: a.idx, price: a.price }, { role: 'valley2', idx: b.idx, price: b.price }, { role: 'valley3', idx: c.idx, price: c.price }] }); continue; }
               const start = candles[a.idx].isoTime, end = candles[c.idx].isoTime;
               if (!start || !end) continue;
               const devs = [relDev(a.price, b.price), relDev(b.price, c.price), relDev(a.price, c.price)];
@@ -2888,10 +2452,10 @@ export default async function detectPatterns(
               const p1 = p1cands.length ? p1cands.reduce((m: any, v: any) => v.price > m.price ? v : m) : null;
               const p2 = p2cands.length ? p2cands.reduce((m: any, v: any) => v.price > m.price ? v : m) : null;
               const nlAvg = (p1 && p2) ? ((Number(p1.price) + Number(p2.price)) / 2) : null;
-              if (!(p1 && p2)) { pushCand({ type: 'triple_bottom', accepted: false, reason: 'peaks_missing_relaxed', idxs: [a.idx, b.idx, c.idx] }); continue; }
+              if (!(p1 && p2)) { pcand({ type: 'triple_bottom', accepted: false, reason: 'peaks_missing_relaxed', idxs: [a.idx, b.idx, c.idx] }); continue; }
               const necklineSlopeLimit = 0.02;
               const necklineSlope = Math.abs(p1.price - p2.price) / Math.max(1, Math.max(p1.price, p2.price));
-              if (necklineSlope > necklineSlopeLimit) { pushCand({ type: 'triple_bottom', accepted: false, reason: 'neckline_slope_excess_relaxed', idxs: [a.idx, b.idx, c.idx] }); continue; }
+              if (necklineSlope > necklineSlopeLimit) { pcand({ type: 'triple_bottom', accepted: false, reason: 'neckline_slope_excess_relaxed', idxs: [a.idx, b.idx, c.idx] }); continue; }
               let diagram: any = undefined;
               const neckline = (p1 && p2) ? [{ x: a.idx, y: nlAvg }, { x: c.idx, y: nlAvg }] : undefined as any;
               if (p1 && p2) {
@@ -2911,7 +2475,7 @@ export default async function detectPatterns(
               if (confidence >= (MIN_CONFIDENCE['triple_bottom'] ?? 0)) {
                 push(patterns, { type: 'triple_bottom', confidence, range: { start, end }, pivots: [a, b, c], ...(neckline ? { neckline } : {}), ...(diagram ? { structureDiagram: diagram } : {}), _fallback: `relaxed_triple_x${f}` });
               } else {
-                pushCand({ type: 'triple_bottom', accepted: false, reason: 'confidence_below_min_relaxed', idxs: [a.idx, b.idx, c.idx] });
+                pcand({ type: 'triple_bottom', accepted: false, reason: 'confidence_below_min_relaxed', idxs: [a.idx, b.idx, c.idx] });
               }
               placed = true;
             }
@@ -3070,154 +2634,8 @@ export default async function detectPatterns(
       }
     }
 
-    // Aftermath analysis helpers
-    const isoToIndex = new Map<string, number>();
-    for (let i = 0; i < candles.length; i++) {
-      const t = (candles[i] as any)?.isoTime;
-      if (t) isoToIndex.set(String(t), i);
-    }
-    function necklineValue(p: any, idx: number): number | null {
-      const nl = Array.isArray(p?.neckline) && p.neckline.length === 2 ? p.neckline : null;
-      if (!nl) return null;
-      const [a, b] = nl;
-      // if x indices exist, linear interpolate; otherwise fallback to a.y/b.y
-      if (Number.isFinite(a?.x) && Number.isFinite(b?.x) && Number.isFinite(a?.y) && Number.isFinite(b?.y)) {
-        const x1 = Number(a.x), y1 = Number(a.y), x2 = Number(b.x), y2 = Number(b.y);
-        if (x2 !== x1) {
-          const t = (idx - x1) / (x2 - x1);
-          return y1 + (y2 - y1) * Math.max(0, Math.min(1, t));
-        }
-        return y1;
-      }
-      return Number.isFinite(a?.y) ? Number(a.y) : (Number.isFinite(b?.y) ? Number(b.y) : null);
-    }
-    function analyzeAftermath(p: any): any | null {
-      try {
-        const endIso = p?.range?.end;
-        const endIdx = isoToIndex.has(String(endIso)) ? (isoToIndex.get(String(endIso)) as number) : -1;
-        if (endIdx < 0) return null;
-        const baseClose = Number(candles[endIdx]?.close ?? NaN);
-        if (!Number.isFinite(baseClose)) return null;
-        const nlAtEnd = necklineValue(p, endIdx);
-        // direction by pattern type
-        const bullish = ['double_bottom', 'inverse_head_and_shoulders', 'triangle_ascending', 'triangle_symmetrical', 'pennant', 'flag'].includes(String(p?.type));
-        const bearish = ['double_top', 'head_and_shoulders', 'triangle_descending'].includes(String(p?.type));
-        if (!Number.isFinite(nlAtEnd as any)) return null;
-        let breakoutConfirmed = false;
-        let breakoutDate: string | undefined;
-        let daysToTarget: number | null = null;
-        // Require a small buffer over/under the neckline to confirm breakout
-        const breakoutBuffer = 0.015; // 1.5%
-        for (let i = endIdx + 1; i < Math.min(candles.length, endIdx + 30); i++) {
-          const nl = necklineValue(p, i) ?? (nlAtEnd as number);
-          const c = Number(candles[i]?.close ?? NaN);
-          if (!Number.isFinite(c) || !Number.isFinite(nl)) continue;
-          if ((bullish && c > nl * (1 + breakoutBuffer)) || (bearish && c < nl * (1 - breakoutBuffer))) {
-            breakoutConfirmed = true;
-            breakoutDate = (candles[i] as any)?.isoTime;
-            break;
-          }
-        }
-        const horizon = [3, 7, 14];
-        const priceMove: any = {};
-        let bestRet = -Infinity;
-        for (const h of horizon) {
-          const to = Math.min(candles.length - 1, endIdx + h);
-          if (to <= endIdx) continue;
-          let hi = -Infinity, lo = Infinity;
-          for (let i = endIdx + 1; i <= to; i++) {
-            hi = Math.max(hi, Number(candles[i]?.high ?? -Infinity));
-            lo = Math.min(lo, Number(candles[i]?.low ?? Infinity));
-          }
-          const closeTo = Number(candles[to]?.close ?? NaN);
-          if (!Number.isFinite(closeTo)) continue;
-          const ret = ((closeTo - baseClose) / baseClose) * 100;
-          bestRet = Math.max(bestRet, ret);
-          priceMove[`days${h}`] = { return: Number(ret.toFixed(2)), high: Number(hi.toFixed(0)), low: Number(lo.toFixed(0)) };
-        }
-        // theoretical target
-        let theoreticalTarget = NaN;
-        const nl = nlAtEnd as number;
-        const pivotPrices = Array.isArray(p?.pivots) ? p.pivots.map((x: any) => Number(x?.price)).filter((x: any) => Number.isFinite(x)) : [];
-        if (bullish && pivotPrices.length) {
-          const patternLow = Math.min(...pivotPrices);
-          theoreticalTarget = nl + (nl - patternLow);
-        } else if (bearish && pivotPrices.length) {
-          const patternHigh = Math.max(...pivotPrices);
-          theoreticalTarget = nl - (patternHigh - nl);
-        }
-        // target reached within 14 bars
-        let targetReached = false;
-        if (Number.isFinite(theoreticalTarget)) {
-          for (let i = endIdx + 1; i <= Math.min(candles.length - 1, endIdx + 14); i++) {
-            const hi = Number(candles[i]?.high ?? NaN);
-            const lo = Number(candles[i]?.low ?? NaN);
-            if (bullish && Number.isFinite(hi) && hi >= theoreticalTarget) { targetReached = true; daysToTarget = i - endIdx; break; }
-            if (bearish && Number.isFinite(lo) && lo <= theoreticalTarget) { targetReached = true; daysToTarget = i - endIdx; break; }
-          }
-        }
-        // outcome
-        function outcomeMessage(): string {
-          if (!breakoutConfirmed) return 'ネックライン未突破（パターン不発）';
-          if (targetReached) return '成功（理論目標価格到達）';
-          const r3 = priceMove?.days3?.return;
-          const r7 = priceMove?.days7?.return;
-          const r14 = priceMove?.days14?.return;
-          const arr = [r3, r7, r14].filter((v: any) => typeof v === 'number') as number[];
-          if (!arr.length) return '評価不可（事後データ不足）';
-          const best = arr.reduce((m, v) => Math.abs(v) > Math.abs(m) ? v : m, 0);
-          const bullish = ['double_bottom', 'inverse_head_and_shoulders', 'triangle_ascending', 'triangle_symmetrical', 'pennant', 'flag'].includes(String(p?.type));
-          const expected = bullish ? 1 : -1;
-          const actual = best > 0 ? 1 : -1;
-          if (expected === actual && Math.abs(best) > 3) return `部分成功（ブレイクアウト後${best > 0 ? '+' : ''}${best.toFixed(1)}%、目標未達）`;
-          if (expected !== actual && Math.abs(best) > 3) return `失敗（ブレイクアウト後、期待と逆方向に${best > 0 ? '+' : ''}${best.toFixed(1)}%）`;
-          return `失敗（ブレイクアウト後、値動き僅少: ${best > 0 ? '+' : ''}${best.toFixed(1)}%）`;
-        }
-        const outcome = outcomeMessage();
-        return {
-          breakoutDate,
-          breakoutConfirmed,
-          priceMove,
-          targetReached,
-          theoreticalTarget: Number.isFinite(theoreticalTarget) ? Math.round(theoreticalTarget) : null,
-          outcome,
-          daysToTarget,
-        };
-      } catch { return null; }
-    }
-
-    // attach aftermath and build statistics
-    const stats: Record<string, { detected: number; withAftermath: number; success: number; r7: number[]; r14: number[] }> = {};
-    for (const p of patterns) {
-      const a = analyzeAftermath(p);
-      if (a) p.aftermath = a;
-      const t = String(p.type);
-      if (!stats[t]) stats[t] = { detected: 0, withAftermath: 0, success: 0, r7: [], r14: [] };
-      stats[t].detected += 1;
-      if (a) {
-        stats[t].withAftermath += 1;
-        if (a.outcome === 'success') stats[t].success += 1;
-        const r7 = a?.priceMove?.days7?.return;
-        if (typeof r7 === 'number') stats[t].r7.push(r7);
-        const r14 = a?.priceMove?.days14?.return;
-        if (typeof r14 === 'number') stats[t].r14.push(r14);
-      }
-    }
-
-    const avg = (arr: number[]) => { const v = avgRaw(arr); return v != null ? Number(v.toFixed(2)) : null; };
-    const median = (arr: number[]) => { const v = medianRaw(arr); return v != null ? Number(v.toFixed(2)) : null; };
-    // MIN_CONFIDENCE は関数先頭で定義済み
-    const statistics: any = {};
-    for (const [k, v] of Object.entries(stats)) {
-      statistics[k] = {
-        detected: v.detected,
-        withAftermath: v.withAftermath,
-        successRate: v.withAftermath ? Number((v.success / v.withAftermath).toFixed(2)) : null,
-        avgReturn7d: avg(v.r7),
-        avgReturn14d: avg(v.r14),
-        medianReturn7d: median(v.r7),
-      };
-    }
+    // Aftermath analysis + statistics（patterns/aftermath.ts へ抽出済み）
+    const { statistics } = buildStatistics(patterns, candles);
 
     // includeForming / includeCompleted に基づくフィルタリング
     let filteredPatterns = patterns;
