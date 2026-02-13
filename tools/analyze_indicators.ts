@@ -4,6 +4,7 @@ import { ok, fail, failFromValidation } from '../lib/result.js';
 import { formatSummary } from '../lib/formatter.js';
 import { getFetchCount } from '../lib/indicator_buffer.js';
 import { GetIndicatorsDataSchema, GetIndicatorsMetaSchema, GetIndicatorsOutputSchema } from '../src/schemas.js';
+import { TtlCache } from '../lib/cache.js';
 import type {
   Result,
   Candle,
@@ -14,56 +15,16 @@ import type {
 } from '../src/types/domain.d.ts';
 
 // --- Result cache for analyzeIndicators ---
-// Same pair/type/limit within TTL → skip redundant API call & computation.
-// This is especially effective when snapshot tools (BB/SMA/Ichimoku) are
-// called sequentially for the same pair.
+// Same pair/type within TTL → skip redundant API call & computation.
+// Especially effective when snapshot tools (BB/SMA/Ichimoku) are called
+// sequentially for the same pair.
 
-const CACHE_TTL_MS = 30_000; // 30 seconds
-const CACHE_MAX_ENTRIES = 20;
-
-interface CacheEntry {
+interface IndicatorCacheValue {
   result: Result<GetIndicatorsData, GetIndicatorsMeta>;
   fetchCount: number;
-  ts: number;
 }
 
-const indicatorCache = new Map<string, CacheEntry>();
-
-function cacheKey(pair: string, type: string): string {
-  return `${pair}:${type}`;
-}
-
-function getFromCache(
-  pair: string,
-  type: string,
-  fetchCount: number,
-): Result<GetIndicatorsData, GetIndicatorsMeta> | null {
-  const key = cacheKey(pair, type);
-  const entry = indicatorCache.get(key);
-  if (!entry) return null;
-  if (Date.now() - entry.ts > CACHE_TTL_MS) {
-    indicatorCache.delete(key);
-    return null;
-  }
-  // Reuse if cached data has at least as many candles as requested
-  if (entry.fetchCount >= fetchCount) return entry.result;
-  return null;
-}
-
-function setCache(
-  pair: string,
-  type: string,
-  fetchCount: number,
-  result: Result<GetIndicatorsData, GetIndicatorsMeta>,
-): void {
-  const key = cacheKey(pair, type);
-  // Evict oldest if at capacity
-  if (indicatorCache.size >= CACHE_MAX_ENTRIES && !indicatorCache.has(key)) {
-    const oldest = indicatorCache.keys().next().value;
-    if (oldest != null) indicatorCache.delete(oldest);
-  }
-  indicatorCache.set(key, { result, fetchCount, ts: Date.now() });
-}
+const indicatorCache = new TtlCache<IndicatorCacheValue>({ ttlMs: 30_000, maxEntries: 20 });
 
 /** Clear the indicator cache (useful for testing). */
 export function clearIndicatorCache(): void {
@@ -360,8 +321,9 @@ export default async function analyzeIndicators(
   const fetchCount = getFetchCount(displayCount, indicatorKeys as unknown as any);
 
   // Check cache before fetching & computing
-  const cached = getFromCache(chk.pair, String(type), fetchCount);
-  if (cached) return cached;
+  const cacheKey = `${chk.pair}:${type}`;
+  const cached = indicatorCache.get(cacheKey);
+  if (cached && cached.fetchCount >= fetchCount) return cached.result;
 
   const candlesResult = await getCandles(chk.pair, type as any, undefined as any, fetchCount);
   if (!candlesResult.ok) return fail(candlesResult.summary.replace(/^Error: /, ''), candlesResult.meta.errorType as any);
@@ -514,7 +476,7 @@ export default async function analyzeIndicators(
   const result = GetIndicatorsOutputSchema.parse(ok(summary, parsedData, parsedMeta)) as unknown as Result<GetIndicatorsData, GetIndicatorsMeta>;
 
   // Store in cache for subsequent calls with same pair/type
-  setCache(chk.pair, String(type), fetchCount, result);
+  indicatorCache.set(cacheKey, { result, fetchCount });
 
   return result;
 }
