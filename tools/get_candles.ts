@@ -3,7 +3,7 @@ import { ensurePair, validateLimit, validateDate, createMeta } from '../lib/vali
 import { ok, fail, failFromError, failFromValidation } from '../lib/result.js';
 import { GetCandlesOutputSchema } from '../src/schemas.js';
 import { formatSummary } from '../lib/formatter.js';
-import { toIsoTime } from '../lib/datetime.js';
+import { toIsoTime, today, daysAgo, dayjs } from '../lib/datetime.js';
 import { getErrorMessage } from '../lib/error.js';
 import type { Result, GetCandlesData, GetCandlesMeta, CandleType } from '../src/types/domain.d.ts';
 
@@ -60,10 +60,7 @@ const BARS_PER_DAY: Record<string, number> = {
 };
 
 function todayYyyymmdd(): string {
-  const d = new Date();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${d.getFullYear()}${m}${day}`;
+  return today('YYYYMMDD');
 }
 
 // 単一年のデータを取得する内部関数
@@ -105,13 +102,8 @@ async function fetchSingleDay(
 }
 
 // N日前の日付をYYYYMMDD形式で取得
-function getDateNDaysAgo(daysAgo: number): string {
-  const d = new Date();
-  d.setDate(d.getDate() - daysAgo);
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${y}${m}${day}`;
+function getDateNDaysAgo(n: number): string {
+  return daysAgo(n, 'YYYYMMDD');
 }
 
 export default async function getCandles(
@@ -138,9 +130,9 @@ export default async function getCandles(
   
   // 年初付近では今年のデータだけでは足りない場合があるため、
   // 今年の経過日数も考慮して必要年数を計算
-  const now = new Date();
-  const startOfYear = new Date(now.getFullYear(), 0, 1);
-  const dayOfYear = Math.ceil((now.getTime() - startOfYear.getTime()) / (1000 * 60 * 60 * 24));
+  const now = dayjs();
+  const startOfYear = now.startOf('year');
+  const dayOfYear = now.diff(startOfYear, 'day') + 1;
   const estimatedBarsThisYear = Math.floor(dayOfYear * (barsPerYear / 365));
   
   // limit が今年の推定本数を超える場合、または単純計算で複数年が必要な場合
@@ -164,7 +156,7 @@ export default async function getCandles(
   try {
     if (needsMultiYear) {
       // 複数年の並列取得
-      const currentYear = new Date().getFullYear();
+      const currentYear = dayjs().year();
       const years = Array.from({ length: yearsNeeded }, (_, i) => currentYear - i);
 
       const results = await Promise.all(

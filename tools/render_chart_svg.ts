@@ -29,6 +29,7 @@ import analyzeIndicators from './analyze_indicators.js';
 import getDepth from './get_depth.js';
 import { ok, fail } from '../lib/result.js';
 import { formatPair } from '../lib/formatter.js';
+import { dayjs } from '../lib/datetime.js';
 import { getErrorMessage } from '../lib/error.js';
 import type { Result, Pair, CandleType, RenderChartSvgOptions, ChartPayload } from '../src/types/domain.d.ts';
 
@@ -729,9 +730,9 @@ export default async function renderChartSvg(args: RenderChartSvgOptions = {}): 
         const step = Math.max(1, Math.floor(displayItems.length / 5));
         if (i % step !== 0) return '';
         const xPos = x(i);
-        const date = new Date(d.isoTime || d.time || d.timestamp);
-        if (isNaN(date.getTime())) return '';
-        const label = `${date.getMonth() + 1}/${date.getDate()}`;
+        const date = dayjs(d.isoTime || d.time || d.timestamp);
+        if (!date.isValid()) return '';
+        const label = `${date.month() + 1}/${date.date()}`;
         return `<text x="${xPos}" y="${h - padding.bottom + 16}" text-anchor="middle" fill="#e5e7eb" font-size="10">${label}</text>`;
       })
       .join('')}

@@ -15,6 +15,7 @@
  */
 
 import type { BacktestChartData, Trade, Candle } from './types.js';
+import { dayjs } from '../../lib/datetime.js';
 
 // === 固定配色 ===
 const COLORS = {
@@ -76,10 +77,7 @@ function formatPct(pct: number): string {
  * 日付フォーマット（YYYY-MM）
  */
 function formatDateShort(isoTime: string): string {
-  const d = new Date(isoTime);
-  const year = d.getFullYear();
-  const month = String(d.getMonth() + 1).padStart(2, '0');
-  return `${year}-${month}`;
+  return dayjs(isoTime).format('YYYY-MM');
 }
 
 /**

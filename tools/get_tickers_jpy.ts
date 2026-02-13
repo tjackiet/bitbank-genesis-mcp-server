@@ -4,6 +4,7 @@ import path from 'path';
 import { getErrorMessage } from '../lib/error.js';
 import { BITBANK_API_BASE } from '../lib/http.js';
 import { ALLOWED_PAIRS } from '../lib/validate.js';
+import { nowIso } from '../lib/datetime.js';
 import { GetTickersJpyOutputSchema } from '../src/schemas.js';
 
 type Item = { pair: string; sell: string; buy: string; high: string; low: string; open: string; last: string; vol: string; timestamp: number };
@@ -82,7 +83,7 @@ export default async function getTickersJpy(opts?: { bypassCache?: boolean }) {
   const now = Date.now();
   if (!opts?.bypassCache && cache && now - cache.ts < CACHE_TTL_MS) {
     return GetTickersJpyOutputSchema.parse(
-      ok('tickers_jpy (cache)', cache.data, { cache: { hit: true, key: 'tickers_jpy' }, ts: new Date().toISOString() })
+      ok('tickers_jpy (cache)', cache.data, { cache: { hit: true, key: 'tickers_jpy' }, ts: nowIso() })
     );
   }
 
@@ -125,7 +126,7 @@ export default async function getTickersJpy(opts?: { bypassCache?: boolean }) {
         ok(
           `tickers_jpy fetched in ${ms}ms (${data.length}/${dataRaw.length} items after filter, ${payloadBytes} bytes raw, mode=${filterInfo.mode}/${filterInfo.source})`,
           data,
-          { cache: { hit: false, key: 'tickers_jpy' }, ts: new Date().toISOString(), latencyMs: ms, payloadBytes }
+          { cache: { hit: false, key: 'tickers_jpy' }, ts: nowIso(), latencyMs: ms, payloadBytes }
         )
       );
     }
@@ -170,7 +171,7 @@ export default async function getTickersJpy(opts?: { bypassCache?: boolean }) {
       ok(
         `tickers_jpy fetched in ${ms}ms (${data.length}/${dataRaw.length} items after filter, ${payloadBytes} bytes raw, mode=${filterInfo.mode}/${filterInfo.source})`,
         data,
-        { cache: { hit: false, key: 'tickers_jpy' }, ts: new Date().toISOString(), latencyMs: ms, payloadBytes, filtered: true }
+        { cache: { hit: false, key: 'tickers_jpy' }, ts: nowIso(), latencyMs: ms, payloadBytes, filtered: true }
       )
     );
   } catch (e: unknown) {

@@ -2,7 +2,7 @@ import getTransactions from './get_transactions.js';
 import { ok, fail, failFromError, failFromValidation } from '../lib/result.js';
 import { createMeta, ensurePair, validateLimit } from '../lib/validate.js';
 import { formatSummary } from '../lib/formatter.js';
-import { toIsoWithTz, toDisplayTime } from '../lib/datetime.js';
+import { toIsoTime, toIsoWithTz, toDisplayTime, dayjs } from '../lib/datetime.js';
 import { GetFlowMetricsOutputSchema } from '../src/schemas.js';
 
 type Tx = { price: number; amount: number; side: 'buy' | 'sell'; timestampMs: number; isoTime: string };
@@ -75,7 +75,7 @@ export default async function getFlowMetrics(
       const ts = b.ts + bucketMs - 1;
       outBuckets.push({
         timestampMs: ts,
-        isoTime: new Date(ts).toISOString(),
+        isoTime: toIsoTime(ts) ?? '',
         isoTimeJST: toIsoWithTz(ts, tz) ?? undefined,
         displayTime: toDisplayTime(ts, tz) ?? undefined,
         buyVolume: Number(b.vBuy.toFixed(8)),
@@ -132,7 +132,7 @@ export default async function getFlowMetrics(
       series: { buckets: outBuckets },
     };
 
-    const offsetMin = -new Date().getTimezoneOffset();
+    const offsetMin = dayjs().utcOffset();
     const offset = `${offsetMin >= 0 ? '+' : '-'}${String(Math.floor(Math.abs(offsetMin) / 60)).padStart(2, '0')}:${String(Math.abs(offsetMin) % 60).padStart(2, '0')}`;
     const meta = createMeta(chk.pair, { count: totalTrades, bucketMs, timezone: tz, timezoneOffset: offset, serverTime: toIsoWithTz(Date.now(), tz) ?? undefined });
     return GetFlowMetricsOutputSchema.parse(ok(summary, data as any, meta as any)) as any;

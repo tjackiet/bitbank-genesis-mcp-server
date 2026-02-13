@@ -8,6 +8,7 @@
  */
 
 import getCandles from '../../get_candles.js';
+import { dayjs } from '../../../lib/datetime.js';
 import type { Candle, Timeframe, Period } from '../types.js';
 
 // 期間 → 必要本数のマッピング（バックテスト対象期間）
@@ -47,7 +48,7 @@ function isValidCandle(candle: Candle): boolean {
   }
 
   // time が有効な日付であること
-  const timestamp = new Date(candle.time).getTime();
+  const timestamp = dayjs(candle.time).valueOf();
   if (isNaN(timestamp)) {
     return false;
   }
@@ -147,8 +148,8 @@ export async function fetchCandlesForBacktest(
 
   // 2. time でソート（古い順）
   validCandles.sort((a, b) => {
-    const timeA = new Date(a.time).getTime();
-    const timeB = new Date(b.time).getTime();
+    const timeA = dayjs(a.time).valueOf();
+    const timeB = dayjs(b.time).valueOf();
     return timeA - timeB;
   });
 
@@ -161,8 +162,8 @@ export async function fetchCandlesForBacktest(
 
   // 4. 再ソート（Map は順序を保証するが念のため）
   uniqueCandles.sort((a, b) => {
-    const timeA = new Date(a.time).getTime();
-    const timeB = new Date(b.time).getTime();
+    const timeA = dayjs(a.time).valueOf();
+    const timeB = dayjs(b.time).valueOf();
     return timeA - timeB;
   });
 

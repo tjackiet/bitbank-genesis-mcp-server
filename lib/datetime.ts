@@ -56,7 +56,7 @@ export function toIsoWithTz(ts: number, tz: string): string | null {
  */
 export function toDisplayTime(ts: number | undefined, tz: string = 'Asia/Tokyo'): string | null {
 	try {
-		const d = dayjs(ts ?? Date.now()).tz(tz);
+		const d = dayjs(ts).tz(tz);
 		if (!d.isValid()) return null;
 		const tzShort = tz === 'UTC' ? 'UTC' : 'JST';
 		return `${d.format('YYYY/MM/DD HH:mm:ss')} ${tzShort}`;

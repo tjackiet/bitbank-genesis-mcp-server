@@ -7,9 +7,11 @@
 
 import renderCandlePatternDiagram from './render_candle_pattern_diagram.js';
 import * as fs from 'fs';
+import { parseArgs } from './lib/cli-utils.js';
 
 async function main() {
-  const outputPath = process.argv[2] || 'candle_pattern_diagram.svg';
+  const { positional } = parseArgs();
+  const outputPath = positional[0] || 'candle_pattern_diagram.svg';
 
   console.log('🎨 Rendering candle pattern diagram...\n');
 
@@ -43,8 +45,9 @@ async function main() {
     console.log('\n💡 Open the SVG file in a browser to view the diagram.');
   } else {
     console.error('❌ Error:', result.summary);
+    process.exit(1);
   }
 }
 
-main().catch(console.error);
+main().catch((err) => { console.error(err); process.exit(1); });
 

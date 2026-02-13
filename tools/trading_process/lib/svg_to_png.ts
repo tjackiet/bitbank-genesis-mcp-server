@@ -5,6 +5,7 @@
 import sharp from 'sharp';
 import { writeFileSync, mkdirSync, existsSync } from 'fs';
 import { dirname } from 'path';
+import { dayjs } from '../../../lib/datetime.js';
 
 /**
  * Convert SVG string to PNG and save to file
@@ -57,7 +58,7 @@ export function generateBacktestChartFilename(
   strategy: string,
   format: 'png' | 'svg' = 'png'
 ): string {
-  const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+  const timestamp = dayjs().format('YYYY-MM-DDTHH-mm-ss');
   const safePair = pair.replace('_', '');
   return `backtest_${safePair}_${timeframe}_${strategy}_${timestamp}.${format}`;
 }

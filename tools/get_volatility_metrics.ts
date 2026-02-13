@@ -3,6 +3,7 @@ import { ok, fail, failFromError, failFromValidation } from '../lib/result.js';
 import { ensurePair, validateLimit, createMeta } from '../lib/validate.js';
 import { formatSummary } from '../lib/formatter.js';
 import { stddev, slidingStddev, slidingMean } from '../lib/math.js';
+import { nowIso } from '../lib/datetime.js';
 import { GetVolMetricsOutputSchema } from '../src/schemas.js';
 
 type Candle = { open: number; high: number; low: number; close: number; isoTime?: string | null };
@@ -157,7 +158,7 @@ export default async function getVolatilityMetrics(
       meta: {
         pair: chk.pair,
         type: String(type),
-        fetchedAt: new Date().toISOString(),
+        fetchedAt: nowIso(),
         baseIntervalMs: baseIntervalMsOf(type),
         sampleSize: candles.length,
         windows: [...windows],

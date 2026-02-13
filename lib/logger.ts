@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import { today, nowIso } from './datetime.js';
 
 const LOG_DIR = process.env.LOG_DIR || './logs';
 const LOG_LEVEL = (process.env.LOG_LEVEL || 'info').toLowerCase();
@@ -17,9 +18,9 @@ function writeJsonl(file: string, obj: unknown) {
 
 export function log(level: 'error' | 'warn' | 'info' | 'debug', event: Record<string, unknown>): void {
   if ((LEVELS[level] ?? 2) > THRESH) return;
-  const date = new Date().toISOString().slice(0, 10);
+  const date = today('YYYY-MM-DD');
   const file = path.join(LOG_DIR, `${date}.jsonl`);
-  const record = { ts: new Date().toISOString(), level, ...event } as const;
+  const record = { ts: nowIso(), level, ...event } as const;
   try {
     writeJsonl(file, record);
   } catch {

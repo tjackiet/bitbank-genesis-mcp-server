@@ -1,6 +1,7 @@
 import fs from 'fs';
 import readline from 'readline';
 import path from 'path';
+import { dayjs } from '../lib/datetime.js';
 
 const LOG_DIR = process.env.LOG_DIR || './logs';
 const REPORT_DIR = './reports';
@@ -14,9 +15,7 @@ type Stats = {
 };
 
 async function generateReport(): Promise<void> {
-  const targetDate = new Date();
-  targetDate.setDate(targetDate.getDate() - 1);
-  const dateStr = targetDate.toISOString().split('T')[0];
+  const dateStr = dayjs().subtract(1, 'day').format('YYYY-MM-DD');
 
   console.log(`Generating report for ${dateStr}...`);
 

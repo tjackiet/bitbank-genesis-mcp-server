@@ -2,6 +2,7 @@ import getDepth from './get_depth.js';
 import getCandles from './get_candles.js';
 import { ok, fail, failFromError, failFromValidation } from '../lib/result.js';
 import { ensurePair, createMeta } from '../lib/validate.js';
+import { nowIso } from '../lib/datetime.js';
 
 type Lookback = '30min' | '1hour' | '2hour';
 
@@ -129,7 +130,7 @@ export default async function detectWhaleEvents(
       meta: { lookback, minSize },
     };
 
-    const out = ok(text, data as any, createMeta(chk.pair, { fetchedAt: new Date().toISOString() })) as any;
+    const out = ok(text, data as any, createMeta(chk.pair, { fetchedAt: nowIso() })) as any;
     cache.set(cacheKey, { ts: Date.now(), data: out });
     return out;
   } catch (e: unknown) {

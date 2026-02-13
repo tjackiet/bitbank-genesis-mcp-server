@@ -1,0 +1,352 @@
+/**
+ * パターン検出の共通ヘルパー関数
+ *
+ * detect_patterns.ts 内にネストされていた関数を、candles 等を明示的に受け取る
+ * モジュールレベル関数に変換したもの。
+ */
+import type { CandleData } from './types.js';
+import { dayjs } from '../../lib/datetime.js';
+
+// ---------------------------------------------------------------------------
+// ATR 計算
+// ---------------------------------------------------------------------------
+export function calcATR(candles: CandleData[], from: number, to: number, period: number = 14): number {
+  const start = Math.max(1, from);
+  const end = Math.max(start + 1, to);
+  const tr: number[] = [];
+  for (let i = start; i <= end; i++) {
+    const hi = Number(candles[i]?.high ?? NaN);
+    const lo = Number(candles[i]?.low ?? NaN);
+    const pc = Number(candles[i - 1]?.close ?? NaN);
+    if (!Number.isFinite(hi) || !Number.isFinite(lo) || !Number.isFinite(pc)) continue;
+    const r1 = hi - lo;
+    const r2 = Math.abs(hi - pc);
+    const r3 = Math.abs(lo - pc);
+    tr.push(Math.max(r1, r2, r3));
+  }
+  if (!tr.length) return 0;
+  const n = Math.min(period, tr.length);
+  const slice = tr.slice(-n);
+  return slice.reduce((s, v) => s + v, 0) / slice.length;
+}
+
+// ---------------------------------------------------------------------------
+// ウェッジのブレイク検出
+// ---------------------------------------------------------------------------
+export interface WedgeBreakResult {
+  detected: boolean;
+  breakIdx: number;
+  breakIsoTime: string | null;
+  breakPrice: number | null;
+}
+
+export function detectWedgeBreak(
+  candles: CandleData[],
+  wedgeType: 'falling_wedge' | 'rising_wedge',
+  upper: { valueAt: (x: number) => number },
+  lower: { valueAt: (x: number) => number },
+  startIdx: number,
+  endIdx: number,
+  lastIdx: number,
+  atr: number
+): WedgeBreakResult {
+  const patternBars = endIdx - startIdx;
+  const scanStart = startIdx + Math.max(20, Math.floor(patternBars * 0.3));
+  const scanEnd = Math.max(endIdx, lastIdx);
+
+  let firstBreakIdx = -1;
+
+  for (let i = scanStart; i <= scanEnd; i++) {
+    const close = Number(candles[i]?.close ?? NaN);
+    if (!Number.isFinite(close)) continue;
+
+    const uLine = upper.valueAt(i);
+    const lLine = lower.valueAt(i);
+    if (!Number.isFinite(uLine) || !Number.isFinite(lLine)) continue;
+
+    if (wedgeType === 'falling_wedge') {
+      if (close < lLine - atr * 0.5) {
+        firstBreakIdx = i;
+        break;
+      }
+    } else {
+      if (close > uLine + atr * 0.5) {
+        firstBreakIdx = i;
+        break;
+      }
+    }
+  }
+
+  if (firstBreakIdx !== -1) {
+    return {
+      detected: true,
+      breakIdx: firstBreakIdx,
+      breakIsoTime: candles[firstBreakIdx]?.isoTime ?? null,
+      breakPrice: Number(candles[firstBreakIdx]?.close ?? NaN),
+    };
+  }
+  return { detected: false, breakIdx: -1, breakIsoTime: null, breakPrice: null };
+}
+
+// ---------------------------------------------------------------------------
+// ウィンドウ生成
+// ---------------------------------------------------------------------------
+export function generateWindows(
+  totalBars: number,
+  minSize: number,
+  maxSize: number,
+  step: number
+): Array<{ startIdx: number; endIdx: number }> {
+  const out: Array<{ startIdx: number; endIdx: number }> = [];
+  for (let size = minSize; size <= maxSize; size += step) {
+    for (let start = 0; start + size < totalBars; start += step) {
+      out.push({ startIdx: start, endIdx: start + size });
+    }
+  }
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// ウェッジタイプ判定
+// ---------------------------------------------------------------------------
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function determineWedgeType(slopeHigh: number, slopeLow: number, params: any): 'rising_wedge' | 'falling_wedge' | null {
+  const minSlope = params?.minSlope ?? 0.0001;
+  const ratioMinRising = (params?.slopeRatioMinRising ?? 1.20);
+  const ratioMinFalling = (params?.slopeRatioMinFalling ?? (params?.slopeRatioMin ?? 1.15));
+  const minWeakerSlopeRatio = params?.minWeakerSlopeRatio ?? 0.3;
+
+  // Rising Wedge: 両ライン上向き、下側がより急
+  if (slopeHigh > minSlope && slopeLow > minSlope) {
+    if (slopeHigh < slopeLow * minWeakerSlopeRatio) return null;
+    if (Math.abs(slopeLow) >= Math.abs(slopeHigh) * ratioMinRising) return 'rising_wedge';
+  }
+  // Falling Wedge: 両ライン下向き、上側がより急
+  if (slopeHigh < -minSlope && slopeLow < -minSlope) {
+    const absHi = Math.abs(slopeHigh);
+    const absLo = Math.abs(slopeLow);
+    const weakerRatio = Math.min(absHi, absLo) / Math.max(absHi, absLo);
+    if (weakerRatio < minWeakerSlopeRatio) return null;
+    if (absHi >= absLo * ratioMinFalling) return 'falling_wedge';
+    return null;
+  }
+  const slopeRatio = Math.abs(slopeLow / (slopeHigh || (slopeLow * 1e-6)));
+  if (slopeRatio > 0.9 && slopeRatio < 1.1) return null;
+  return null;
+}
+
+// ---------------------------------------------------------------------------
+// ウェッジ品質スコアリング関数群
+// ---------------------------------------------------------------------------
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function checkConvergenceEx(upper: any, lower: any, startIdx: number, endIdx: number) {
+  const midIdx = Math.floor((startIdx + endIdx) / 2);
+  const gapStart = upper.valueAt(startIdx) - lower.valueAt(startIdx);
+  const gapMid = upper.valueAt(midIdx) - lower.valueAt(midIdx);
+  const gapEnd = upper.valueAt(endIdx) - lower.valueAt(endIdx);
+  const ratio = gapEnd / Math.max(1e-12, gapStart);
+  if (!(gapEnd > 0) || !(ratio < 0.30)) return { isConverging: false };
+  const firstHalf = gapStart - gapMid;
+  const secondHalf = gapMid - gapEnd;
+  const isAccelerating = secondHalf > firstHalf * 1.2;
+  const score = Math.max(0, Math.min(1, 0.5 * (1 - ratio) + 0.3 * 1 + 0.2 * (isAccelerating ? 1 : 0)));
+  return { isConverging: true, gapStart, gapMid, gapEnd, ratio, isAccelerating, score };
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function evaluateTouchesEx(candles: CandleData[], upper: any, lower: any, startIdx: number, endIdx: number) {
+  const touchThresholdPct = 0.005;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const upperTouches: any[] = [], lowerTouches: any[] = [];
+  for (let i = startIdx; i <= endIdx; i++) {
+    const c = candles[i]; if (!c) continue;
+    const u = upper.valueAt(i), l = lower.valueAt(i);
+    const thrUp = Math.abs(u) * touchThresholdPct;
+    const distU = Math.abs(c.high - u);
+    if (distU < thrUp && c.high <= u + thrUp) upperTouches.push({ index: i, distance: distU, isBreak: false }); else if (c.high > u + thrUp) upperTouches.push({ index: i, distance: distU, isBreak: true });
+    const thrLo = Math.abs(l) * touchThresholdPct;
+    const distL = Math.abs(c.low - l);
+    if (distL < thrLo && c.low >= l - thrLo) lowerTouches.push({ index: i, distance: distL, isBreak: false }); else if (c.low < l - thrLo) lowerTouches.push({ index: i, distance: distL, isBreak: true });
+  }
+  const upQ = upperTouches.filter((t: { isBreak: boolean }) => !t.isBreak).length;
+  const loQ = lowerTouches.filter((t: { isBreak: boolean }) => !t.isBreak).length;
+  const score = Math.max(0, Math.min(1, (upQ + loQ) / 8));
+  return { upperTouches, lowerTouches, upperQuality: upQ, lowerQuality: loQ, score };
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function calcAlternationScoreEx(touches: any): number {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const all = [...touches.upperTouches.map((t: any) => ({ ...t, type: 'upper' })), ...touches.lowerTouches.map((t: any) => ({ ...t, type: 'lower' }))].sort((a, b) => a.index - b.index);
+  if (all.length < 2) return 0;
+  let alternations = 0;
+  for (let i = 1; i < all.length; i++) { if (all[i].type !== all[i - 1].type) alternations++; }
+  return Math.max(0, Math.min(1, alternations / Math.max(1, all.length - 1)));
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function calcInsideRatioEx(candles: CandleData[], upper: any, lower: any, startIdx: number, endIdx: number): number {
+  let inside = 0, total = 0;
+  for (let i = startIdx; i <= endIdx; i++) {
+    const c = candles[i]; if (!c) continue; total++;
+    const u = upper.valueAt(i), l = lower.valueAt(i);
+    if (c.high <= u && c.low >= l) inside++;
+  }
+  return total ? inside / total : 0;
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function calcDurationScoreEx(bars: number, params: any): number {
+  const min = params?.windowSizeMin ?? 25, max = params?.windowSizeMax ?? 90;
+  if (bars < min) return 0;
+  if (bars > max) return 0;
+  const mid = (min + max) / 2;
+  const dist = Math.abs(bars - mid) / Math.max(1, (max - min) / 2);
+  return Math.max(0, Math.min(1, 1 - dist));
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function calculatePatternScoreEx(components: any, weights?: any): number {
+  const w = weights || { fit: 0.25, converge: 0.25, touch: 0.35, alternation: 0.07, inside: 0.05, duration: 0.03 };
+  return (
+    w.fit * components.fitScore +
+    w.converge * components.convergeScore +
+    w.touch * components.touchScore +
+    w.alternation * components.alternationScore +
+    w.inside * components.insideScore +
+    w.duration * components.durationScore
+  );
+}
+
+// ---------------------------------------------------------------------------
+// パターン共通スコアリング
+// ---------------------------------------------------------------------------
+export function periodScoreDays(startIso?: string, endIso?: string): number {
+  if (!startIso || !endIso) return 0.7;
+  const d = Math.abs(dayjs(endIso).diff(dayjs(startIso), 'day', true));
+  if (d < 5) return 0.6;
+  if (d < 15) return 0.8;
+  if (d < 30) return 0.9;
+  return 0.7;
+}
+
+export function finalizeConf(base: number, type: string): number {
+  const adj = (type === 'head_and_shoulders' || type === 'inverse_head_and_shoulders') ? 1.1
+    : (type === 'triple_top' || type === 'triple_bottom') ? 1.05
+      : (type.startsWith('triangle') || type === 'pennant' || type === 'flag') ? 0.95
+        : 1.0;
+  const v = Math.min(1, Math.max(0, base * adj));
+  return Math.round(v * 100) / 100;
+}
+
+// ---------------------------------------------------------------------------
+// 重複パターンの排除
+// ---------------------------------------------------------------------------
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function deduplicatePatterns(arr: any[]): any[] {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const result: any[] = [];
+  for (const pattern of arr) {
+    if (!pattern?.type || !pattern?.range?.start || !pattern?.range?.end) { result.push(pattern); continue; }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const overlapping = result.filter((existing: any) => {
+      if (existing?.type !== pattern.type) return false;
+      const existingStart = Date.parse(existing.range.start);
+      const existingEnd = Date.parse(existing.range.end);
+      const patternStart = Date.parse(pattern.range.start);
+      const patternEnd = Date.parse(pattern.range.end);
+      if (!Number.isFinite(existingStart) || !Number.isFinite(existingEnd) || !Number.isFinite(patternStart) || !Number.isFinite(patternEnd)) return false;
+      const overlapStart = Math.max(existingStart, patternStart);
+      const overlapEnd = Math.min(existingEnd, patternEnd);
+      const overlapDuration = Math.max(0, overlapEnd - overlapStart);
+      const existingDuration = Math.max(1, existingEnd - existingStart);
+      const patternDuration = Math.max(1, patternEnd - patternStart);
+      const minDuration = Math.min(existingDuration, patternDuration);
+      return overlapDuration / minDuration > 0.5;
+    });
+    if (overlapping.length === 0) {
+      result.push(pattern);
+    } else {
+      const allCandidates = [...overlapping, pattern];
+      const maxEndTime = Math.max(...allCandidates.map((p: { range: { end: string } }) => Date.parse(p.range.end)));
+      let best = allCandidates.filter((p: { range: { end: string } }) => Date.parse(p.range.end) === maxEndTime);
+      if (best.length > 1) {
+        const maxConfidence = Math.max(...best.map((p: { confidence?: number }) => Number(p.confidence ?? 0)));
+        best = best.filter((p: { confidence?: number }) => Number(p.confidence ?? 0) === maxConfidence);
+      }
+      if (best.length > 1) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const getHeight = (p: any) => {
+          const piv = Array.isArray(p?.pivots) ? p.pivots : [];
+          if (p?.type === 'double_top' && piv.length >= 3) {
+            const peak = Math.max(Number(piv[0]?.price ?? 0), Number(piv[2]?.price ?? 0));
+            const valley = Number(piv[1]?.price ?? peak);
+            return Math.max(0, peak - valley);
+          }
+          if (p?.type === 'double_bottom' && piv.length >= 3) {
+            const valley = Math.min(Number(piv[0]?.price ?? 0), Number(piv[2]?.price ?? 0));
+            const peak = Number(piv[1]?.price ?? valley);
+            return Math.max(0, peak - valley);
+          }
+          return 0;
+        };
+        const maxHeight = Math.max(...best.map(getHeight));
+        best = best.filter(p => getHeight(p) === maxHeight);
+      }
+      const winner = best[0];
+      for (const dup of overlapping) {
+        const idx = result.indexOf(dup);
+        if (idx >= 0) result.splice(idx, 1);
+      }
+      result.push(winner);
+    }
+  }
+  return result;
+}
+
+// ---------------------------------------------------------------------------
+// グローバル重複排除（全パターン種別横断）
+// ---------------------------------------------------------------------------
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function globalDedup(patterns: any[]): any[] {
+  function toMs(iso?: string): number {
+    try { const t = Date.parse(String(iso)); return Number.isFinite(t) ? t : NaN; } catch { return NaN; }
+  }
+  function overlapRatio(aStart: string, aEnd: string, bStart: string, bEnd: string): number {
+    const as = toMs(aStart), ae = toMs(aEnd), bs = toMs(bStart), be = toMs(bEnd);
+    if (!Number.isFinite(as) || !Number.isFinite(ae) || !Number.isFinite(bs) || !Number.isFinite(be)) return 0;
+    const os = Math.max(as, bs);
+    const oe = Math.min(ae, be);
+    const ov = Math.max(0, oe - os);
+    const ad = Math.max(1, ae - as);
+    const bd = Math.max(1, be - bs);
+    const minD = Math.min(ad, bd);
+    return ov / minD;
+  }
+  const dedupThreshold = 0.70;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const out: any[] = [];
+  for (const p of patterns) {
+    const sameTypeIdx = out.findIndex(q =>
+      String(q?.type) === String(p?.type) &&
+      overlapRatio(String(q?.range?.start), String(q?.range?.end ?? q?.range?.current), String(p?.range?.start), String(p?.range?.end ?? p?.range?.current)) >= dedupThreshold
+    );
+    if (sameTypeIdx < 0) {
+      out.push(p);
+    } else {
+      const existing = out[sameTypeIdx];
+      const eConf = Number(existing?.confidence ?? 0);
+      const pConf = Number(p?.confidence ?? 0);
+      if (pConf > eConf) {
+        out[sameTypeIdx] = p;
+      } else if (pConf === eConf) {
+        const eEnd = toMs(existing?.range?.end ?? existing?.range?.current);
+        const pEnd = toMs(p?.range?.end ?? p?.range?.current);
+        if (Number.isFinite(pEnd) && Number.isFinite(eEnd) && pEnd > eEnd) {
+          out[sameTypeIdx] = p;
+        }
+      }
+    }
+  }
+  return out;
+}
