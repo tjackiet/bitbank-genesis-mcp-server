@@ -47,6 +47,28 @@ export interface DetectContext {
   includeForming: boolean;
   /** デバッグ候補バッファ（各モジュールが直接 push する） */
   debugCandidates: CandDebugEntry[];
+  /** 時間軸（'1day', '1hour', '1week' 等） */
+  type: string;
+  /** スイング深度 */
+  swingDepth: number;
+  /** 近接判定ヘルパー（tolerancePct ベース） */
+  near: (a: number, b: number) => boolean;
+  /** 変化率計算 */
+  pct: (a: number, b: number) => number;
+  /** R² 付き線形回帰 */
+  lrWithR2: (pts: Array<{ x: number; y: number }>) => {
+    slope: number;
+    intercept: number;
+    r2: number;
+    valueAt: (x: number) => number;
+  };
+}
+
+/** 各パターン検出関数の戻り値 */
+export interface DetectResult {
+  patterns: PatternEntry[];
+  /** 検出成否フラグ（後続の relaxed パスに使用） */
+  found?: Record<string, boolean>;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- detect_patterns が any[] で蓄積するため
