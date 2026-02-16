@@ -581,6 +581,66 @@ registerToolWithLog(
 		if (threeSignals) lines.push(`  三役判定: ${threeSignals.judge}`);
 		if (toCloudDistance != null && cloudPos === 'below_cloud') lines.push(`  雲突入まで: ${toCloudDistance.toFixed(1)}%`);
 		lines.push('');
+		// Stochastic RSI
+		const stochK = ind.STOCH_RSI_K ?? null;
+		const stochD = ind.STOCH_RSI_D ?? null;
+		const stochPrevK = ind.STOCH_RSI_prevK ?? null;
+		const stochPrevD = ind.STOCH_RSI_prevD ?? null;
+		lines.push('【ストキャスティクスRSI】');
+		if (stochK != null && stochD != null) {
+			lines.push(`  %K: ${Number(stochK).toFixed(1)}  %D: ${Number(stochD).toFixed(1)}`);
+			const stochZone = Number(stochK) <= 20 ? '売られすぎゾーン' : (Number(stochK) >= 80 ? '買われすぎゾーン' : '中立圏');
+			const stochStrength = Number(stochK) <= 10 ? '（強い売られすぎ）' : (Number(stochK) >= 90 ? '（強い買われすぎ）' : '');
+			lines.push(`  判定: ${stochZone}${stochStrength}`);
+			if (stochPrevK != null && stochPrevD != null) {
+				const prevBelow = Number(stochPrevK) < Number(stochPrevD);
+				const curAbove = Number(stochK) > Number(stochD);
+				const prevAbove = Number(stochPrevK) > Number(stochPrevD);
+				const curBelow = Number(stochK) < Number(stochD);
+				if (prevBelow && curAbove) {
+					lines.push('  クロス: %Kが%Dを上抜け（買いシグナル候補）');
+				} else if (prevAbove && curBelow) {
+					lines.push('  クロス: %Kが%Dを下抜け（売りシグナル候補）');
+				} else {
+					lines.push('  クロス: なし');
+				}
+			}
+		} else {
+			lines.push('  データ不足');
+		}
+		lines.push('');
+		// OBV
+		const obvVal = ind.OBV ?? null;
+		const obvSma20 = ind.OBV_SMA20 ?? null;
+		const obvTrend = ind.OBV_trend ?? null;
+		lines.push('【OBV (On-Balance Volume)】');
+		if (obvVal != null) {
+			const obvUnit = String(pair).toLowerCase().includes('btc') ? 'BTC' : '';
+			lines.push(`  現在値: ${Number(obvVal).toLocaleString(undefined, { maximumFractionDigits: 2 })} ${obvUnit}`.trim());
+			if (obvSma20 != null) lines.push(`  SMA(20): ${Number(obvSma20).toLocaleString(undefined, { maximumFractionDigits: 2 })} ${obvUnit}`.trim());
+			if (obvTrend != null) {
+				const obvTrendLabel = obvTrend === 'rising' ? 'OBV > SMA → 出来高が上昇を支持' : (obvTrend === 'falling' ? 'OBV < SMA → 出来高が下落を支持' : 'OBV ≈ SMA → 出来高中立');
+				lines.push(`  トレンド: ${obvTrendLabel}`);
+			}
+			// Divergence check: price direction vs OBV direction over recent bars
+			const obvPrev = ind.OBV_prevObv ?? null;
+			if (obvPrev != null && prev != null && close != null) {
+				const priceUp = Number(close) > Number(prev);
+				const priceDn = Number(close) < Number(prev);
+				const obvUp = Number(obvVal) > Number(obvPrev);
+				const obvDn = Number(obvVal) < Number(obvPrev);
+				if (priceUp && obvDn) {
+					lines.push('  ダイバージェンス: ベアリッシュ（価格↑・OBV↓）→ 上昇の持続力に疑問');
+				} else if (priceDn && obvUp) {
+					lines.push('  ダイバージェンス: ブルリッシュ（価格↓・OBV↑）→ 反発の可能性');
+				} else {
+					lines.push('  ダイバージェンス: なし（価格とOBVが同方向）');
+				}
+			}
+		} else {
+			lines.push('  データ不足');
+		}
+		lines.push('');
 		lines.push('【次に確認すべきこと】');
 		lines.push('  ・より詳しく: analyze_bb_snapshot / analyze_ichimoku_snapshot / analyze_sma_snapshot');
 		lines.push('  ・転換サイン例: RSI>40, MACDヒストグラムのプラ転, 25日線の明確な上抜け');

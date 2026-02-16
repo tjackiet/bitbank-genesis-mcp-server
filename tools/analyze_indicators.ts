@@ -218,6 +218,137 @@ export function ichimokuSeries(
   };
 }
 
+/**
+ * Stochastic RSI: RSI値にストキャスティクス計算を適用。
+ * %K = (RSI - RSI_Low) / (RSI_High - RSI_Low) * 100
+ * %D = SMA(%K, smoothD)
+ */
+export function computeStochRSI(
+  closes: number[],
+  rsiPeriod = 14,
+  stochPeriod = 14,
+  smoothK = 3,
+  smoothD = 3
+): { k: number | null; d: number | null; prevK: number | null; prevD: number | null } {
+  const rsiSeries = rsi(closes, rsiPeriod);
+  // Extract numeric RSI values (skip leading nulls)
+  const rsiValues: (number | null)[] = rsiSeries;
+
+  // Need at least stochPeriod RSI values to compute
+  const validRsi = rsiValues.filter((v): v is number => v != null);
+  if (validRsi.length < stochPeriod + smoothK + smoothD) {
+    return { k: null, d: null, prevK: null, prevD: null };
+  }
+
+  // Compute raw %K for each RSI value where we have enough lookback
+  const rawK: (number | null)[] = [];
+  for (let i = 0; i < rsiValues.length; i++) {
+    const val = rsiValues[i];
+    if (val == null || i < stochPeriod - 1) {
+      rawK.push(null);
+      continue;
+    }
+    // Look back stochPeriod values in RSI
+    const window: number[] = [];
+    for (let j = i - stochPeriod + 1; j <= i; j++) {
+      if (rsiValues[j] != null) window.push(rsiValues[j] as number);
+    }
+    if (window.length < stochPeriod) {
+      rawK.push(null);
+      continue;
+    }
+    const lo = Math.min(...window);
+    const hi = Math.max(...window);
+    const range = hi - lo;
+    rawK.push(range === 0 ? 50 : Number((((val - lo) / range) * 100).toFixed(2)));
+  }
+
+  // Smooth rawK with SMA(smoothK) to get %K
+  const smoothedK: (number | null)[] = [];
+  for (let i = 0; i < rawK.length; i++) {
+    if (i < smoothK - 1 || rawK[i] == null) {
+      smoothedK.push(null);
+      continue;
+    }
+    let sum = 0;
+    let count = 0;
+    for (let j = i - smoothK + 1; j <= i; j++) {
+      if (rawK[j] != null) { sum += rawK[j] as number; count++; }
+    }
+    smoothedK.push(count === smoothK ? Number((sum / count).toFixed(2)) : null);
+  }
+
+  // %D = SMA(%K, smoothD)
+  const dSeries: (number | null)[] = [];
+  for (let i = 0; i < smoothedK.length; i++) {
+    if (i < smoothD - 1 || smoothedK[i] == null) {
+      dSeries.push(null);
+      continue;
+    }
+    let sum = 0;
+    let count = 0;
+    for (let j = i - smoothD + 1; j <= i; j++) {
+      if (smoothedK[j] != null) { sum += smoothedK[j] as number; count++; }
+    }
+    dSeries.push(count === smoothD ? Number((sum / count).toFixed(2)) : null);
+  }
+
+  const k = smoothedK.at(-1) ?? null;
+  const d = dSeries.at(-1) ?? null;
+  const prevK = smoothedK.at(-2) ?? null;
+  const prevD = dSeries.at(-2) ?? null;
+
+  return { k, d, prevK, prevD };
+}
+
+/**
+ * OBV (On-Balance Volume): 出来高を価格方向に応じて累積加算/減算。
+ * close > prev_close → OBV += volume
+ * close < prev_close → OBV -= volume
+ * close == prev_close → OBV unchanged
+ */
+export function computeOBV(
+  candles: Candle[],
+  smaPeriod = 20
+): { obv: number | null; obvSma: number | null; prevObv: number | null; trend: 'rising' | 'falling' | 'flat' | null } {
+  if (candles.length < 2) return { obv: null, obvSma: null, prevObv: null, trend: null };
+
+  const obvSeries: number[] = [0];
+  for (let i = 1; i < candles.length; i++) {
+    const prev = obvSeries[i - 1];
+    const vol = candles[i].volume ?? 0;
+    if (candles[i].close > candles[i - 1].close) {
+      obvSeries.push(prev + vol);
+    } else if (candles[i].close < candles[i - 1].close) {
+      obvSeries.push(prev - vol);
+    } else {
+      obvSeries.push(prev);
+    }
+  }
+
+  const obv = obvSeries.at(-1) ?? null;
+  const prevObv = obvSeries.at(-2) ?? null;
+
+  // SMA of OBV
+  let obvSma: number | null = null;
+  if (obvSeries.length >= smaPeriod) {
+    const slice = obvSeries.slice(-smaPeriod);
+    obvSma = Number((slice.reduce((a, b) => a + b, 0) / smaPeriod).toFixed(2));
+  }
+
+  // Trend: compare OBV to its SMA
+  let trend: 'rising' | 'falling' | 'flat' | null = null;
+  if (obv != null && obvSma != null) {
+    const diff = obv - obvSma;
+    const threshold = Math.abs(obvSma) * 0.02; // 2% threshold
+    if (diff > threshold) trend = 'rising';
+    else if (diff < -threshold) trend = 'falling';
+    else trend = 'flat';
+  }
+
+  return { obv, obvSma, prevObv, trend };
+}
+
 function ichimoku(
   highs: number[],
   lows: number[],
@@ -393,6 +524,20 @@ export default async function analyzeIndicators(
     indicators.ICHIMOKU_spanB = ichiSimple.spanB;
   }
 
+  // Stochastic RSI
+  const stochRsi = computeStochRSI(allCloses, 14, 14, 3, 3);
+  indicators.STOCH_RSI_K = stochRsi.k;
+  indicators.STOCH_RSI_D = stochRsi.d;
+  indicators.STOCH_RSI_prevK = stochRsi.prevK;
+  indicators.STOCH_RSI_prevD = stochRsi.prevD;
+
+  // OBV (On-Balance Volume)
+  const obvResult = computeOBV(normalized, 20);
+  indicators.OBV = obvResult.obv;
+  indicators.OBV_SMA20 = obvResult.obvSma;
+  indicators.OBV_prevObv = obvResult.prevObv;
+  indicators.OBV_trend = obvResult.trend;
+
   const warnings: string[] = [];
   if (allCloses.length < 5) warnings.push('SMA_5: データ不足');
   if (allCloses.length < 20) warnings.push('SMA_20: データ不足');
@@ -403,6 +548,8 @@ export default async function analyzeIndicators(
   if (allCloses.length < 15) warnings.push('RSI_14: データ不足');
   if (allCloses.length < 20) warnings.push('Bollinger_Bands: データ不足');
   if (allCloses.length < 52) warnings.push('Ichimoku: データ不足');
+  if (allCloses.length < 34) warnings.push('StochRSI: データ不足'); // 14(RSI) + 14(stoch) + 3(smoothK) + 3(smoothD)
+  if (normalized.length < 2) warnings.push('OBV: データ不足');
 
   const trend = analyzeTrend(indicators, allCloses.at(-1));
 
