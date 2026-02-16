@@ -512,13 +512,13 @@ export default async function renderChartSvg(args: RenderChartSvgOptions = {}): 
   const sma75 = (indicators?.SMA_75 || []) as Array<number | null>;
   const sma200 = (indicators?.SMA_200 || []) as Array<number | null>;
   let smaLayers = '';
-  // SMA線は simplifyTolerance(0.5px) で簡略化（860×420のキャンバスでは視覚差なし）
-  if (withSMA?.includes(5) && sma5.length > 0) smaLayers += createLinePath(sma5, smaColors[5], { simplify: true });
-  if (withSMA?.includes(20) && sma20.length > 0) smaLayers += createLinePath(sma20, smaColors[20], { simplify: true });
-  if (withSMA?.includes(25) && sma25.length > 0) smaLayers += createLinePath(sma25, smaColors[25], { simplify: true });
-  if (withSMA?.includes(50) && sma50.length > 0) smaLayers += createLinePath(sma50, smaColors[50], { simplify: true });
-  if (withSMA?.includes(75) && sma75.length > 0) smaLayers += createLinePath(sma75, smaColors[75], { simplify: true });
-  if (withSMA?.includes(200) && sma200.length > 0) smaLayers += createLinePath(sma200, smaColors[200], { simplify: true });
+  // インジケーターは簡略化しない（見た目の忠実度を優先）
+  if (withSMA?.includes(5) && sma5.length > 0) smaLayers += createLinePath(sma5, smaColors[5], { simplify: false });
+  if (withSMA?.includes(20) && sma20.length > 0) smaLayers += createLinePath(sma20, smaColors[20], { simplify: false });
+  if (withSMA?.includes(25) && sma25.length > 0) smaLayers += createLinePath(sma25, smaColors[25], { simplify: false });
+  if (withSMA?.includes(50) && sma50.length > 0) smaLayers += createLinePath(sma50, smaColors[50], { simplify: false });
+  if (withSMA?.includes(75) && sma75.length > 0) smaLayers += createLinePath(sma75, smaColors[75], { simplify: false });
+  if (withSMA?.includes(200) && sma200.length > 0) smaLayers += createLinePath(sma200, smaColors[200], { simplify: false });
 
   // ボリンジャーバンド
   let bbLayers = '';
@@ -536,8 +536,7 @@ export default async function renderChartSvg(args: RenderChartSvgOptions = {}): 
       if (debugEnabled) {
         (debugInfo.bb ||= []).push({ count: points.length, skipped });
       }
-      // BB 線・塗りにも RDP 簡略化を適用（0.5px のズレは視覚差なし）
-      return simplifyPts(points);
+      return points;
     };
     const createPathFromPoints = (points?: Pt[]): string => {
       if (!points || points.length === 0) return '';
