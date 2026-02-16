@@ -393,7 +393,7 @@ export default async function renderChartSvg(args: RenderChartSvgOptions = {}): 
     sticks = displayItems
       .map((d: any, i: number) => {
         const cx = x(i);
-        return `<line x1="${cx}" y1="${y(d.high)}" x2="${cx}" y2="${y(d.low)}" stroke="#9ca3af" stroke-width="1"/>`;
+        return `<line x1="${cx}" y1="${y(d.high)}" x2="${cx}" y2="${y(d.low)}" class="w"/>`;
       })
       .join('');
     bodies = displayItems
@@ -404,7 +404,7 @@ export default async function renderChartSvg(args: RenderChartSvgOptions = {}): 
         const top = Math.min(o, c);
         const bot = Math.max(o, c);
         const up = d.close >= d.open;
-        return `<rect x="${Number(cx.toFixed(effectivePrecision))}" y="${Number(top.toFixed(effectivePrecision))}" width="${Number(barW.toFixed(effectivePrecision))}" height="${Number(Math.max(1, bot - top).toFixed(effectivePrecision))}" fill="${up ? '#16a34a' : '#ef4444'}"/>`;
+        return `<rect x="${Number(cx.toFixed(effectivePrecision))}" y="${Number(top.toFixed(effectivePrecision))}" width="${Number(barW.toFixed(effectivePrecision))}" height="${Number(Math.max(1, bot - top).toFixed(effectivePrecision))}" class="${up ? 'u' : 'd'}"/>`;
       })
       .join('');
   } else if (style === 'line') {
@@ -426,9 +426,25 @@ export default async function renderChartSvg(args: RenderChartSvgOptions = {}): 
 
   // 汎用的なライン描画関数
   const round = (v: number) => Number(v.toFixed(svgPrecision));
+
+  // 共通の RDP 風ポイント簡略化ヘルパー
+  type Pt = { x: number; y: number };
+  const simplifyPts = (raw: Pt[]): Pt[] => {
+    if (simplifyTolerance <= 0 || raw.length <= 2) return raw;
+    const sqTol = simplifyTolerance * simplifyTolerance;
+    const simplified: Pt[] = [raw[0]];
+    for (let i = 1; i < raw.length - 1; i++) {
+      const a = raw[i - 1], b = raw[i], c = raw[i + 1];
+      const area = Math.abs((b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x));
+      const dx = c.x - a.x; const dy = c.y - a.y; const len2 = dx * dx + dy * dy || 1;
+      if ((area * area) / len2 >= sqTol) simplified.push(b);
+    }
+    simplified.push(raw[raw.length - 1]);
+    return simplified;
+  };
+
   const createLinePath = (data: Array<number | null> | undefined, color: string, options: { dash?: string; width?: string; offset?: number; simplify?: boolean } = {}) => {
     if (!data || data.length === 0) return '';
-    type Pt = { x: number; y: number };
     let raw: Pt[] = [];
     const offset = options.offset || 0; // 先行(+26) / 遅行(-26)
     let skipped = 0;
@@ -442,22 +458,8 @@ export default async function renderChartSvg(args: RenderChartSvgOptions = {}): 
     });
     if (raw.length === 0) return '';
     // RDP風の単純化
-    const doSimplify = options.simplify !== false && simplifyTolerance > 0 && raw.length > 2;
-    if (doSimplify) {
-      const sqTol = simplifyTolerance * simplifyTolerance;
-      const simplified: Pt[] = [];
-      const keep = (a: Pt, b: Pt, c: Pt) => {
-        // 二点直線からの距離（二乗）で判定
-        const area = Math.abs((b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x));
-        const dx = c.x - a.x; const dy = c.y - a.y; const len2 = dx * dx + dy * dy || 1;
-        return (area * area) / len2 >= sqTol;
-      };
-      simplified.push(raw[0]);
-      for (let i = 1; i < raw.length - 1; i++) {
-        if (keep(raw[i - 1], raw[i], raw[i + 1])) simplified.push(raw[i]);
-      }
-      simplified.push(raw[raw.length - 1]);
-      raw = simplified;
+    if (options.simplify !== false) {
+      raw = simplifyPts(raw);
     }
     const points = raw.map(p => `${round(p.x)},${round(p.y)}`);
     const d = 'M ' + points.join(' L ');
@@ -510,20 +512,19 @@ export default async function renderChartSvg(args: RenderChartSvgOptions = {}): 
   const sma75 = (indicators?.SMA_75 || []) as Array<number | null>;
   const sma200 = (indicators?.SMA_200 || []) as Array<number | null>;
   let smaLayers = '';
-  // インジケーターは簡略化しない（見た目の忠実度を優先）
-  if (withSMA?.includes(5) && sma5.length > 0) smaLayers += createLinePath(sma5, smaColors[5], { simplify: false });
-  if (withSMA?.includes(20) && sma20.length > 0) smaLayers += createLinePath(sma20, smaColors[20], { simplify: false });
-  if (withSMA?.includes(25) && sma25.length > 0) smaLayers += createLinePath(sma25, smaColors[25], { simplify: false });
-  if (withSMA?.includes(50) && sma50.length > 0) smaLayers += createLinePath(sma50, smaColors[50], { simplify: false });
-  if (withSMA?.includes(75) && sma75.length > 0) smaLayers += createLinePath(sma75, smaColors[75], { simplify: false });
-  if (withSMA?.includes(200) && sma200.length > 0) smaLayers += createLinePath(sma200, smaColors[200], { simplify: false });
+  // SMA線は simplifyTolerance(0.5px) で簡略化（860×420のキャンバスでは視覚差なし）
+  if (withSMA?.includes(5) && sma5.length > 0) smaLayers += createLinePath(sma5, smaColors[5], { simplify: true });
+  if (withSMA?.includes(20) && sma20.length > 0) smaLayers += createLinePath(sma20, smaColors[20], { simplify: true });
+  if (withSMA?.includes(25) && sma25.length > 0) smaLayers += createLinePath(sma25, smaColors[25], { simplify: true });
+  if (withSMA?.includes(50) && sma50.length > 0) smaLayers += createLinePath(sma50, smaColors[50], { simplify: true });
+  if (withSMA?.includes(75) && sma75.length > 0) smaLayers += createLinePath(sma75, smaColors[75], { simplify: true });
+  if (withSMA?.includes(200) && sma200.length > 0) smaLayers += createLinePath(sma200, smaColors[200], { simplify: true });
 
   // ボリンジャーバンド
   let bbLayers = '';
   if (withBB) {
-    type Point = { x: number; y: number };
-    const createPoints = (data?: Array<number | null>): Point[] => {
-      const points: Point[] = [];
+    const createBBPoints = (data?: Array<number | null>): Pt[] => {
+      const points: Pt[] = [];
       let skipped = 0;
       data?.forEach?.((val, i) => {
         if (val !== null && val !== undefined) {
@@ -535,16 +536,17 @@ export default async function renderChartSvg(args: RenderChartSvgOptions = {}): 
       if (debugEnabled) {
         (debugInfo.bb ||= []).push({ count: points.length, skipped });
       }
-      return points;
+      // BB 線・塗りにも RDP 簡略化を適用（0.5px のズレは視覚差なし）
+      return simplifyPts(points);
     };
-    const createPathFromPoints = (points?: Point[]): string => {
+    const createPathFromPoints = (points?: Pt[]): string => {
       if (!points || points.length === 0) return '';
       return 'M ' + points.map((p) => `${round(p.x)},${round(p.y)}`).join(' L ');
     };
 
     const makeBand = (upperSeries?: Array<number | null>, lowerSeries?: Array<number | null>) => {
-      const upperPoints = createPoints(upperSeries);
-      const lowerPoints = createPoints(lowerSeries);
+      const upperPoints = createBBPoints(upperSeries);
+      const lowerPoints = createBBPoints(lowerSeries);
       const upperPath = createPathFromPoints(upperPoints);
       const lowerPath = createPathFromPoints(lowerPoints);
       let bandPath = '';
@@ -563,24 +565,24 @@ export default async function renderChartSvg(args: RenderChartSvgOptions = {}): 
         <path d="${band2.bandPath}" fill="${bbColors.bandFill2}" stroke="none" />
       `;
       // ±1σ ライン（グレー）
-      const p1u = createPathFromPoints(createPoints(bbSeries.getBand(1).upper));
-      const p1l = createPathFromPoints(createPoints(bbSeries.getBand(1).lower));
+      const p1u = createPathFromPoints(createBBPoints(bbSeries.getBand(1).upper));
+      const p1l = createPathFromPoints(createBBPoints(bbSeries.getBand(1).lower));
       bbLayers += `
         <path d="${p1u}" fill="none" stroke="${bbColors.line1}" stroke-width="1"/>
         <path d="${p1l}" fill="none" stroke="${bbColors.line1}" stroke-width="1"/>
       `;
       // ±2σ ライン（青） + 中央線（灰の破線）
-      const p2u = createPathFromPoints(createPoints(bbSeries.getBand(2).upper));
-      const p2m = createPathFromPoints(createPoints(bbSeries.getBand(2).middle));
-      const p2l = createPathFromPoints(createPoints(bbSeries.getBand(2).lower));
+      const p2u = createPathFromPoints(createBBPoints(bbSeries.getBand(2).upper));
+      const p2m = createPathFromPoints(createBBPoints(bbSeries.getBand(2).middle));
+      const p2l = createPathFromPoints(createBBPoints(bbSeries.getBand(2).lower));
       bbLayers += `
         <path d="${p2u}" fill="none" stroke="${bbColors.line2}" stroke-width="1"/>
         <path d="${p2l}" fill="none" stroke="${bbColors.line2}" stroke-width="1"/>
         <path d="${p2m}" fill="none" stroke="${bbColors.middle}" stroke-width="1" stroke-dasharray="4 4"/>
       `;
       // ±3σ ライン（オレンジ）
-      const p3u = createPathFromPoints(createPoints(bbSeries.getBand(3).upper));
-      const p3l = createPathFromPoints(createPoints(bbSeries.getBand(3).lower));
+      const p3u = createPathFromPoints(createBBPoints(bbSeries.getBand(3).upper));
+      const p3l = createPathFromPoints(createBBPoints(bbSeries.getBand(3).lower));
       bbLayers += `
         <path d="${p3u}" fill="none" stroke="${bbColors.line3}" stroke-width="1"/>
         <path d="${p3l}" fill="none" stroke="${bbColors.line3}" stroke-width="1"/>
@@ -588,7 +590,7 @@ export default async function renderChartSvg(args: RenderChartSvgOptions = {}): 
     } else {
       // light: 互換キー（±2σ）のみを使って従来描画
       const band2 = makeBand(bbSeries.getUpper('default'), bbSeries.getLower('default'));
-      const mid2 = createPathFromPoints(createPoints(bbSeries.getMiddle('default')));
+      const mid2 = createPathFromPoints(createBBPoints(bbSeries.getMiddle('default')));
       bbLayers = `
         <path d="${band2.bandPath}" fill="${bbColors.bandFill2}" stroke="none" />
         <path d="${band2.upperPath}" fill="none" stroke="${bbColors.line2}" stroke-width="1"/>
@@ -743,6 +745,7 @@ export default async function renderChartSvg(args: RenderChartSvgOptions = {}): 
   const createSvgString = (layers: { ichimoku: string; bb: string; sma: string }) => `
     <svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg" style="background-color: #1f2937; color: #e5e7eb; font-family: sans-serif; max-width: 100%; height: auto;">
       <title>${formatPair(pair)} ${type} chart</title>
+      <style>.u{fill:#16a34a}.d{fill:#ef4444}.w{stroke:#9ca3af;stroke-width:1}</style>
       <defs>
         <clipPath id="plotArea">
           <rect x="${padding.left}" y="${padding.top}" width="${plotW}" height="${plotH}"/>
