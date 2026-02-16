@@ -308,6 +308,16 @@ export const IndicatorsInternalSchema = z.object({
   macd_series: z
     .object({ line: NumericSeriesSchema, signal: NumericSeriesSchema, hist: NumericSeriesSchema })
     .optional(),
+  // Stochastic RSI
+  STOCH_RSI_K: z.number().nullable().optional(),
+  STOCH_RSI_D: z.number().nullable().optional(),
+  STOCH_RSI_prevK: z.number().nullable().optional(),
+  STOCH_RSI_prevD: z.number().nullable().optional(),
+  // OBV (On-Balance Volume)
+  OBV: z.number().nullable().optional(),
+  OBV_SMA20: z.number().nullable().optional(),
+  OBV_prevObv: z.number().nullable().optional(),
+  OBV_trend: z.enum(['rising', 'falling', 'flat']).nullable().optional(),
 });
 
 export const GetIndicatorsDataSchema = z.object({

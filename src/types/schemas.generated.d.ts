@@ -216,6 +216,14 @@ export type GetIndicatorsDataFromSchema = {
             signal: (number | null)[];
             hist: (number | null)[];
         } | undefined;
+        STOCH_RSI_K?: (number | null) | undefined;
+        STOCH_RSI_D?: (number | null) | undefined;
+        STOCH_RSI_prevK?: (number | null) | undefined;
+        STOCH_RSI_prevD?: (number | null) | undefined;
+        OBV?: (number | null) | undefined;
+        OBV_SMA20?: (number | null) | undefined;
+        OBV_prevObv?: (number | null) | undefined;
+        OBV_trend?: (("rising" | "falling" | "flat") | null) | undefined;
     };
     trend: "strong_uptrend" | "uptrend" | "strong_downtrend" | "downtrend" | "overbought" | "oversold" | "sideways" | "insufficient_data";
     chart: {
