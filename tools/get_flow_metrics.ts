@@ -110,11 +110,20 @@ export default async function getFlowMetrics(
       spikeInfo = ' | スパイクなし';
     }
 
-    const summary = formatSummary({
+    const baseSummary = formatSummary({
       pair: chk.pair,
       latest: txs.at(-1)?.price,
       extra: `trades=${totalTrades} buy%=${(aggressorRatio * 100).toFixed(1)} CVD=${cvd.toFixed(2)}${spikeInfo}`,
     });
+    // テキスト summary に全バケットデータを含める（LLM が structuredContent.data を読めない対策）
+    const bucketLines = outBuckets.map((b, i) => {
+      const t = b.displayTime || b.isoTimeJST || b.isoTime || '?';
+      const sp = b.spike ? ` spike:${b.spike}` : '';
+      return `[${i}] ${t} buy:${b.buyVolume} sell:${b.sellVolume} cvd:${b.cvd} z:${b.zscore ?? 'n/a'}${sp}`;
+    });
+    const summary = baseSummary
+      + `\naggregates: totalTrades=${totalTrades} buyVol=${Number(buyVolume.toFixed(4))} sellVol=${Number(sellVolume.toFixed(4))} netVol=${Number(netVolume.toFixed(4))} aggRatio=${aggressorRatio} finalCvd=${Number(cvd.toFixed(4))}`
+      + `\n\n📋 全${outBuckets.length}件のバケット (${bucketMs}ms間隔):\n` + bucketLines.join('\n');
 
     const data = {
       source: 'transactions' as const,

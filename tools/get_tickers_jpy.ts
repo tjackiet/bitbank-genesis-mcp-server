@@ -10,6 +10,15 @@ import { TtlCache } from '../lib/cache.js';
 
 type Item = { pair: string; sell: string; buy: string; high: string; low: string; open: string; last: string; vol: string; timestamp: number };
 
+// テキスト summary にティッカー全件を含める（LLM が structuredContent.data を読めない対策）
+function buildTickerText(baseSummary: string, data: Array<Item & { change24h?: number | null; change24hPct?: number | null }>): string {
+  const lines = data.map((t, i) => {
+    const chg = t.change24hPct != null ? ` chg:${t.change24hPct >= 0 ? '+' : ''}${t.change24hPct}%` : '';
+    return `[${i}] ${t.pair} last:${t.last} high:${t.high} low:${t.low} vol:${t.vol}${chg}`;
+  });
+  return baseSummary + `\n\n📋 全${data.length}件のティッカー:\n` + lines.join('\n');
+}
+
 const CACHE_KEY = 'tickers_jpy';
 const tickerCache = new TtlCache<Item[]>({ ttlMs: 10_000, maxEntries: 1 });
 
@@ -85,7 +94,7 @@ export default async function getTickersJpy(opts?: { bypassCache?: boolean }) {
     const cached = tickerCache.get(CACHE_KEY);
     if (cached) {
       return GetTickersJpyOutputSchema.parse(
-        ok('tickers_jpy (cache)', cached, { cache: { hit: true, key: CACHE_KEY }, ts: nowIso() })
+        ok(buildTickerText('tickers_jpy (cache)', cached as any), cached, { cache: { hit: true, key: CACHE_KEY }, ts: nowIso() })
       );
     }
   }
@@ -125,12 +134,12 @@ export default async function getTickersJpy(opts?: { bypassCache?: boolean }) {
       tickerCache.set(CACHE_KEY, data);
       const ms = Date.now() - t0;
       const payloadBytes = Buffer.byteLength(JSON.stringify(dataRaw));
+      const summaryText = buildTickerText(
+        `tickers_jpy fetched in ${ms}ms (${data.length}/${dataRaw.length} items after filter, ${payloadBytes} bytes raw, mode=${filterInfo.mode}/${filterInfo.source})`,
+        data as any
+      );
       return GetTickersJpyOutputSchema.parse(
-        ok(
-          `tickers_jpy fetched in ${ms}ms (${data.length}/${dataRaw.length} items after filter, ${payloadBytes} bytes raw, mode=${filterInfo.mode}/${filterInfo.source})`,
-          data,
-          { cache: { hit: false, key: 'tickers_jpy' }, ts: nowIso(), latencyMs: ms, payloadBytes }
-        )
+        ok(summaryText, data, { cache: { hit: false, key: 'tickers_jpy' }, ts: nowIso(), latencyMs: ms, payloadBytes })
       );
     }
 
@@ -170,12 +179,12 @@ export default async function getTickersJpy(opts?: { bypassCache?: boolean }) {
     const ms = Date.now() - t0;
     const payloadBytes = Buffer.byteLength(JSON.stringify(dataRaw));
     // ロギングはサーバ側集約。ここではsummaryに最小指標を含める
+    const summaryTextHttp = buildTickerText(
+      `tickers_jpy fetched in ${ms}ms (${data.length}/${dataRaw.length} items after filter, ${payloadBytes} bytes raw, mode=${filterInfo.mode}/${filterInfo.source})`,
+      data as any
+    );
     return GetTickersJpyOutputSchema.parse(
-      ok(
-        `tickers_jpy fetched in ${ms}ms (${data.length}/${dataRaw.length} items after filter, ${payloadBytes} bytes raw, mode=${filterInfo.mode}/${filterInfo.source})`,
-        data,
-        { cache: { hit: false, key: 'tickers_jpy' }, ts: nowIso(), latencyMs: ms, payloadBytes, filtered: true }
-      )
+      ok(summaryTextHttp, data, { cache: { hit: false, key: 'tickers_jpy' }, ts: nowIso(), latencyMs: ms, payloadBytes, filtered: true })
     );
   } catch (e: unknown) {
     const msg = getErrorMessage(e) || 'network error';

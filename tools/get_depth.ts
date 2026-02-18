@@ -54,13 +54,19 @@ export default async function getDepth(
       },
     };
 
-    // タイムスタンプ付きテキスト出力
+    // タイムスタンプ付きテキスト出力（全板データを含める: LLM が structuredContent.data を読めない対策）
     const text = [
       `📸 ${formatTimestampJST(data.timestamp)}`,
       '',
       summary,
       `板の層数: 買い ${bids.length}層 / 売り ${asks.length}層`,
       mid ? `中値: ${mid.toLocaleString()}円` : '',
+      '',
+      `🟢 買い板 (全${bids.length}層):`,
+      ...bids.map(([p, s]: [unknown, unknown], i: number) => `  ${i + 1}. ${Number(p).toLocaleString()}円 ${s}`),
+      '',
+      `🔴 売り板 (全${asks.length}層):`,
+      ...asks.map(([p, s]: [unknown, unknown], i: number) => `  ${i + 1}. ${Number(p).toLocaleString()}円 ${s}`),
     ].filter(Boolean).join('\n');
 
     const meta = createMeta(chk.pair);

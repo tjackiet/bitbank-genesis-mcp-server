@@ -161,11 +161,15 @@ export default async function analyzeSmaSnapshot(
       return `SMA(${p}): ${valStr} (${pctStr}, ${absStr}) slope=${it?.slope}${slopeRate ? ` (${slopeRate})` : ''}${pos}`;
     });
     const recentLines = recentCrosses.slice(-3).reverse().map(rc => `${rc.type} ${rc.pair.join('/')} - ${rc.barsAgo} bars ago (${rc.date})`);
+    // 全クロス状態もテキストに含める（LLM が structuredContent.data を読めない対策）
+    const crossStatusLines = crosses.map(c => `${c.a}/${c.b}: ${c.type} (delta:${c.delta})`);
+    const allRecentLines = recentCrosses.map(rc => `${rc.type} ${rc.pair.join('/')} - ${rc.barsAgo} bars ago (${rc.date})`);
     const summaryText = [
       formatSummary({ pair: chk.pair, latest: close ?? undefined, extra: `align=${alignment} pos=${position}` }),
       '',
       ...distanceLines,
-      ...(recentLines.length ? ['', 'Recent Crosses:', ...recentLines] : []),
+      ...(crossStatusLines.length ? ['', 'Cross Status:', ...crossStatusLines] : []),
+      ...(allRecentLines.length ? ['', 'Recent Crosses (all):', ...allRecentLines] : []),
     ].filter(Boolean).join('\n');
 
     const data = {

@@ -595,12 +595,38 @@ export default async function analyzeIndicators(
     latestIndicators.ICHIMOKU_spanB = indicators.ICHIMOKU_spanB;
   }
 
-  const summary = formatSummary({
+  const baseSummary = formatSummary({
     pair: chk.pair,
     timeframe: String(type),
     latest: allCloses.at(-1) ?? undefined,
     extra: `RSI=${latestIndicators.RSI_14} trend=${trend} (count=${allCloses.length})`,
   });
+  // テキスト summary にインジケーター最新値＋主要系列を含める（LLM が structuredContent.data を読めない対策）
+  const indLines: string[] = [];
+  for (const [k, v] of Object.entries(latestIndicators)) {
+    if (v != null) indLines.push(`${k}:${v}`);
+  }
+  if (indicators.ICHIMOKU_conversion != null) {
+    indLines.push(`ICHI_conv:${indicators.ICHIMOKU_conversion}`);
+    indLines.push(`ICHI_base:${indicators.ICHIMOKU_base}`);
+    indLines.push(`ICHI_spanA:${indicators.ICHIMOKU_spanA}`);
+    indLines.push(`ICHI_spanB:${indicators.ICHIMOKU_spanB}`);
+  }
+  const recentN = Math.min(displayCount, normalized.length);
+  const recentSlice = normalized.slice(-recentN);
+  const recentLines = recentSlice.map((c, i) => {
+    const idx = normalized.length - recentN + i;
+    const t = c.isoTime ? String(c.isoTime).replace(/\.000Z$/, 'Z') : '?';
+    const r = rsi14_series[idx] != null ? ` RSI:${rsi14_series[idx]}` : '';
+    const s25 = sma_25_series[idx] != null ? ` S25:${sma_25_series[idx]}` : '';
+    const s75 = sma_75_series[idx] != null ? ` S75:${sma_75_series[idx]}` : '';
+    const bbu = bb2.upper[idx] != null ? ` BBu:${bb2.upper[idx]}` : '';
+    const bbl = bb2.lower[idx] != null ? ` BBl:${bb2.lower[idx]}` : '';
+    return `[${idx}] ${t} C:${c.close}${r}${s25}${s75}${bbu}${bbl}`;
+  });
+  const summary = baseSummary
+    + `\n\n📊 最新インジケーター値:\n` + indLines.join(' | ')
+    + `\n\n📋 直近${recentN}本のデータ:\n` + recentLines.join('\n');
 
   const data: GetIndicatorsData = {
     summary,

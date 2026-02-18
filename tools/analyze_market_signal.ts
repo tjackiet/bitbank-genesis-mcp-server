@@ -397,6 +397,15 @@ export default async function analyzeMarketSignal(
       '',
       '【次の確認推奨】',
       ...(nextLines.length ? nextLines : ['- 該当なし']),
+      '',
+      '【数値詳細】',
+      `contributions: sma=${contribution_sma.toFixed(3)} mom=${contribution_mom.toFixed(3)} cvd=${contribution_cvd.toFixed(3)} vol=${contribution_vol.toFixed(3)} buy=${contribution_buy.toFixed(3)}`,
+      `rawValues: smaTrend=${smaTrendFactor.toFixed(3)} momentum=${momentumFactor.toFixed(3)} cvdTrend=${cvdTrend.toFixed(3)} volatility=${volatilityFactor.toFixed(3)} buyPressure=${buyPressure.toFixed(3)}`,
+      `confidence: ${confidence.level} (${confidence.reason})`,
+      `RSI: ${rsi ?? 'n/a'} | rv_ann: ${rvNum.toFixed(4)} | aggRatio: ${buyRatio.toFixed(3)}`,
+      ...(smaDeviations.vs25 != null ? [`SMA乖離: vs25=${(smaDeviations.vs25 * 100).toFixed(2)}% vs75=${smaDeviations.vs75 != null ? (smaDeviations.vs75 * 100).toFixed(2) : 'n/a'}% vs200=${smaDeviations.vs200 != null ? (smaDeviations.vs200 * 100).toFixed(2) : 'n/a'}%`] : []),
+      ...(recentCross ? [`SMAクロス: ${recentCross.type} ${recentCross.pair} ${recentCross.barsAgo}bars前`] : []),
+      ...(alerts.length ? ['alerts: ' + alerts.map(a => `[${a.level}] ${a.message}`).join('; ')] : []),
     ].join('\n');
 
     const meta = createMeta(chk.pair, { type, windows, bucketMs, flowLimit });

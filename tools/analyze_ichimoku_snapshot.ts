@@ -318,6 +318,18 @@ export default async function analyzeIchimokuSnapshot(
       lines.push(`・モメンタム: ${m === 'accelerating' ? '加速中' : m === 'decelerating' ? '減速中' : '安定'}`);
     }
 
+    // structuredContent.data の数値詳細もテキストに含める（LLM が読めない対策）
+    lines.push('');
+    lines.push('【数値データ】');
+    lines.push(`転換線: ${tenkan} / 基準線: ${kijun}`);
+    lines.push(`雲(今日): spanA=${currentSpanA} spanB=${currentSpanB} top=${cloudTop} bottom=${cloudBottom} 厚み=${thickness}`);
+    lines.push(`雲(26日後): spanA=${futureSpanA} spanB=${futureSpanB} top=${futureCloudTop} bottom=${futureCloudBottom}`);
+    lines.push(`転換-基準: 距離=${tkDist}円 (${tkDistPct}%)`);
+    if (chikouSpan.distance != null) lines.push(`遅行スパン距離: ${chikouSpan.distance}円`);
+    if (cloudHistory.length > 0) {
+      lines.push(`雲の履歴(直近${cloudHistory.length}本): ${cloudHistory.map(h => `${h.barsAgo}=${h.position}`).join(' ')}`);
+    }
+
     const text = lines.join('\n');
     return AnalyzeIchimokuSnapshotOutputSchema.parse(ok(text, data as any, meta as any)) as any;
   } catch (e: unknown) {

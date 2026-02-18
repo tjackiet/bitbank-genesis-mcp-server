@@ -176,7 +176,16 @@ export default async function detectMacdCross(
     if (opts.maxReturnPct != null) conds.push(`return≤${opts.maxReturnPct}%`);
     if (opts.limit != null) conds.push(`top${opts.limit}`);
     const condStr = conds.length ? ` (全${totalFound}件中, 条件: ${conds.join(', ')})` : '';
-    const summary = formatSummary({ pair: 'multi', latest: undefined, extra: `crosses=${resultsScreened.length}${condStr}${brief ? ' [' + brief + ']' : ''}` });
+    const baseSummaryMacd = formatSummary({ pair: 'multi', latest: undefined, extra: `crosses=${resultsScreened.length}${condStr}${brief ? ' [' + brief + ']' : ''}` });
+    // テキスト summary に全クロスデータを含める（LLM が structuredContent.data を読めない対策）
+    const crossLines = filtered.map((r, i) => {
+      const date = r.crossDate ? String(r.crossDate).slice(0, 10) : '?';
+      const ret = r.returnSinceCrossPct != null ? ` ret:${r.returnSinceCrossPct >= 0 ? '+' : ''}${r.returnSinceCrossPct}%` : '';
+      const hd = r.histogramDelta != null ? ` histDelta:${r.histogramDelta}` : '';
+      const prev = r.prevCross ? ` prev:${r.prevCross.type}(${r.prevCross.barsAgo}bars)` : '';
+      return `[${i}] ${r.pair} ${r.type} @${date} barsAgo:${r.barsAgo} macd:${r.macdAtCross} sig:${r.signalAtCross}${hd}${ret}${prev}`;
+    });
+    const summary = baseSummaryMacd + `\n\n📋 全${filtered.length}件のクロス詳細:\n` + crossLines.join('\n');
     const data: Record<string, unknown> = { results: resultsScreened };
     if (view === 'detailed') {
       data.resultsDetailed = resultsDetailed;
