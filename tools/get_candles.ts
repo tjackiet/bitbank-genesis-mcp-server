@@ -228,6 +228,8 @@ export default async function getCandles(
 
     const rows = ohlcvs.slice(-limitCheck.value) as Array<[unknown, unknown, unknown, unknown, unknown, unknown]>;
 
+    // volume (v): base 通貨建ての合算取引量（買い+売り区別なし）
+    // bitbank /candlestick API の OHLCV[4] をそのまま使用
     const normalized = rows.map(([o, h, l, c, v, ts]) => ({
       open: Number(o),
       high: Number(h),
@@ -322,7 +324,7 @@ export default async function getCandles(
       periodEnd: normalized[normalized.length - 1].isoTime?.split('T')[0] || '',
     } : undefined;
 
-    const summary = formatSummary({
+    const baseSummary = formatSummary({
       pair: chk.pair,
       timeframe: String(type),
       latest: normalized.at(-1)?.close,
@@ -331,6 +333,17 @@ export default async function getCandles(
       volumeStats,
       priceRange,
     });
+
+    // テキスト summary に全ローソク足データを含める
+    // （MCP クライアントが structuredContent.data を読めない場合に対応）
+    const baseCurrency = chk.pair.split('_')[0]?.toUpperCase() ?? '';
+    const candleLines = normalized.map((c, i) => {
+      const t = c.isoTime ? c.isoTime.replace(/\.000Z$/, 'Z') : '?';
+      return `[${i}] ${t} O:${c.open} H:${c.high} L:${c.low} C:${c.close} V:${c.volume}`;
+    });
+    const summary = baseSummary
+      + `\n\n📋 全${normalized.length}件のOHLCV (volume=${baseCurrency}建て合算値):\n`
+      + candleLines.join('\n');
 
     const metaExtra: Record<string, unknown> = { type, count: normalized.length };
     if (needsMultiYear) {
