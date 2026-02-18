@@ -80,12 +80,10 @@ function buildSummary(pair: string, bidsNum: NumLevel[], asksNum: NumLevel[], to
     `スプレッド: ${spread?.toLocaleString() ?? 'N/A'}円`,
     '',
     `🟢 買い板 (Bids): ${bids.length}層`,
-    ...bids.slice(0, 5).map((b, i) => `  ${i + 1}. ${b.price.toLocaleString()}円 ${b.size.toFixed(4)} BTC (累計: ${b.cumSize.toFixed(4)} BTC)`),
-    bids.length > 5 ? `  ... 他 ${bids.length - 5}層` : '',
+    ...bids.map((b, i) => `  ${i + 1}. ${b.price.toLocaleString()}円 ${b.size.toFixed(4)} (cum:${b.cumSize.toFixed(4)})`),
     '',
     `🔴 売り板 (Asks): ${asks.length}層`,
-    ...asks.slice(0, 5).map((a, i) => `  ${i + 1}. ${a.price.toLocaleString()}円 ${a.size.toFixed(4)} BTC (累計: ${a.cumSize.toFixed(4)} BTC)`),
-    asks.length > 5 ? `  ... 他 ${asks.length - 5}層` : '',
+    ...asks.map((a, i) => `  ${i + 1}. ${a.price.toLocaleString()}円 ${a.size.toFixed(4)} (cum:${a.cumSize.toFixed(4)})`),
   ].filter(Boolean).join('\n');
 
   const data = {
@@ -250,11 +248,11 @@ function buildStatistics(pair: string, bidsNum: NumLevel[], asksNum: NumLevel[],
     ...rangesOut.map((r) => `±${r.pct}%レンジ: 買い ${r.bidVolume} BTC / 売り ${r.askVolume} BTC (比率 ${r.ratio}) → ${r.interpretation}`),
     '',
     '📈 価格帯別の流動性分布:',
-    ...zones.slice(0, 5).map((z) => `${z.priceRange}円: 買い ${z.bidVolume} / 売り ${z.askVolume} (${z.dominance}) ${z.note || ''}`),
+    ...zones.map((z) => `${z.priceRange}円: 買い ${z.bidVolume} / 売り ${z.askVolume} (${z.dominance}) ${z.note || ''}`),
     '',
     '🐋 大口注文:',
-    ...largeBids.slice(0, 3).map((o) => `買い板: ${o.price.toLocaleString()}円に${o.size} BTC (${o.distance != null ? (o.distance >= 0 ? '+' : '') + o.distance + '%' : ''})`),
-    ...largeAsks.slice(0, 3).map((o) => `売り板: ${o.price.toLocaleString()}円に${o.size} BTC (${o.distance != null ? (o.distance >= 0 ? '+' : '') + o.distance + '%' : ''})`),
+    ...largeBids.map((o) => `買い板: ${o.price.toLocaleString()}円に${o.size} BTC (${o.distance != null ? (o.distance >= 0 ? '+' : '') + o.distance + '%' : ''})`),
+    ...largeAsks.map((o) => `売り板: ${o.price.toLocaleString()}円に${o.size} BTC (${o.distance != null ? (o.distance >= 0 ? '+' : '') + o.distance + '%' : ''})`),
     '',
     `💡 総合評価: ${overall}（${strength}）`,
     recommendation,
@@ -287,12 +285,19 @@ function buildRaw(pair: string, rawJson: Record<string, unknown>, bidsRaw: RawLe
     extra: `levels: bids=${bidsRaw.length} asks=${asksRaw.length}`,
   });
 
+  // raw mode: 全レベルをテキストに含める（LLM が structuredContent.data を読めない対策）
   const text = [
     `📸 ${formatTimestampJST(timestamp)}`,
     '',
     summary,
     `板の層数: 買い ${bidsRaw.length}層 / 売り ${asksRaw.length}層`,
     mid ? `中値: ${mid.toLocaleString()}円` : '',
+    '',
+    `🟢 買い板 (全${bidsRaw.length}層):`,
+    ...bidsRaw.map(([p, s], i) => `  ${i + 1}. ${Number(p).toLocaleString()}円 ${s}`),
+    '',
+    `🔴 売り板 (全${asksRaw.length}層):`,
+    ...asksRaw.map(([p, s], i) => `  ${i + 1}. ${Number(p).toLocaleString()}円 ${s}`),
   ].filter(Boolean).join('\n');
 
   const d = rawJson;

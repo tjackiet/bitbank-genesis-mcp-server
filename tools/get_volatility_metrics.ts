@@ -192,12 +192,31 @@ export default async function getVolatilityMetrics(
       tags,
     };
 
-    const summary = formatSummary({
+    const baseSummaryVol = formatSummary({
       pair: chk.pair,
       timeframe: String(type),
       latest: close.at(-1),
       extra: `rv=${(rvRef).toFixed(3)}${withAnn ? '(ann)' : ''}${tags.length ? ' ' + tags.join(',') : ''}`,
     });
+    // テキスト summary にボラティリティ詳細を含める（LLM が structuredContent.data を読めない対策）
+    const aggLines = [
+      `rv_std:${data.aggregates.rv_std}`,
+      data.aggregates.rv_std_ann != null ? `rv_std_ann:${data.aggregates.rv_std_ann}` : '',
+      `parkinson:${data.aggregates.parkinson}`,
+      `garmanKlass:${data.aggregates.garmanKlass}`,
+      `rogersSatchell:${data.aggregates.rogersSatchell}`,
+      `atr:${data.aggregates.atr}`,
+    ].filter(Boolean).join(' ');
+    const rollLines = rollingOut.map((r) => {
+      const parts = [`w=${r.window} rv:${r.rv_std.toFixed(6)}`];
+      if (r.rv_std_ann != null) parts.push(`ann:${r.rv_std_ann.toFixed(6)}`);
+      if (r.atr != null) parts.push(`atr:${r.atr.toFixed(2)}`);
+      if (r.parkinson != null) parts.push(`pk:${r.parkinson.toFixed(6)}`);
+      return parts.join(' ');
+    });
+    const summary = baseSummaryVol
+      + `\n\naggregates: ${aggLines}`
+      + `\n\n📊 ローリング分析:\n` + rollLines.join('\n');
 
     const meta = createMeta(chk.pair, { type, count: candles.length });
     return GetVolMetricsOutputSchema.parse(ok(summary, data as any, meta as any)) as any;

@@ -108,7 +108,13 @@ export default async function getTransactions(
 
     const buys = latest.filter((t) => t.side === 'buy').length;
     const sells = latest.filter((t) => t.side === 'sell').length;
-    const summary = formatTransactionsSummary(chk.pair, latest, buys, sells);
+    const baseSummary = formatTransactionsSummary(chk.pair, latest, buys, sells);
+    // テキスト summary に全取引データを含める（LLM が structuredContent.data を読めない対策）
+    const txLines = latest.map((t, i) => {
+      const time = dayjs(t.timestampMs).tz('Asia/Tokyo').format('HH:mm:ss');
+      return `[${i}] ${time} ${t.side} ${t.price} x${t.amount}`;
+    });
+    const summary = baseSummary + `\n\n📋 全${latest.length}件の取引:\n` + txLines.join('\n');
 
     const data = { raw: json, normalized: latest };
     const meta = createMeta(chk.pair, { count: latest.length, source: date ? 'by_date' : 'latest' });

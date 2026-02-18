@@ -161,6 +161,14 @@ export default async function analyzeBbSnapshot(
         'Next Steps:',
         `- ${next_steps.if_need_detail}`,
         `- ${next_steps.if_need_visualization}`,
+        '',
+        '📊 数値データ:',
+        `BB middle:${mid} upper:${upper} lower:${lower} zScore:${zScore?.toFixed(3)} bw:${bandWidthPct?.toFixed(2)}%`,
+        ...(timeseries ? [
+          '',
+          `📋 直近${timeseries.length}本のBB推移:`,
+          ...timeseries.map((t) => `${t.time.slice(0, 10)} z:${t.zScore} bw:${t.bandWidthPct}%`),
+        ] : []),
       ].join('\n');
       const meta = createMeta(chk.pair, { type, count: indRes.data.normalized.length, mode, extra: { timeseries: timeseries ? { last_30_candles: timeseries } : undefined, metadata: { calculation_params: { period: 20, std_dev_multiplier: 2 }, data_quality: 'complete', last_updated: nowIso() } } });
       return AnalyzeBbSnapshotOutputSchema.parse(ok(summaryLines, data, meta as any)) as any;
