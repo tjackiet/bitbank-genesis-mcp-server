@@ -170,6 +170,11 @@ export default async function analyzeSmaSnapshot(
       ...distanceLines,
       ...(crossStatusLines.length ? ['', 'Cross Status:', ...crossStatusLines] : []),
       ...(allRecentLines.length ? ['', 'Recent Crosses (all):', ...allRecentLines] : []),
+      '',
+      '---',
+      '📌 含まれるもの: SMA値・傾き・クロス状態・配列パターン・価格との乖離',
+      '📌 含まれないもの: 他のテクニカル指標（RSI・MACD・BB・一目均衡表）、出来高フロー、板情報',
+      '📌 補完ツール: analyze_indicators（他指標）, analyze_bb_snapshot（BB）, get_flow_metrics（出来高）, get_orderbook（板情報）',
     ].filter(Boolean).join('\n');
 
     const data = {

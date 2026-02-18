@@ -343,7 +343,10 @@ export default async function getCandles(
     });
     const summary = baseSummary
       + `\n\n📋 全${normalized.length}件のOHLCV (volume=${baseCurrency}建て合算値):\n`
-      + candleLines.join('\n');
+      + candleLines.join('\n')
+      + `\n\n---\n📌 含まれるもの: OHLCV（volume=${baseCurrency}建て合算値）、価格レンジ、期間別変動率`
+      + `\n📌 含まれないもの: 出来高の売買内訳、板情報、ファンディングレート、個別約定`
+      + `\n📌 補完ツール: get_flow_metrics（売買内訳・CVD）, get_transactions（個別約定）, get_orderbook（板情報）`;
 
     const metaExtra: Record<string, unknown> = { type, count: normalized.length };
     if (needsMultiYear) {

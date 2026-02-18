@@ -406,6 +406,11 @@ export default async function analyzeMarketSignal(
       ...(smaDeviations.vs25 != null ? [`SMA乖離: vs25=${(smaDeviations.vs25 * 100).toFixed(2)}% vs75=${smaDeviations.vs75 != null ? (smaDeviations.vs75 * 100).toFixed(2) : 'n/a'}% vs200=${smaDeviations.vs200 != null ? (smaDeviations.vs200 * 100).toFixed(2) : 'n/a'}%`] : []),
       ...(recentCross ? [`SMAクロス: ${recentCross.type} ${recentCross.pair} ${recentCross.barsAgo}bars前`] : []),
       ...(alerts.length ? ['alerts: ' + alerts.map(a => `[${a.level}] ${a.message}`).join('; ')] : []),
+      '',
+      '---',
+      '📌 含まれるもの: 総合スコア・各要素の寄与度と生値・SMA配置・信頼度・推奨アクション',
+      '📌 含まれないもの: 指標の時系列詳細、個別約定データ、チャートパターン検出、板の層別分析',
+      '📌 補完ツール: get_flow_metrics（フロー詳細）, get_volatility_metrics（ボラ詳細）, analyze_indicators（指標詳細）, detect_patterns（パターン）, get_orderbook（板情報）',
     ].join('\n');
 
     const meta = createMeta(chk.pair, { type, windows, bucketMs, flowLimit });

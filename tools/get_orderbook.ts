@@ -389,6 +389,11 @@ export default async function getOrderbook(params: GetOrderbookParams | string =
         break;
     }
 
+    const boundary = `\n\n---\n📌 含まれるもの: 現時点の板スナップショット（mode=${mode}）`
+      + `\n📌 含まれないもの: 板の時系列変化、約定履歴、テクニカル指標、出来高フロー`
+      + `\n📌 補完ツール: get_flow_metrics（出来高フロー・CVD）, get_transactions（約定履歴）, analyze_indicators（指標）`;
+    result.text += boundary;
+
     const meta = createMeta(chk.pair, { mode, topN });
     return ok(result.text, result.data as any, meta as any);
   } catch (err: unknown) {

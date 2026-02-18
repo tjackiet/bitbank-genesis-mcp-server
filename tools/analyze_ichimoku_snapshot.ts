@@ -330,7 +330,10 @@ export default async function analyzeIchimokuSnapshot(
       lines.push(`雲の履歴(直近${cloudHistory.length}本): ${cloudHistory.map(h => `${h.barsAgo}=${h.position}`).join(' ')}`);
     }
 
-    const text = lines.join('\n');
+    const text = lines.join('\n')
+      + `\n\n---\n📌 含まれるもの: 一目均衡表の全要素（転換線・基準線・雲・遅行スパン）、三役判定、シグナル`
+      + `\n📌 含まれないもの: 他のテクニカル指標（RSI・MACD・BB）、出来高フロー、板情報`
+      + `\n📌 補完ツール: analyze_indicators（他指標）, analyze_bb_snapshot（BB）, get_flow_metrics（出来高）, get_orderbook（板情報）`;
     return AnalyzeIchimokuSnapshotOutputSchema.parse(ok(text, data as any, meta as any)) as any;
   } catch (e: unknown) {
     return failFromError(e, { schema: AnalyzeIchimokuSnapshotOutputSchema }) as any;

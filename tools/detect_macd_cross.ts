@@ -185,7 +185,10 @@ export default async function detectMacdCross(
       const prev = r.prevCross ? ` prev:${r.prevCross.type}(${r.prevCross.barsAgo}bars)` : '';
       return `[${i}] ${r.pair} ${r.type} @${date} barsAgo:${r.barsAgo} macd:${r.macdAtCross} sig:${r.signalAtCross}${hd}${ret}${prev}`;
     });
-    const summary = baseSummaryMacd + `\n\n📋 全${filtered.length}件のクロス詳細:\n` + crossLines.join('\n');
+    const summary = baseSummaryMacd + `\n\n📋 全${filtered.length}件のクロス詳細:\n` + crossLines.join('\n')
+      + `\n\n---\n📌 含まれるもの: MACDクロス検出（種類・日付・ヒストグラム差分・リターン率・前回クロス）`
+      + `\n📌 含まれないもの: 他のテクニカル指標（RSI・BB等）、出来高分析、板情報`
+      + `\n📌 補完ツール: analyze_indicators（全指標詳細）, analyze_market_signal（総合シグナル）, get_flow_metrics（出来高）`;
     const data: Record<string, unknown> = { results: resultsScreened };
     if (view === 'detailed') {
       data.resultsDetailed = resultsDetailed;
