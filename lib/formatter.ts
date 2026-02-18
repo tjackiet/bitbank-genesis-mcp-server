@@ -165,7 +165,7 @@ export function formatSummary(args: {
 			summary += `\n- 判定: ${volumeStats.judgment}`;
 		}
 
-		summary += '\n\n※ 全データは structuredContent.data に含まれます';
+		// 全データは呼び出し元（get_candles.ts 等）がテキストに追記する
 	} else if (typeof latest === 'number') {
 		// keyPointsがない場合（板情報など）は中値を表示
 		summary += ` 中値=${latest.toLocaleString('ja-JP')}${currency}`;

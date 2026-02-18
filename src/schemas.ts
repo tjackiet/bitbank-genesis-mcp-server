@@ -160,6 +160,13 @@ export const NumericSeriesSchema = z
   .array(z.union([z.number(), z.null()]))
   .transform((arr) => arr.map((v) => (v == null ? null : Number(Number(v).toFixed(2)))));
 
+/**
+ * ローソク足スキーマ
+ * volume: base 通貨建ての合算取引量（買い+売り区別なし）。
+ *   例: btc_jpy → BTC 単位、eth_jpy → ETH 単位。
+ *   bitbank /candlestick API の OHLCV[4] をそのまま使用。
+ *   公式アプリの Volume バー（買い/売り色分け）とは集計方法が異なる。
+ */
 export const CandleSchema = z.object({
   open: z.number(),
   high: z.number(),
