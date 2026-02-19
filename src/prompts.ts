@@ -1667,7 +1667,8 @@ MACD（中央が0、左が弱気・右が強気）:
   - カード: 角丸(8px)、影あり
   - フォント: システムフォント
   
-- Tailwind CSS を使用
+- Tailwind CSS（jsdelivr の pre-built CSS）を使用
+  - カスタムカラーは \`<style>\` ブロックで定義（arbitrary value 構文 \`bg-[#xxx]\` は使わない）
 \`\`\`
 
 ## 出力テンプレート
@@ -1678,10 +1679,15 @@ MACD（中央が0、左が弱気・右が強気）:
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+  <style>
+    .bg-dark  { background-color: #1a1a2e; }
+    .bg-card  { background-color: #16213e; }
+    .bg-accent { background-color: #0f3460; }
+  </style>
   <title>直近8時間レポート</title>
 </head>
-<body class="bg-[#1a1a2e] text-gray-100 min-h-screen p-6">
+<body class="bg-dark text-gray-100 min-h-screen p-6">
   <div class="max-w-3xl mx-auto space-y-6">
     
     <!-- ヘッダー -->
@@ -1691,7 +1697,7 @@ MACD（中央が0、左が弱気・右が強気）:
     </header>
     
     <!-- 価格サマリー -->
-    <section class="bg-[#16213e] rounded-lg p-6">
+    <section class="bg-card rounded-lg p-6">
       <h2 class="font-bold mb-4">📊 価格の動き</h2>
       <div class="flex justify-between items-center mb-4">
         <div>
@@ -1718,7 +1724,7 @@ MACD（中央が0、左が弱気・右が強気）:
     </section>
     
     <!-- イベントタイムライン -->
-    <section class="bg-[#16213e] rounded-lg p-6">
+    <section class="bg-card rounded-lg p-6">
       <h2 class="font-bold mb-4">⚡ 主なイベント</h2>
       <div class="space-y-3">
         <!-- イベント項目 or 「大きな急変動なし」 -->
@@ -1726,7 +1732,7 @@ MACD（中央が0、左が弱気・右が強気）:
     </section>
     
     <!-- 出来高（24時間棒グラフ） -->
-    <section class="bg-[#16213e] rounded-lg p-6">
+    <section class="bg-card rounded-lg p-6">
       <h2 class="font-bold mb-4">📈 出来高（直近24時間）</h2>
       <!-- 24本の棒グラフ: 高さは必ず px 単位で指定（%は効かない） -->
       <div class="flex items-end gap-1" style="height: 96px;">
@@ -1743,13 +1749,13 @@ MACD（中央が0、左が弱気・右が強気）:
     </section>
     
     <!-- 売買比率 -->
-    <section class="bg-[#16213e] rounded-lg p-6">
+    <section class="bg-card rounded-lg p-6">
       <h2 class="font-bold mb-4">⚖️ 売買比率</h2>
       <!-- 買い/売りの比率バー -->
     </section>
     
     <!-- 重要ライン（縦型構造図） -->
-    <section class="bg-[#16213e] rounded-lg p-6">
+    <section class="bg-card rounded-lg p-6">
       <h2 class="font-bold mb-4">📍 重要ラインとの関係</h2>
       <!-- 縦型で上から下へ: レジスタンス → 現在価格 → サポート -->
       <div class="font-mono text-sm space-y-2">
@@ -1758,13 +1764,13 @@ MACD（中央が0、左が弱気・右が強気）:
     </section>
     
     <!-- 板状況 -->
-    <section class="bg-[#16213e] rounded-lg p-6">
+    <section class="bg-card rounded-lg p-6">
       <h2 class="font-bold mb-4">🔮 今の板状況</h2>
       <!-- ±1%帯域の買い/売り圧力バー -->
     </section>
     
     <!-- ポイント -->
-    <section class="bg-[#16213e] rounded-lg p-6">
+    <section class="bg-card rounded-lg p-6">
       <h2 class="font-bold mb-3">💡 ポイント</h2>
       <p class="text-gray-300">{summary_text}</p>
     </section>
@@ -1783,7 +1789,7 @@ MACD（中央が0、左が弱気・右が強気）:
 - \`create_file\` で \`/mnt/user-data/outputs/morning-report-visual.html\` を作成
 - \`present_files\` で提示
 - コードブロックでの出力やテキスト説明は不要
-- Tailwind CSS（CDN版）を使用
+- Tailwind CSS（jsdelivr pre-built CSS）を使用。\`<script src="https://cdn.tailwindcss.com">\` は本番非推奨の警告が出るため使わない
 `
         }]
       }
