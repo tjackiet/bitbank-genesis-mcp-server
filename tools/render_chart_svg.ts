@@ -474,7 +474,7 @@ export default async function renderChartSvg(args: RenderChartSvgOptions = {}): 
   // 折れ線（終値）を必要に応じて描画
   if (wantPriceLine) {
     const closesFull: Array<number | null> = items.map((d: any) => (typeof d.close === 'number' ? d.close : null));
-    priceLine = createLinePath(closesFull, '#e5e7eb', { width: '1.5', simplify: true, offset: 0 });
+    priceLine = createLinePath(closesFull, '#60a5fa', { width: '1.5', simplify: true, offset: 0 });
   }
 
   // --- 型安全なインジケータ参照ヘルパー ---
@@ -714,7 +714,7 @@ export default async function renderChartSvg(args: RenderChartSvgOptions = {}): 
   // Y軸 (価格)
   const yAxis = `
     <line x1="${padding.left}" y1="${padding.top}" x2="${padding.left}" y2="${h - padding.bottom}" stroke="#4b5563" stroke-width="1"/>
-    <g font-size="12" fill="#e5e7eb">
+    <g font-size="12" fill="#9ca3af">
       ${yTicks.map(val => {
     const yPos = y(val);
     return `<text x="${padding.left - 8}" y="${yPos}" text-anchor="end" dominant-baseline="middle">${val.toLocaleString()}</text>`;
@@ -746,7 +746,7 @@ export default async function renderChartSvg(args: RenderChartSvgOptions = {}): 
 
   const xAxis = `
     <line x1="${padding.left}" y1="${h - padding.bottom}" x2="${w - padding.right}" y2="${h - padding.bottom}" stroke="#4b5563" stroke-width="1"/>
-    <g font-size="12" fill="#e5e7eb">
+    <g font-size="12" fill="#9ca3af">
       ${displayItems
       .map((d: any, i: number) => {
         const step = Math.max(1, Math.floor(displayItems.length / 5));
@@ -755,7 +755,7 @@ export default async function renderChartSvg(args: RenderChartSvgOptions = {}): 
         const date = dayjs(d.isoTime || d.time || d.timestamp);
         if (!date.isValid()) return '';
         const label = formatXLabel(date);
-        return `<text x="${xPos}" y="${h - padding.bottom + 16}" text-anchor="middle" fill="#e5e7eb" font-size="10">${label}</text>`;
+        return `<text x="${xPos}" y="${h - padding.bottom + 16}" text-anchor="middle" fill="#9ca3af" font-size="10">${label}</text>`;
       })
       .join('')}
     </g>
