@@ -722,7 +722,28 @@ export default async function renderChartSvg(args: RenderChartSvgOptions = {}): 
     </g>
   `;
 
-  // X軸 (日付)
+  // X軸 (日付) - timeframe に応じたフォーマットで表示
+  // 全データが同一日に収まるかを判定
+  const firstDate = dayjs(displayItems[0]?.isoTime || displayItems[0]?.time || displayItems[0]?.timestamp);
+  const lastDate = dayjs(displayItems[displayItems.length - 1]?.isoTime || displayItems[displayItems.length - 1]?.time || displayItems[displayItems.length - 1]?.timestamp);
+  const isSameDay = firstDate.isValid() && lastDate.isValid() && firstDate.format('YYYYMMDD') === lastDate.format('YYYYMMDD');
+
+  // timeframe に基づくフォーマット決定
+  const formatXLabel = (d: ReturnType<typeof dayjs>): string => {
+    const tf = String(type).toLowerCase();
+    if (['1min', '5min', '15min', '30min'].includes(tf)) {
+      return d.format('H:mm');
+    }
+    if (['1hour', '4hour'].includes(tf)) {
+      return isSameDay ? d.format('H:mm') : d.format('M/D H:mm');
+    }
+    if (['8hour', '12hour', '1day'].includes(tf)) {
+      return `${d.month() + 1}/${d.date()}`;
+    }
+    // 1week, 1month
+    return d.format('YYYY/M/D');
+  };
+
   const xAxis = `
     <line x1="${padding.left}" y1="${h - padding.bottom}" x2="${w - padding.right}" y2="${h - padding.bottom}" stroke="#4b5563" stroke-width="1"/>
     <g font-size="12" fill="#e5e7eb">
@@ -733,7 +754,7 @@ export default async function renderChartSvg(args: RenderChartSvgOptions = {}): 
         const xPos = x(i);
         const date = dayjs(d.isoTime || d.time || d.timestamp);
         if (!date.isValid()) return '';
-        const label = `${date.month() + 1}/${date.date()}`;
+        const label = formatXLabel(date);
         return `<text x="${xPos}" y="${h - padding.bottom + 16}" text-anchor="middle" fill="#e5e7eb" font-size="10">${label}</text>`;
       })
       .join('')}
