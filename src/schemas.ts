@@ -174,6 +174,7 @@ export const CandleSchema = z.object({
   close: z.number(),
   volume: z.number().optional(),
   isoTime: z.string().nullable().optional(),
+  isoTimeLocal: z.string().nullable().optional().describe('tz パラメータ指定時のローカル時刻（例: 2026-02-20T09:00:00）'),
   time: z.union([z.string(), z.number()]).optional(),
   timestamp: z.number().optional(),
 });
@@ -512,9 +513,9 @@ export const GetTransactionsInputSchema = BasePairInputSchema.extend({
 });
 
 export const GetFlowMetricsInputSchema = BasePairInputSchema.extend({
-  limit: z.number().int().min(1).max(2000).optional().default(100),
+  limit: z.number().int().min(1).max(2000).optional().default(100).describe('取得する約定件数（バケット数ではない）。取引が少ない時間帯では少ない件数でも短時間分のデータにしかならない場合があります'),
   date: z.string().regex(/^\d{8}$/).optional().describe('YYYYMMDD; omit for latest'),
-  bucketMs: z.number().int().min(1000).max(3600_000).optional().default(60_000),
+  bucketMs: z.number().int().min(1000).max(3600_000).optional().default(60_000).describe('バケットの時間幅（ミリ秒）。デフォルト60000=1分間隔'),
   view: z.enum(['summary', 'buckets', 'full']).optional().default('summary'),
   bucketsN: z.number().int().min(1).max(100).optional().default(10),
   tz: z.string().optional().default('Asia/Tokyo'),
@@ -549,6 +550,7 @@ export const GetCandlesInputSchema = z.object({
     .describe("YYYYMMDD format (e.g., 20251022). Fetches the {limit} most recent candles up to and including this date. For '1month' type use YYYY format. If omitted, returns latest candles."),
   limit: z.number().int().min(1).max(1000).optional().default(200),
   view: z.enum(['full', 'items']).optional().default('full'),
+  tz: z.string().optional().default('').describe('タイムゾーン（例: Asia/Tokyo）。指定時は各ローソク足に isoTimeLocal フィールドを追加。未指定時はUTCのみ'),
 });
 
 export const GetIndicatorsInputSchema = BasePairInputSchema.extend({

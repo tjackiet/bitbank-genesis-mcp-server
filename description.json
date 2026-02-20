@@ -51,6 +51,9 @@
         },
         "view": {
           "type": "unknown"
+        },
+        "tz": {
+          "type": "unknown"
         }
       }
     },

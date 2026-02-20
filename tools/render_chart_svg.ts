@@ -883,14 +883,22 @@ ${priceLine}
   const outputPath = path.join(assetsDir, filename);
 
   // preferFile: 必ずファイル保存、svgは返さない
+  // ただし outputFormat=base64/dataUri 指定時はエンコード済み文字列も返す
   if (preferFile) {
     try {
       await fs.mkdir(assetsDir, { recursive: true });
       await fs.writeFile(outputPath, finalSvg);
       const savedUrl = `computer://${outputPath}`;
+      const resultData: RenderData & { url?: string } = { filePath: outputPath, svg: undefined, legend: legendMeta, url: savedUrl };
+      // outputFormat に応じてエンコード済み文字列も付与
+      if (outputFormat === 'base64') {
+        resultData.base64 = toBase64(finalSvg);
+      } else if (outputFormat === 'dataUri') {
+        resultData.base64 = toDataUri(finalSvg);
+      }
       return ok<RenderData & { url?: string }, RenderMeta>(
         `${formatPair(pair)} ${type} chart saved to ${outputPath}\nURL: ${savedUrl}`,
-        { filePath: outputPath, svg: undefined, legend: legendMeta, url: savedUrl },
+        resultData,
         metaBase
       );
     } catch (err) {

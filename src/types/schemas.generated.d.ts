@@ -102,6 +102,8 @@ export type ChartPayloadFromSchema = {
         close: number;
         volume?: number | undefined;
         isoTime?: (string | null) | undefined;
+        /** tz パラメータ指定時のローカル時刻（例: 2026-02-20T09:00:00） */
+        isoTimeLocal?: (string | null) | undefined;
         time?: (string | number) | undefined;
         timestamp?: number | undefined;
     }[];
@@ -152,6 +154,8 @@ export type GetIndicatorsDataFromSchema = {
         close: number;
         volume?: number | undefined;
         isoTime?: (string | null) | undefined;
+        /** tz パラメータ指定時のローカル時刻（例: 2026-02-20T09:00:00） */
+        isoTimeLocal?: (string | null) | undefined;
         time?: (string | number) | undefined;
         timestamp?: number | undefined;
     }[];
@@ -226,6 +230,8 @@ export type GetIndicatorsDataFromSchema = {
             close: number;
             volume?: number | undefined;
             isoTime?: (string | null) | undefined;
+            /** tz パラメータ指定時のローカル時刻（例: 2026-02-20T09:00:00） */
+            isoTimeLocal?: (string | null) | undefined;
             time?: (string | number) | undefined;
             timestamp?: number | undefined;
         }[];
