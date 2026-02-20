@@ -159,6 +159,27 @@ backtest_btcjpy_1D_macd_cross_2026-02-10.png
 - BB / 一目均衡表 / SMA のオプション詳細は `tools/render_chart_svg.ts` 先頭の JSDoc を参照。
 - 大きな変更を行う場合は README の該当箇所も更新すること。
 
+### HTML 出力時の Tailwind CSS ポリシー
+
+HTML ファイルを生成する際に Tailwind CSS を使う場合、以下のルールに従うこと。
+
+| NG | OK |
+|----|----|
+| `<script src="https://cdn.tailwindcss.com"></script>` | `<link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">` |
+
+- `cdn.tailwindcss.com` は JS ベースの Play CDN であり、ブラウザコンソールに **"should not be used in production"** 警告が出る。使用禁止。
+- 代わりに **jsdelivr の pre-built CSS（Tailwind v2.2.19）** を `<link>` で読み込む。
+- カスタムカラー（デザイントークン等）は `<style>` ブロックでクラスを定義する。Tailwind v3 の arbitrary value 構文（`bg-[#hex]`）は pre-built CSS では動かないため使わない。
+
+```html
+<!-- 例 -->
+<link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+<style>
+  .bg-dark { background-color: #1a1a2e; }
+  .bg-card { background-color: #16213e; }
+</style>
+```
+
 ## メンテナンスルール
 
 - `CLAUDE.md`（本体）と `.cursorrules` は同じ内容を維持すること。
