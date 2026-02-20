@@ -1661,7 +1661,13 @@ MACD（中央が0、左が弱気・右が強気）:
   - 赤系 (#f87171): ネガティブ/下落/売り
   - 黄系 (#fbbf24): 中立/注意
   - 青系 (#60a5fa): 情報/イベント
-  
+
+- CSS禁止パターン（pre-built Tailwind v2 で非対応/不安定）
+  - bg-opacity-* / text-opacity-* → style属性で rgba() を直接指定
+  - bg-[#xxx] 等の arbitrary value → <style>ブロックでクラス定義
+  - backdrop-* 系 → 使用禁止
+  - ring-* 系 → border で代替
+
 - レイアウト
   - 最大幅: 800px
   - カード: 角丸(8px)、影あり
