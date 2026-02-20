@@ -626,7 +626,10 @@ export default async function analyzeIndicators(
   });
   const summary = baseSummary
     + `\n\n📊 最新インジケーター値:\n` + indLines.join(' | ')
-    + `\n\n📋 直近${recentN}本のデータ:\n` + recentLines.join('\n');
+    + `\n\n📋 直近${recentN}本のデータ:\n` + recentLines.join('\n')
+    + `\n\n---\n📌 含まれるもの: RSI・MACD・SMA・BB・一目均衡表の計算値と時系列、トレンド判定`
+    + `\n📌 含まれないもの: 板情報、出来高フロー（CVD・売買内訳）、大口動向、チャートパターン`
+    + `\n📌 補完ツール: get_flow_metrics（フロー・CVD）, get_orderbook（板情報）, detect_whale_events（大口）, detect_patterns（パターン）`;
 
   const data: GetIndicatorsData = {
     summary,

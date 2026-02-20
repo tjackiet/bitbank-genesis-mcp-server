@@ -116,6 +116,11 @@ export default async function detectWhaleEvents(
       recommendation,
       '',
       '※ 注: 推測ベースの簡易分析です（実約定・寿命照合は未実装）。',
+      '',
+      '---',
+      '📌 含まれるもの: 現在の板から検出した大口注文（買い/売り・価格・サイズ・距離）、バランス分析',
+      '📌 含まれないもの: 過去の大口動向の時系列変化、全体の出来高フロー、テクニカル指標',
+      '📌 補完ツール: get_flow_metrics（出来高フロー・CVD）, get_orderbook（板の詳細分析）, analyze_indicators（指標）',
     ].join('\n');
 
     const data = {

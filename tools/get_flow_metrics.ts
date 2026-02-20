@@ -123,7 +123,10 @@ export default async function getFlowMetrics(
     });
     const summary = baseSummary
       + `\naggregates: totalTrades=${totalTrades} buyVol=${Number(buyVolume.toFixed(4))} sellVol=${Number(sellVolume.toFixed(4))} netVol=${Number(netVolume.toFixed(4))} aggRatio=${aggressorRatio} finalCvd=${Number(cvd.toFixed(4))}`
-      + `\n\n📋 全${outBuckets.length}件のバケット (${bucketMs}ms間隔):\n` + bucketLines.join('\n');
+      + `\n\n📋 全${outBuckets.length}件のバケット (${bucketMs}ms間隔):\n` + bucketLines.join('\n')
+      + `\n\n---\n📌 含まれるもの: 時系列バケット（買い/売り出来高・CVD・Zスコア・スパイク）、集計値`
+      + `\n📌 含まれないもの: 個別約定の詳細、OHLCV価格データ、板情報、テクニカル指標`
+      + `\n📌 補完ツール: get_transactions（個別約定）, get_candles（OHLCV）, get_orderbook（板情報）, analyze_indicators（指標）`;
 
     const data = {
       source: 'transactions' as const,

@@ -3,7 +3,7 @@ import { ensurePair, validateLimit, validateDate, createMeta } from '../lib/vali
 import { ok, fail, failFromError, failFromValidation } from '../lib/result.js';
 import { GetCandlesOutputSchema } from '../src/schemas.js';
 import { formatSummary } from '../lib/formatter.js';
-import { toIsoTime, today, daysAgo, dayjs } from '../lib/datetime.js';
+import { toIsoTime, toIsoWithTz, today, daysAgo, dayjs } from '../lib/datetime.js';
 import { getErrorMessage } from '../lib/error.js';
 import type { Result, GetCandlesData, GetCandlesMeta, CandleType } from '../src/types/domain.d.ts';
 
@@ -110,7 +110,8 @@ export default async function getCandles(
   pair: string,
   type: CandleType | string = '1day',
   date: string = todayYyyymmdd(),
-  limit: number = 200
+  limit: number = 200,
+  tz: string = ''
 ): Promise<Result<GetCandlesData, GetCandlesMeta>> {
   const chk = ensurePair(pair);
   if (!chk.ok) return failFromValidation(chk) as any;
@@ -230,6 +231,7 @@ export default async function getCandles(
 
     // volume (v): base 通貨建ての合算取引量（買い+売り区別なし）
     // bitbank /candlestick API の OHLCV[4] をそのまま使用
+    const useTz = typeof tz === 'string' && tz.length > 0;
     const normalized = rows.map(([o, h, l, c, v, ts]) => ({
       open: Number(o),
       high: Number(h),
@@ -237,6 +239,7 @@ export default async function getCandles(
       close: Number(c),
       volume: Number(v),
       isoTime: toIsoTime(ts) ?? undefined,
+      ...(useTz ? { isoTimeLocal: toIsoWithTz(Number(ts), tz) ?? undefined } : {}),
     }));
 
     // 期間別のキーポイントを抽出
@@ -337,13 +340,16 @@ export default async function getCandles(
     // テキスト summary に全ローソク足データを含める
     // （MCP クライアントが structuredContent.data を読めない場合に対応）
     const baseCurrency = chk.pair.split('_')[0]?.toUpperCase() ?? '';
-    const candleLines = normalized.map((c, i) => {
-      const t = c.isoTime ? c.isoTime.replace(/\.000Z$/, 'Z') : '?';
+    const candleLines = normalized.map((c: any, i: number) => {
+      const t = c.isoTimeLocal || (c.isoTime ? (c.isoTime as string).replace(/\.000Z$/, 'Z') : '?');
       return `[${i}] ${t} O:${c.open} H:${c.high} L:${c.low} C:${c.close} V:${c.volume}`;
     });
     const summary = baseSummary
       + `\n\n📋 全${normalized.length}件のOHLCV (volume=${baseCurrency}建て合算値):\n`
-      + candleLines.join('\n');
+      + candleLines.join('\n')
+      + `\n\n---\n📌 含まれるもの: OHLCV（volume=${baseCurrency}建て合算値）、価格レンジ、期間別変動率`
+      + `\n📌 含まれないもの: 出来高の売買内訳、板情報、ファンディングレート、個別約定`
+      + `\n📌 補完ツール: get_flow_metrics（売買内訳・CVD）, get_transactions（個別約定）, get_orderbook（板情報）`;
 
     const metaExtra: Record<string, unknown> = { type, count: normalized.length };
     if (needsMultiYear) {

@@ -216,7 +216,10 @@ export default async function getVolatilityMetrics(
     });
     const summary = baseSummaryVol
       + `\n\naggregates: ${aggLines}`
-      + `\n\n📊 ローリング分析:\n` + rollLines.join('\n');
+      + `\n\n📊 ローリング分析:\n` + rollLines.join('\n')
+      + `\n\n---\n📌 含まれるもの: ボラティリティ指標（RV・Parkinson・GK・RS・ATR）、ローリング分析`
+      + `\n📌 含まれないもの: 価格の方向性・トレンド、出来高フロー、板情報、テクニカル指標`
+      + `\n📌 補完ツール: get_candles（価格OHLCV）, analyze_indicators（方向性指標）, get_flow_metrics（出来高フロー）`;
 
     const meta = createMeta(chk.pair, { type, count: candles.length });
     return GetVolMetricsOutputSchema.parse(ok(summary, data as any, meta as any)) as any;

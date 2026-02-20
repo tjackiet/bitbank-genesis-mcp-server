@@ -114,7 +114,10 @@ export default async function getTransactions(
       const time = dayjs(t.timestampMs).tz('Asia/Tokyo').format('HH:mm:ss');
       return `[${i}] ${time} ${t.side} ${t.price} x${t.amount}`;
     });
-    const summary = baseSummary + `\n\n📋 全${latest.length}件の取引:\n` + txLines.join('\n');
+    const summary = baseSummary + `\n\n📋 全${latest.length}件の取引:\n` + txLines.join('\n')
+      + `\n\n---\n📌 含まれるもの: 個別約定（時刻・売買方向・価格・数量）、買い/売り件数比率`
+      + `\n📌 含まれないもの: 集計済みフロー指標（CVD・Zスコア・スパイク）、OHLCV、板情報`
+      + `\n📌 補完ツール: get_flow_metrics（集計フロー・CVD・スパイク検出）, get_candles（OHLCV）, get_orderbook（板情報）`;
 
     const data = { raw: json, normalized: latest };
     const meta = createMeta(chk.pair, { count: latest.length, source: date ? 'by_date' : 'latest' });

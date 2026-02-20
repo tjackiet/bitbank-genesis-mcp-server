@@ -16,7 +16,10 @@ function buildTickerText(baseSummary: string, data: Array<Item & { change24h?: n
     const chg = t.change24hPct != null ? ` chg:${t.change24hPct >= 0 ? '+' : ''}${t.change24hPct}%` : '';
     return `[${i}] ${t.pair} last:${t.last} high:${t.high} low:${t.low} vol:${t.vol}${chg}`;
   });
-  return baseSummary + `\n\n📋 全${data.length}件のティッカー:\n` + lines.join('\n');
+  return baseSummary + `\n\n📋 全${data.length}件のティッカー:\n` + lines.join('\n')
+    + `\n\n---\n📌 含まれるもの: 現時点のスナップショット（last/high/low/vol/bid/ask/24h変動率）`
+    + `\n📌 含まれないもの: 価格の時系列推移、板の深度、個別約定履歴、テクニカル指標`
+    + `\n📌 補完ツール: get_candles（時系列OHLCV）, get_orderbook（板情報）, get_transactions（約定履歴）, analyze_indicators（指標）`;
 }
 
 const CACHE_KEY = 'tickers_jpy';

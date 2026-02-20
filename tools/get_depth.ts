@@ -69,8 +69,13 @@ export default async function getDepth(
       ...asks.map(([p, s]: [unknown, unknown], i: number) => `  ${i + 1}. ${Number(p).toLocaleString()}円 ${s}`),
     ].filter(Boolean).join('\n');
 
+    const textWithBoundary = text
+      + `\n\n---\n📌 含まれるもの: 現時点の板（bid/ask全レベル）、壁ゾーン推定`
+      + `\n📌 含まれないもの: 板の時系列変化、約定履歴、テクニカル指標、出来高フロー`
+      + `\n📌 補完ツール: get_orderbook（分析モード付き板情報）, get_flow_metrics（出来高フロー）, get_transactions（約定履歴）`;
+
     const meta = createMeta(chk.pair);
-    return GetDepthOutputSchema.parse(ok(text, data as any, meta as any));
+    return GetDepthOutputSchema.parse(ok(textWithBoundary, data as any, meta as any));
   } catch (err: unknown) {
     return failFromError(err, { schema: GetDepthOutputSchema, timeoutMs, defaultType: 'network', defaultMessage: 'ネットワークエラー' }) as any;
   }
