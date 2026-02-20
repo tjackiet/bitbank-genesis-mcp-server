@@ -523,7 +523,8 @@ export const GetTransactionsInputSchema = BasePairInputSchema.extend({
 });
 
 export const GetFlowMetricsInputSchema = BasePairInputSchema.extend({
-  limit: z.number().int().min(1).max(2000).optional().default(100).describe('取得する約定件数（バケット数ではない）。取引が少ない時間帯では少ない件数でも短時間分のデータにしかならない場合があります'),
+  limit: z.number().int().min(1).max(2000).optional().default(100).describe('取得する約定件数（バケット数ではない）。hours 指定時は無視されます'),
+  hours: z.number().min(0.1).max(24).optional().describe('指定した時間数分の約定を取得して分析（例: 8 → 直近8時間）。limit より優先。複数日にまたがる場合も自動で取得します'),
   date: z.string().regex(/^\d{8}$/).optional().describe('YYYYMMDD; omit for latest'),
   bucketMs: z.number().int().min(1000).max(3600_000).optional().default(60_000).describe('バケットの時間幅（ミリ秒）。デフォルト60000=1分間隔'),
   view: z.enum(['summary', 'buckets', 'full']).optional().default('summary'),

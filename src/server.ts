@@ -685,17 +685,17 @@ registerToolWithLog(
 	'get_flow_metrics',
 	{ description: `/transactions をベースにフロー分析。CVD・アグレッサー比・スパイク検出。
 
-【重要】limit は「取得する約定件数」であり、バケット数や時間範囲ではありません。
-- 例: limit=300 → 直近300件の約定を取得し、bucketMs 間隔でバケットに集計
-- 取引が少ないペア/時間帯では、300件でも数分〜数十分のデータにしかならない場合があります
-- 長時間のフロー分析には、取引頻度の高いペア（btc_jpy等）で limit を大きく設定してください
+【パラメータ（2つの取得モード）】
+A) 時間範囲モード（推奨）: hours を指定 → 直近N時間分の約定を自動取得
+   例: hours=8 → 直近8時間の全約定を取得（複数日にまたがっても自動対応）
+B) 件数モード: limit を指定 → 直近N件の約定を取得
+   注意: 取引が閑散な時間帯では、300件でも数分間のデータにしかならない場合あり
 
-【パラメータ】
-- limit: 取得する約定件数（1〜2000、デフォルト100）
+【共通パラメータ】
 - bucketMs: バケットの時間幅（ミリ秒、デフォルト60000=1分）
 - view: summary|buckets|full`, inputSchema: (await import('./schemas.js')).GetFlowMetricsInputSchema as any },
-	async ({ pair, limit, date, bucketMs, view, bucketsN, tz }: any) => {
-		const res: any = await getFlowMetrics(pair, Number(limit), date, Number(bucketMs), tz);
+	async ({ pair, limit, date, bucketMs, view, bucketsN, tz, hours }: any) => {
+		const res: any = await getFlowMetrics(pair, Number(limit), date, Number(bucketMs), tz, hours != null ? Number(hours) : undefined);
 		if (!res?.ok) return res;
 		if (view === 'summary') return res;
 		const agg = res?.data?.aggregates ?? {};

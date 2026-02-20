@@ -159,6 +159,9 @@
         "limit": {
           "type": "unknown"
         },
+        "hours": {
+          "type": "unknown"
+        },
         "date": {
           "type": "unknown"
         },

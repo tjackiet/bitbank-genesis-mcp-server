@@ -12,17 +12,53 @@ export default async function getFlowMetrics(
   limit: number = 100,
   date?: string,
   bucketMs: number = 60_000,
-  tz: string = 'Asia/Tokyo'
+  tz: string = 'Asia/Tokyo',
+  hours?: number
 ) {
   const chk = ensurePair(pair);
   if (!chk.ok) return failFromValidation(chk, GetFlowMetricsOutputSchema) as any;
-  const lim = validateLimit(limit, 1, 2000);
-  if (!lim.ok) return failFromValidation(lim, GetFlowMetricsOutputSchema) as any;
 
   try {
-    const txRes = await getTransactions(chk.pair, lim.value, date);
-    if (!txRes?.ok) return GetFlowMetricsOutputSchema.parse(fail(txRes?.summary || 'failed', (txRes?.meta as any)?.errorType || 'internal')) as any;
-    const txs: Tx[] = txRes.data.normalized as Tx[];
+    let txs: Tx[];
+
+    if (hours != null && hours > 0) {
+      // 時間範囲ベースの取得: 必要な日付を計算して複数回フェッチ
+      const nowMs = Date.now();
+      const sinceMs = nowMs - hours * 3600_000;
+      const sinceDayjs = dayjs(sinceMs);
+      const nowDayjs = dayjs(nowMs);
+
+      // 必要な日付を YYYYMMDD 形式で列挙（古い順）
+      const dates: string[] = [];
+      let d = sinceDayjs.startOf('day');
+      while (d.isBefore(nowDayjs) || d.isSame(nowDayjs, 'day')) {
+        dates.push(d.format('YYYYMMDD'));
+        d = d.add(1, 'day');
+      }
+
+      // 各日付のトランザクションを並列取得（日付指定 + limit=1000 で最大件数取得）
+      const results = await Promise.all(
+        dates.map(dateStr => getTransactions(chk.pair, 1000, dateStr))
+      );
+
+      // 全結果をマージし、時間範囲でフィルタ
+      const allTxs: Tx[] = [];
+      for (const res of results) {
+        if (res?.ok && Array.isArray(res.data?.normalized)) {
+          allTxs.push(...(res.data.normalized as Tx[]));
+        }
+      }
+      txs = allTxs
+        .filter(t => t.timestampMs >= sinceMs && t.timestampMs <= nowMs)
+        .sort((a, b) => a.timestampMs - b.timestampMs);
+    } else {
+      // 従来の件数ベース取得
+      const lim = validateLimit(limit, 1, 2000);
+      if (!lim.ok) return failFromValidation(lim, GetFlowMetricsOutputSchema) as any;
+      const txRes = await getTransactions(chk.pair, lim.value, date);
+      if (!txRes?.ok) return GetFlowMetricsOutputSchema.parse(fail(txRes?.summary || 'failed', (txRes?.meta as any)?.errorType || 'internal')) as any;
+      txs = txRes.data.normalized as Tx[];
+    }
     if (!Array.isArray(txs) || txs.length === 0) {
       return GetFlowMetricsOutputSchema.parse(ok('no transactions', {
         source: 'transactions',
@@ -146,7 +182,12 @@ export default async function getFlowMetrics(
 
     const offsetMin = dayjs().utcOffset();
     const offset = `${offsetMin >= 0 ? '+' : '-'}${String(Math.floor(Math.abs(offsetMin) / 60)).padStart(2, '0')}:${String(Math.abs(offsetMin) % 60).padStart(2, '0')}`;
-    const meta = createMeta(chk.pair, { count: totalTrades, bucketMs, timezone: tz, timezoneOffset: offset, serverTime: toIsoWithTz(Date.now(), tz) ?? undefined });
+    const metaExtra: Record<string, unknown> = { count: totalTrades, bucketMs, timezone: tz, timezoneOffset: offset, serverTime: toIsoWithTz(Date.now(), tz) ?? undefined };
+    if (hours != null) {
+      metaExtra.hours = hours;
+      metaExtra.mode = 'time_range';
+    }
+    const meta = createMeta(chk.pair, metaExtra);
     return GetFlowMetricsOutputSchema.parse(ok(summary, data as any, meta as any)) as any;
   } catch (e: unknown) {
     return failFromError(e, { schema: GetFlowMetricsOutputSchema }) as any;
