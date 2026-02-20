@@ -342,10 +342,17 @@ export default async function renderChartSvg(args: RenderChartSvgOptions = {}): 
   const dataYMin = Math.min(...allYValues);
   const dataYMax = Math.max(...allYValues);
   const yPad = Math.min(0.2, Math.max(0, Number((args as any)?.yPaddingPct ?? 0.06)));
-  const yAxisMinWithBuffer = dataYMin * (1 - yPad);
+  const yRange = dataYMax - dataYMin;
   // クリップ回避用の安全ヘッドルーム（レンジの2%）
-  const autoHeadroom = (dataYMax - dataYMin) * 0.02;
-  const yAxisMaxTarget = dataYMax * (1 + yPad) + autoHeadroom;
+  const autoHeadroom = yRange * 0.02;
+  // line: データレンジに対する相対パディング（変動をタイトに描画）
+  // candles/depth: 絶対価格に対する相対パディング（インジケータの余裕を確保）
+  const yAxisMinWithBuffer = (style === 'line' && yRange > 0)
+    ? dataYMin - yRange * yPad
+    : dataYMin * (1 - yPad);
+  const yAxisMaxTarget = (style === 'line' && yRange > 0)
+    ? dataYMax + yRange * yPad + autoHeadroom
+    : dataYMax * (1 + yPad) + autoHeadroom;
   const yTicks = niceTicks(yAxisMinWithBuffer, yAxisMaxTarget, 6);
   const yMin = yTicks[0];
   const yMax = yTicks.at(-1) as number;

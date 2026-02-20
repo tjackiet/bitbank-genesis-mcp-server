@@ -1575,7 +1575,7 @@ MACD（中央が0、左が弱気・右が強気）:
 【使用ツール】
 1. get_ticker(pair="btc_jpy") → リアルタイム現在価格
 2. get_candles(pair="btc_jpy", type="1hour", limit=24) → 直近24時間の1時間足（出来高棒グラフ用）
-3. render_chart_svg(pair="btc_jpy", type="1hour", limit=8, style="line", outputFormat="dataUri", yPaddingPct=0.01) → 直近8時間の価格折れ線チャート（data URI で返却）
+3. render_chart_svg(pair="btc_jpy", type="1hour", limit=8, style="line", outputFormat="dataUri") → 直近8時間の価格折れ線チャート（data URI で返却）
 4. get_flow_metrics(pair="btc_jpy", limit=300, bucketMs=60000) → 急騰/急落スパイク、売買バランス
 5. analyze_support_resistance(pair="btc_jpy", lookbackDays=90, topN=3) → サポート/レジスタンスライン
 6. get_orderbook(pair="btc_jpy", mode=pressure, bandsPct=[0.005, 0.01, 0.02]) → 板の買い/売り圧力
