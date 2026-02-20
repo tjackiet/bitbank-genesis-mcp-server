@@ -1575,9 +1575,10 @@ MACD（中央が0、左が弱気・右が強気）:
 【使用ツール】
 1. get_ticker(pair="btc_jpy") → リアルタイム現在価格
 2. get_candles(pair="btc_jpy", type="1hour", limit=24) → 直近24時間の1時間足（出来高棒グラフ用）
-3. get_flow_metrics(pair="btc_jpy", limit=300, bucketMs=60000) → 急騰/急落スパイク、売買バランス
-4. analyze_support_resistance(pair="btc_jpy", lookbackDays=90, topN=3) → サポート/レジスタンスライン
-5. get_orderbook(pair="btc_jpy", mode=pressure, bandsPct=[0.005, 0.01, 0.02]) → 板の買い/売り圧力
+3. render_chart_svg(pair="btc_jpy", type="1hour", limit=8, style="line", outputFormat="dataUri") → 直近8時間の価格折れ線チャート（data URI で返却）
+4. get_flow_metrics(pair="btc_jpy", limit=300, bucketMs=60000) → 急騰/急落スパイク、売買バランス
+5. analyze_support_resistance(pair="btc_jpy", lookbackDays=90, topN=3) → サポート/レジスタンスライン
+6. get_orderbook(pair="btc_jpy", mode=pressure, bandsPct=[0.005, 0.01, 0.02]) → 板の買い/売り圧力
 
 【出力形式】
 取得したデータを使って、以下の構成の **HTML ファイル** を生成してください。
@@ -1592,8 +1593,8 @@ MACD（中央が0、左が弱気・右が強気）:
 - 8時間前の価格 → 現在価格
 - 変動率（±X.X%）と方向アイコン（📈上昇 / 📉下落 / ➡️横ばい）
 - 高値・安値とその時刻
-- SVGで簡易的な価格レンジバーを表示
-  - 安値〜高値の範囲内で現在価格の位置を示すマーカー
+- render_chart_svg の折れ線チャート（data URI）を \`<img>\` タグで埋め込み
+  - 途中の値動き（下がってから戻した等）がひと目でわかる
 
 ### 3. イベントタイムライン
 - 急騰🚀/急落💥イベントを時系列で表示
@@ -1719,10 +1720,8 @@ MACD（中央が0、左が弱気・右が強気）:
       <div class="text-center mb-4">
         <span class="{change_color} text-lg font-bold">{change_pct}%</span>
       </div>
-      <!-- 価格レンジバー（SVG） -->
-      <div class="relative h-8 bg-gray-700 rounded">
-        <!-- 安値・高値・現在価格のマーカー -->
-      </div>
+      <!-- 価格折れ線チャート（render_chart_svg の data URI を埋め込み） -->
+      <img src="{chart_data_uri}" alt="直近8時間の価格推移" class="w-full rounded" />
       <div class="flex justify-between text-sm text-gray-400 mt-1">
         <span>安値: {low}円 ({low_time})</span>
         <span>高値: {high}円 ({high_time})</span>
