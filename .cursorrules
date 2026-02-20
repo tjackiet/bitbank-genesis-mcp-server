@@ -171,6 +171,15 @@ HTML ファイルを生成する際に Tailwind CSS を使う場合、以下の�
 - 代わりに **jsdelivr の pre-built CSS（Tailwind v2.2.19）** を `<link>` で読み込む。
 - カスタムカラー（デザイントークン等）は `<style>` ブロックでクラスを定義する。Tailwind v3 の arbitrary value 構文（`bg-[#hex]`）は pre-built CSS では動かないため使わない。
 
+**CSS 禁止パターン（pre-built Tailwind v2 で非対応/不安定）:**
+
+| NG | OK（代替） |
+|----|-----------|
+| `bg-opacity-*` / `text-opacity-*` | `style="background-color: rgba(…)"` で直接指定 |
+| `bg-[#xxx]` 等の arbitrary value | `<style>` ブロックでクラス定義 |
+| `backdrop-*` 系 | 使用禁止 |
+| `ring-*` 系 | `border` で代替 |
+
 ```html
 <!-- 例 -->
 <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
