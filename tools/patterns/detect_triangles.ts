@@ -1,5 +1,6 @@
 /**
  * Triangle detection — swing-point + R²-regression, multi-scale.
+ * + Trendoscope-style pennant reclassification (2-stage).
  *
  * Architecture:
  * 1. Relaxed swing detection (swingDepth=1) for peaks/valleys
@@ -10,7 +11,8 @@
  *              symmetrical (upper falling, lower rising)
  * 5. Convergence check (gap narrows ≥ 10%)
  * 6. Breakout detection with ATR × 0.3 buffer
- * 7. deduplicatePatterns() before returning
+ * 7. Pole detection: if impulsive move precedes the triangle → reclassify as pennant
+ * 8. deduplicatePatterns() before returning
  */
 import { clamp01 } from './regression.js';
 import { calcATR, deduplicatePatterns, finalizeConf } from './helpers.js';
@@ -52,14 +54,94 @@ function getTriangleParams(tf: string) {
   return { minWindowBars, maxWindowBars, minR2, flatThreshold, moveThreshold, minConvergence };
 }
 
+// ---------------------------------------------------------------------------
+// Pole detection parameters for pennant reclassification (Trendoscope 2-stage)
+// ---------------------------------------------------------------------------
+function getPoleParams(tf: string) {
+  const bpd = barsPerDay(tf);
+  const poleMinBars = Math.max(2, Math.round(1 * bpd));
+  const poleMaxBars = Math.max(5, Math.round(15 * bpd));
+
+  const t = String(tf);
+  let minPoleATRMult = 1.5;
+  let minPolePct = 0.03;
+  if (t === '1day')                                    { minPoleATRMult = 2.0; minPolePct = 0.05; }
+  if (t === '1week')                                   { minPoleATRMult = 2.0; minPolePct = 0.06; }
+  if (t === '1month')                                  { minPoleATRMult = 2.5; minPolePct = 0.08; }
+  if (t === '1min' || t === '5min')                    { minPolePct = 0.01; }
+  if (t === '15min' || t === '30min')                  { minPolePct = 0.015; }
+  if (t === '1hour')                                   { minPolePct = 0.02; }
+
+  return { poleMinBars, poleMaxBars, minPoleATRMult, minPolePct };
+}
+
+/**
+ * Detect if there is an impulsive move (flagpole) immediately before winStart.
+ * Returns pole info if found, null otherwise.
+ */
+function detectPole(
+  candles: readonly { open: number; close: number; high: number; low: number; isoTime?: string }[],
+  winStart: number,
+  tf: string,
+): { poleStart: number; poleEnd: number; poleDirection: 'up' | 'down'; atrMult: number } | null {
+  const pp = getPoleParams(tf);
+
+  let bestPoleStart = -1;
+  let bestPoleMag = 0;
+  let bestPoleATRMult = 0;
+
+  // Pole ends just before the triangle window starts
+  const poleEnd = winStart - 1;
+  if (poleEnd < pp.poleMinBars) return null;
+
+  for (let poleLen = pp.poleMinBars; poleLen <= Math.min(pp.poleMaxBars, poleEnd); poleLen++) {
+    const ps = poleEnd - poleLen;
+    if (ps < 0) continue;
+    const startPrice = candles[ps].close;
+    const endPrice = candles[poleEnd].close;
+    const magnitude = endPrice - startPrice;
+    const changePct = Math.abs(magnitude) / Math.max(1e-12, startPrice);
+
+    const localATR = calcATR(candles as any, Math.max(1, ps), poleEnd, 14);
+    if (localATR <= 0) continue;
+
+    const atrMult = Math.abs(magnitude) / localATR;
+    if (atrMult < pp.minPoleATRMult || changePct < pp.minPolePct) continue;
+
+    if (atrMult > bestPoleATRMult) {
+      bestPoleStart = ps;
+      bestPoleMag = magnitude;
+      bestPoleATRMult = atrMult;
+    }
+  }
+
+  if (bestPoleStart < 0) return null;
+
+  // Consolidation (triangle) range should be contained within pole range
+  // Skip if triangle is too wide relative to pole
+  const poleRange = Math.abs(bestPoleMag);
+  const triangleHigh = Math.max(...candles.slice(winStart, winStart + 10).map(c => c.high));
+  const triangleLow = Math.min(...candles.slice(winStart, winStart + 10).map(c => c.low));
+  const triRange = triangleHigh - triangleLow;
+  if (triRange > poleRange * 0.90) return null;
+
+  return {
+    poleStart: bestPoleStart,
+    poleEnd,
+    poleDirection: bestPoleMag > 0 ? 'up' : 'down',
+    atrMult: bestPoleATRMult,
+  };
+}
+
 export function detectTriangles(ctx: DetectContext): DetectResult {
   const { candles, want, includeForming, debugCandidates, lrWithR2 } = ctx;
   const type = ctx.type;
   let patterns: any[] = [];
 
-  const wantAsc = want.size === 0 || want.has('triangle') || want.has('triangle_ascending');
-  const wantDesc = want.size === 0 || want.has('triangle') || want.has('triangle_descending');
-  const wantSym = want.size === 0 || want.has('triangle') || want.has('triangle_symmetrical');
+  const wantPennant = want.size === 0 || want.has('pennant');
+  const wantAsc = want.size === 0 || want.has('triangle') || want.has('triangle_ascending') || wantPennant;
+  const wantDesc = want.size === 0 || want.has('triangle') || want.has('triangle_descending') || wantPennant;
+  const wantSym = want.size === 0 || want.has('triangle') || want.has('triangle_symmetrical') || wantPennant;
   if (!wantAsc && !wantDesc && !wantSym) return { patterns: [] };
 
   const lastIdx = candles.length - 1;
@@ -275,21 +357,57 @@ export function detectTriangles(ctx: DetectContext): DetectResult {
         ...valleys.map(p => ({ idx: p.idx, price: p.price, kind: 'L' as const })),
       ].sort((a, b) => a.idx - b.idx);
 
+      // --- Trendoscope 2-stage: pole detection → pennant reclassification ---
+      let finalType: string = triangleType;
+      let poleDirection: 'up' | 'down' | undefined;
+      let poleATRMult: number | undefined;
+      let reclassifiedStartIso = startIso;
+
+      if (wantPennant) {
+        const pole = detectPole(candles, winStart, type);
+        if (pole) {
+          // Validate: breakout direction (if any) should match pole direction
+          const poleBreakoutOk = !hasBreakout ||
+            (pole.poleDirection === 'up' && breakoutDirection === 'up') ||
+            (pole.poleDirection === 'down' && breakoutDirection === 'down');
+
+          if (poleBreakoutOk) {
+            finalType = 'pennant';
+            poleDirection = pole.poleDirection;
+            poleATRMult = pole.atrMult;
+            // Extend range start to pole start
+            const poleStartIso = candles[pole.poleStart]?.isoTime;
+            if (poleStartIso) reclassifiedStartIso = poleStartIso;
+
+            // Re-evaluate status for pennant: breakout must match pole direction
+            if (hasBreakout) {
+              const pennantExpected = pole.poleDirection === breakoutDirection;
+              status = pennantExpected ? 'completed' : 'invalid';
+            }
+          }
+        }
+      }
+
+      const finalConfidence = finalType === 'pennant'
+        ? finalizeConf(baseScore * 0.95 + clamp01((poleATRMult ?? 0) / 6) * 0.05, 'pennant')
+        : confidence;
+
       patterns.push({
-        type: triangleType,
-        confidence,
-        range: { start: startIso, end: endIso },
+        type: finalType,
+        confidence: finalConfidence,
+        range: { start: reclassifiedStartIso, end: endIso },
         status,
         pivots: allPivots,
         neckline,
         breakoutDirection: breakoutDirection ?? undefined,
-        outcome,
+        outcome: hasBreakout ? (status === 'completed' ? 'success' : 'failure') : undefined,
+        ...(poleDirection ? { poleDirection } : {}),
       });
 
       debugCandidates.push({
-        type: triangleType as any,
+        type: finalType as any,
         accepted: true,
-        reason: 'detected',
+        reason: finalType === 'pennant' ? 'reclassified_from_triangle' : 'detected',
         indices: [winStart, resultEndIdx],
         details: {
           convergenceRatio: Number(convergenceRatio.toFixed(3)),
@@ -300,7 +418,8 @@ export function detectTriangles(ctx: DetectContext): DetectResult {
           touchCount: peaks.length + valleys.length,
           breakout: hasBreakout ? { idx: breakoutIdx, direction: breakoutDirection } : null,
           status,
-          confidence,
+          confidence: finalConfidence,
+          ...(poleDirection ? { poleDirection, poleATRMult: Number((poleATRMult ?? 0).toFixed(2)) } : {}),
         }
       });
     }

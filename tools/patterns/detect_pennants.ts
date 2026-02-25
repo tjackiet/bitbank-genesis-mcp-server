@@ -1,12 +1,15 @@
 /**
- * Pennant & Flag detection — swing-point based with sliding pole scan.
+ * Flag detection — swing-point based with sliding pole scan.
  *
- * Architecture:
+ * Pennant detection has been moved to detect_triangles.ts (Trendoscope 2-stage:
+ * triangle detection → pole check → reclassify as pennant).
+ *
+ * This module now handles flag patterns only:
  * 1. Relaxed swing detection (swingDepth=1) for consolidation trendlines
  * 2. Scan for impulsive moves (flagpoles) using ATR normalization
  * 3. For each pole, examine subsequent swing points for consolidation
  * 4. Fit R²-based regression trendlines on consolidation swing points
- * 5. Classify: pennant (converging) vs flag (parallel, counter-trend)
+ * 5. Classify as flag (roughly parallel channel, counter-trend to pole)
  * 6. Detect breakout with ATR buffer
  * 7. Apply deduplicatePatterns() before returning
  */
@@ -34,7 +37,7 @@ function barsPerDay(tf: string): number {
   }
 }
 
-function getPennantParams(tf: string) {
+function getFlagParams(tf: string) {
   const bpd = barsPerDay(tf);
 
   // 旗竿: 1〜15日、保ち合い: 2〜30日（日数をバー数に変換）
@@ -62,14 +65,14 @@ export function detectPennantsFlags(ctx: DetectContext): DetectResult {
   const type = ctx.type;
   let patterns: any[] = [];
 
-  const wantPennant = want.size === 0 || want.has('pennant');
+  // This module now only handles flags. Pennants are detected via detect_triangles.ts.
   const wantFlag = want.size === 0 || want.has('flag');
-  if (!wantPennant && !wantFlag) return { patterns: [] };
+  if (!wantFlag) return { patterns: [] };
 
   const lastIdx = candles.length - 1;
   if (lastIdx < 15) return { patterns: [] };
 
-  const params = getPennantParams(type);
+  const params = getFlagParams(type);
 
   // --- Relaxed swing detection (swingDepth=1) for consolidation zones ---
   const relaxedPeaks: Array<{ idx: number; price: number }> = [];
@@ -85,8 +88,6 @@ export function detectPennantsFlags(ctx: DetectContext): DetectResult {
   }
 
   // --- Scan for flagpoles across entire history ---
-  // パフォーマンス: バー数が多い時間軸ではステップを大きくする
-  // ただし outerStep を大きくしすぎるとスパンチェック境界で候補を落とすため控えめに
   const outerStep = params.poleMaxBars > 100 ? 2 : 1;
   const innerStep = params.poleMaxBars > 50 ? 2 : 1;
 
@@ -136,7 +137,7 @@ export function detectPennantsFlags(ctx: DetectContext): DetectResult {
 
     if (consHighs.length < 2 || consLows.length < 2) {
       debugCandidates.push({
-        type: 'pennant' as any,
+        type: 'flag' as any,
         accepted: false,
         reason: 'insufficient_consolidation_swings',
         indices: [bestPoleStart, poleEnd],
@@ -146,23 +147,18 @@ export function detectPennantsFlags(ctx: DetectContext): DetectResult {
     }
 
     // --- Trendline span balance check ---
-    // 上側・下側それぞれのスイングポイントが保ち合い区間の十分な幅をカバーしているか検証。
-    // 片方が極端に短い（例: 2点が数本しか離れていない）場合はトレンドラインとして無意味。
     const upperSpan = consHighs[consHighs.length - 1].idx - consHighs[0].idx;
     const lowerSpan = consLows[consLows.length - 1].idx - consLows[0].idx;
-    // 実際のスイングポイント範囲を基準にする（理論上の最大ウィンドウではなく）。
-    // consMaxEnd は poleEnd + consMaxBars まで広がるため、保ち合い後のバーを含みスパン比率が
-    // 不当に小さくなる。実際の保ち合い範囲で判定すべき。
     const actualConsEnd = Math.max(
       consHighs[consHighs.length - 1].idx,
       consLows[consLows.length - 1].idx
     );
     const consZoneWidth = Math.max(1, actualConsEnd - consStart);
-    const minSpanRatio = 0.30; // 各ラインは保ち合い区間の30%以上をカバーすべき
+    const minSpanRatio = 0.30;
 
     if (upperSpan < consZoneWidth * minSpanRatio || lowerSpan < consZoneWidth * minSpanRatio) {
       debugCandidates.push({
-        type: 'pennant' as any,
+        type: 'flag' as any,
         accepted: false,
         reason: 'trendline_span_too_short',
         indices: [bestPoleStart, poleEnd],
@@ -183,7 +179,7 @@ export function detectPennantsFlags(ctx: DetectContext): DetectResult {
     const minR2 = 0.25;
     if (upperLine.r2 < minR2 || lowerLine.r2 < minR2) {
       debugCandidates.push({
-        type: 'pennant' as any,
+        type: 'flag' as any,
         accepted: false,
         reason: 'poor_trendline_fit',
         indices: [bestPoleStart, consMaxEnd],
@@ -192,19 +188,17 @@ export function detectPennantsFlags(ctx: DetectContext): DetectResult {
       continue;
     }
 
-    // Consolidation geometry（actualConsEnd はスパンチェックで算出済み）
+    // Consolidation geometry
     const consEndIdx = actualConsEnd;
     const gapStart = upperLine.valueAt(consStart) - lowerLine.valueAt(consStart);
     const gapEnd = upperLine.valueAt(consEndIdx) - lowerLine.valueAt(consEndIdx);
 
-    if (gapStart <= 0 || gapEnd <= 0) continue; // lines shouldn't cross
+    if (gapStart <= 0 || gapEnd <= 0) continue;
 
-    // Consolidation range should be contained within pole range
-    // 0.90: データ端で旗竿が部分的にしか捕捉できないケースに対応
     const poleRange = Math.abs(bestPoleMag);
     if (gapStart > poleRange * 0.90) {
       debugCandidates.push({
-        type: 'pennant' as any,
+        type: 'flag' as any,
         accepted: false,
         reason: 'consolidation_too_wide',
         indices: [bestPoleStart, consEndIdx],
@@ -215,45 +209,15 @@ export function detectPennantsFlags(ctx: DetectContext): DetectResult {
 
     const convergenceRatio = gapEnd / gapStart;
 
-    // --- Classify: Pennant vs Flag ---
-    let patternType: 'pennant' | 'flag' | null = null;
+    // --- Classify: Flag only (parallel channel, counter-trend to pole) ---
+    const avgSlope = (upperLine.slope + lowerLine.slope) / 2;
+    const slopeDiff = Math.abs(upperLine.slope - lowerLine.slope);
+    const isParallel = slopeDiff < Math.abs(avgSlope) * 0.6 || convergenceRatio > 0.70;
+    const isAgainstPole = poleUp ? avgSlope < 0 : avgSlope > 0;
 
-    // Pennant: converging lines (gap narrows by at least 20%)
-    // ペナントの条件: 旗竿と反対方向のライン（カウンター側）が「受け止める」形を形成すること。
-    // 両ラインが同方向に傾いている場合はウェッジ/チャネルでありペナントではない。
-    if (wantPennant && convergenceRatio < 0.80) {
-      // カウンター側ライン: 旗竿方向と逆のトレンドラインが上昇/下降しているか
-      const poleSideSlope = poleUp ? lowerLine.slope : upperLine.slope;
-      const counterSlope = poleUp ? upperLine.slope : lowerLine.slope;
-      // カウンター側が正しい方向（上昇旗竿→上側下降、下降旗竿→下側上昇）
-      const counterDirectionOk = poleUp ? counterSlope <= 0 : counterSlope >= 0;
-      // 許容: カウンター側がほぼフラット（ポール側スロープの25%以内の逆方向傾き）
-      const isNearFlat = Math.abs(poleSideSlope) > 1e-12
-        && Math.abs(counterSlope) < Math.abs(poleSideSlope) * 0.25;
-
-      if (counterDirectionOk || isNearFlat) {
-        patternType = 'pennant';
-      }
-    }
-
-    // Flag: roughly parallel channel, slope against pole direction
-    if (!patternType && wantFlag) {
-      const avgSlope = (upperLine.slope + lowerLine.slope) / 2;
-      const slopeDiff = Math.abs(upperLine.slope - lowerLine.slope);
-      const isParallel = slopeDiff < Math.abs(avgSlope) * 0.6 || convergenceRatio > 0.70;
-      const isAgainstPole = poleUp ? avgSlope < 0 : avgSlope > 0;
-
-      if (isParallel && isAgainstPole && convergenceRatio > 0.60) {
-        patternType = 'flag';
-      }
-    }
-
-    if (!patternType) {
-      // classification_failed の原因を特定するための追加情報
-      const poleSideSlope_ = poleUp ? lowerLine.slope : upperLine.slope;
-      const counterSlope_ = poleUp ? upperLine.slope : lowerLine.slope;
+    if (!(isParallel && isAgainstPole && convergenceRatio > 0.60)) {
       debugCandidates.push({
-        type: 'pennant' as any,
+        type: 'flag' as any,
         accepted: false,
         reason: 'classification_failed',
         indices: [bestPoleStart, consEndIdx],
@@ -262,10 +226,8 @@ export function detectPennantsFlags(ctx: DetectContext): DetectResult {
           upperSlope: Number(upperLine.slope.toFixed(6)),
           lowerSlope: Number(lowerLine.slope.toFixed(6)),
           poleDirection: poleUp ? 'up' : 'down',
-          counterDirectionOk: poleUp ? counterSlope_ <= 0 : counterSlope_ >= 0,
-          counterSlopeRatio: Math.abs(poleSideSlope_) > 1e-12
-            ? Number((Math.abs(counterSlope_) / Math.abs(poleSideSlope_)).toFixed(3))
-            : null
+          isParallel,
+          isAgainstPole,
         }
       });
       continue;
@@ -302,16 +264,6 @@ export function detectPennantsFlags(ctx: DetectContext): DetectResult {
     let status: 'completed' | 'invalid' | 'forming' | 'near_completion';
     if (hasBreakout) {
       status = isExpectedBreakout ? 'completed' : 'invalid';
-    } else if (patternType === 'pennant') {
-      // Check apex proximity
-      const slopeDiff = upperLine.slope - lowerLine.slope;
-      if (Math.abs(slopeDiff) > 1e-12) {
-        const apexIdx = Math.round((lowerLine.intercept - upperLine.intercept) / slopeDiff);
-        const barsToApex = Math.max(0, apexIdx - lastIdx);
-        status = barsToApex <= 5 ? 'near_completion' : 'forming';
-      } else {
-        status = 'forming';
-      }
     } else {
       // Flag: duration-based completion estimate
       const consBars = consEndIdx - consStart;
@@ -327,21 +279,19 @@ export function detectPennantsFlags(ctx: DetectContext): DetectResult {
 
     // --- Scoring ---
     const poleScore = clamp01(bestPoleATRMult / (params.minPoleATRMult * 3));
-    const convScore = patternType === 'pennant'
-      ? clamp01((1 - convergenceRatio) / 0.5)
-      : clamp01(1 - Math.abs(1 - convergenceRatio) / 0.5); // closer to 1.0 = better for flags
+    const convScore = clamp01(1 - Math.abs(1 - convergenceRatio) / 0.5); // closer to 1.0 = better for flags
     const fitScore = (upperLine.r2 + lowerLine.r2) / 2;
     const touchScore = clamp01((consHighs.length + consLows.length) / 6);
 
     const baseScore = poleScore * 0.30 + convScore * 0.25 + fitScore * 0.20 + touchScore * 0.25;
-    const confidence = finalizeConf(baseScore, patternType);
+    const confidence = finalizeConf(baseScore, 'flag');
 
     const outcome = hasBreakout
       ? (isExpectedBreakout ? 'success' : 'failure')
       : undefined;
 
     patterns.push({
-      type: patternType,
+      type: 'flag',
       confidence,
       range: { start: startIso, end: endIso },
       status,
@@ -351,7 +301,7 @@ export function detectPennantsFlags(ctx: DetectContext): DetectResult {
     });
 
     debugCandidates.push({
-      type: patternType as any,
+      type: 'flag' as any,
       accepted: true,
       reason: 'detected',
       indices: [bestPoleStart, patternEndIdx],
