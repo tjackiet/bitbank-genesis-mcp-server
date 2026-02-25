@@ -1,183 +1,303 @@
 /**
- * Pennant & Flag detection — extracted from detect_patterns.ts (sections 5 & 5a).
+ * Pennant & Flag detection — swing-point based with sliding pole scan.
+ *
+ * Architecture:
+ * 1. Relaxed swing detection (swingDepth=1) for consolidation trendlines
+ * 2. Scan for impulsive moves (flagpoles) using ATR normalization
+ * 3. For each pole, examine subsequent swing points for consolidation
+ * 4. Fit R²-based regression trendlines on consolidation swing points
+ * 5. Classify: pennant (converging) vs flag (parallel, counter-trend)
+ * 6. Detect breakout with ATR buffer
+ * 7. Apply deduplicatePatterns() before returning
  */
 import { clamp01 } from './regression.js';
-import { periodScoreDays, finalizeConf, globalDedup } from './helpers.js';
-import { getConvergenceFactorForTf } from '../patterns/config.js';
+import { calcATR, deduplicatePatterns, finalizeConf } from './helpers.js';
 import type { DetectContext, DetectResult } from './types.js';
 
-const push = (arr: any[], item: any) => { arr.push(item); };
+// ---------------------------------------------------------------------------
+// 時間軸別パラメータ
+// ---------------------------------------------------------------------------
+function getPennantParams(tf: string) {
+  const t = String(tf);
+  if (t === '1min' || t === '5min')
+    return { poleMinBars: 8, poleMaxBars: 30, minPoleATRMult: 1.5, minPolePct: 0.01, consMinBars: 5, consMaxBars: 25 };
+  if (t === '15min' || t === '30min')
+    return { poleMinBars: 5, poleMaxBars: 20, minPoleATRMult: 1.5, minPolePct: 0.015, consMinBars: 5, consMaxBars: 25 };
+  if (t === '1hour')
+    return { poleMinBars: 5, poleMaxBars: 20, minPoleATRMult: 1.5, minPolePct: 0.02, consMinBars: 5, consMaxBars: 30 };
+  if (t === '4hour' || t === '8hour' || t === '12hour')
+    return { poleMinBars: 3, poleMaxBars: 15, minPoleATRMult: 1.5, minPolePct: 0.03, consMinBars: 5, consMaxBars: 25 };
+  if (t === '1week')
+    return { poleMinBars: 2, poleMaxBars: 6, minPoleATRMult: 2.0, minPolePct: 0.06, consMinBars: 3, consMaxBars: 12 };
+  if (t === '1month')
+    return { poleMinBars: 2, poleMaxBars: 5, minPoleATRMult: 2.5, minPolePct: 0.08, consMinBars: 2, consMaxBars: 10 };
+  // Default: 1day
+  return { poleMinBars: 3, poleMaxBars: 12, minPoleATRMult: 2.0, minPolePct: 0.05, consMinBars: 5, consMaxBars: 25 };
+}
 
 export function detectPennantsFlags(ctx: DetectContext): DetectResult {
-  const { candles, want, tolerancePct, includeForming, pct } = ctx;
+  const { candles, want, includeForming, debugCandidates, lrWithR2 } = ctx;
   const type = ctx.type;
   let patterns: any[] = [];
 
-  // 5) Pennant & Flag (continuation after pole)
-  {
-    const wantPennant = want.size === 0 || want.has('pennant');
-    const wantFlag = want.size === 0 || want.has('flag');
-    const W = Math.min(20, candles.length);
-    const closes = candles.map(c => c.close);
-    const highsArr = candles.map(c => c.high);
-    const lowsArr = candles.map(c => c.low);
-    const M = Math.min(12, Math.max(6, Math.floor(W * 0.6))); // 旗竿計測をやや長めに
-    const idxEnd = candles.length - 1;
-    const idxStart = Math.max(0, idxEnd - M);
-    const poleChange = pct(closes[idxStart], closes[idxEnd]);
-    // 時間軸に応じた旗竿しきい値（C）
-    const poleThreshold = (tf: string): number => {
-      const t = String(tf);
-      if (t === '1hour' || t === '4hour') return 0.05; // 5%
-      if (t === '1day') return 0.08; // 8%
-      return 0.06; // others
-    };
-    const minPole = poleThreshold(type);
-    const poleUp = poleChange >= minPole;
-    const poleDown = poleChange <= -minPole;
-    const havePole = poleUp || poleDown;
+  const wantPennant = want.size === 0 || want.has('pennant');
+  const wantFlag = want.size === 0 || want.has('flag');
+  if (!wantPennant && !wantFlag) return { patterns: [] };
 
-    // Consolidation window after pole start
-    const C = Math.min(14, W);
-    const winStart = Math.max(0, candles.length - C);
-    const hwin = highsArr.slice(winStart);
-    const lwin = lowsArr.slice(winStart);
-    const firstH = hwin[0];
-    const lastH = hwin[hwin.length - 1];
-    const firstL = lwin[0];
-    const lastL = lwin[lwin.length - 1];
-    const dH = pct(firstH, lastH);
-    const dL = pct(firstL, lastL);
-    const spreadStart = firstH - firstL;
-    const spreadEnd = lastH - lastL;
-    // 収束条件を時間軸で緩和（B）
-    const convF = getConvergenceFactorForTf(type);
-    const converging = spreadEnd < spreadStart * (1 - tolerancePct * convF);
+  const lastIdx = candles.length - 1;
+  if (lastIdx < 15) return { patterns: [] };
 
-    if (havePole) {
-      const start = candles[winStart].isoTime;
-      const end = candles[idxEnd].isoTime;
-      if (start && end) {
-        // Pennant: converging (symmetrical) consolidation after strong pole
-        if (wantPennant && ((dH <= 0 && dL >= 0) || (dH < 0 && dL > 0)) && converging) {
-          const qPole = clamp01((Math.abs(poleChange) - minPole) / Math.max(1e-12, (minPole * 2)));
-          const qConv = clamp01((spreadStart - spreadEnd) / Math.max(1e-12, spreadStart * 0.8));
-          const per = periodScoreDays(start, end);
-          const base = (qPole + qConv + per) / 3;
-          const confidence = finalizeConf(base, 'pennant');
-          push(patterns, { type: 'pennant', confidence, range: { start, end } });
-        }
-        // Flag: parallel/slight slope against pole direction
-        if (wantFlag) {
-          const slopeAgainstUp = poleUp && dH < 0 && dL < 0; // both down
-          const slopeAgainstDown = poleDown && dH > 0 && dL > 0; // both up
-          const smallRange = spreadEnd <= spreadStart * 1.02; // 並行チャネルの厳格化
-          if ((slopeAgainstUp || slopeAgainstDown) && smallRange) {
-            const qPole = clamp01((Math.abs(poleChange) - minPole) / Math.max(1e-12, (minPole * 2)));
-            const qRange = clamp01(1 - (spreadEnd - spreadStart) / Math.max(1e-12, spreadStart * 0.2));
-            const per = periodScoreDays(start, end);
-            const base = (qPole + qRange + per) / 3;
-            const confidence = finalizeConf(base, 'flag');
-            push(patterns, { type: 'flag', confidence, range: { start, end } });
-          }
-        }
-      }
+  const params = getPennantParams(type);
+
+  // --- Relaxed swing detection (swingDepth=1) for consolidation zones ---
+  const relaxedPeaks: Array<{ idx: number; price: number }> = [];
+  const relaxedValleys: Array<{ idx: number; price: number }> = [];
+  for (let i = 1; i < candles.length - 1; i++) {
+    const c = candles[i], prev = candles[i - 1], next = candles[i + 1];
+    if (c.high > prev.high && c.high > next.high) {
+      relaxedPeaks.push({ idx: i, price: c.high });
+    }
+    if (c.low < prev.low && c.low < next.low) {
+      relaxedValleys.push({ idx: i, price: c.low });
     }
   }
 
-  // 5a) 形成中ペナント/フラッグ（統合: 旗竿後の保ち合い形成中）
-  if (includeForming && (want.size === 0 || want.has('pennant') || want.has('flag'))) {
-    const lastIdx = candles.length - 1;
-    const isoAt = (i: number) => (candles[i] as any)?.isoTime || '';
-    const maxFormingDays = 30; // ペナント/フラッグは短期パターン
-    const daysPerBar = type === '1day' ? 1 : type === '1week' ? 7 : 1;
+  // --- Scan for flagpoles across entire history ---
+  for (let poleEnd = params.poleMinBars; poleEnd <= lastIdx - params.consMinBars; poleEnd++) {
+    // Find the strongest pole ending at this position
+    let bestPoleStart = -1;
+    let bestPoleMag = 0;
+    let bestPoleATRMult = 0;
 
-    const closes = candles.map(c => c.close);
-    const highsArr = candles.map(c => c.high);
-    const lowsArr = candles.map(c => c.low);
+    for (let poleLen = params.poleMinBars; poleLen <= Math.min(params.poleMaxBars, poleEnd); poleLen++) {
+      const ps = poleEnd - poleLen;
+      const startPrice = candles[ps].close;
+      const endPrice = candles[poleEnd].close;
+      const magnitude = endPrice - startPrice;
+      const changePct = Math.abs(magnitude) / Math.max(1e-12, startPrice);
 
-    // 旗竿検出（直近20本）
-    const poleWindow = Math.min(20, candles.length);
-    const poleStart = Math.max(0, lastIdx - poleWindow);
+      // Local ATR at pole
+      const localATR = calcATR(candles, Math.max(1, ps), poleEnd, 14);
+      if (localATR <= 0) continue;
 
-    // 各ウィンドウで旗竿を探す
-    for (let poleLen = 5; poleLen <= Math.min(12, poleWindow); poleLen++) {
-      const poleEndIdx = lastIdx - Math.floor(poleLen * 0.3); // 旗竿の終点
-      if (poleEndIdx < poleLen) continue;
+      const atrMult = Math.abs(magnitude) / localATR;
+      if (atrMult < params.minPoleATRMult || changePct < params.minPolePct) continue;
 
-      const poleStartIdx = poleEndIdx - poleLen;
-      const poleChange = (closes[poleEndIdx] - closes[poleStartIdx]) / Math.max(1e-12, closes[poleStartIdx]);
-      const minPoleChange = type === '1day' ? 0.06 : 0.04; // 6%/4%
-
-      const poleUp = poleChange >= minPoleChange;
-      const poleDown = poleChange <= -minPoleChange;
-
-      if (!poleUp && !poleDown) continue;
-
-      // 保ち合い部分（旗竿後）
-      const consolidationStart = poleEndIdx + 1;
-      if (consolidationStart >= lastIdx - 2) continue;
-
-      const consHighs = highsArr.slice(consolidationStart, lastIdx + 1);
-      const consLows = lowsArr.slice(consolidationStart, lastIdx + 1);
-      if (consHighs.length < 3) continue;
-
-      const firstH = consHighs[0], lastH = consHighs[consHighs.length - 1];
-      const firstL = consLows[0], lastL = consLows[consLows.length - 1];
-      const spreadStart = firstH - firstL;
-      const spreadEnd = lastH - lastL;
-
-      // 期間チェック
-      const formationBars = Math.max(0, lastIdx - poleStartIdx);
-      const patternDays = Math.round(formationBars * daysPerBar);
-      if (patternDays > maxFormingDays) continue;
-
-      const dH = (lastH - firstH) / Math.max(1e-12, firstH);
-      const dL = (lastL - firstL) / Math.max(1e-12, firstL);
-
-      // ペナント: 収束（高値下落＆安値上昇）
-      const isPennant = spreadEnd < spreadStart * 0.85 && dH < 0 && dL > 0;
-
-      // フラッグ: 並行で旗竿と逆方向
-      const isFlag = Math.abs(spreadEnd - spreadStart) / Math.max(1e-12, spreadStart) < 0.15 &&
-        ((poleUp && dH < 0 && dL < 0) || (poleDown && dH > 0 && dL > 0));
-
-      if ((want.size === 0 || want.has('pennant')) && isPennant) {
-        const qPole = Math.min(1, Math.abs(poleChange) / (minPoleChange * 2));
-        const qConv = Math.min(1, (spreadStart - spreadEnd) / Math.max(1e-12, spreadStart * 0.5));
-        const confidence = Math.round((0.5 + qPole * 0.25 + qConv * 0.25) * 100) / 100;
-
-        push(patterns, {
-          type: 'pennant',
-          confidence,
-          range: { start: isoAt(poleStartIdx), end: isoAt(lastIdx) },
-          status: 'forming',
-          completionPct: Math.round((1 - spreadEnd / Math.max(1e-12, spreadStart)) * 100),
-          _method: 'forming_pennant',
-        });
-        break; // 1件で十分
-      }
-
-      if ((want.size === 0 || want.has('flag')) && isFlag) {
-        const qPole = Math.min(1, Math.abs(poleChange) / (minPoleChange * 2));
-        const qParallel = Math.min(1, 1 - Math.abs(spreadEnd - spreadStart) / Math.max(1e-12, spreadStart * 0.2));
-        const confidence = Math.round((0.5 + qPole * 0.25 + qParallel * 0.25) * 100) / 100;
-
-        push(patterns, {
-          type: 'flag',
-          confidence,
-          range: { start: isoAt(poleStartIdx), end: isoAt(lastIdx) },
-          status: 'forming',
-          completionPct: 70, // フラッグは完成度の概念が曖昧
-          _method: 'forming_flag',
-        });
-        break; // 1件で十分
+      // Keep the strongest pole
+      if (atrMult > bestPoleATRMult) {
+        bestPoleStart = ps;
+        bestPoleMag = magnitude;
+        bestPoleATRMult = atrMult;
       }
     }
+
+    if (bestPoleStart < 0) continue;
+
+    const poleUp = bestPoleMag > 0;
+    const localATR = calcATR(candles, Math.max(1, bestPoleStart), poleEnd, 14);
+    if (localATR <= 0) continue;
+
+    // --- Check consolidation after pole ---
+    const consStart = poleEnd + 1;
+    if (consStart > lastIdx - 2) continue;
+
+    const consMaxEnd = Math.min(lastIdx, poleEnd + params.consMaxBars);
+
+    // Get swing points in consolidation zone
+    const consHighs = relaxedPeaks.filter(p => p.idx >= consStart && p.idx <= consMaxEnd);
+    const consLows = relaxedValleys.filter(p => p.idx >= consStart && p.idx <= consMaxEnd);
+
+    if (consHighs.length < 2 || consLows.length < 2) {
+      debugCandidates.push({
+        type: 'pennant' as any,
+        accepted: false,
+        reason: 'insufficient_consolidation_swings',
+        indices: [bestPoleStart, poleEnd],
+        details: { highs: consHighs.length, lows: consLows.length, poleATRMult: Number(bestPoleATRMult.toFixed(2)) }
+      });
+      continue;
+    }
+
+    // Fit trendlines with R²-based regression on swing points
+    const upperLine = lrWithR2(consHighs.map(p => ({ x: p.idx, y: p.price })));
+    const lowerLine = lrWithR2(consLows.map(p => ({ x: p.idx, y: p.price })));
+
+    const minR2 = 0.25;
+    if (upperLine.r2 < minR2 || lowerLine.r2 < minR2) {
+      debugCandidates.push({
+        type: 'pennant' as any,
+        accepted: false,
+        reason: 'poor_trendline_fit',
+        indices: [bestPoleStart, consMaxEnd],
+        details: { r2Upper: Number(upperLine.r2.toFixed(3)), r2Lower: Number(lowerLine.r2.toFixed(3)), minR2 }
+      });
+      continue;
+    }
+
+    // Consolidation geometry
+    const consEndIdx = Math.max(
+      consHighs[consHighs.length - 1].idx,
+      consLows[consLows.length - 1].idx
+    );
+    const gapStart = upperLine.valueAt(consStart) - lowerLine.valueAt(consStart);
+    const gapEnd = upperLine.valueAt(consEndIdx) - lowerLine.valueAt(consEndIdx);
+
+    if (gapStart <= 0 || gapEnd <= 0) continue; // lines shouldn't cross
+
+    // Consolidation range should be contained within pole range
+    const poleRange = Math.abs(bestPoleMag);
+    if (gapStart > poleRange * 0.75) {
+      debugCandidates.push({
+        type: 'pennant' as any,
+        accepted: false,
+        reason: 'consolidation_too_wide',
+        indices: [bestPoleStart, consEndIdx],
+        details: { consRange: Number(gapStart.toFixed(2)), poleRange: Number(poleRange.toFixed(2)), ratio: Number((gapStart / poleRange).toFixed(3)) }
+      });
+      continue;
+    }
+
+    const convergenceRatio = gapEnd / gapStart;
+
+    // --- Classify: Pennant vs Flag ---
+    let patternType: 'pennant' | 'flag' | null = null;
+
+    // Pennant: converging lines (gap narrows by at least 20%)
+    if (wantPennant && convergenceRatio < 0.80) {
+      const upperFalls = upperLine.slope <= 0;
+      const lowerRises = lowerLine.slope >= 0;
+      // At least one line should move to narrow the gap
+      if (upperFalls || lowerRises) {
+        patternType = 'pennant';
+      }
+    }
+
+    // Flag: roughly parallel channel, slope against pole direction
+    if (!patternType && wantFlag) {
+      const avgSlope = (upperLine.slope + lowerLine.slope) / 2;
+      const slopeDiff = Math.abs(upperLine.slope - lowerLine.slope);
+      const isParallel = slopeDiff < Math.abs(avgSlope) * 0.6 || convergenceRatio > 0.70;
+      const isAgainstPole = poleUp ? avgSlope < 0 : avgSlope > 0;
+
+      if (isParallel && isAgainstPole && convergenceRatio > 0.60) {
+        patternType = 'flag';
+      }
+    }
+
+    if (!patternType) {
+      debugCandidates.push({
+        type: 'pennant' as any,
+        accepted: false,
+        reason: 'classification_failed',
+        indices: [bestPoleStart, consEndIdx],
+        details: {
+          convergenceRatio: Number(convergenceRatio.toFixed(3)),
+          upperSlope: Number(upperLine.slope.toFixed(6)),
+          lowerSlope: Number(lowerLine.slope.toFixed(6)),
+          poleDirection: poleUp ? 'up' : 'down'
+        }
+      });
+      continue;
+    }
+
+    // --- Breakout detection (close-based with ATR buffer) ---
+    let breakoutIdx = -1;
+    let breakoutDirection: 'up' | 'down' | null = null;
+
+    const scanStart = consStart + Math.max(3, Math.floor((consEndIdx - consStart) * 0.3));
+    for (let i = scanStart; i <= lastIdx; i++) {
+      const close = candles[i].close;
+      const uVal = upperLine.valueAt(i);
+      const lVal = lowerLine.valueAt(i);
+
+      if (close > uVal + localATR * 0.3) {
+        breakoutIdx = i;
+        breakoutDirection = 'up';
+        break;
+      }
+      if (close < lVal - localATR * 0.3) {
+        breakoutIdx = i;
+        breakoutDirection = 'down';
+        break;
+      }
+    }
+
+    // --- Status determination ---
+    const hasBreakout = breakoutIdx !== -1;
+    const patternEndIdx = hasBreakout ? breakoutIdx : consEndIdx;
+    const isExpectedBreakout = hasBreakout &&
+      ((poleUp && breakoutDirection === 'up') || (!poleUp && breakoutDirection === 'down'));
+
+    let status: 'completed' | 'invalid' | 'forming' | 'near_completion';
+    if (hasBreakout) {
+      status = isExpectedBreakout ? 'completed' : 'invalid';
+    } else if (patternType === 'pennant') {
+      // Check apex proximity
+      const slopeDiff = upperLine.slope - lowerLine.slope;
+      if (Math.abs(slopeDiff) > 1e-12) {
+        const apexIdx = Math.round((lowerLine.intercept - upperLine.intercept) / slopeDiff);
+        const barsToApex = Math.max(0, apexIdx - lastIdx);
+        status = barsToApex <= 5 ? 'near_completion' : 'forming';
+      } else {
+        status = 'forming';
+      }
+    } else {
+      // Flag: duration-based completion estimate
+      const consBars = consEndIdx - consStart;
+      status = consBars > params.consMaxBars * 0.7 ? 'near_completion' : 'forming';
+    }
+
+    // Skip forming if not requested
+    if ((status === 'forming' || status === 'near_completion') && !includeForming) continue;
+
+    const startIso = candles[bestPoleStart]?.isoTime;
+    const endIso = candles[patternEndIdx]?.isoTime;
+    if (!startIso || !endIso) continue;
+
+    // --- Scoring ---
+    const poleScore = clamp01(bestPoleATRMult / (params.minPoleATRMult * 3));
+    const convScore = patternType === 'pennant'
+      ? clamp01((1 - convergenceRatio) / 0.5)
+      : clamp01(1 - Math.abs(1 - convergenceRatio) / 0.5); // closer to 1.0 = better for flags
+    const fitScore = (upperLine.r2 + lowerLine.r2) / 2;
+    const touchScore = clamp01((consHighs.length + consLows.length) / 6);
+
+    const baseScore = poleScore * 0.30 + convScore * 0.25 + fitScore * 0.20 + touchScore * 0.25;
+    const confidence = finalizeConf(baseScore, patternType);
+
+    const outcome = hasBreakout
+      ? (isExpectedBreakout ? 'success' : 'failure')
+      : undefined;
+
+    patterns.push({
+      type: patternType,
+      confidence,
+      range: { start: startIso, end: endIso },
+      status,
+      poleDirection: poleUp ? 'up' : 'down',
+      breakoutDirection: breakoutDirection ?? undefined,
+      outcome,
+    });
+
+    debugCandidates.push({
+      type: patternType as any,
+      accepted: true,
+      reason: 'detected',
+      indices: [bestPoleStart, patternEndIdx],
+      details: {
+        poleATRMult: Number(bestPoleATRMult.toFixed(2)),
+        convergenceRatio: Number(convergenceRatio.toFixed(3)),
+        r2Upper: Number(upperLine.r2.toFixed(3)),
+        r2Lower: Number(lowerLine.r2.toFixed(3)),
+        touchCount: consHighs.length + consLows.length,
+        breakout: hasBreakout ? { idx: breakoutIdx, direction: breakoutDirection } : null,
+        status,
+        confidence,
+      }
+    });
   }
 
-  // 5b) Global deduplication across types（patterns/helpers.ts へ抽出済み）
-  patterns = globalDedup(patterns);
+  patterns = deduplicatePatterns(patterns);
 
   return { patterns };
 }
