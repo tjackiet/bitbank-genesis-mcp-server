@@ -1,6 +1,7 @@
 /**
  * Wedge 検出（Rising / Falling — 完成済み＋形成中）
- * detect_patterns.ts Sections 4b, 4c, 4d から抽出
+ * - 4b) 回帰ベース（完成済みの主力検出）
+ * - 4d) 形成中ウェッジ検出（緩い条件）
  */
 import { generatePatternDiagram } from '../../src/utils/pattern-diagrams.js';
 import {
@@ -15,7 +16,6 @@ import {
   calcATR,
   detectWedgeBreak,
 } from './helpers.js';
-import { findUpperTrendline, findLowerTrendline } from './trendline.js';
 import type { DetectContext, DetectResult } from './types.js';
 
 export function detectWedges(ctx: DetectContext): DetectResult {
@@ -462,221 +462,8 @@ export function detectWedges(ctx: DetectContext): DetectResult {
     }
   }
 
-  // 4c) ピボットベース・ウェッジ検出（2点接線方式）
-  {
-    const pivotWedgeDebug: any[] = [];
-    const windowSizeMin = 40;
-    const windowSizeMax = 80;
-    const windowStep = 5;
-
-    // wantフィルタ
-    const allowFallingPivot = (want.size === 0) || want.has('falling_wedge' as any);
-    const allowRisingPivot = (want.size === 0) || want.has('rising_wedge' as any);
-
-    // ピボットポイントを取得
-    const swingHighs = pivots.filter(p => p.kind === 'H').map(p => ({ idx: p.idx, price: p.price }));
-    const swingLows = pivots.filter(p => p.kind === 'L').map(p => ({ idx: p.idx, price: p.price }));
-
-    // makeLine / findUpperTrendline / findLowerTrendline は patterns/trendline.ts からインポート済み
-
-    // ウィンドウを生成して検出
-    for (let size = windowSizeMin; size <= windowSizeMax; size += windowStep) {
-      for (let startIdx = 0; startIdx + size <= candles.length; startIdx += windowStep) {
-        const endIdx = startIdx + size;
-
-        const avgPrice = (Number(candles[startIdx]?.close) + Number(candles[endIdx - 1]?.close)) / 2;
-        const tolerance = avgPrice * 0.01;
-
-        const upperLine = findUpperTrendline(swingHighs, startIdx, endIdx, tolerance);
-        const lowerLine = findLowerTrendline(swingLows, startIdx, endIdx, tolerance);
-
-        if (!upperLine || !lowerLine) continue;
-
-        const isUpperDown = upperLine.slope < 0;
-        const isLowerDown = lowerLine.slope < 0;
-        const gapStart = upperLine.valueAt(startIdx) - lowerLine.valueAt(startIdx);
-        const gapEnd = upperLine.valueAt(endIdx) - lowerLine.valueAt(endIdx);
-        const isConverging = gapEnd > 0 && gapEnd < gapStart * 0.8;
-
-        // Falling Wedge: 両ライン下向き + 収束
-        if (allowFallingPivot && isUpperDown && isLowerDown && isConverging) {
-          const start = (candles[startIdx] as any)?.isoTime;
-
-          // ブレイクアウト検出（トレンドラインからの乖離で判定）
-          // Falling Wedge: 上方ブレイク=success（強気転換）、下方ブレイク=failure（弱気継続）
-          let breakoutIdx = endIdx - 1;
-          let breakoutDetected = false;
-          let breakoutDirection: 'up' | 'down' | null = null;
-
-          for (let i = endIdx; i < candles.length && i < endIdx + 30; i++) {
-            const open = Number(candles[i]?.open);
-            const close = Number(candles[i]?.close);
-            const candleBodyTop = Math.max(open, close);  // ローソク本体の上端
-            const candleBodyBottom = Math.min(open, close);  // ローソク本体の下端
-            const upperLineValue = upperLine.valueAt(i);
-            const lowerLineValue = lowerLine.valueAt(i);
-            const upperBreakThreshold = upperLineValue * 1.015;  // 上側トレンドラインの1.5%上
-            const lowerBreakThreshold = lowerLineValue * 0.985;  // 下側トレンドラインの1.5%下
-
-            // 上方ブレイク: ローソク本体の下端が上側トレンドラインを2%以上上回る
-            if (candleBodyBottom > upperBreakThreshold) {
-              breakoutIdx = i;
-              breakoutDetected = true;
-              breakoutDirection = 'up';
-              break;
-            }
-            // 下方ブレイク: ローソク本体の上端が下側トレンドラインを2%以上下回る
-            if (candleBodyTop < lowerBreakThreshold) {
-              breakoutIdx = i;
-              breakoutDetected = true;
-              breakoutDirection = 'down';
-              break;
-            }
-          }
-
-          if (!breakoutDetected) continue;
-
-          const actualEndIdx = breakoutIdx;
-          const end = (candles[actualEndIdx] as any)?.isoTime;
-
-          if (start && end) {
-            const convergenceScore = 1 - (gapEnd / gapStart);
-            const slopeScore = Math.min(Math.abs(upperLine.slope), Math.abs(lowerLine.slope)) / Math.max(Math.abs(upperLine.slope), Math.abs(lowerLine.slope));
-            const durationDays = endIdx - startIdx;
-            const durationScore = durationDays >= 40 && durationDays <= 60 ? 1.0 : 0.8;
-            const slopeStrength = Math.min(1, (Math.abs(upperLine.slope) + Math.abs(lowerLine.slope)) / 100000);
-            const score = (convergenceScore * 0.4 + slopeScore * 0.3 + durationScore * 0.15 + slopeStrength * 0.15);
-            const confidence = Math.max(0.65, Math.min(0.95, score + 0.3));
-
-            pivotWedgeDebug.push({
-              type: 'falling_wedge',
-              method: 'pivot_based',
-              accepted: true,
-              indices: [startIdx, actualEndIdx],
-              range: { start, end },
-              details: {
-                upperSlope: upperLine.slope,
-                lowerSlope: lowerLine.slope,
-                gapStart,
-                gapEnd,
-                convergenceRatio: gapEnd / gapStart,
-                score,
-                breakoutDetected,
-                breakoutIdx
-              }
-            });
-
-            // Falling Wedge: 上方ブレイク=success、下方ブレイク=failure
-            const outcome = breakoutDirection === 'up' ? 'success' : 'failure';
-
-            push(patterns, {
-              type: 'falling_wedge' as const,
-              confidence,
-              range: { start, end },
-              _method: 'pivot_based',
-              breakoutDirection: breakoutDirection,
-              outcome: outcome,
-            });
-          }
-        }
-
-        // Rising Wedge
-        const isUpperUp = upperLine.slope > 0;
-        const isLowerUp = lowerLine.slope > 0;
-        const isConvergingUp = gapEnd > 0 && gapEnd < gapStart * 0.8;
-
-        if (allowRisingPivot && isUpperUp && isLowerUp && isConvergingUp) {
-          const start = (candles[startIdx] as any)?.isoTime;
-
-          // ブレイクアウト検出（トレンドラインからの乖離で判定）
-          // Rising Wedge: 下方ブレイク=success（弱気転換）、上方ブレイク=failure（強気継続）
-          let breakoutIdx = endIdx - 1;
-          let breakoutDetected = false;
-          let breakoutDirectionRw: 'up' | 'down' | null = null;
-
-          for (let i = endIdx; i < candles.length && i < endIdx + 30; i++) {
-            const open = Number(candles[i]?.open);
-            const close = Number(candles[i]?.close);
-            const candleBodyTop = Math.max(open, close);  // ローソク本体の上端
-            const candleBodyBottom = Math.min(open, close);  // ローソク本体の下端
-            const upperLineValue = upperLine.valueAt(i);
-            const lowerLineValue = lowerLine.valueAt(i);
-            const upperBreakThresholdRw = upperLineValue * 1.015;  // 上側トレンドラインの1.5%上
-            const lowerBreakThresholdRw = lowerLineValue * 0.985;  // 下側トレンドラインの1.5%下
-
-            // 下方ブレイク: ローソク本体の上端が下側トレンドラインを2%以上下回る
-            if (candleBodyTop < lowerBreakThresholdRw) {
-              breakoutIdx = i;
-              breakoutDetected = true;
-              breakoutDirectionRw = 'down';
-              break;
-            }
-            // 上方ブレイク: ローソク本体の下端が上側トレンドラインを2%以上上回る
-            if (candleBodyBottom > upperBreakThresholdRw) {
-              breakoutIdx = i;
-              breakoutDetected = true;
-              breakoutDirectionRw = 'up';
-              break;
-            }
-          }
-
-          if (!breakoutDetected) continue;
-
-          const actualEndIdx = breakoutIdx;
-          const end = (candles[actualEndIdx] as any)?.isoTime;
-
-          if (start && end) {
-            const convergenceScore = 1 - (gapEnd / gapStart);
-            const slopeScore = Math.min(Math.abs(upperLine.slope), Math.abs(lowerLine.slope)) / Math.max(Math.abs(upperLine.slope), Math.abs(lowerLine.slope));
-            const durationDays = endIdx - startIdx;
-            const durationScore = durationDays >= 40 && durationDays <= 60 ? 1.0 : 0.8;
-            const slopeStrength = Math.min(1, (Math.abs(upperLine.slope) + Math.abs(lowerLine.slope)) / 100000);
-            const score = (convergenceScore * 0.4 + slopeScore * 0.3 + durationScore * 0.15 + slopeStrength * 0.15);
-            const confidence = Math.max(0.65, Math.min(0.95, score + 0.3));
-
-            pivotWedgeDebug.push({
-              type: 'rising_wedge',
-              method: 'pivot_based',
-              accepted: true,
-              indices: [startIdx, actualEndIdx],
-              range: { start, end },
-              details: {
-                upperSlope: upperLine.slope,
-                lowerSlope: lowerLine.slope,
-                gapStart,
-                gapEnd,
-                convergenceRatio: gapEnd / gapStart,
-                score,
-                breakoutDetected,
-                breakoutIdx
-              }
-            });
-
-            // Rising Wedge: 下方ブレイク=success、上方ブレイク=failure
-            const outcomeRw = breakoutDirectionRw === 'down' ? 'success' : 'failure';
-
-            push(patterns, {
-              type: 'rising_wedge' as const,
-              confidence,
-              range: { start, end },
-              _method: 'pivot_based',
-              breakoutDirection: breakoutDirectionRw,
-              outcome: outcomeRw,
-            });
-          }
-        }
-      }
-    }
-
-    for (const d of pivotWedgeDebug) {
-      debugCandidates.unshift(d);
-    }
-  }
-
-  // 最終整合性フィルタは撤回（ウェッジの定義は収束・傾き関係で十分とする）
-
   // 4d) 形成中ウェッジ検出
-  // 既存の 4c は完成済み向け（厳格）、4d は形成中向け（緩い）
+  // 4b（回帰ベース）が完成済みの主力。4d は形成中向け（緩い条件）
   {
     const formingWedgeDebug: any[] = [];
     const fWindowSizeMin = 20;  // 短いウィンドウも許容

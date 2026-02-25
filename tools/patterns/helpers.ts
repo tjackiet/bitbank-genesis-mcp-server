@@ -42,7 +42,7 @@ export interface WedgeBreakResult {
 
 export function detectWedgeBreak(
   candles: CandleData[],
-  wedgeType: 'falling_wedge' | 'rising_wedge',
+  _wedgeType: 'falling_wedge' | 'rising_wedge',
   upper: { valueAt: (x: number) => number },
   lower: { valueAt: (x: number) => number },
   startIdx: number,
@@ -56,6 +56,11 @@ export function detectWedgeBreak(
 
   let firstBreakIdx = -1;
 
+  // 両方向をスキャンし、最初に見つかったブレイクを返す。
+  // 方向の判定は呼び出し側（detect_wedges.ts）が breakPrice と
+  // トレンドラインの位置関係から行う。
+  // - falling_wedge: 上方ブレイク（uLine 超え）が教科書的
+  // - rising_wedge:  下方ブレイク（lLine 割れ）が教科書的
   for (let i = scanStart; i <= scanEnd; i++) {
     const close = Number(candles[i]?.close ?? NaN);
     if (!Number.isFinite(close)) continue;
@@ -64,16 +69,9 @@ export function detectWedgeBreak(
     const lLine = lower.valueAt(i);
     if (!Number.isFinite(uLine) || !Number.isFinite(lLine)) continue;
 
-    if (wedgeType === 'falling_wedge') {
-      if (close < lLine - atr * 0.5) {
-        firstBreakIdx = i;
-        break;
-      }
-    } else {
-      if (close > uLine + atr * 0.5) {
-        firstBreakIdx = i;
-        break;
-      }
+    if (close > uLine + atr * 0.5 || close < lLine - atr * 0.5) {
+      firstBreakIdx = i;
+      break;
     }
   }
 
