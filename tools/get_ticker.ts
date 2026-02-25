@@ -2,7 +2,7 @@ import { ensurePair, createMeta } from '../lib/validate.js';
 import { fetchJson, BITBANK_API_BASE, DEFAULT_RETRIES } from '../lib/http.js';
 import { ok, fail, failFromError, failFromValidation } from '../lib/result.js';
 import { formatPair, formatPrice, formatPercent } from '../lib/formatter.js';
-import { toIsoTime } from '../lib/datetime.js';
+import { toIsoTime, toDisplayTime } from '../lib/datetime.js';
 import { GetTickerOutputSchema } from '../src/schemas.js';
 import type { Result, GetTickerData, GetTickerMeta } from '../src/types/domain.d.ts';
 
@@ -62,6 +62,10 @@ function formatTickerSummary(pair: string, d: Record<string, unknown>): string {
   }
   lines.push(`出来高: ${formatVolume(vol)}`);
   lines.push(`Bid: ${fmtPx(buy)} / Ask: ${fmtPx(sell)}${spreadStr ? `（スプレッド: ${spreadStr}）` : ''}`);
+
+  const tsNum = d.timestamp != null ? Number(d.timestamp) : null;
+  const timeStr = tsNum != null ? toDisplayTime(tsNum) : null;
+  if (timeStr) lines.push(`📸 ${timeStr} 時点`);
 
   return lines.join('\n');
 }
