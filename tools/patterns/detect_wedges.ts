@@ -37,7 +37,7 @@ export function detectWedges(ctx: DetectContext): DetectResult {
       slopeRatioMin: 1.15,
       slopeRatioMinRising: 1.20,
       minWeakerSlopeRatio: 0.3, // ★ 追加: 弱い方のラインの最小傾き比率
-      minTouchesPerLine: 2,
+      minTouchesPerLine: 3,
       minScore: 0.5,
     };
     const swings = {
