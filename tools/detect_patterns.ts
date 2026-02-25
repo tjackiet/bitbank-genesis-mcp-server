@@ -215,16 +215,40 @@ export default async function detectPatterns(
       const endDate = p.range?.end?.substring(0, 10) || '?';
       let detail = `${idx + 1}. ${p.type}【${tfLabel}】(パターン整合度: ${p.confidence})\n   - 時間足: ${tfLabel}（${type}）\n   - 期間: ${startDate} ~ ${endDate}`;
 
-      // ウェッジパターンの場合、ブレイク情報を追加
-      if ((p.type === 'falling_wedge' || p.type === 'rising_wedge') && p.breakoutDirection && p.outcome) {
+      // status（全パターン共通）
+      if (p.status) {
+        const statusJa: Record<string, string> = {
+          completed: '完成（ブレイクアウト確認済み）',
+          invalid: '無効（期待と逆方向にブレイク）',
+          forming: '形成中',
+          near_completion: 'ほぼ完成（apex接近）',
+        };
+        detail += `\n   - 状態: ${statusJa[p.status] || p.status}`;
+      }
+
+      // ブレイクアウト情報（全パターン共通）
+      if (p.breakoutDirection && p.outcome) {
         const directionJa = p.breakoutDirection === 'up' ? '上方' : '下方';
         const outcomeJa = p.outcome === 'success' ? '成功' : '失敗';
-        const expectedDir = p.type === 'falling_wedge' ? '上方' : '下方';
-        const meaning = p.type === 'falling_wedge'
-          ? (p.outcome === 'success' ? '強気転換' : '弱気継続')
-          : (p.outcome === 'success' ? '弱気転換' : '強気継続');
 
-        detail += `\n   - ブレイク方向: ${directionJa}ブレイク（本来は${expectedDir}ブレイクが期待されるパターン）`;
+        // パターン別の期待方向と意味付け
+        const expectedDirMap: Record<string, string | undefined> = {
+          falling_wedge: '上方', rising_wedge: '下方',
+          triangle_ascending: '上方', triangle_descending: '下方',
+          pennant: undefined, flag: undefined,
+        };
+        const expectedDir = expectedDirMap[p.type];
+
+        const meaningMap: Record<string, Record<string, string>> = {
+          falling_wedge: { success: '強気転換', failure: '弱気継続' },
+          rising_wedge: { success: '弱気転換', failure: '強気継続' },
+          triangle_ascending: { success: '上方ブレイク（強気）', failure: '下方ブレイク（弱気転換）' },
+          triangle_descending: { success: '下方ブレイク（弱気）', failure: '上方ブレイク（強気転換）' },
+        };
+        const meaning = meaningMap[p.type]?.[p.outcome] || outcomeJa;
+
+        detail += `\n   - ブレイク方向: ${directionJa}ブレイク`;
+        if (expectedDir) detail += `（本来は${expectedDir}ブレイクが期待されるパターン）`;
         detail += `\n   - パターン結果: ${outcomeJa}（${meaning}）`;
       }
 
