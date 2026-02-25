@@ -86,7 +86,8 @@ export function detectPennantsFlags(ctx: DetectContext): DetectResult {
 
   // --- Scan for flagpoles across entire history ---
   // パフォーマンス: バー数が多い時間軸ではステップを大きくする
-  const outerStep = params.poleMaxBars > 30 ? 2 : 1;
+  // ただし outerStep を大きくしすぎるとスパンチェック境界で候補を落とすため控えめに
+  const outerStep = params.poleMaxBars > 100 ? 2 : 1;
   const innerStep = params.poleMaxBars > 50 ? 2 : 1;
 
   for (let poleEnd = params.poleMinBars; poleEnd <= lastIdx - params.consMinBars; poleEnd += outerStep) {
@@ -149,7 +150,14 @@ export function detectPennantsFlags(ctx: DetectContext): DetectResult {
     // 片方が極端に短い（例: 2点が数本しか離れていない）場合はトレンドラインとして無意味。
     const upperSpan = consHighs[consHighs.length - 1].idx - consHighs[0].idx;
     const lowerSpan = consLows[consLows.length - 1].idx - consLows[0].idx;
-    const consZoneWidth = consMaxEnd - consStart;
+    // 実際のスイングポイント範囲を基準にする（理論上の最大ウィンドウではなく）。
+    // consMaxEnd は poleEnd + consMaxBars まで広がるため、保ち合い後のバーを含みスパン比率が
+    // 不当に小さくなる。実際の保ち合い範囲で判定すべき。
+    const actualConsEnd = Math.max(
+      consHighs[consHighs.length - 1].idx,
+      consLows[consLows.length - 1].idx
+    );
+    const consZoneWidth = Math.max(1, actualConsEnd - consStart);
     const minSpanRatio = 0.30; // 各ラインは保ち合い区間の30%以上をカバーすべき
 
     if (upperSpan < consZoneWidth * minSpanRatio || lowerSpan < consZoneWidth * minSpanRatio) {
@@ -159,7 +167,7 @@ export function detectPennantsFlags(ctx: DetectContext): DetectResult {
         reason: 'trendline_span_too_short',
         indices: [bestPoleStart, poleEnd],
         details: {
-          upperSpan, lowerSpan, consZoneWidth,
+          upperSpan, lowerSpan, consZoneWidth, actualConsEnd,
           upperRatio: Number((upperSpan / consZoneWidth).toFixed(3)),
           lowerRatio: Number((lowerSpan / consZoneWidth).toFixed(3)),
           minSpanRatio,
@@ -184,11 +192,8 @@ export function detectPennantsFlags(ctx: DetectContext): DetectResult {
       continue;
     }
 
-    // Consolidation geometry
-    const consEndIdx = Math.max(
-      consHighs[consHighs.length - 1].idx,
-      consLows[consLows.length - 1].idx
-    );
+    // Consolidation geometry（actualConsEnd はスパンチェックで算出済み）
+    const consEndIdx = actualConsEnd;
     const gapStart = upperLine.valueAt(consStart) - lowerLine.valueAt(consStart);
     const gapEnd = upperLine.valueAt(consEndIdx) - lowerLine.valueAt(consEndIdx);
 
