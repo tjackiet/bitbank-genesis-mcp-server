@@ -15,24 +15,46 @@ import { calcATR, deduplicatePatterns, finalizeConf } from './helpers.js';
 import type { DetectContext, DetectResult } from './types.js';
 
 // ---------------------------------------------------------------------------
-// 時間軸別パラメータ
+// 時間軸別パラメータ — 「日数」ベースで定義し、bars-per-day で変換
 // ---------------------------------------------------------------------------
+function barsPerDay(tf: string): number {
+  switch (tf) {
+    case '1min':  return 1440;
+    case '5min':  return 288;
+    case '15min': return 96;
+    case '30min': return 48;
+    case '1hour': return 24;
+    case '4hour': return 6;
+    case '8hour': return 3;
+    case '12hour': return 2;
+    case '1day':  return 1;
+    case '1week': return 1 / 7;
+    case '1month': return 1 / 30;
+    default:      return 1;
+  }
+}
+
 function getPennantParams(tf: string) {
+  const bpd = barsPerDay(tf);
+
+  // 旗竿: 1〜15日、保ち合い: 2〜30日（日数をバー数に変換）
+  const poleMinBars = Math.max(2, Math.round(1 * bpd));
+  const poleMaxBars = Math.max(5, Math.round(15 * bpd));
+  const consMinBars = Math.max(3, Math.round(2 * bpd));
+  const consMaxBars = Math.max(10, Math.round(30 * bpd));
+
+  // ATR 倍率・最小変化率は時間軸で微調整
   const t = String(tf);
-  if (t === '1min' || t === '5min')
-    return { poleMinBars: 8, poleMaxBars: 30, minPoleATRMult: 1.5, minPolePct: 0.01, consMinBars: 5, consMaxBars: 25 };
-  if (t === '15min' || t === '30min')
-    return { poleMinBars: 5, poleMaxBars: 20, minPoleATRMult: 1.5, minPolePct: 0.015, consMinBars: 5, consMaxBars: 25 };
-  if (t === '1hour')
-    return { poleMinBars: 5, poleMaxBars: 20, minPoleATRMult: 1.5, minPolePct: 0.02, consMinBars: 5, consMaxBars: 30 };
-  if (t === '4hour' || t === '8hour' || t === '12hour')
-    return { poleMinBars: 3, poleMaxBars: 15, minPoleATRMult: 1.5, minPolePct: 0.03, consMinBars: 5, consMaxBars: 25 };
-  if (t === '1week')
-    return { poleMinBars: 2, poleMaxBars: 6, minPoleATRMult: 2.0, minPolePct: 0.06, consMinBars: 3, consMaxBars: 12 };
-  if (t === '1month')
-    return { poleMinBars: 2, poleMaxBars: 5, minPoleATRMult: 2.5, minPolePct: 0.08, consMinBars: 2, consMaxBars: 10 };
-  // Default: 1day
-  return { poleMinBars: 3, poleMaxBars: 12, minPoleATRMult: 2.0, minPolePct: 0.05, consMinBars: 5, consMaxBars: 25 };
+  let minPoleATRMult = 1.5;
+  let minPolePct = 0.03;
+  if (t === '1day')                                      { minPoleATRMult = 2.0; minPolePct = 0.05; }
+  if (t === '1week')                                     { minPoleATRMult = 2.0; minPolePct = 0.06; }
+  if (t === '1month')                                    { minPoleATRMult = 2.5; minPolePct = 0.08; }
+  if (t === '1min' || t === '5min')                      { minPolePct = 0.01; }
+  if (t === '15min' || t === '30min')                    { minPolePct = 0.015; }
+  if (t === '1hour')                                     { minPolePct = 0.02; }
+
+  return { poleMinBars, poleMaxBars, minPoleATRMult, minPolePct, consMinBars, consMaxBars };
 }
 
 export function detectPennantsFlags(ctx: DetectContext): DetectResult {
@@ -63,13 +85,17 @@ export function detectPennantsFlags(ctx: DetectContext): DetectResult {
   }
 
   // --- Scan for flagpoles across entire history ---
-  for (let poleEnd = params.poleMinBars; poleEnd <= lastIdx - params.consMinBars; poleEnd++) {
+  // パフォーマンス: バー数が多い時間軸ではステップを大きくする
+  const outerStep = params.poleMaxBars > 30 ? 2 : 1;
+  const innerStep = params.poleMaxBars > 50 ? 2 : 1;
+
+  for (let poleEnd = params.poleMinBars; poleEnd <= lastIdx - params.consMinBars; poleEnd += outerStep) {
     // Find the strongest pole ending at this position
     let bestPoleStart = -1;
     let bestPoleMag = 0;
     let bestPoleATRMult = 0;
 
-    for (let poleLen = params.poleMinBars; poleLen <= Math.min(params.poleMaxBars, poleEnd); poleLen++) {
+    for (let poleLen = params.poleMinBars; poleLen <= Math.min(params.poleMaxBars, poleEnd); poleLen += innerStep) {
       const ps = poleEnd - poleLen;
       const startPrice = candles[ps].close;
       const endPrice = candles[poleEnd].close;
@@ -145,8 +171,9 @@ export function detectPennantsFlags(ctx: DetectContext): DetectResult {
     if (gapStart <= 0 || gapEnd <= 0) continue; // lines shouldn't cross
 
     // Consolidation range should be contained within pole range
+    // 0.90: データ端で旗竿が部分的にしか捕捉できないケースに対応
     const poleRange = Math.abs(bestPoleMag);
-    if (gapStart > poleRange * 0.75) {
+    if (gapStart > poleRange * 0.90) {
       debugCandidates.push({
         type: 'pennant' as any,
         accepted: false,
