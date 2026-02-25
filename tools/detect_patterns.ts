@@ -12,6 +12,7 @@ import {
 } from './patterns/regression.js';
 import { type CandDebugEntry, type DetectContext } from './patterns/types.js';
 import { buildStatistics } from './patterns/aftermath.js';
+import { globalDedup } from './patterns/helpers.js';
 // --- 各パターン検出モジュール ---
 import { detectDoubles } from './patterns/detect_doubles.js';
 import { detectHeadAndShoulders } from './patterns/detect_hs.js';
@@ -130,6 +131,9 @@ export default async function detectPatterns(
     // 6) Triple Top / Triple Bottom
     const triples = detectTriples(ctx);
     patterns.push(...triples.patterns);
+
+    // グローバル重複排除: 全パターン種別横断で期間が70%以上重複する同一タイプを統合
+    patterns = globalDedup(patterns);
 
     // Optional filter: only patterns whose end is within N days from now (current relevance)
     {

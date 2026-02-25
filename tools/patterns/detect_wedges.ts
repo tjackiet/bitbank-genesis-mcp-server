@@ -15,6 +15,7 @@ import {
   calculatePatternScoreEx,
   calcATR,
   detectWedgeBreak,
+  deduplicatePatterns,
 } from './helpers.js';
 import type { DetectContext, DetectResult } from './types.js';
 
@@ -694,5 +695,5 @@ export function detectWedges(ctx: DetectContext): DetectResult {
     }
   }
 
-  return { patterns };
+  return { patterns: deduplicatePatterns(patterns) };
 }
