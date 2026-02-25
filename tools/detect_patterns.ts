@@ -116,7 +116,7 @@ export default async function detectPatterns(
     const hs = detectHeadAndShoulders(ctx);
     patterns.push(...hs.patterns);
 
-    // 4) Triangles
+    // 4) Triangles + Pennant (Trendoscope 2-stage: triangle → pole check → pennant reclassification)
     const triangles = detectTriangles(ctx);
     patterns.push(...triangles.patterns);
 
@@ -124,9 +124,9 @@ export default async function detectPatterns(
     const wedges = detectWedges(ctx);
     patterns.push(...wedges.patterns);
 
-    // 5) Pennant & Flag + global dedup
-    const pennants = detectPennantsFlags(ctx);
-    patterns.push(...pennants.patterns);
+    // 5) Flag detection (parallel channel with pole; pennant is now handled by detectTriangles)
+    const flags = detectPennantsFlags(ctx);
+    patterns.push(...flags.patterns);
 
     // 6) Triple Top / Triple Bottom
     const triples = detectTriples(ctx);
