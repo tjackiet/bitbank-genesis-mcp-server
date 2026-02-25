@@ -7,6 +7,25 @@ import { GetFlowMetricsOutputSchema } from '../src/schemas.js';
 
 type Tx = { price: number; amount: number; side: 'buy' | 'sell'; timestampMs: number; isoTime: string };
 
+/** 複数の getTransactions 結果をマージし重複を除去する */
+function mergeTxResults(results: unknown[]): Tx[] {
+  const seen = new Set<string>();
+  const merged: Tx[] = [];
+  for (const res of results) {
+    const r = res as { ok?: boolean; data?: { normalized?: Tx[] } } | null;
+    if (r?.ok && Array.isArray(r.data?.normalized)) {
+      for (const tx of r.data.normalized as Tx[]) {
+        const key = `${tx.timestampMs}:${tx.price}:${tx.amount}:${tx.side}`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          merged.push(tx);
+        }
+      }
+    }
+  }
+  return merged;
+}
+
 export default async function getFlowMetrics(
   pair: string = 'btc_jpy',
   limit: number = 100,
@@ -22,13 +41,16 @@ export default async function getFlowMetrics(
     let txs: Tx[];
 
     if (hours != null && hours > 0) {
-      // 時間範囲ベースの取得: 必要な日付を計算して複数回フェッチ
+      // === 時間範囲ベースの取得 ===
       const nowMs = Date.now();
       const sinceMs = nowMs - hours * 3600_000;
-      const sinceDayjs = dayjs(sinceMs);
-      const nowDayjs = dayjs(nowMs);
 
-      // 必要な日付を YYYYMMDD 形式で列挙（古い順）
+      // bitbank API は JST 基準の日付を使用するため、JST で日付計算
+      const sinceDayjs = dayjs(sinceMs).tz('Asia/Tokyo');
+      const nowDayjs = dayjs(nowMs).tz('Asia/Tokyo');
+      const todayStr = nowDayjs.format('YYYYMMDD');
+
+      // 必要な日付を YYYYMMDD (JST) 形式で列挙（古い順）
       const dates: string[] = [];
       let d = sinceDayjs.startOf('day');
       while (d.isBefore(nowDayjs) || d.isSame(nowDayjs, 'day')) {
@@ -36,28 +58,54 @@ export default async function getFlowMetrics(
         d = d.add(1, 'day');
       }
 
-      // 各日付のトランザクションを並列取得（日付指定 + limit=1000 で最大件数取得）
-      const results = await Promise.all(
-        dates.map(dateStr => getTransactions(chk.pair, 1000, dateStr))
-      );
+      // 過去日（JST）は日付指定エンドポイントで取得
+      // 当日（JST）は日付指定だと空/不完全な場合があるため latest で取得
+      const pastDates = dates.filter(ds => ds !== todayStr);
+      const fetches: Promise<unknown>[] = pastDates.map(ds => getTransactions(chk.pair, 1000, ds));
+      fetches.push(getTransactions(chk.pair, 1000)); // latest（日付なし）
 
-      // 全結果をマージし、時間範囲でフィルタ
-      const allTxs: Tx[] = [];
-      for (const res of results) {
-        if (res?.ok && Array.isArray(res.data?.normalized)) {
-          allTxs.push(...(res.data.normalized as Tx[]));
-        }
-      }
+      const results = await Promise.all(fetches);
+      const allTxs = mergeTxResults(results);
+
       txs = allTxs
         .filter(t => t.timestampMs >= sinceMs && t.timestampMs <= nowMs)
         .sort((a, b) => a.timestampMs - b.timestampMs);
     } else {
-      // 従来の件数ベース取得
+      // === 件数ベース取得 ===
       const lim = validateLimit(limit, 1, 2000);
       if (!lim.ok) return failFromValidation(lim, GetFlowMetricsOutputSchema) as any;
-      const txRes = await getTransactions(chk.pair, lim.value, date);
-      if (!txRes?.ok) return GetFlowMetricsOutputSchema.parse(fail(txRes?.summary || 'failed', (txRes?.meta as any)?.errorType || 'internal')) as any;
-      txs = txRes.data.normalized as Tx[];
+
+      if (date) {
+        // 明示的な日付指定がある場合はそのまま取得
+        const txRes = await getTransactions(chk.pair, Math.min(lim.value, 1000), date);
+        if (!txRes?.ok) return GetFlowMetricsOutputSchema.parse(fail(txRes?.summary || 'failed', (txRes?.meta as any)?.errorType || 'internal')) as any;
+        txs = txRes.data.normalized as Tx[];
+      } else {
+        // 日付指定なし: latest で取得し、不足なら日付ベースで補完
+        const latestRes = await getTransactions(chk.pair, Math.min(lim.value, 1000));
+        const latestTxs = (latestRes?.ok ? latestRes.data.normalized : []) as Tx[];
+
+        if (latestTxs.length >= lim.value) {
+          txs = latestTxs;
+        } else {
+          // latest の返却数が不足 → 前日・前々日の日付ベース取得で補完
+          // bitbank の latest エンドポイントは約60件のみ返却するため
+          const todayJst = dayjs().tz('Asia/Tokyo');
+          const supplementFetches: Promise<unknown>[] = [
+            getTransactions(chk.pair, 1000, todayJst.subtract(1, 'day').format('YYYYMMDD')),
+          ];
+          if (lim.value > 500) {
+            supplementFetches.push(
+              getTransactions(chk.pair, 1000, todayJst.subtract(2, 'day').format('YYYYMMDD'))
+            );
+          }
+          const supplementResults = await Promise.all(supplementFetches);
+          const merged = mergeTxResults([latestRes, ...supplementResults]);
+          txs = merged
+            .sort((a, b) => a.timestampMs - b.timestampMs)
+            .slice(-lim.value);
+        }
+      }
     }
     if (!Array.isArray(txs) || txs.length === 0) {
       return GetFlowMetricsOutputSchema.parse(ok('no transactions', {
