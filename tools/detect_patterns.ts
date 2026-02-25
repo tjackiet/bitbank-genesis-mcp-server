@@ -174,6 +174,16 @@ export default async function detectPatterns(
     }
     patterns = filteredPatterns;
 
+    // 時間足ラベル（各パターンに注入 + summary 用）
+    const tfMap: Record<string, string> = { '1min': '1分足', '5min': '5分足', '15min': '15分足', '30min': '30分足', '1hour': '1時間足', '4hour': '4時間足', '8hour': '8時間足', '12hour': '12時間足', '1day': '日足', '1week': '週足', '1month': '月足' };
+    const tfLabel = tfMap[String(type)] || String(type);
+
+    // 全パターンに timeframe / timeframeLabel を付与（LLM が個別パターンから時間足を即座に読み取れるようにする）
+    for (const p of patterns) {
+      (p as any).timeframe = String(type);
+      (p as any).timeframeLabel = tfLabel;
+    }
+
     // overlays: パターン範囲をそのまま帯描画できるように提供
     const ranges = patterns.map((p: any) => ({ start: p.range.start, end: p.range.end, label: p.type }));
     const warnings: any[] = [];
@@ -195,15 +205,11 @@ export default async function detectPatterns(
       candidates: candidatesTrimmed,
     };
 
-    // 時間足ラベル
-    const tfMap: Record<string, string> = { '1min': '1分足', '5min': '5分足', '15min': '15分足', '30min': '30分足', '1hour': '1時間足', '4hour': '4時間足', '8hour': '8時間足', '12hour': '12時間足', '1day': '日足', '1week': '週足', '1month': '月足' };
-    const tfLabel = tfMap[String(type)] || String(type);
-
     // summary 生成: LLM が content から読み取れるように詳細を含める
     const patternSummaries = patterns.map((p: any, idx: number) => {
       const startDate = p.range?.start?.substring(0, 10) || '?';
       const endDate = p.range?.end?.substring(0, 10) || '?';
-      let detail = `${idx + 1}. ${p.type} (パターン整合度: ${p.confidence})\n   - 期間: ${startDate} ~ ${endDate}`;
+      let detail = `${idx + 1}. ${p.type}【${tfLabel}】(パターン整合度: ${p.confidence})\n   - 時間足: ${tfLabel}（${type}）\n   - 期間: ${startDate} ~ ${endDate}`;
 
       // ウェッジパターンの場合、ブレイク情報を追加
       if ((p.type === 'falling_wedge' || p.type === 'rising_wedge') && p.breakoutDirection && p.outcome) {

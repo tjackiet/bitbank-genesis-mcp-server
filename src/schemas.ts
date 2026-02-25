@@ -622,6 +622,10 @@ export const DetectPatternsInputSchema = BasePairInputSchema.extend({
 export const DetectedPatternSchema = z.object({
   type: PatternTypeEnum,
   confidence: z.number().min(0).max(1),
+  /** 検出に使用した時間足（例: '1day', '4hour', '1week'） */
+  timeframe: CandleTypeEnum.or(z.string()).optional(),
+  /** 人間可読な時間足ラベル（例: '日足', '4時間足', '週足'） */
+  timeframeLabel: z.string().optional(),
   range: z.object({ start: z.string(), end: z.string() }),
   pivots: z.array(z.object({ idx: z.number().int(), price: z.number() })).optional(),
   neckline: z.array(z.object({ x: z.number().int().optional(), y: z.number() })).length(2).optional(),
