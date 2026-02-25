@@ -13,5 +13,5 @@
     "noEmit": true
   },
   "include": ["src/**/*", "tools/**/*", "lib/**/*", "reports/**/*"],
-  "exclude": ["node_modules", "assets", "cache"]
+  "exclude": ["node_modules", "assets", "cache", "**/*.test.ts"]
 }
