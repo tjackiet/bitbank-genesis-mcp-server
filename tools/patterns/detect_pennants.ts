@@ -144,6 +144,30 @@ export function detectPennantsFlags(ctx: DetectContext): DetectResult {
       continue;
     }
 
+    // --- Trendline span balance check ---
+    // 上側・下側それぞれのスイングポイントが保ち合い区間の十分な幅をカバーしているか検証。
+    // 片方が極端に短い（例: 2点が数本しか離れていない）場合はトレンドラインとして無意味。
+    const upperSpan = consHighs[consHighs.length - 1].idx - consHighs[0].idx;
+    const lowerSpan = consLows[consLows.length - 1].idx - consLows[0].idx;
+    const consZoneWidth = consMaxEnd - consStart;
+    const minSpanRatio = 0.30; // 各ラインは保ち合い区間の30%以上をカバーすべき
+
+    if (upperSpan < consZoneWidth * minSpanRatio || lowerSpan < consZoneWidth * minSpanRatio) {
+      debugCandidates.push({
+        type: 'pennant' as any,
+        accepted: false,
+        reason: 'trendline_span_too_short',
+        indices: [bestPoleStart, poleEnd],
+        details: {
+          upperSpan, lowerSpan, consZoneWidth,
+          upperRatio: Number((upperSpan / consZoneWidth).toFixed(3)),
+          lowerRatio: Number((lowerSpan / consZoneWidth).toFixed(3)),
+          minSpanRatio,
+        }
+      });
+      continue;
+    }
+
     // Fit trendlines with R²-based regression on swing points
     const upperLine = lrWithR2(consHighs.map(p => ({ x: p.idx, y: p.price })));
     const lowerLine = lrWithR2(consLows.map(p => ({ x: p.idx, y: p.price })));
