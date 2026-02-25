@@ -43,6 +43,8 @@ export type RenderChartSvgInput = {
     preferFile?: boolean;
     /** Output format: svg (default), base64, or dataUri (for embedding in HTML/Markdown). */
     outputFormat?: ("svg" | "base64" | "dataUri");
+    /** X軸ラベルのタイムゾーン（例: Asia/Tokyo, UTC） */
+    tz?: string;
     overlays?: {
         ranges?: {
             start: string;
