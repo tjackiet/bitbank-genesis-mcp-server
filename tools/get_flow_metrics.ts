@@ -58,11 +58,10 @@ export default async function getFlowMetrics(
         d = d.add(1, 'day');
       }
 
-      // 過去日（JST）は日付指定エンドポイントで取得
-      // 当日（JST）は日付指定だと空/不完全な場合があるため latest で取得
-      const pastDates = dates.filter(ds => ds !== todayStr);
-      const fetches: Promise<unknown>[] = pastDates.map(ds => getTransactions(chk.pair, 1000, ds));
-      fetches.push(getTransactions(chk.pair, 1000)); // latest（日付なし）
+      // 全日付を日付指定エンドポイントで取得（当日含む）
+      // 当日分は日付指定だと直近数分が欠ける場合があるため latest も併用
+      const fetches: Promise<unknown>[] = dates.map(ds => getTransactions(chk.pair, 1000, ds));
+      fetches.push(getTransactions(chk.pair, 1000)); // latest で最新約定を補完
 
       const results = await Promise.all(fetches);
       const allTxs = mergeTxResults(results);
@@ -179,6 +178,21 @@ export default async function getFlowMetrics(
     const netVolume = buyVolume - sellVolume;
     const aggressorRatio = totalTrades > 0 ? Number((buyTrades / totalTrades).toFixed(3)) : 0;
 
+    // 実際の取得範囲を計算
+    const actualStartMs = txs[0]?.timestampMs;
+    const actualEndMs = txs[txs.length - 1]?.timestampMs;
+    const actualDurationMin = actualStartMs && actualEndMs ? Math.round((actualEndMs - actualStartMs) / 60_000) : 0;
+
+    // データ不足警告
+    let dataWarning: string | undefined;
+    if (hours != null && hours > 0 && actualDurationMin > 0) {
+      const requestedMin = hours * 60;
+      const coveragePct = Math.round((actualDurationMin / requestedMin) * 100);
+      if (coveragePct < 80) {
+        dataWarning = `⚠️ ${hours}時間分をリクエストしましたが、取得できたデータは約${actualDurationMin}分間（カバー率${coveragePct}%）です。bitbank API の返却上限による制約の可能性があります。`;
+      }
+    }
+
     // スパイク情報を集計（spike が null でないものをフィルタ）
     const spikes = outBuckets.filter(b => b.spike !== null);
     let spikeInfo = '';
@@ -194,10 +208,13 @@ export default async function getFlowMetrics(
       spikeInfo = ' | スパイクなし';
     }
 
+    const rangeLabel = actualStartMs && actualEndMs
+      ? ` (${toDisplayTime(actualStartMs, tz) ?? '?'}〜${toDisplayTime(actualEndMs, tz) ?? '?'}, ${actualDurationMin}分間)`
+      : '';
     const baseSummary = formatSummary({
       pair: chk.pair,
       latest: txs.at(-1)?.price,
-      extra: `trades=${totalTrades} buy%=${(aggressorRatio * 100).toFixed(1)} CVD=${cvd.toFixed(2)}${spikeInfo}`,
+      extra: `trades=${totalTrades} buy%=${(aggressorRatio * 100).toFixed(1)} CVD=${cvd.toFixed(2)}${spikeInfo}${rangeLabel}`,
     });
     // テキスト summary に全バケットデータを含める（LLM が structuredContent.data を読めない対策）
     const bucketLines = outBuckets.map((b, i) => {
@@ -205,7 +222,9 @@ export default async function getFlowMetrics(
       const sp = b.spike ? ` spike:${b.spike}` : '';
       return `[${i}] ${t} buy:${b.buyVolume} sell:${b.sellVolume} cvd:${b.cvd} z:${b.zscore ?? 'n/a'}${sp}`;
     });
+    const warningLine = dataWarning ? `\n${dataWarning}` : '';
     const summary = baseSummary
+      + warningLine
       + `\naggregates: totalTrades=${totalTrades} buyVol=${Number(buyVolume.toFixed(4))} sellVol=${Number(sellVolume.toFixed(4))} netVol=${Number(netVolume.toFixed(4))} aggRatio=${aggressorRatio} finalCvd=${Number(cvd.toFixed(4))}`
       + `\n\n📋 全${outBuckets.length}件のバケット (${bucketMs}ms間隔):\n` + bucketLines.join('\n')
       + `\n\n---\n📌 含まれるもの: 時系列バケット（買い/売り出来高・CVD・Zスコア・スパイク）、集計値`
@@ -234,6 +253,16 @@ export default async function getFlowMetrics(
     if (hours != null) {
       metaExtra.hours = hours;
       metaExtra.mode = 'time_range';
+    }
+    if (actualStartMs && actualEndMs) {
+      metaExtra.actualRange = {
+        start: toIsoWithTz(actualStartMs, tz) ?? toIsoTime(actualStartMs),
+        end: toIsoWithTz(actualEndMs, tz) ?? toIsoTime(actualEndMs),
+        durationMinutes: actualDurationMin,
+      };
+    }
+    if (dataWarning) {
+      metaExtra.warning = dataWarning;
     }
     const meta = createMeta(chk.pair, metaExtra);
     return GetFlowMetricsOutputSchema.parse(ok(summary, data as any, meta as any)) as any;
