@@ -1,246 +1,312 @@
 /**
- * Triangle 検出（ascending / descending / symmetrical）＋形成中
- * detect_patterns.ts Section 4 から抽出
+ * Triangle detection — swing-point + R²-regression, multi-scale.
+ *
+ * Architecture:
+ * 1. Relaxed swing detection (swingDepth=1) for peaks/valleys
+ * 2. Multi-scale sliding window scan (geometric progression ×1.5)
+ * 3. R²-based regression on peaks and valleys within each window
+ * 4. Classify: ascending (upper ≈ flat, lower rising),
+ *              descending (upper falling, lower ≈ flat),
+ *              symmetrical (upper falling, lower rising)
+ * 5. Convergence check (gap narrows ≥ 10%)
+ * 6. Breakout detection with ATR × 0.3 buffer
+ * 7. deduplicatePatterns() before returning
  */
-import { linearRegression, trendlineFit, clamp01 } from './regression.js';
-import { periodScoreDays, finalizeConf } from './helpers.js';
-import { getTriangleWindowSize, getTriangleCoeffForTf, getConvergenceFactorForTf, getMinFitForTf } from './config.js';
-import { findUpperTrendline, findLowerTrendline } from './trendline.js';
-import { pushCand, type DetectContext, type DetectResult } from './types.js';
+import { clamp01 } from './regression.js';
+import { calcATR, deduplicatePatterns, finalizeConf } from './helpers.js';
+import type { DetectContext, DetectResult } from './types.js';
+
+// ---------------------------------------------------------------------------
+// bars-per-day helper
+// ---------------------------------------------------------------------------
+function barsPerDay(tf: string): number {
+  switch (tf) {
+    case '1min':  return 1440;
+    case '5min':  return 288;
+    case '15min': return 96;
+    case '30min': return 48;
+    case '1hour': return 24;
+    case '4hour': return 6;
+    case '8hour': return 3;
+    case '12hour': return 2;
+    case '1day':  return 1;
+    case '1week': return 1 / 7;
+    case '1month': return 1 / 30;
+    default:      return 1;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Time-frame dependent parameters
+// ---------------------------------------------------------------------------
+function getTriangleParams(tf: string) {
+  const bpd = barsPerDay(tf);
+  const maxDurationDays = 90;           // triangles > 90 days → different pattern
+  const minWindowBars = 15;             // absolute minimum bars
+  const maxWindowBars = Math.max(minWindowBars, Math.round(maxDurationDays * bpd));
+  const minR2 = 0.25;
+  const flatThreshold = 0.03;           // |relSlope| < 3% over window → "flat"
+  const moveThreshold = 0.015;          // |relSlope| > 1.5% over window → "rising/falling"
+  const minConvergence = 0.90;          // gap must narrow by ≥ 10%
+
+  return { minWindowBars, maxWindowBars, minR2, flatThreshold, moveThreshold, minConvergence };
+}
 
 export function detectTriangles(ctx: DetectContext): DetectResult {
-  const { candles, pivots, tolerancePct, want, includeForming, pct, debugCandidates } = ctx;
+  const { candles, want, includeForming, debugCandidates, lrWithR2 } = ctx;
   const type = ctx.type;
-  const pcand = (arg: Parameters<typeof pushCand>[1]) => pushCand(ctx, arg);
-  const push = (arr: any[], item: any) => { arr.push(item); };
-  const patterns: any[] = [];
+  let patterns: any[] = [];
 
-  // 4) Triangles (ascending/descending/symmetrical)
+  const wantAsc = want.size === 0 || want.has('triangle') || want.has('triangle_ascending');
+  const wantDesc = want.size === 0 || want.has('triangle') || want.has('triangle_descending');
+  const wantSym = want.size === 0 || want.has('triangle') || want.has('triangle_symmetrical');
+  if (!wantAsc && !wantDesc && !wantSym) return { patterns: [] };
+
+  const lastIdx = candles.length - 1;
+  if (lastIdx < 15) return { patterns: [] };
+
+  const params = getTriangleParams(type);
+
+  // --- Relaxed swing detection (swingDepth=1) ---
+  const relaxedPeaks: Array<{ idx: number; price: number }> = [];
+  const relaxedValleys: Array<{ idx: number; price: number }> = [];
+  for (let i = 1; i < candles.length - 1; i++) {
+    const c = candles[i], prev = candles[i - 1], next = candles[i + 1];
+    if (c.high > prev.high && c.high > next.high) {
+      relaxedPeaks.push({ idx: i, price: c.high });
+    }
+    if (c.low < prev.low && c.low < next.low) {
+      relaxedValleys.push({ idx: i, price: c.low });
+    }
+  }
+
+  // --- Generate multi-scale window sizes (geometric ×1.5) ---
+  const effectiveMax = Math.min(lastIdx - 5, params.maxWindowBars);
+  const windowSizes: number[] = [];
   {
-    const wantTriangle =
-      want.size === 0 ||
-      want.has('triangle') ||
-      want.has('triangle_ascending') ||
-      want.has('triangle_descending') ||
-      want.has('triangle_symmetrical');
-    if (wantTriangle) {
-      const highs = pivots.filter(p => p.kind === 'H');
-      const lows = pivots.filter(p => p.kind === 'L');
-      const WIN = getTriangleWindowSize(type);
-      const step = Math.max(1, Math.floor(WIN / 4));
-      // DEBUG: 窓スキャンの設定とループ条件（ログ出力は抑止）
-      for (let offset = 0; offset <= Math.max(0, Math.min(highs.length, lows.length) - Math.max(3, WIN)); offset += step) {
-        // per-iteration debug log removed
-        const hwin = highs.slice(offset, offset + WIN);
-        const lwin = lows.slice(offset, offset + WIN);
-        if (hwin.length < 3 || lwin.length < 3) continue;
-        const coef = getTriangleCoeffForTf(type);
-        const firstH = hwin[0], lastH = hwin[hwin.length - 1];
-        const firstL = lwin[0], lastL = lwin[lwin.length - 1];
-        const dH = pct(firstH.price, lastH.price);
-        const dL = pct(firstL.price, lastL.price);
-        const spreadStart = firstH.price - firstL.price;
-        const spreadEnd = lastH.price - lastL.price;
-        const convF = getConvergenceFactorForTf(type);
-        const converging = spreadEnd < spreadStart * (1 - tolerancePct * convF);
-        const startIdx = Math.min(firstH.idx, firstL.idx);
-        const endIdx = Math.max(lastH.idx, lastL.idx);
-        const start = candles[startIdx].isoTime;
-        const end = candles[endIdx].isoTime;
+    let w = params.minWindowBars;
+    while (w <= effectiveMax) {
+      windowSizes.push(Math.round(w));
+      w = Math.round(w * 1.5);
+    }
+  }
+  if (!windowSizes.length) return { patterns: [] };
 
-        if (start && end) {
-          // --- 回帰ベースのライン推定 ---
-          const minTouches = 3;
-          const highsPts = hwin.map(p => ({ idx: p.idx, price: p.price }));
-          const lowsPts = lwin.map(p => ({ idx: p.idx, price: p.price }));
-          const highsOk = highsPts.length >= minTouches;
-          const lowsOk = lowsPts.length >= minTouches;
-          const hiLine = linearRegression(highsPts);
-          const loLine = linearRegression(lowsPts);
-          const barsSpan = Math.max(1, endIdx - startIdx);
-          const avgH = highsPts.reduce((s, p) => s + p.price, 0) / Math.max(1, highsPts.length);
-          const avgL = lowsPts.reduce((s, p) => s + p.price, 0) / Math.max(1, lowsPts.length);
-          // 窓全体での回帰による変化率（相対）
-          const hiSlopeRel = Math.abs(hiLine.slope) * barsSpan / Math.max(1e-12, avgH);
-          const loSlopeRelSigned = (loLine.slope) * barsSpan / Math.max(1e-12, avgL);
-          const loSlopeRelAbs = Math.abs(loSlopeRelSigned);
-          const fitH = trendlineFit(highsPts, hiLine);
-          const fitL = trendlineFit(lowsPts, loLine);
-          // Guard: same-direction slopes → likely wedge; skip triangle classification
-          if ((hiLine.slope * loLine.slope) > 0) {
-            debugCandidates.push({
-              type: 'triangle_symmetrical' as any,
-              accepted: false,
-              reason: 'same_direction_slopes_skip_for_wedge',
-              indices: [startIdx, endIdx],
-              details: { hiSlope: hiLine.slope, loSlope: loLine.slope }
-            });
-            continue;
+  // --- Sliding window scan ---
+  for (const windowSize of windowSizes) {
+    const posStep = Math.max(1, Math.floor(windowSize / 6));
+
+    for (let winEnd = windowSize; winEnd <= lastIdx; winEnd += posStep) {
+      const winStart = winEnd - windowSize;
+
+      // Collect peaks/valleys in window
+      const peaks = relaxedPeaks.filter(p => p.idx >= winStart && p.idx <= winEnd);
+      const valleys = relaxedValleys.filter(p => p.idx >= winStart && p.idx <= winEnd);
+
+      if (peaks.length < 2 || valleys.length < 2) continue;
+
+      // R²-based regression
+      const upperLine = lrWithR2(peaks.map(p => ({ x: p.idx, y: p.price })));
+      const lowerLine = lrWithR2(valleys.map(p => ({ x: p.idx, y: p.price })));
+
+      if (upperLine.r2 < params.minR2 || lowerLine.r2 < params.minR2) {
+        debugCandidates.push({
+          type: 'triangle_symmetrical' as any,
+          accepted: false,
+          reason: 'poor_trendline_fit',
+          indices: [winStart, winEnd],
+          details: { r2Upper: Number(upperLine.r2.toFixed(3)), r2Lower: Number(lowerLine.r2.toFixed(3)) }
+        });
+        continue;
+      }
+
+      // Convergence check
+      const gapStart = upperLine.valueAt(winStart) - lowerLine.valueAt(winStart);
+      const gapEnd = upperLine.valueAt(winEnd) - lowerLine.valueAt(winEnd);
+      if (gapStart <= 0 || gapEnd <= 0) continue; // lines cross → invalid
+
+      const convergenceRatio = gapEnd / gapStart;
+      if (convergenceRatio >= params.minConvergence) continue; // not converging enough
+
+      // Slope classification (relative slope over window)
+      const barsSpan = Math.max(1, winEnd - winStart);
+      const avgHigh = peaks.reduce((s, p) => s + p.price, 0) / peaks.length;
+      const avgLow = valleys.reduce((s, p) => s + p.price, 0) / valleys.length;
+      const upperRelSlope = upperLine.slope * barsSpan / Math.max(1e-12, avgHigh);
+      const lowerRelSlope = lowerLine.slope * barsSpan / Math.max(1e-12, avgLow);
+
+      // Both meaningfully same direction → likely wedge, skip
+      if (upperRelSlope > params.moveThreshold && lowerRelSlope > params.moveThreshold) continue;
+      if (upperRelSlope < -params.moveThreshold && lowerRelSlope < -params.moveThreshold) continue;
+
+      const upperFlat = Math.abs(upperRelSlope) < params.flatThreshold;
+      const upperFalling = upperRelSlope < -params.moveThreshold;
+      const lowerFlat = Math.abs(lowerRelSlope) < params.flatThreshold;
+      const lowerRising = lowerRelSlope > params.moveThreshold;
+
+      // Classify
+      let triangleType: 'triangle_ascending' | 'triangle_descending' | 'triangle_symmetrical' | null = null;
+
+      if (wantAsc && upperFlat && lowerRising) {
+        triangleType = 'triangle_ascending';
+      } else if (wantDesc && upperFalling && lowerFlat) {
+        triangleType = 'triangle_descending';
+      } else if (wantSym && upperFalling && lowerRising) {
+        triangleType = 'triangle_symmetrical';
+      }
+
+      if (!triangleType) {
+        debugCandidates.push({
+          type: 'triangle_symmetrical' as any,
+          accepted: false,
+          reason: 'classification_failed',
+          indices: [winStart, winEnd],
+          details: {
+            upperRelSlope: Number(upperRelSlope.toFixed(4)),
+            lowerRelSlope: Number(lowerRelSlope.toFixed(4)),
+            convergenceRatio: Number(convergenceRatio.toFixed(3)),
+            upperFlat, upperFalling, lowerFlat, lowerRising,
           }
-          // フィット品質しきい値（時間軸別+段階フォールバック）
-          const baseFit = getMinFitForTf(type);
-          const fitThresholds = Array.from(new Set([baseFit, 0.70, 0.60])).sort((a, b) => b - a);
-          let placedAsc = false, placedDesc = false, placedSym = false;
-          for (const minFit of fitThresholds) {
-            // Ascending: highs ~ flat, lows rising
-            if (!placedAsc &&
-              (want.size === 0 || want.has('triangle') || want.has('triangle_ascending')) &&
-              highsOk && lowsOk &&
-              hiSlopeRel <= tolerancePct * coef.flat &&
-              loSlopeRelSigned >= tolerancePct * coef.move &&
-              fitH >= minFit && fitL >= minFit &&
-              converging
-            ) {
-              const qFlat = clamp01(1 - Math.abs(dH) / Math.max(1e-12, tolerancePct * coef.flat));
-              const qRise = clamp01(dL / Math.max(1e-12, tolerancePct * coef.move));
-              const qConv = clamp01((spreadStart - spreadEnd) / Math.max(1e-12, spreadStart * 0.8));
-              const per = periodScoreDays(start, end);
-              const base = (qFlat + qRise + qConv + per) / 4;
-              const confidence = Math.min(1, finalizeConf(base, 'triangle_ascending') * (minFit / 0.78));
-              push(patterns, { type: 'triangle_ascending', confidence, range: { start, end }, pivots: [...hwin, ...lwin].sort((a, b) => a.idx - b.idx) });
-              placedAsc = true;
-            }
-            // Descending: lows ~ flat, highs falling
-            if (!placedDesc &&
-              (want.size === 0 || want.has('triangle') || want.has('triangle_descending')) &&
-              highsOk && lowsOk &&
-              loSlopeRelAbs <= tolerancePct * coef.flat &&
-              (hiLine.slope * barsSpan / Math.max(1e-12, avgH)) <= -tolerancePct * coef.move &&
-              fitH >= minFit && fitL >= minFit &&
-              converging
-            ) {
-              const qFlat = clamp01(1 - Math.abs(dL) / Math.max(1e-12, tolerancePct * coef.flat));
-              const qFall = clamp01((-dH) / Math.max(1e-12, tolerancePct * coef.move));
-              const qConv = clamp01((spreadStart - spreadEnd) / Math.max(1e-12, spreadStart * 0.8));
-              const per = periodScoreDays(start, end);
-              const base = (qFlat + qFall + qConv + per) / 4;
-              const confidence = Math.min(1, finalizeConf(base, 'triangle_descending') * (minFit / 0.78));
-              push(patterns, { type: 'triangle_descending', confidence, range: { start, end }, pivots: [...hwin, ...lwin].sort((a, b) => a.idx - b.idx) });
-              placedDesc = true;
-            }
-            // Symmetrical: highs falling and lows rising
-            if (!placedSym &&
-              (want.size === 0 || want.has('triangle') || want.has('triangle_symmetrical')) &&
-              highsOk && lowsOk &&
-              (hiLine.slope * barsSpan / Math.max(1e-12, avgH)) <= -tolerancePct * coef.move &&
-              loSlopeRelSigned >= tolerancePct * coef.move &&
-              fitH >= minFit && fitL >= minFit &&
-              converging
-            ) {
-              const qFall = clamp01((-dH) / Math.max(1e-12, tolerancePct * coef.move));
-              const qRise = clamp01(dL / Math.max(1e-12, tolerancePct * coef.move));
-              const qSym = clamp01(1 - Math.abs(Math.abs(dH) - Math.abs(dL)) / Math.max(1e-12, Math.abs(dH) + Math.abs(dL)));
-              const qConv = clamp01((spreadStart - spreadEnd) / Math.max(1e-12, spreadStart * 0.8));
-              const per = periodScoreDays(start, end);
-              const base = (qFall + qRise + qSym + qConv + per) / 5;
-              const confidence = Math.min(1, finalizeConf(base, 'triangle_symmetrical') * (minFit / 0.78));
-              push(patterns, { type: 'triangle_symmetrical', confidence, range: { start, end }, pivots: [...hwin, ...lwin].sort((a, b) => a.idx - b.idx) });
-              placedSym = true;
-            }
-            if (placedAsc && placedDesc && placedSym) break;
-          }
-          // (legacy wedge detection removed; revamped scanner runs later)
+        });
+        continue;
+      }
+
+      // --- Breakout detection (ATR × 0.3 buffer) ---
+      const localATR = calcATR(candles, Math.max(1, winStart), winEnd, 14);
+
+      const patternEndIdx = Math.max(
+        peaks[peaks.length - 1].idx,
+        valleys[valleys.length - 1].idx,
+      );
+
+      let breakoutIdx = -1;
+      let breakoutDirection: 'up' | 'down' | null = null;
+
+      // Scan from 50% into the pattern (triangle breakout typically happens in latter half)
+      const scanStart = winStart + Math.max(3, Math.floor(barsSpan * 0.5));
+      for (let i = scanStart; i <= lastIdx; i++) {
+        const close = candles[i].close;
+        const uVal = upperLine.valueAt(i);
+        const lVal = lowerLine.valueAt(i);
+
+        if (close > uVal + localATR * 0.3) {
+          breakoutIdx = i;
+          breakoutDirection = 'up';
+          break;
+        }
+        if (close < lVal - localATR * 0.3) {
+          breakoutIdx = i;
+          breakoutDirection = 'down';
+          break;
         }
       }
-      // for-loop end
+
+      // --- Status determination ---
+      const hasBreakout = breakoutIdx !== -1;
+      const resultEndIdx = hasBreakout ? breakoutIdx : patternEndIdx;
+
+      // Expected breakout direction by type
+      const expectedDirection: 'up' | 'down' | null =
+        triangleType === 'triangle_ascending' ? 'up' :
+        triangleType === 'triangle_descending' ? 'down' :
+        null; // symmetrical: either direction is valid
+
+      const isExpectedBreakout = hasBreakout && (
+        expectedDirection === null || breakoutDirection === expectedDirection
+      );
+
+      let status: 'completed' | 'invalid' | 'forming' | 'near_completion';
+      if (hasBreakout) {
+        status = isExpectedBreakout ? 'completed' : 'invalid';
+      } else {
+        // No breakout — skip old historical patterns that never broke out
+        if (lastIdx - winEnd > windowSize * 0.5) continue;
+
+        // Check apex proximity for forming status
+        const slopeDiff = upperLine.slope - lowerLine.slope;
+        if (Math.abs(slopeDiff) > 1e-12) {
+          const apexIdx = Math.round((lowerLine.intercept - upperLine.intercept) / slopeDiff);
+          const barsToApex = Math.max(0, apexIdx - lastIdx);
+          status = barsToApex <= 5 ? 'near_completion' : 'forming';
+        } else {
+          status = 'forming';
+        }
+      }
+
+      // Skip forming if not requested
+      if ((status === 'forming' || status === 'near_completion') && !includeForming) continue;
+
+      const startIso = candles[winStart]?.isoTime;
+      const endIso = candles[resultEndIdx]?.isoTime;
+      if (!startIso || !endIso) continue;
+
+      // --- Neckline for aftermath ---
+      // ascending: upper (flat) line / descending: lower (flat) line / symmetrical: breakout side
+      const necklineLine =
+        triangleType === 'triangle_ascending' ? upperLine :
+        triangleType === 'triangle_descending' ? lowerLine :
+        (breakoutDirection === 'down' ? lowerLine : upperLine);
+
+      const neckline = [
+        { x: winStart, y: Number(necklineLine.valueAt(winStart).toFixed(2)) },
+        { x: winEnd, y: Number(necklineLine.valueAt(winEnd).toFixed(2)) },
+      ];
+
+      // --- Scoring ---
+      const fitScore = (upperLine.r2 + lowerLine.r2) / 2;
+      const convScore = clamp01((1 - convergenceRatio) / 0.5);
+      const touchScore = clamp01((peaks.length + valleys.length) / 8);
+      // Symmetry: how close are the two slope magnitudes? (relevant for symmetrical type)
+      const symScore = triangleType === 'triangle_symmetrical'
+        ? clamp01(1 - Math.abs(Math.abs(upperRelSlope) - Math.abs(lowerRelSlope))
+            / Math.max(1e-12, Math.abs(upperRelSlope) + Math.abs(lowerRelSlope)))
+        : 0.5; // neutral for asc/desc
+
+      const baseScore = fitScore * 0.25 + convScore * 0.25 + touchScore * 0.30 + symScore * 0.20;
+      const confidence = finalizeConf(baseScore, triangleType);
+
+      const outcome = hasBreakout
+        ? (isExpectedBreakout ? 'success' : 'failure')
+        : undefined;
+
+      // Pivot points for aftermath target calculation
+      const allPivots = [
+        ...peaks.map(p => ({ idx: p.idx, price: p.price, kind: 'H' as const })),
+        ...valleys.map(p => ({ idx: p.idx, price: p.price, kind: 'L' as const })),
+      ].sort((a, b) => a.idx - b.idx);
+
+      patterns.push({
+        type: triangleType,
+        confidence,
+        range: { start: startIso, end: endIso },
+        status,
+        pivots: allPivots,
+        neckline,
+        breakoutDirection: breakoutDirection ?? undefined,
+        outcome,
+      });
+
+      debugCandidates.push({
+        type: triangleType as any,
+        accepted: true,
+        reason: 'detected',
+        indices: [winStart, resultEndIdx],
+        details: {
+          convergenceRatio: Number(convergenceRatio.toFixed(3)),
+          r2Upper: Number(upperLine.r2.toFixed(3)),
+          r2Lower: Number(lowerLine.r2.toFixed(3)),
+          upperRelSlope: Number(upperRelSlope.toFixed(4)),
+          lowerRelSlope: Number(lowerRelSlope.toFixed(4)),
+          touchCount: peaks.length + valleys.length,
+          breakout: hasBreakout ? { idx: breakoutIdx, direction: breakoutDirection } : null,
+          status,
+          confidence,
+        }
+      });
     }
   }
 
-  // 4a) 形成中三角形（統合: 収束中のトレンドラインでブレイク前）
-  if (includeForming && (want.size === 0 || want.has('triangle') || want.has('triangle_ascending') || want.has('triangle_descending') || want.has('triangle_symmetrical'))) {
-    const lastIdx = candles.length - 1;
-    const isoAt = (i: number) => (candles[i] as any)?.isoTime || '';
-    const maxFormingDays = 90;
-    const daysPerBar = type === '1day' ? 1 : type === '1week' ? 7 : 1;
-
-    const highs = pivots.filter(p => p.kind === 'H');
-    const lows = pivots.filter(p => p.kind === 'L');
-
-    // 直近のピボットを使用してトレンドラインを構築
-    if (highs.length >= 2 && lows.length >= 2) {
-      // 直近の高値・安値を取得
-      const recentHighs = highs.filter(h => h.idx < lastIdx - 1).slice(-4);
-      const recentLows = lows.filter(l => l.idx < lastIdx - 1).slice(-4);
-
-      if (recentHighs.length >= 2 && recentLows.length >= 2) {
-        const firstH = recentHighs[0], lastH = recentHighs[recentHighs.length - 1];
-        const firstL = recentLows[0], lastL = recentLows[recentLows.length - 1];
-
-        const startIdx = Math.min(firstH.idx, firstL.idx);
-        const endIdx = Math.max(lastH.idx, lastL.idx);
-
-        // 期間チェック
-        const formationBars = Math.max(0, lastIdx - startIdx);
-        const patternDays = Math.round(formationBars * daysPerBar);
-        const minPatternDays = 14;
-        if (patternDays >= minPatternDays && patternDays <= maxFormingDays) {
-          // トレンドライン計算
-          const hiLine = linearRegression(recentHighs.map(p => ({ idx: p.idx, price: p.price })));
-          const loLine = linearRegression(recentLows.map(p => ({ idx: p.idx, price: p.price })));
-
-          // 収束チェック
-          const spreadStart = firstH.price - firstL.price;
-          const spreadEnd = lastH.price - lastL.price;
-          const converging = spreadEnd < spreadStart * 0.9;
-
-          // アペックス計算
-          const slopeDiff = hiLine.slope - loLine.slope;
-          let apexIdx = -1;
-          let daysToApex = -1;
-          if (Math.abs(slopeDiff) > 1e-12) {
-            apexIdx = Math.round((loLine.intercept - hiLine.intercept) / slopeDiff);
-            daysToApex = Math.max(0, Math.round((apexIdx - lastIdx) * daysPerBar));
-          }
-
-          if (converging && hiLine.slope * loLine.slope <= 0) { // 反対方向の傾き
-            const barsSpan = Math.max(1, endIdx - startIdx);
-            const avgH = recentHighs.reduce((s, p) => s + p.price, 0) / recentHighs.length;
-            const avgL = recentLows.reduce((s, p) => s + p.price, 0) / recentLows.length;
-            const hiSlopeRel = hiLine.slope * barsSpan / Math.max(1e-12, avgH);
-            const loSlopeRel = loLine.slope * barsSpan / Math.max(1e-12, avgL);
-
-            let triangleType: 'triangle_ascending' | 'triangle_descending' | 'triangle_symmetrical' | null = null;
-
-            // Ascending: 高値フラット、安値上昇
-            if (Math.abs(hiSlopeRel) < 0.02 && loSlopeRel > 0.01) {
-              triangleType = 'triangle_ascending';
-            }
-            // Descending: 安値フラット、高値下落
-            else if (Math.abs(loSlopeRel) < 0.02 && hiSlopeRel < -0.01) {
-              triangleType = 'triangle_descending';
-            }
-            // Symmetrical: 高値下落、安値上昇
-            else if (hiSlopeRel < -0.005 && loSlopeRel > 0.005) {
-              triangleType = 'triangle_symmetrical';
-            }
-
-            if (triangleType && (want.size === 0 || want.has('triangle') || want.has(triangleType))) {
-              // 完成度（アペックスまでの距離に基づく）
-              const completionPct = daysToApex >= 0
-                ? Math.min(100, Math.round((1 - daysToApex / Math.max(1, patternDays)) * 100))
-                : 80;
-              const completion = completionPct / 100;
-              const confidence = Math.round(Math.min(0.9, 0.6 + (converging ? 0.2 : 0) + (daysToApex <= 14 ? 0.1 : 0)) * 100) / 100;
-
-              if (completion >= 0.4) {
-                push(patterns, {
-                  type: triangleType,
-                  confidence,
-                  range: { start: isoAt(startIdx), end: isoAt(lastIdx) },
-                  status: daysToApex <= 7 ? 'near_completion' : 'forming',
-                  pivots: [...recentHighs, ...recentLows].sort((a, b) => a.idx - b.idx).map(p => ({ idx: p.idx, price: p.price, kind: p.kind })),
-                  completionPct,
-                  apexDate: apexIdx > 0 ? isoAt(Math.min(apexIdx, lastIdx + 30)) : undefined,
-                  daysToApex: daysToApex >= 0 ? daysToApex : undefined,
-                  _method: 'forming_triangle',
-                });
-              }
-            }
-          }
-        }
-      }
-    }
-  }
+  patterns = deduplicatePatterns(patterns);
 
   return { patterns };
 }
