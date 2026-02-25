@@ -94,6 +94,7 @@ export default async function renderChartSvg(args: RenderChartSvgOptions = {}): 
     limit = 60,
     withLegend = true,
     overlays,
+    tz = 'Asia/Tokyo',
   } = args as any;
   const debugEnabled = Boolean((args as any)?.debug);
   const debugInfo: Record<string, any> = debugEnabled ? { notes: [] } : {};
@@ -730,9 +731,11 @@ export default async function renderChartSvg(args: RenderChartSvgOptions = {}): 
   `;
 
   // X軸 (日付) - timeframe に応じたフォーマットで表示
+  // タイムゾーンを適用してdayjsインスタンスを生成
+  const toDayjs = (d: any) => dayjs(d?.isoTime || d?.time || d?.timestamp).tz(tz);
   // 全データが同一日に収まるかを判定
-  const firstDate = dayjs(displayItems[0]?.isoTime || displayItems[0]?.time || displayItems[0]?.timestamp);
-  const lastDate = dayjs(displayItems[displayItems.length - 1]?.isoTime || displayItems[displayItems.length - 1]?.time || displayItems[displayItems.length - 1]?.timestamp);
+  const firstDate = toDayjs(displayItems[0]);
+  const lastDate = toDayjs(displayItems[displayItems.length - 1]);
   const isSameDay = firstDate.isValid() && lastDate.isValid() && firstDate.format('YYYYMMDD') === lastDate.format('YYYYMMDD');
 
   // timeframe に基づくフォーマット決定
@@ -759,7 +762,7 @@ export default async function renderChartSvg(args: RenderChartSvgOptions = {}): 
         const step = Math.max(1, Math.floor(displayItems.length / 5));
         if (i % step !== 0) return '';
         const xPos = x(i);
-        const date = dayjs(d.isoTime || d.time || d.timestamp);
+        const date = toDayjs(d);
         if (!date.isValid()) return '';
         const label = formatXLabel(date);
         return `<text x="${xPos}" y="${h - padding.bottom + 16}" text-anchor="middle" fill="#9ca3af" font-size="10">${label}</text>`;

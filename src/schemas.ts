@@ -82,6 +82,8 @@ export const RenderChartSvgInputSchema = z
     // 出力フォーマット: 'svg'(デフォルト), 'base64'(Base64文字列), 'dataUri'(data:image/svg+xml;base64,...形式)
     // Claude.ai等でpresent_filesがうまく動作しない場合の回避策として使用
     outputFormat: z.enum(['svg', 'base64', 'dataUri']).optional().default('svg').describe('Output format: svg (default), base64, or dataUri (for embedding in HTML/Markdown).'),
+    // X軸ラベルのタイムゾーン
+    tz: z.string().optional().default('Asia/Tokyo').describe('X軸ラベルのタイムゾーン（例: Asia/Tokyo, UTC）'),
     // Optional pattern overlays (ranges/annotations)
     overlays: z
       .object({
