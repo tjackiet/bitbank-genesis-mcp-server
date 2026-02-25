@@ -55,6 +55,16 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 	return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+/** 時間足コードを日本語ラベルに変換 */
+function timeframeLabel(type: string): string {
+	const map: Record<string, string> = {
+		'1min': '1分足', '5min': '5分足', '15min': '15分足', '30min': '30分足',
+		'1hour': '1時間足', '4hour': '4時間足', '8hour': '8時間足', '12hour': '12時間足',
+		'1day': '日足', '1week': '週足', '1month': '月足',
+	};
+	return map[type] || type;
+}
+
 const respond = (result: unknown): ToolReturn => {
 	// 優先順位: custom content > summary > safe JSON fallback
 	let text = '';
@@ -997,7 +1007,8 @@ registerToolWithLog(
 		const pats: any[] = Array.isArray((res as any)?.data?.patterns) ? (res as any).data.patterns : [];
 		const meta: any = (res as any)?.meta || {};
 		const count = Number(meta?.count ?? pats.length ?? 0);
-		const hdr = `${String(pair).toUpperCase()} [${String(type)}] ${limit ?? count}本から${pats.length}件を検出`;
+		const tfLabel = timeframeLabel(String(type));
+		const hdr = `${String(pair).toUpperCase()} ${tfLabel}（${String(type)}） ${limit ?? count}本から${pats.length}件を検出`;
 		// Debug view: list swings and candidates with reasons
 		if (view === 'debug') {
 			const swings = Array.isArray(meta?.debug?.swings) ? meta.debug.swings : [];
@@ -1153,6 +1164,7 @@ registerToolWithLog(
 			}
 		}
 		// detection period (if candles range available in meta or infer from patterns)
+		let periodLine = '';
 		try {
 			const toTs = (s?: string) => { try { return s ? Date.parse(s) : NaN; } catch { return NaN; } };
 			const ends = pats.map(p => toTs(p?.range?.end)).filter((x: number) => Number.isFinite(x));
@@ -1161,10 +1173,7 @@ registerToolWithLog(
 				const startIso = (toIsoTime(Math.min(...starts)) ?? '').slice(0, 10);
 				const endIso = (toIsoTime(Math.max(...ends)) ?? '').slice(0, 10);
 				const days = Math.max(1, Math.round((Math.max(...ends) - Math.min(...starts)) / 86400000));
-				// prepend detection window line in summary/detailed
-				if (view === 'summary') {
-					// nothing extra here; appended below
-				}
+				periodLine = `検出対象期間: ${startIso} ~ ${endIso}（${days}日間）`;
 			}
 		} catch { }
 		// 種別別件数集計
@@ -1280,17 +1289,14 @@ registerToolWithLog(
 			const within = (ms: number) => pats.filter(p => Number.isFinite(toTs(p?.range?.end)) && (now - toTs(p.range.end)) <= ms).length;
 			const in30 = within(30 * 86400000);
 			const in90 = within(90 * 86400000);
-			const starts = pats.map(p => toTs(p?.range?.start)).filter((x: number) => Number.isFinite(x));
-			const ends = pats.map(p => toTs(p?.range?.end)).filter((x: number) => Number.isFinite(x));
-			const periodLine = (starts.length && ends.length) ? `検出対象期間: ${(toIsoTime(Math.min(...starts)) ?? '').slice(0, 10)} ~ ${(toIsoTime(Math.max(...ends)) ?? '').slice(0, 10)} (${Math.max(1, Math.round((Math.max(...ends) - Math.min(...starts)) / 86400000))}日間)` : '';
-			const text = `${hdr}（${typeSummary || '分類なし'}、直近30日: ${in30}件、直近90日: ${in90}件）\n${periodLine}\n検討パターン: ${(patterns && patterns.length) ? patterns.join(', ') : '既定セット'}\n※形成中は includeForming=true を指定してください。\n詳細は structuredContent.data.patterns を参照。`;
+			const text = `${hdr}（${typeSummary || '分類なし'}、直近30日: ${in30}件、直近90日: ${in90}件）\n${periodLine ? periodLine + '\n' : ''}検討パターン: ${(patterns && patterns.length) ? patterns.join(', ') : '既定セット'}\n※形成中は includeForming=true を指定してください。\n詳細は structuredContent.data.patterns を参照。`;
 			return { content: [{ type: 'text', text }], structuredContent: res as any };
 		}
 		if ((view || 'detailed') === 'full') {
 			const body = pats.map((p, i) => fmtLine(p, i)).join('\n\n');
 			const overlayNote = (res as any)?.data?.overlays ? '\n\nチャート連携: structuredContent.data.overlays を render_chart_svg.overlays に渡すと注釈/範囲を描画できます。' : '';
 			const trustNote = '\n\nパターン整合度について（形状一致度・対称性・期間から算出）:\n  0.8以上 = 理想的な形状（教科書的パターン）\n  0.7-0.8 = 標準的な形状（他指標と併用推奨）\n  0.6-0.7 = やや不明瞭（慎重に判断）\n  0.6未満 = 形状不十分';
-			const text = `${hdr}（${typeSummary || '分類なし'}）\n\n【検出パターン（全件）】\n${body}${overlayNote}${trustNote}`;
+			const text = `${hdr}（${typeSummary || '分類なし'}）\n${periodLine ? periodLine + '\n' : ''}\n【検出パターン（全件）】\n${body}${overlayNote}${trustNote}`;
 			return { content: [{ type: 'text', text }], structuredContent: res as any };
 		}
 		// detailed (default): 上位5件
@@ -1304,7 +1310,7 @@ registerToolWithLog(
 		const overlayNote = (res as any)?.data?.overlays ? '\n\nチャート連携: structuredContent.data.overlays を render_chart_svg.overlays に渡すと注釈/範囲を描画できます。' : '';
 		const trustNote = '\n\nパターン整合度について（形状一致度・対称性・期間から算出）:\n  0.8以上 = 理想的な形状（教科書的パターン）\n  0.7-0.8 = 標準的な形状（他指標と併用推奨）\n  0.6-0.7 = やや不明瞭（慎重に判断）\n  0.6未満 = 形状不十分';
 		const usage = `\n\nusage_example:\n  step1: detect_patterns を実行\n  step2: structuredContent.data.overlays を取得\n  step3: render_chart_svg の overlays に渡す`;
-		const text = `${hdr}（${typeSummary || '分類なし'}）\n\n${top.length ? '【検出パターン】\n' + body : ''}${none}${overlayNote}${trustNote}${usage}`;
+		const text = `${hdr}（${typeSummary || '分類なし'}）\n${periodLine ? periodLine + '\n' : ''}\n${top.length ? '【検出パターン】\n' + body : ''}${none}${overlayNote}${trustNote}${usage}`;
 		return { content: [{ type: 'text', text }], structuredContent: { ...res, usage_example: { step1: 'detect_patterns を実行', step2: 'data.overlays を取得', step3: 'render_chart_svg の overlays に渡す' } } as any };
 	}
 );
