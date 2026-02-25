@@ -214,11 +214,19 @@ export function detectPennantsFlags(ctx: DetectContext): DetectResult {
     let patternType: 'pennant' | 'flag' | null = null;
 
     // Pennant: converging lines (gap narrows by at least 20%)
+    // ペナントの条件: 旗竿と反対方向のライン（カウンター側）が「受け止める」形を形成すること。
+    // 両ラインが同方向に傾いている場合はウェッジ/チャネルでありペナントではない。
     if (wantPennant && convergenceRatio < 0.80) {
-      const upperFalls = upperLine.slope <= 0;
-      const lowerRises = lowerLine.slope >= 0;
-      // At least one line should move to narrow the gap
-      if (upperFalls || lowerRises) {
+      // カウンター側ライン: 旗竿方向と逆のトレンドラインが上昇/下降しているか
+      const poleSideSlope = poleUp ? lowerLine.slope : upperLine.slope;
+      const counterSlope = poleUp ? upperLine.slope : lowerLine.slope;
+      // カウンター側が正しい方向（上昇旗竿→上側下降、下降旗竿→下側上昇）
+      const counterDirectionOk = poleUp ? counterSlope <= 0 : counterSlope >= 0;
+      // 許容: カウンター側がほぼフラット（ポール側スロープの25%以内の逆方向傾き）
+      const isNearFlat = Math.abs(poleSideSlope) > 1e-12
+        && Math.abs(counterSlope) < Math.abs(poleSideSlope) * 0.25;
+
+      if (counterDirectionOk || isNearFlat) {
         patternType = 'pennant';
       }
     }
@@ -236,6 +244,9 @@ export function detectPennantsFlags(ctx: DetectContext): DetectResult {
     }
 
     if (!patternType) {
+      // classification_failed の原因を特定するための追加情報
+      const poleSideSlope_ = poleUp ? lowerLine.slope : upperLine.slope;
+      const counterSlope_ = poleUp ? upperLine.slope : lowerLine.slope;
       debugCandidates.push({
         type: 'pennant' as any,
         accepted: false,
@@ -245,7 +256,11 @@ export function detectPennantsFlags(ctx: DetectContext): DetectResult {
           convergenceRatio: Number(convergenceRatio.toFixed(3)),
           upperSlope: Number(upperLine.slope.toFixed(6)),
           lowerSlope: Number(lowerLine.slope.toFixed(6)),
-          poleDirection: poleUp ? 'up' : 'down'
+          poleDirection: poleUp ? 'up' : 'down',
+          counterDirectionOk: poleUp ? counterSlope_ <= 0 : counterSlope_ >= 0,
+          counterSlopeRatio: Math.abs(poleSideSlope_) > 1e-12
+            ? Number((Math.abs(counterSlope_) / Math.abs(poleSideSlope_)).toFixed(3))
+            : null
         }
       });
       continue;
