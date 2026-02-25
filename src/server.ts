@@ -1268,7 +1268,7 @@ registerToolWithLog(
 						triangle_ascending: { success: '上方ブレイク（強気）', failure: '下方ブレイク（弱気転換）' },
 						triangle_descending: { success: '下方ブレイク（弱気）', failure: '上方ブレイク（強気転換）' },
 					};
-					const meaning = meaningMap[p.type]?.[p.outcome] || outcomeJa;
+					const meaning = meaningMap[p.type]?.[p.outcome] || `${directionJa}ブレイク`;
 					let dirLine = `   - ブレイク方向: ${directionJa}ブレイク`;
 					if (expectedDir) dirLine += `（本来は${expectedDir}ブレイクが期待されるパターン）`;
 					outcomeLine = `${dirLine}\n   - パターン結果: ${outcomeJa}（${meaning}）`;
