@@ -999,7 +999,7 @@ registerToolWithLog(
 
 registerToolWithLog(
 	'detect_patterns',
-	{ description: '古典的チャートパターン（ダブルトップ/ヘッドアンドショルダーズ/三角持ち合い/ウェッジ等）を統合検出します。\n\n🆕 統合版: 形成中（forming）と完成済み（completed）の両方を1回で取得可能。\n\n【オプション】\n- includeForming: true → 形成中パターンを含める（status=forming/near_completion）\n- includeCompleted: true → 完成済みパターンを含める（status=completed）\n- requireCurrentInPattern + currentRelevanceDays: 鮮度フィルタ（N日以内のみ）\n\n【パターン別推奨パラメータ】\n- pennant/flag: swingDepth≈5, minBarsBetweenSwings≈3（短期の旗型パターン向け）\n- triangle/wedge: swingDepth≈10, tolerancePct≈0.03（中期の収束パターン向け）\n- double_top/double_bottom: tolerancePct≈0.02（価格水準の一致精度重視）\n\n【出力】\n- content: 検出名・パターン整合度・期間・ステータス\n- ウェッジ: breakoutDirection（up/down）とoutcome（success/failure）を含む\n- 視覚確認: structuredContent.data.overlays を render_chart_svg.overlays に渡す\n\nview=summary|detailed|full（既定=detailed）。', inputSchema: DetectPatternsInputSchema },
+	{ description: '古典的チャートパターン（ダブルトップ/ヘッドアンドショルダーズ/三角持ち合い/ウェッジ等）を統合検出します。\n\n🆕 統合版: 形成中（forming）と完成済み（completed）の両方を1回で取得可能。\n\n【オプション】\n- includeForming: true → 形成中パターンを含める（status=forming/near_completion）\n- includeCompleted: true → 完成済みパターンを含める（status=completed）\n- requireCurrentInPattern + currentRelevanceDays: 鮮度フィルタ（N日以内のみ）\n\n【パターン別推奨パラメータ】\n- pennant/flag: swingDepth≈5, minBarsBetweenSwings≈3（短期の旗型パターン向け）\n- triangle/wedge: swingDepth≈10, tolerancePct≈0.03（中期の収束パターン向け）\n- double_top/double_bottom: tolerancePct≈0.02（価格水準の一致精度重視）\n\n【出力】\n- content: 検出名・パターン整合度・期間・ステータス\n- 全パターン: status（forming/near_completion/completed）、breakoutDirection（up/down）、outcome（success/failure）を含む\n- 視覚確認: structuredContent.data.overlays を render_chart_svg.overlays に渡す\n\nview=summary|detailed|full（既定=detailed）。', inputSchema: DetectPatternsInputSchema },
 	async ({ pair, type, limit, patterns, swingDepth, tolerancePct, minBarsBetweenSwings, view, requireCurrentInPattern, currentRelevanceDays }: any) => {
 		const out = await detectPatterns(pair, type, limit, { patterns, swingDepth, tolerancePct, minBarsBetweenSwings, requireCurrentInPattern, currentRelevanceDays });
 		const res = DetectPatternsOutputSchema.parse(out as any);
@@ -1240,17 +1240,38 @@ registerToolWithLog(
 					breakoutLine = `   - ブレイク: ${bdate} (${bprice}円)`;
 				}
 			} catch { /* ignore */ }
-			// ウェッジパターンのブレイク方向と結果（LLM が正しく解釈できるように）
-			let wedgeOutcomeLine: string | null = null;
+			// status（全パターン共通）
+			let statusLine: string | null = null;
+			if (p?.status) {
+				const statusJa: Record<string, string> = {
+					completed: '完成（ブレイクアウト確認済み）',
+					invalid: '無効（期待と逆方向にブレイク）',
+					forming: '形成中',
+					near_completion: 'ほぼ完成（apex接近）',
+				};
+				statusLine = `   - 状態: ${statusJa[p.status] || p.status}`;
+			}
+			// ブレイク方向と結果（全パターン共通）
+			let outcomeLine: string | null = null;
 			try {
-				if ((p?.type === 'falling_wedge' || p?.type === 'rising_wedge') && p?.breakoutDirection && p?.outcome) {
+				if (p?.breakoutDirection && p?.outcome) {
 					const directionJa = p.breakoutDirection === 'up' ? '上方' : '下方';
 					const outcomeJa = p.outcome === 'success' ? '成功' : '失敗';
-					const expectedDir = p.type === 'falling_wedge' ? '上方' : '下方';
-					const meaning = p.type === 'falling_wedge'
-						? (p.outcome === 'success' ? '強気転換' : '弱気継続')
-						: (p.outcome === 'success' ? '弱気転換' : '強気継続');
-					wedgeOutcomeLine = `   - ブレイク方向: ${directionJa}ブレイク（本来は${expectedDir}ブレイクが期待されるパターン）\n   - パターン結果: ${outcomeJa}（${meaning}）`;
+					const expectedDirMap: Record<string, string | undefined> = {
+						falling_wedge: '上方', rising_wedge: '下方',
+						triangle_ascending: '上方', triangle_descending: '下方',
+					};
+					const expectedDir = expectedDirMap[p.type];
+					const meaningMap: Record<string, Record<string, string>> = {
+						falling_wedge: { success: '強気転換', failure: '弱気継続' },
+						rising_wedge: { success: '弱気転換', failure: '強気継続' },
+						triangle_ascending: { success: '上方ブレイク（強気）', failure: '下方ブレイク（弱気転換）' },
+						triangle_descending: { success: '下方ブレイク（弱気）', failure: '上方ブレイク（強気転換）' },
+					};
+					const meaning = meaningMap[p.type]?.[p.outcome] || outcomeJa;
+					let dirLine = `   - ブレイク方向: ${directionJa}ブレイク`;
+					if (expectedDir) dirLine += `（本来は${expectedDir}ブレイクが期待されるパターン）`;
+					outcomeLine = `${dirLine}\n   - パターン結果: ${outcomeJa}（${meaning}）`;
 				}
 			} catch { /* ignore */ }
 			// structure diagram SVG (inline for LLM visibility)
@@ -1274,11 +1295,12 @@ registerToolWithLog(
 			const lines = [
 				`${idx + 1}. ${name} (パターン整合度: ${conf})`,
 				`   - 期間: ${range}`,
+				statusLine,
 				priceRange ? `   - 価格範囲: ${priceRange}` : null,
 				...(pivotLines.length ? pivotLines : []),
 				neckline ? `   - ネックライン: ${neckline}` : null,
 				breakoutLine,
-				wedgeOutcomeLine,
+				outcomeLine,
 				diagramBlock,
 			].filter(Boolean);
 			return lines.join('\n');
