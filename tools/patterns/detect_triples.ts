@@ -67,7 +67,10 @@ export function detectTriples(ctx: DetectContext): DetectResult {
               { start, end }
             );
             if (confidence >= (MIN_CONFIDENCE['triple_top'] ?? 0)) {
-              push(patterns, { type: 'triple_top', confidence, range: { start, end }, pivots: [a, b, c], ...(neckline ? { neckline } : {}), ...(diagram ? { structureDiagram: diagram } : {}) });
+              // --- ターゲット価格計算（neckline_projection 方式） ---
+              const ttAvgPeak = (a.price + b.price + c.price) / 3;
+              const ttTarget = nlAvg != null ? Math.round(nlAvg - (ttAvgPeak - nlAvg)) : undefined;
+              push(patterns, { type: 'triple_top', confidence, range: { start, end }, pivots: [a, b, c], ...(neckline ? { neckline, trendlineLabel: 'ネックライン' } : {}), ...(ttTarget !== undefined ? { breakoutTarget: ttTarget, targetMethod: 'neckline_projection' as const } : {}), ...(diagram ? { structureDiagram: diagram } : {}) });
               pcand({ type: 'triple_top', accepted: true, idxs: [a.idx, b.idx, c.idx], pts: [{ role: 'peak1', idx: a.idx, price: a.price }, { role: 'peak2', idx: b.idx, price: b.price }, { role: 'peak3', idx: c.idx, price: c.price }] });
             } else {
               pcand({ type: 'triple_top', accepted: false, reason: 'confidence_below_min', idxs: [a.idx, b.idx, c.idx] });
@@ -130,7 +133,10 @@ export function detectTriples(ctx: DetectContext): DetectResult {
               { start, end }
             );
             if (confidence >= (MIN_CONFIDENCE['triple_bottom'] ?? 0)) {
-              push(patterns, { type: 'triple_bottom', confidence, range: { start, end }, pivots: [a, b, c], ...(neckline ? { neckline } : {}), ...(diagram ? { structureDiagram: diagram } : {}) });
+              // --- ターゲット価格計算（neckline_projection 方式） ---
+              const tbAvgValley = (a.price + b.price + c.price) / 3;
+              const tbTarget = nlAvg != null ? Math.round(nlAvg + (nlAvg - tbAvgValley)) : undefined;
+              push(patterns, { type: 'triple_bottom', confidence, range: { start, end }, pivots: [a, b, c], ...(neckline ? { neckline, trendlineLabel: 'ネックライン' } : {}), ...(tbTarget !== undefined ? { breakoutTarget: tbTarget, targetMethod: 'neckline_projection' as const } : {}), ...(diagram ? { structureDiagram: diagram } : {}) });
               pcand({ type: 'triple_bottom', accepted: true, idxs: [a.idx, b.idx, c.idx], pts: [{ role: 'valley1', idx: a.idx, price: a.price }, { role: 'valley2', idx: b.idx, price: b.price }, { role: 'valley3', idx: c.idx, price: c.price }] });
             } else {
               pcand({ type: 'triple_bottom', accepted: false, reason: 'confidence_below_min', idxs: [a.idx, b.idx, c.idx] });
@@ -186,7 +192,9 @@ export function detectTriples(ctx: DetectContext): DetectResult {
               );
             }
             if (confidence >= (MIN_CONFIDENCE['triple_top'] ?? 0)) {
-              push(patterns, { type: 'triple_top', confidence, range: { start, end }, pivots: [a, b, c], ...(neckline ? { neckline } : {}), ...(diagram ? { structureDiagram: diagram } : {}), _fallback: `relaxed_triple_x${f}` });
+              const ttRelAvgPeak = (a.price + b.price + c.price) / 3;
+              const ttRelTarget = nlAvg != null ? Math.round(nlAvg - (ttRelAvgPeak - nlAvg)) : undefined;
+              push(patterns, { type: 'triple_top', confidence, range: { start, end }, pivots: [a, b, c], ...(neckline ? { neckline, trendlineLabel: 'ネックライン' } : {}), ...(ttRelTarget !== undefined ? { breakoutTarget: ttRelTarget, targetMethod: 'neckline_projection' as const } : {}), ...(diagram ? { structureDiagram: diagram } : {}), _fallback: `relaxed_triple_x${f}` });
             } else {
               pcand({ type: 'triple_top', accepted: false, reason: 'confidence_below_min_relaxed', idxs: [a.idx, b.idx, c.idx] });
             }
@@ -236,7 +244,9 @@ export function detectTriples(ctx: DetectContext): DetectResult {
               );
             }
             if (confidence >= (MIN_CONFIDENCE['triple_bottom'] ?? 0)) {
-              push(patterns, { type: 'triple_bottom', confidence, range: { start, end }, pivots: [a, b, c], ...(neckline ? { neckline } : {}), ...(diagram ? { structureDiagram: diagram } : {}), _fallback: `relaxed_triple_x${f}` });
+              const tbRelAvgValley = (a.price + b.price + c.price) / 3;
+              const tbRelTarget = nlAvg != null ? Math.round(nlAvg + (nlAvg - tbRelAvgValley)) : undefined;
+              push(patterns, { type: 'triple_bottom', confidence, range: { start, end }, pivots: [a, b, c], ...(neckline ? { neckline, trendlineLabel: 'ネックライン' } : {}), ...(tbRelTarget !== undefined ? { breakoutTarget: tbRelTarget, targetMethod: 'neckline_projection' as const } : {}), ...(diagram ? { structureDiagram: diagram } : {}), _fallback: `relaxed_triple_x${f}` });
             } else {
               pcand({ type: 'triple_bottom', accepted: false, reason: 'confidence_below_min_relaxed', idxs: [a.idx, b.idx, c.idx] });
             }
@@ -296,6 +306,7 @@ export function detectTriples(ctx: DetectContext): DetectResult {
             : Math.min(peak1.price, peak2.price) * 0.95;
           const neckline = [{ x: peak1.idx, y: avgValley }, { x: lastIdx, y: avgValley }];
 
+          const formTtTarget = Math.round(avgValley - ((peak1.price + peak2.price) / 2 - avgValley));
           push(patterns, {
             type: 'triple_top',
             confidence,
@@ -306,6 +317,9 @@ export function detectTriples(ctx: DetectContext): DetectResult {
               { idx: peak2.idx, price: peak2.price, kind: 'H' as const },
             ],
             neckline,
+            trendlineLabel: 'ネックライン',
+            breakoutTarget: formTtTarget,
+            targetMethod: 'neckline_projection' as const,
             completionPct: Math.round(completion * 100),
             _method: 'forming_triple_top',
           });
@@ -355,6 +369,7 @@ export function detectTriples(ctx: DetectContext): DetectResult {
         if (completion >= 0.4 && confidence >= 0.5) {
           const neckline = [{ x: valley1.idx, y: avgPeakPrice }, { x: lastIdx, y: avgPeakPrice }];
 
+          const formTbTarget = Math.round(avgPeakPrice + (avgPeakPrice - avgValleyPrice));
           push(patterns, {
             type: 'triple_bottom',
             confidence,
@@ -365,6 +380,9 @@ export function detectTriples(ctx: DetectContext): DetectResult {
               { idx: valley2.idx, price: valley2.price, kind: 'L' as const },
             ],
             neckline,
+            trendlineLabel: 'ネックライン',
+            breakoutTarget: formTbTarget,
+            targetMethod: 'neckline_projection' as const,
             completionPct: Math.round(completion * 100),
             _method: 'forming_triple_bottom',
           });

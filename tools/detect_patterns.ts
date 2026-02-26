@@ -257,14 +257,28 @@ export default async function detectPatterns(
         detail += `\n   - パターン結果: ${outcomeJa}（${meaning}）`;
       }
 
-      // ネックラインがある場合
+      // ネックライン/トレンドラインがある場合（用語正規化ラベルを使用）
       if (p.neckline && Array.isArray(p.neckline) && p.neckline.length >= 2) {
-        detail += `\n   - ネックライン: ${Math.round(p.neckline[0]?.y || 0).toLocaleString()}円 → ${Math.round(p.neckline[1]?.y || 0).toLocaleString()}円`;
+        const label = p.trendlineLabel || 'ネックライン';
+        detail += `\n   - ${label}: ${Math.round(p.neckline[0]?.y || 0).toLocaleString()}円 → ${Math.round(p.neckline[1]?.y || 0).toLocaleString()}円`;
       }
 
       // ウェッジ固有: Apex（頂点）情報
       if ((p.type === 'falling_wedge' || p.type === 'rising_wedge') && p.daysToApex != null) {
         detail += `\n   - Apex（収束点）まで: ${p.daysToApex}本`;
+      }
+
+      // ターゲット価格情報（全パターン共通）
+      if (p.breakoutTarget != null) {
+        const methodJa: Record<string, string> = {
+          flagpole_projection: 'フラッグポール値幅投影',
+          pattern_height: 'パターン高さ投影',
+          neckline_projection: 'ネックライン投影',
+        };
+        detail += `\n   - ターゲット価格: ${Math.round(p.breakoutTarget).toLocaleString()}円（${methodJa[p.targetMethod] || p.targetMethod}）`;
+        if (p.targetReachedPct != null) {
+          detail += `\n   - ターゲット進捗: ${p.targetReachedPct}%${p.targetReachedPct >= 100 ? '（到達済み）' : ''}`;
+        }
       }
 
       // ペナント固有フィールド

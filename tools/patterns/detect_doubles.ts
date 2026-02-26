@@ -69,7 +69,16 @@ export function detectDoubles(ctx: DetectContext): DetectResult {
               { price: necklinePrice },
               { start, end }
             );
-            push(patterns, { type: 'double_top', confidence, range: { start, end }, pivots: [a, b, c], neckline, breakout: { idx: breakoutIdx, price: Number(candles[breakoutIdx]?.close ?? NaN) }, structureDiagram: diagram });
+            // --- ターゲット価格計算（neckline_projection 方式） ---
+            const dtAvgPeak = (a.price + c.price) / 2;
+            const dtTarget = Math.round(necklinePrice - (dtAvgPeak - necklinePrice));
+            const dtBp = Number(candles[breakoutIdx]?.close ?? NaN);
+            let dtTargetPct: number | undefined;
+            const dtCurPrice = Number(candles[candles.length - 1]?.close);
+            if (Number.isFinite(dtCurPrice) && Number.isFinite(dtBp) && Math.abs(dtTarget - dtBp) > 1e-12) {
+              dtTargetPct = Math.round(((dtCurPrice - dtBp) / (dtTarget - dtBp)) * 100);
+            }
+            push(patterns, { type: 'double_top', confidence, range: { start, end }, pivots: [a, b, c], neckline, trendlineLabel: 'ネックライン', breakout: { idx: breakoutIdx, price: dtBp }, breakoutBarIndex: breakoutIdx, breakoutTarget: dtTarget, targetMethod: 'neckline_projection' as const, ...(dtTargetPct !== undefined ? { targetReachedPct: dtTargetPct } : {}), structureDiagram: diagram });
             foundDoubleTop = true;
             pcand({
               type: 'double_top',
@@ -79,7 +88,7 @@ export function detectDoubles(ctx: DetectContext): DetectResult {
                 { role: 'peak1', idx: a.idx, price: a.price },
                 { role: 'valley', idx: b.idx, price: b.price },
                 { role: 'peak2', idx: c.idx, price: c.price },
-                { role: 'breakout', idx: breakoutIdx, price: Number(candles[breakoutIdx]?.close ?? NaN) },
+                { role: 'breakout', idx: breakoutIdx, price: dtBp },
               ]
             });
           }
@@ -150,13 +159,27 @@ export function detectDoubles(ctx: DetectContext): DetectResult {
               { price: necklinePrice },
               { start, end }
             );
+            // --- ターゲット価格計算（neckline_projection 方式） ---
+            const dbAvgValley = (a.price + c.price) / 2;
+            const dbTarget = Math.round(necklinePrice + (necklinePrice - dbAvgValley));
+            const dbBp = Number(candles[breakoutIdx]?.close ?? NaN);
+            let dbTargetPct: number | undefined;
+            const dbCurPrice = Number(candles[candles.length - 1]?.close);
+            if (Number.isFinite(dbCurPrice) && Number.isFinite(dbBp) && Math.abs(dbTarget - dbBp) > 1e-12) {
+              dbTargetPct = Math.round(((dbCurPrice - dbBp) / (dbTarget - dbBp)) * 100);
+            }
             push(patterns, {
               type: 'double_bottom',
               confidence,
               range: { start, end },
               pivots: [a, b, c],
               neckline,
-              breakout: { idx: breakoutIdx, price: Number(candles[breakoutIdx]?.close ?? NaN) },
+              trendlineLabel: 'ネックライン',
+              breakout: { idx: breakoutIdx, price: dbBp },
+              breakoutBarIndex: breakoutIdx,
+              breakoutTarget: dbTarget,
+              targetMethod: 'neckline_projection' as const,
+              ...(dbTargetPct !== undefined ? { targetReachedPct: dbTargetPct } : {}),
               structureDiagram: diagram
             });
             foundDoubleBottom = true;
@@ -231,7 +254,9 @@ export function detectDoubles(ctx: DetectContext): DetectResult {
               { price: necklinePrice },
               { start, end }
             );
-            push(patterns, { type: 'double_top', confidence, range: { start, end }, pivots: [a, b, c], neckline, breakout: { idx: breakoutIdx, price: Number(candles[breakoutIdx]?.close ?? NaN) }, structureDiagram: diagram, _fallback: `relaxed_double_x${f}` });
+            const dtRelAvgPeak = (a.price + c.price) / 2;
+            const dtRelTarget = Math.round(necklinePrice - (dtRelAvgPeak - necklinePrice));
+            push(patterns, { type: 'double_top', confidence, range: { start, end }, pivots: [a, b, c], neckline, trendlineLabel: 'ネックライン', breakout: { idx: breakoutIdx, price: Number(candles[breakoutIdx]?.close ?? NaN) }, breakoutBarIndex: breakoutIdx, breakoutTarget: dtRelTarget, targetMethod: 'neckline_projection' as const, structureDiagram: diagram, _fallback: `relaxed_double_x${f}` });
             foundDoubleTop = true;
             break;
           } else {
@@ -288,7 +313,9 @@ export function detectDoubles(ctx: DetectContext): DetectResult {
               { price: necklinePrice },
               { start, end }
             );
-            push(patterns, { type: 'double_bottom', confidence, range: { start, end }, pivots: [a, b, c], neckline, breakout: { idx: breakoutIdx, price: Number(candles[breakoutIdx]?.close ?? NaN) }, structureDiagram: diagram, _fallback: `relaxed_double_x${f}` });
+            const dbRelAvgValley = (a.price + c.price) / 2;
+            const dbRelTarget = Math.round(necklinePrice + (necklinePrice - dbRelAvgValley));
+            push(patterns, { type: 'double_bottom', confidence, range: { start, end }, pivots: [a, b, c], neckline, trendlineLabel: 'ネックライン', breakout: { idx: breakoutIdx, price: Number(candles[breakoutIdx]?.close ?? NaN) }, breakoutBarIndex: breakoutIdx, breakoutTarget: dbRelTarget, targetMethod: 'neckline_projection' as const, structureDiagram: diagram, _fallback: `relaxed_double_x${f}` });
             foundDoubleBottom = true;
             break;
           } else {
@@ -342,6 +369,8 @@ export function detectDoubles(ctx: DetectContext): DetectResult {
               const start = isoAt(leftPeak.idx);
               const end = isoAt(lastIdx);
 
+              // 形成中ダブルトップのターゲット: ネックライン - (ピーク - ネックライン)
+              const formDtTarget = Math.round(valley.price - (leftPeak.price - valley.price));
               push(patterns, {
                 type: 'double_top',
                 confidence,
@@ -352,6 +381,9 @@ export function detectDoubles(ctx: DetectContext): DetectResult {
                   { idx: valley.idx, price: valley.price, kind: 'L' as const },
                 ],
                 neckline,
+                trendlineLabel: 'ネックライン',
+                breakoutTarget: formDtTarget,
+                targetMethod: 'neckline_projection' as const,
                 completionPct: Math.round(completion * 100),
                 _method: 'forming_double_top',
               });
@@ -409,6 +441,9 @@ export function detectDoubles(ctx: DetectContext): DetectResult {
           const start = isoAt(leftValley.idx);
           const end = isoAt(lastIdx);
 
+          // 形成中ダブルボトムのターゲット: ネックライン + (ネックライン - 谷平均)
+          const formDbAvgValley = (leftValley.price + rightValley.price) / 2;
+          const formDbTarget = Math.round(midPeak.price + (midPeak.price - formDbAvgValley));
           push(patterns, {
             type: 'double_bottom',
             confidence,
@@ -420,6 +455,9 @@ export function detectDoubles(ctx: DetectContext): DetectResult {
               { idx: rightValley.idx, price: rightValley.price, kind: 'L' as const },
             ],
             neckline,
+            trendlineLabel: 'ネックライン',
+            breakoutTarget: formDbTarget,
+            targetMethod: 'neckline_projection' as const,
             completionPct: Math.round(completion * 100),
             _method: 'forming_double_bottom',
           });
