@@ -315,6 +315,7 @@ export function detectPennantsFlags(ctx: DetectContext): DetectResult {
       breakoutBarIndex: hasBreakout ? breakoutIdx : undefined,
       ...(breakoutTarget !== undefined ? { breakoutTarget, targetMethod: 'flagpole_projection' as const } : {}),
       ...(targetReachedPct !== undefined ? { targetReachedPct } : {}),
+      trendlineFit: { r2Upper: Number(upperLine.r2.toFixed(3)), r2Lower: Number(lowerLine.r2.toFixed(3)) },
     });
 
     debugCandidates.push({

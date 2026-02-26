@@ -495,7 +495,8 @@ export function detectWedges(ctx: DetectContext): DetectResult {
         ...(breakoutTarget !== undefined ? { breakoutTarget, targetMethod: 'pattern_height' as const } : {}),
         ...(targetReachedPct !== undefined ? { targetReachedPct } : {}),
         ...(aftermath ? { aftermath } : {}),
-        ...(diagram ? { structureDiagram: diagram } : {})
+        ...(diagram ? { structureDiagram: diagram } : {}),
+        trendlineFit: { r2Upper: Number(upper.r2.toFixed(3)), r2Lower: Number(lower.r2.toFixed(3)) },
       });
       debugCandidates.push({
         type: wedgeType,

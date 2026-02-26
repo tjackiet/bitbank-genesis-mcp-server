@@ -472,6 +472,7 @@ export function detectTriangles(ctx: DetectContext): DetectResult {
           ...(retracementRatio !== undefined ? { retracementRatio: Number(retracementRatio.toFixed(2)) } : {}),
           ...(isTrendContinuation !== undefined ? { isTrendContinuation } : {}),
         } : {}),
+        trendlineFit: { r2Upper: Number(upperLine.r2.toFixed(3)), r2Lower: Number(lowerLine.r2.toFixed(3)) },
       });
 
       debugCandidates.push({
