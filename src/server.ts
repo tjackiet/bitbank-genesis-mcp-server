@@ -1319,9 +1319,18 @@ registerToolWithLog(
 				statusLine,
 				priceRange ? `   - 価格範囲: ${priceRange}` : null,
 				...(pivotLines.length ? pivotLines : []),
-				neckline ? `   - ネックライン: ${neckline}` : null,
+				neckline ? `   - ${p?.trendlineLabel || 'ネックライン'}: ${neckline}` : null,
 				breakoutLine,
 				outcomeLine,
+				// ターゲット価格情報（全パターン共通）
+				p?.breakoutTarget != null ? (() => {
+					const methodJa: Record<string, string> = { flagpole_projection: 'フラッグポール値幅投影', pattern_height: 'パターン高さ投影', neckline_projection: 'ネックライン投影' };
+					let targetLine = `   - ターゲット価格: ${Math.round(Number(p.breakoutTarget)).toLocaleString()}円（${methodJa[p.targetMethod] || p.targetMethod}）`;
+					if (p?.targetReachedPct != null) {
+						targetLine += `\n   - ターゲット進捗: ${p.targetReachedPct}%${Number(p.targetReachedPct) >= 100 ? '（到達済み）' : ''}`;
+					}
+					return targetLine;
+				})() : null,
 				pennantLine,
 				diagramBlock,
 			].filter(Boolean);
