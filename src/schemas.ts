@@ -643,9 +643,15 @@ export const DetectedPatternSchema = z.object({
   // 完成済みパターン用フィールド
   breakoutDate: z.string().optional(),       // ブレイクアウト日
   daysSinceBreakout: z.number().int().optional(), // ブレイクアウトからの経過日数
-  // ウェッジパターン用: ブレイク方向と結果
+  // ブレイク方向と結果
   breakoutDirection: z.enum(['up', 'down']).optional(),  // ブレイク方向
   outcome: z.enum(['success', 'failure']).optional(),    // パターン結果（期待通り=success, 逆方向=failure）
+  // ペナント用: フラッグポール（旗竿）情報
+  poleDirection: z.enum(['up', 'down']).optional(),             // フラッグポールの方向
+  priorTrendDirection: z.enum(['bullish', 'bearish']).optional(), // 先行トレンド方向
+  isTrendContinuation: z.boolean().optional(),                  // ブレイク方向が先行トレンドと一致しているか
+  flagpoleHeight: z.number().optional(),                        // フラッグポールの値幅
+  retracementRatio: z.number().optional(),                      // フラッグポールに対する戻し比率（0.38未満ならペナント的）
   aftermath: z
     .object({
       breakoutDate: z.string().nullable().optional(),

@@ -83,7 +83,7 @@ function detectPole(
   candles: readonly { open: number; close: number; high: number; low: number; isoTime?: string }[],
   winStart: number,
   tf: string,
-): { poleStart: number; poleEnd: number; poleDirection: 'up' | 'down'; atrMult: number } | null {
+): { poleStart: number; poleEnd: number; poleDirection: 'up' | 'down'; atrMult: number; poleHeight: number } | null {
   const pp = getPoleParams(tf);
 
   let bestPoleStart = -1;
@@ -130,6 +130,7 @@ function detectPole(
     poleEnd,
     poleDirection: bestPoleMag > 0 ? 'up' : 'down',
     atrMult: bestPoleATRMult,
+    poleHeight: poleRange,
   };
 }
 
@@ -362,35 +363,55 @@ export function detectTriangles(ctx: DetectContext): DetectResult {
       let poleDirection: 'up' | 'down' | undefined;
       let poleATRMult: number | undefined;
       let reclassifiedStartIso = startIso;
+      let flagpoleHeight: number | undefined;
+      let retracementRatio: number | undefined;
+      let isTrendContinuation: boolean | undefined;
 
       if (wantPennant) {
         const pole = detectPole(candles, winStart, type);
         if (pole) {
-          // Validate: breakout direction (if any) should match pole direction
-          const poleBreakoutOk = !hasBreakout ||
-            (pole.poleDirection === 'up' && breakoutDirection === 'up') ||
-            (pole.poleDirection === 'down' && breakoutDirection === 'down');
+          finalType = 'pennant';
+          poleDirection = pole.poleDirection;
+          poleATRMult = pole.atrMult;
+          flagpoleHeight = pole.poleHeight;
 
-          if (poleBreakoutOk) {
-            finalType = 'pennant';
-            poleDirection = pole.poleDirection;
-            poleATRMult = pole.atrMult;
-            // Extend range start to pole start
-            const poleStartIso = candles[pole.poleStart]?.isoTime;
-            if (poleStartIso) reclassifiedStartIso = poleStartIso;
+          // Extend range start to pole start
+          const poleStartIso = candles[pole.poleStart]?.isoTime;
+          if (poleStartIso) reclassifiedStartIso = poleStartIso;
 
-            // Re-evaluate status for pennant: breakout must match pole direction
-            if (hasBreakout) {
-              const pennantExpected = pole.poleDirection === breakoutDirection;
-              status = pennantExpected ? 'completed' : 'invalid';
-            }
+          // Calculate retracement ratio: how much of the pole move has been retraced
+          const poleEndPrice = candles[pole.poleEnd].close;
+          const triHigh = Math.max(...peaks.map(p => p.price));
+          const triLow = Math.min(...valleys.map(p => p.price));
+          if (pole.poleHeight > 0) {
+            retracementRatio = pole.poleDirection === 'up'
+              ? (poleEndPrice - triLow) / pole.poleHeight
+              : (triHigh - poleEndPrice) / pole.poleHeight;
+            retracementRatio = Math.max(0, Math.min(1, retracementRatio));
+          }
+
+          // Re-evaluate status for pennant: breakout must match pole direction (trend continuation)
+          if (hasBreakout) {
+            const pennantExpected = pole.poleDirection === breakoutDirection;
+            isTrendContinuation = pennantExpected;
+            status = pennantExpected ? 'completed' : 'invalid';
           }
         }
       }
 
-      const finalConfidence = finalType === 'pennant'
-        ? finalizeConf(baseScore * 0.95 + clamp01((poleATRMult ?? 0) / 6) * 0.05, 'pennant')
-        : confidence;
+      // Confidence adjustment for pennants
+      let finalConfidence: number;
+      if (finalType === 'pennant') {
+        let pennantScore = baseScore * 0.90 + clamp01((poleATRMult ?? 0) / 6) * 0.05;
+        // Retracement penalty: >38% retracement reduces confidence (more triangle-like)
+        if (retracementRatio !== undefined && retracementRatio > 0.38) {
+          const penalty = Math.min(0.15, (retracementRatio - 0.38) * 0.25);
+          pennantScore -= penalty;
+        }
+        finalConfidence = finalizeConf(Math.max(0, pennantScore), 'pennant');
+      } else {
+        finalConfidence = confidence;
+      }
 
       patterns.push({
         type: finalType,
@@ -401,7 +422,13 @@ export function detectTriangles(ctx: DetectContext): DetectResult {
         neckline,
         breakoutDirection: breakoutDirection ?? undefined,
         outcome: hasBreakout ? (status === 'completed' ? 'success' : 'failure') : undefined,
-        ...(poleDirection ? { poleDirection } : {}),
+        ...(poleDirection ? {
+          poleDirection,
+          priorTrendDirection: poleDirection === 'up' ? 'bullish' : 'bearish',
+          ...(flagpoleHeight !== undefined ? { flagpoleHeight: Math.round(flagpoleHeight) } : {}),
+          ...(retracementRatio !== undefined ? { retracementRatio: Number(retracementRatio.toFixed(2)) } : {}),
+          ...(isTrendContinuation !== undefined ? { isTrendContinuation } : {}),
+        } : {}),
       });
 
       debugCandidates.push({
@@ -419,7 +446,13 @@ export function detectTriangles(ctx: DetectContext): DetectResult {
           breakout: hasBreakout ? { idx: breakoutIdx, direction: breakoutDirection } : null,
           status,
           confidence: finalConfidence,
-          ...(poleDirection ? { poleDirection, poleATRMult: Number((poleATRMult ?? 0).toFixed(2)) } : {}),
+          ...(poleDirection ? {
+            poleDirection,
+            poleATRMult: Number((poleATRMult ?? 0).toFixed(2)),
+            ...(flagpoleHeight !== undefined ? { flagpoleHeight: Math.round(flagpoleHeight) } : {}),
+            ...(retracementRatio !== undefined ? { retracementRatio: Number(retracementRatio.toFixed(2)) } : {}),
+            ...(isTrendContinuation !== undefined ? { isTrendContinuation } : {}),
+          } : {}),
         }
       });
     }
