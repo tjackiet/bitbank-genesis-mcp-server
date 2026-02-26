@@ -28,8 +28,9 @@ export function necklineValue(p: any, idx: number): number | null {
 // ---------------------------------------------------------------------------
 // 事後分析
 // ---------------------------------------------------------------------------
-const BULLISH_TYPES = ['double_bottom', 'inverse_head_and_shoulders', 'triangle_ascending', 'triangle_symmetrical', 'pennant', 'flag'];
+const BULLISH_TYPES = ['double_bottom', 'inverse_head_and_shoulders', 'triangle_ascending', 'triangle_symmetrical', 'flag'];
 const BEARISH_TYPES = ['double_top', 'head_and_shoulders', 'triangle_descending'];
+// Note: 'pennant' is intentionally excluded from both lists — its direction is determined by poleDirection field.
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function analyzeAftermath(p: any, candles: CandleData[], isoToIndex: Map<string, number>): any | null {
@@ -40,8 +41,10 @@ export function analyzeAftermath(p: any, candles: CandleData[], isoToIndex: Map<
     const baseClose = Number(candles[endIdx]?.close ?? NaN);
     if (!Number.isFinite(baseClose)) return null;
     const nlAtEnd = necklineValue(p, endIdx);
-    const bullish = BULLISH_TYPES.includes(String(p?.type));
-    const bearish = BEARISH_TYPES.includes(String(p?.type));
+    const pType = String(p?.type);
+    const isPennant = pType === 'pennant';
+    const bullish = isPennant ? p?.poleDirection === 'up' : BULLISH_TYPES.includes(pType);
+    const bearish = isPennant ? p?.poleDirection === 'down' : BEARISH_TYPES.includes(pType);
     if (!Number.isFinite(nlAtEnd as number)) return null;
     let breakoutConfirmed = false;
     let breakoutDate: string | undefined;
@@ -104,7 +107,7 @@ export function analyzeAftermath(p: any, candles: CandleData[], isoToIndex: Map<
       const arr = [r3, r7, r14].filter((v: unknown) => typeof v === 'number') as number[];
       if (!arr.length) return '評価不可（事後データ不足）';
       const best = arr.reduce((m, v) => Math.abs(v) > Math.abs(m) ? v : m, 0);
-      const isBullish = BULLISH_TYPES.includes(String(p?.type));
+      const isBullish = isPennant ? p?.poleDirection === 'up' : BULLISH_TYPES.includes(String(p?.type));
       const expected = isBullish ? 1 : -1;
       const actual = best > 0 ? 1 : -1;
       if (expected === actual && Math.abs(best) > 3) return `部分成功（ブレイクアウト後${best > 0 ? '+' : ''}${best.toFixed(1)}%、目標未達）`;
