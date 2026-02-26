@@ -176,7 +176,7 @@ export function detectPennantsFlags(ctx: DetectContext): DetectResult {
     const upperLine = lrWithR2(consHighs.map(p => ({ x: p.idx, y: p.price })));
     const lowerLine = lrWithR2(consLows.map(p => ({ x: p.idx, y: p.price })));
 
-    const minR2 = 0.25;
+    const minR2 = 0.65;  // 平行チャネルは線形性が命 — 0.25 では偽陽性が多すぎた
     if (upperLine.r2 < minR2 || lowerLine.r2 < minR2) {
       debugCandidates.push({
         type: 'flag' as any,

@@ -98,14 +98,14 @@ export function detectWedges(ctx: DetectContext): DetectResult {
       if (highsIn.length < 4 || lowsIn.length < 4) continue;
       const upper = lrWithR2(highsIn.map(s => ({ x: s.index, y: s.price })));
       const lower = lrWithR2(lowsIn.map(s => ({ x: s.index, y: s.price })));
-      if (upper.r2 < 0.40 || lower.r2 < 0.40) {
+      if (upper.r2 < 0.55 || lower.r2 < 0.55) {  // 緩やかな収束なのでフラッグほど厳しくなくてよい — 0.40 から引き上げ
         const dbgType = (upper.slope < 0 && lower.slope < 0) ? 'falling_wedge' : ((upper.slope > 0 && lower.slope > 0) ? 'rising_wedge' : 'triangle_symmetrical');
         debugCandidates.push({
           type: dbgType as any,
           accepted: false,
           reason: 'r2_below_threshold',
           indices: [w.startIdx, w.endIdx],
-          details: { r2High: upper.r2, r2Low: lower.r2, slopeHigh: upper.slope, slopeLow: lower.slope, r2MinRequired: 0.40 }
+          details: { r2High: upper.r2, r2Low: lower.r2, slopeHigh: upper.slope, slopeLow: lower.slope, r2MinRequired: 0.55 }
         });
         continue;
       }
