@@ -1260,6 +1260,7 @@ registerToolWithLog(
 					const expectedDirMap: Record<string, string | undefined> = {
 						falling_wedge: '上方', rising_wedge: '下方',
 						triangle_ascending: '上方', triangle_descending: '下方',
+						pennant: p.poleDirection === 'up' ? '上方' : p.poleDirection === 'down' ? '下方' : undefined,
 					};
 					const expectedDir = expectedDirMap[p.type];
 					const meaningMap: Record<string, Record<string, string>> = {
@@ -1267,11 +1268,31 @@ registerToolWithLog(
 						rising_wedge: { success: '弱気転換', failure: '強気継続' },
 						triangle_ascending: { success: '上方ブレイク（強気）', failure: '下方ブレイク（弱気転換）' },
 						triangle_descending: { success: '下方ブレイク（弱気）', failure: '上方ブレイク（強気転換）' },
+						pennant: {
+							success: `トレンド継続（${p.poleDirection === 'up' ? '強気' : '弱気'}）`,
+							failure: `ダマシ（${p.poleDirection === 'up' ? '弱気転換' : '強気転換'}）`,
+						},
 					};
 					const meaning = meaningMap[p.type]?.[p.outcome] || `${directionJa}ブレイク`;
 					let dirLine = `   - ブレイク方向: ${directionJa}ブレイク`;
 					if (expectedDir) dirLine += `（本来は${expectedDir}ブレイクが期待されるパターン）`;
 					outcomeLine = `${dirLine}\n   - パターン結果: ${outcomeJa}（${meaning}）`;
+				}
+			} catch { /* ignore */ }
+			// ペナント固有フィールド
+			let pennantLine: string | null = null;
+			try {
+				if (p?.type === 'pennant') {
+					const parts: string[] = [];
+					if (p.poleDirection) parts.push(`フラッグポール方向: ${p.poleDirection === 'up' ? '上昇' : '下降'}`);
+					if (p.priorTrendDirection) parts.push(`先行トレンド: ${p.priorTrendDirection === 'bullish' ? '強気（上昇トレンド）' : '弱気（下降トレンド）'}`);
+					if (p.flagpoleHeight != null) parts.push(`フラッグポール値幅: ${Math.round(Number(p.flagpoleHeight)).toLocaleString()}円`);
+					if (p.retracementRatio != null) {
+						const pctStr = (Number(p.retracementRatio) * 100).toFixed(0);
+						parts.push(`戻し比率: ${pctStr}%${Number(p.retracementRatio) > 0.38 ? '（高め — トライアングル寄り）' : '（正常範囲）'}`);
+					}
+					if (p.isTrendContinuation !== undefined) parts.push(`トレンド継続: ${p.isTrendContinuation ? 'はい（成功）' : 'いいえ（ダマシ）'}`);
+					if (parts.length) pennantLine = parts.map(s => `   - ${s}`).join('\n');
 				}
 			} catch { /* ignore */ }
 			// structure diagram SVG (inline for LLM visibility)
@@ -1301,6 +1322,7 @@ registerToolWithLog(
 				neckline ? `   - ネックライン: ${neckline}` : null,
 				breakoutLine,
 				outcomeLine,
+				pennantLine,
 				diagramBlock,
 			].filter(Boolean);
 			return lines.join('\n');
