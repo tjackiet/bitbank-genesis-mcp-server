@@ -3,7 +3,8 @@ import { ok, fail, failFromError, failFromValidation } from '../lib/result.js';
 import { createMeta, ensurePair } from '../lib/validate.js';
 import { formatSummary } from '../lib/formatter.js';
 import { avg } from '../lib/math.js';
-import { AnalyzeIchimokuSnapshotOutputSchema } from '../src/schemas.js';
+import { AnalyzeIchimokuSnapshotInputSchema, AnalyzeIchimokuSnapshotOutputSchema } from '../src/schemas.js';
+import type { ToolDefinition } from '../src/tool-definition.js';
 
 export default async function analyzeIchimokuSnapshot(
   pair: string = 'btc_jpy',
@@ -340,4 +341,10 @@ export default async function analyzeIchimokuSnapshot(
   }
 }
 
-
+// ── MCP ツール定義（tool-registry から自動収集） ──
+export const toolDef: ToolDefinition = {
+	name: 'analyze_ichimoku_snapshot',
+	description: '一目均衡表の数値スナップショットを返します（視覚的判定は行いません）。価格と雲の位置関係、転換線/基準線の関係、雲の傾き（spanA/Bの差分）を数値から評価します。SVGの見た目について断定しないでください。',
+	inputSchema: AnalyzeIchimokuSnapshotInputSchema,
+	handler: async ({ pair, type, limit }: any) => analyzeIchimokuSnapshot(pair, type, limit),
+};

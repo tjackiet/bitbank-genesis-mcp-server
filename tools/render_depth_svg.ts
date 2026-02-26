@@ -6,6 +6,8 @@ import { ok, fail, failFromError } from '../lib/result.js';
 import { formatPair } from '../lib/formatter.js';
 import { toDisplayTime, nowIso } from '../lib/datetime.js';
 import type { Result, Pair } from '../src/types/domain.d.ts';
+import { z } from 'zod';
+import type { ToolDefinition } from '../src/tool-definition.js';
 
 type RenderData = { svg?: string; filePath?: string; summary?: Record<string, any> };
 type RenderMeta = {
@@ -189,4 +191,57 @@ export default async function renderDepthSvg(args: {
   }
 }
 
+// ── MCP ツール定義（tool-registry から自動収集） ──
+export const toolDef: ToolDefinition = {
+	name: 'render_depth_svg',
+	description: `板の深さ(Depth)チャートをSVGで生成します。軽量・専用実装で meta.pair/type を常に含みます。
 
+【返却形式】
+- data.svg: 完全なSVG文字列
+- data.filePath: ファイル保存時のパス
+- meta.pair/type: 銘柄と時間軸
+
+【チャート表示方法（重要）】
+Claude.aiでチャートを表示するには、HTMLファイルにSVGを埋め込んで提示してください。
+SVGファイルを直接 present_files で提示しても、ダウンロードリンクになるだけで画像として表示されません。
+
+手順:
+1. render_depth_svg を呼び出し、data.svg を取得
+2. create_file でHTMLファイル（SVG埋め込み）を /mnt/user-data/outputs/ に保存
+3. present_files でHTMLファイルを提示
+
+※ autoSave のデフォルト保存先（/assets）はClaude.ai環境では書き込み不可。HTMLファイル埋め込み方式を推奨。
+※ SVGファイル単体の present_files は非推奨（表示されない）
+
+使い方:
+render_depth_svg({ pair: "btc_jpy", type: "1day", depth: { levels: 200 } })`,
+	inputSchema: z.object({
+		pair: z.string().default('btc_jpy'),
+		type: z.string().default('1day'),
+		depth: z.object({ levels: z.number().int().min(10).max(1000).optional().default(200) }).optional().default({ levels: 200 }),
+		preferFile: z.boolean().optional(),
+		autoSave: z.boolean().optional(),
+	}),
+	handler: async ({ pair, type, depth, preferFile, autoSave }: any) => {
+		const res: any = await renderDepthSvg({ pair, type, depth, preferFile, autoSave });
+		if (!res?.ok) return res;
+		const data: any = (res as any).data || {};
+		const header = `${String(pair).toUpperCase()} Depth chart`;
+		if (data?.filePath) {
+			const text = `${header}\nSaved: computer://${data.filePath}`;
+			return { content: [{ type: 'text', text }], structuredContent: res as any };
+		}
+		if (data?.svg) {
+			const text = [
+				header, '',
+				'--- Depth SVG ---',
+				`identifier: depth-${String(pair)}-${Date.now()}`,
+				`title: Depth ${String(pair).toUpperCase()}`,
+				'type: image/svg+xml', '',
+				String(data.svg),
+			].join('\n');
+			return { content: [{ type: 'text', text }], structuredContent: res as any };
+		}
+		return { content: [{ type: 'text', text: header }], structuredContent: res as any };
+	},
+};

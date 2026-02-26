@@ -3,7 +3,8 @@ import { ok, fail, failFromError, failFromValidation } from '../lib/result.js';
 import { createMeta, ensurePair } from '../lib/validate.js';
 import { formatSummary } from '../lib/formatter.js';
 import { nowIso } from '../lib/datetime.js';
-import { AnalyzeBbSnapshotOutputSchema } from '../src/schemas.js';
+import { AnalyzeBbSnapshotInputSchema, AnalyzeBbSnapshotOutputSchema } from '../src/schemas.js';
+import type { ToolDefinition } from '../src/tool-definition.js';
 
 export default async function analyzeBbSnapshot(
   pair: string = 'btc_jpy',
@@ -193,4 +194,27 @@ export default async function analyzeBbSnapshot(
   }
 }
 
+// ── MCP ツール定義（tool-registry から自動収集） ──
+export const toolDef: ToolDefinition = {
+	name: 'analyze_bb_snapshot',
+	description: `ボリンジャーバンドの数値スナップショットを取得。視覚的判断は行わず、客観的な数値のみ提供。
 
+【mode の使い分け】
+- default (推奨): ±2σ帯の基本情報で高速チェック
+  - middle/upper(+2σ)/lower(-2σ)
+  - zScore: 現在価格が±2σ帯のどこに位置するか
+  - bandWidthPct: バンド幅の middle 比（スクイーズ/エクスパンション把握）
+  - 用途: 初動確認、定期監視、軽量スナップショット
+
+- extended: ±1σ/±2σ/±3σ を含む詳細分析
+  - 全階層のバンド値と各層での価格位置
+  - 極端値検出（±3σタッチ、バンドウォーク等）
+  - 用途: 異常値確認、詳細なボラティリティ分析
+
+【他ツールとの使い分け】
+- get_indicators: RSI/MACD等を含む総合テクニカル分析（重い）
+- analyze_bb_snapshot: BB特化で軽量（速い）
+- render_chart_svg: 視覚化が必要な場合`,
+	inputSchema: AnalyzeBbSnapshotInputSchema,
+	handler: async ({ pair, type, limit, mode }: any) => analyzeBbSnapshot(pair, type, limit, mode),
+};

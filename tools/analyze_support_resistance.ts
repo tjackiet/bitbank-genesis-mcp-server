@@ -3,7 +3,8 @@ import { ok, fail, failFromError, failFromValidation } from '../lib/result.js';
 import { createMeta, ensurePair } from '../lib/validate.js';
 import { formatSummary } from '../lib/formatter.js';
 import { dayjs } from '../lib/datetime.js';
-import { AnalyzeSupportResistanceOutputSchema } from '../src/schemas.js';
+import { AnalyzeSupportResistanceInputSchema, AnalyzeSupportResistanceOutputSchema } from '../src/schemas.js';
+import type { ToolDefinition } from '../src/tool-definition.js';
 
 export interface AnalyzeSupportResistanceOptions {
   lookbackDays?: number;
@@ -766,4 +767,13 @@ export default async function analyzeSupportResistance(
     return failFromError(err, { schema: AnalyzeSupportResistanceOutputSchema, defaultMessage: 'Analysis error' }) as any;
   }
 }
+
+// ── MCP ツール定義（tool-registry から自動収集） ──
+export const toolDef: ToolDefinition = {
+	name: 'analyze_support_resistance',
+	description: 'サポート・レジスタンスを自動検出。過去のローソク足から反発/反落ポイントを抽出し、接触回数・強度・直近の崩壊実績を分析。LLMのハルシネーションを防ぐため、サーバー側で正確に計算してcontentに結果を出力。',
+	inputSchema: AnalyzeSupportResistanceInputSchema,
+	handler: async ({ pair, lookbackDays, topN, tolerance }: any) =>
+		analyzeSupportResistance(pair, { lookbackDays, topN, tolerance }),
+};
 

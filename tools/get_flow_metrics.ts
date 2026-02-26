@@ -3,7 +3,8 @@ import { ok, fail, failFromError, failFromValidation } from '../lib/result.js';
 import { createMeta, ensurePair, validateLimit } from '../lib/validate.js';
 import { formatSummary } from '../lib/formatter.js';
 import { toIsoTime, toIsoWithTz, toDisplayTime, dayjs } from '../lib/datetime.js';
-import { GetFlowMetricsOutputSchema } from '../src/schemas.js';
+import { GetFlowMetricsInputSchema, GetFlowMetricsOutputSchema } from '../src/schemas.js';
+import type { ToolDefinition } from '../src/tool-definition.js';
 
 type Tx = { price: number; amount: number; side: 'buy' | 'sell'; timestampMs: number; isoTime: string };
 
@@ -271,5 +272,39 @@ export default async function getFlowMetrics(
   }
 }
 
+// ── MCP ツール定義（tool-registry から自動収集） ──
+export const toolDef: ToolDefinition = {
+	name: 'get_flow_metrics',
+	description: `/transactions をベースにフロー分析。CVD・アグレッサー比・スパイク検出。
 
+【パラメータ（2つの取得モード）】
+A) 時間範囲モード（推奨）: hours を指定 → 直近N時間分の約定を自動取得
+   例: hours=8 → 直近8時間の全約定を取得（複数日にまたがっても自動対応）
+B) 件数モード: limit を指定 → 直近N件の「約定」を取得
+   ⚠️ limit は約定件数であり、返却バケット数ではありません（バケット数は時間幅に依存）
+   注意: 取引が閑散な時間帯では、300件でも数分間のデータにしかならない場合あり
+
+【共通パラメータ】
+- bucketMs: バケットの時間幅（ミリ秒、デフォルト60000=1分）
+- view: summary|buckets|full`,
+	inputSchema: GetFlowMetricsInputSchema,
+	handler: async ({ pair, limit, date, bucketMs, view, bucketsN, tz, hours }: any) => {
+		const res: any = await getFlowMetrics(pair, Number(limit), date, Number(bucketMs), tz, hours != null ? Number(hours) : undefined);
+		if (!res?.ok) return res;
+		if (view === 'summary') return res;
+		const agg = res?.data?.aggregates ?? {};
+		const buckets: any[] = res?.data?.series?.buckets ?? [];
+		const n = Number(bucketsN ?? 10);
+		const last = buckets.slice(-n);
+		const fmt = (b: any) => `${b.displayTime || b.isoTime}  buy=${b.buyVolume} sell=${b.sellVolume} total=${b.totalVolume} cvd=${b.cvd}${b.spike ? ` spike=${b.spike}` : ''}`;
+		let text = `${String(pair).toUpperCase()} Flow Metrics (bucketMs=${res?.data?.params?.bucketMs ?? bucketMs})\n`;
+		text += `Totals: trades=${agg.totalTrades} buyVol=${agg.buyVolume} sellVol=${agg.sellVolume} net=${agg.netVolume} buy%=${(agg.aggressorRatio * 100 || 0).toFixed(1)} CVD=${agg.finalCvd}`;
+		if (view === 'buckets') {
+			text += `\n\nRecent ${last.length} buckets:\n` + last.map(fmt).join('\n');
+			return { content: [{ type: 'text', text }], structuredContent: res as Record<string, unknown> };
+		}
+		text += `\n\nAll buckets:\n` + buckets.map(fmt).join('\n');
+		return { content: [{ type: 'text', text }], structuredContent: res as Record<string, unknown> };
+	},
+};
 
