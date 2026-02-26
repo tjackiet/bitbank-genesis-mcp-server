@@ -1,5 +1,15 @@
 import { toDisplayTime, dayjs } from './datetime.js';
 
+/** 時間足コードを日本語ラベルに変換 */
+export function timeframeLabel(type: string): string {
+	const map: Record<string, string> = {
+		'1min': '1分足', '5min': '5分足', '15min': '15分足', '30min': '30分足',
+		'1hour': '1時間足', '4hour': '4時間足', '8hour': '8時間足', '12hour': '12時間足',
+		'1day': '日足', '1week': '週足', '1month': '月足',
+	};
+	return map[type] || type;
+}
+
 export function formatPair(pair: string): string {
 	return (pair || '').toUpperCase().replace('_', '/');
 }

@@ -1,7 +1,8 @@
 import { fetchJson, BITBANK_API_BASE, DEFAULT_RETRIES } from '../lib/http.js';
 import { ensurePair, validateLimit, validateDate, createMeta } from '../lib/validate.js';
 import { ok, fail, failFromError, failFromValidation } from '../lib/result.js';
-import { GetCandlesOutputSchema } from '../src/schemas.js';
+import { GetCandlesInputSchema, GetCandlesOutputSchema } from '../src/schemas.js';
+import type { ToolDefinition } from '../src/tool-definition.js';
 import { formatSummary } from '../lib/formatter.js';
 import { toIsoTime, toIsoWithTz, today, daysAgo, dayjs } from '../lib/datetime.js';
 import { getErrorMessage } from '../lib/error.js';
@@ -377,4 +378,39 @@ export default async function getCandles(
   }
 }
 
+// ── MCP ツール定義（tool-registry から自動収集） ──
+export const toolDef: ToolDefinition = {
+	name: 'get_candles',
+	description: `ローソク足（OHLCV）を取得。
 
+【パラメータ】
+- pair: 通貨ペア（例: btc_jpy）
+- type: 時間足（1min, 5min, 15min, 30min, 1hour, 4hour, 8hour, 12hour, 1day, 1week, 1month）
+- date: 日付指定。1min〜1hour→YYYYMMDD形式、4hour以上→YYYY形式
+- limit: 取得本数
+- tz: タイムゾーン（例: Asia/Tokyo）。指定時は各ローソク足に isoTimeLocal（ローカル時刻）を追加
+
+【重要】バックテストを行う場合は、このツールではなく run_backtest を使用してください。
+run_backtest はデータ取得・計算・チャート描画をすべて行い、結果をワンコールで返します。
+独自にバックテストロジックを実装する必要はありません。`,
+	inputSchema: GetCandlesInputSchema,
+	handler: async ({ pair, type, date, limit, view, tz }: any) => {
+		const result: any = await getCandles(pair, type, date, limit, tz);
+		if (view === 'items') {
+			const items = result?.data?.normalized ?? [];
+			return {
+				content: [{ type: 'text', text: JSON.stringify(items, null, 2) }],
+				structuredContent: { items } as Record<string, unknown>,
+			};
+		}
+		try {
+			const items = Array.isArray(result?.data?.normalized) ? result.data.normalized : [];
+			const sample = items.slice(0, 5);
+			const header = String(result?.summary ?? `${String(pair).toUpperCase()} [${String(type)}]`);
+			const text = `${header}\nSample (first ${sample.length}/${items.length}):\n${JSON.stringify(sample, null, 2)}`;
+			return { content: [{ type: 'text', text }], structuredContent: result as Record<string, unknown> };
+		} catch {
+			return result;
+		}
+	},
+};

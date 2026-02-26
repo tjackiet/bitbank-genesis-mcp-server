@@ -3,6 +3,8 @@ import { ok, fail } from '../../lib/result.js';
 import { formatSummary } from '../../lib/formatter.js';
 import { getErrorMessage } from '../../lib/error.js';
 import { dayjs } from '../../lib/datetime.js';
+import { z } from 'zod';
+import type { ToolDefinition } from '../tool-definition.js';
 
 type AnalyzeInput = {
   pair: string;
@@ -185,4 +187,11 @@ export default async function analyzeMacdPattern({
   }
 }
 
-
+// ── MCP ツール定義（tool-registry から自動収集） ──
+export const toolDef: ToolDefinition = {
+	name: 'analyze_macd_pattern',
+	description: 'MACDゴールデンクロス/デッドクロスのforming検出と過去統計分析専用。チャートパターン検出は detect_patterns(includeForming=true) を使用。historyDays（既定90）、performanceWindows（既定1/3/5/10）、minHistogramForForming（既定0.3）。',
+	inputSchema: z.object({ pair: z.string(), historyDays: z.number().int().min(10).max(365).optional().default(90), performanceWindows: z.array(z.number().int().min(1).max(30)).optional().default([1, 3, 5, 10] as any), minHistogramForForming: z.number().min(0).optional().default(0.3) }),
+	handler: async ({ pair, historyDays, performanceWindows, minHistogramForForming }: any) =>
+		analyzeMacdPattern({ pair, historyDays, performanceWindows, minHistogramForForming }),
+};

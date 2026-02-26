@@ -18,6 +18,8 @@ import { toIsoTime } from '../lib/datetime.js';
 import { fetchJson, BITBANK_API_BASE, DEFAULT_RETRIES } from '../lib/http.js';
 import { estimateZones } from '../lib/depth-analysis.js';
 import type { OrderbookLevelWithCum } from '../src/types/domain.d.ts';
+import { GetOrderbookInputSchema } from '../src/schemas.js';
+import type { ToolDefinition } from '../src/tool-definition.js';
 
 export type OrderbookMode = 'summary' | 'pressure' | 'statistics' | 'raw';
 
@@ -400,3 +402,18 @@ export default async function getOrderbook(params: GetOrderbookParams | string =
     return failFromError(err, { timeoutMs, defaultType: 'network', defaultMessage: 'ネットワークエラー' });
   }
 }
+
+// ── MCP ツール定義（tool-registry から自動収集） ──
+export const toolDef: ToolDefinition = {
+	name: 'get_orderbook',
+	description: `板情報の統合ツール（単一の /depth API呼出しで全モードをカバー）。
+
+【mode 一覧】
+- summary（デフォルト）: 上位N層の正規化＋累計サイズ＋spread。topN=1-200。
+- pressure: 帯域(±0.1%/0.5%/1%等)別の買い/売り圧力バランス。bandsPct で帯域を指定。
+- statistics: 範囲分析(±0.5%/1%/2%)＋流動性ゾーン＋大口注文＋総合評価。ranges, priceZones で指定。
+- raw: 生の bids/asks 配列＋壁ゾーン自動推定。`,
+	inputSchema: GetOrderbookInputSchema,
+	handler: async ({ pair, mode, topN, bandsPct, ranges, priceZones }: any) =>
+		getOrderbook({ pair, mode, topN, bandsPct, ranges, priceZones }),
+};

@@ -3,7 +3,8 @@ import { ensurePair, validateLimit, createMeta } from '../lib/validate.js';
 import { ok, fail, failFromError, failFromValidation } from '../lib/result.js';
 import { formatPair, formatPrice } from '../lib/formatter.js';
 import { toIsoMs, dayjs } from '../lib/datetime.js';
-import { GetTransactionsOutputSchema } from '../src/schemas.js';
+import { GetTransactionsInputSchema, GetTransactionsOutputSchema } from '../src/schemas.js';
+import type { ToolDefinition } from '../src/tool-definition.js';
 
 type TxnRaw = Record<string, unknown>;
 
@@ -127,5 +128,29 @@ export default async function getTransactions(
   }
 }
 
-
+// ── MCP ツール定義（tool-registry から自動収集） ──
+export const toolDef: ToolDefinition = {
+	name: 'get_transactions',
+	description: '約定履歴を取得（/transactions）。直近60件 or 日付指定。view=summary|items。minAmount/minPrice等でフィルタ可。',
+	inputSchema: GetTransactionsInputSchema,
+	handler: async ({ pair, limit, date, minAmount, maxAmount, minPrice, maxPrice, view }: any) => {
+		const res: any = await getTransactions(pair, limit, date);
+		if (!res?.ok) return res;
+		const hasFilter = minAmount != null || maxAmount != null || minPrice != null || maxPrice != null;
+		const items = (res?.data?.normalized ?? []).filter((t: any) => (
+			(minAmount == null || t.amount >= minAmount) &&
+			(maxAmount == null || t.amount <= maxAmount) &&
+			(minPrice == null || t.price >= minPrice) &&
+			(maxPrice == null || t.price <= maxPrice)
+		));
+		const summary = hasFilter
+			? `${String(pair).toUpperCase().replace('_', '/')} フィルタ後 ${items.length}件 (buy=${items.filter((t: any) => t.side === 'buy').length} sell=${items.filter((t: any) => t.side === 'sell').length})`
+			: res.summary;
+		if (view === 'items') {
+			const text = JSON.stringify(items, null, 2);
+			return { content: [{ type: 'text', text }], structuredContent: { ...res, summary, data: { ...res.data, normalized: items } } as Record<string, unknown> };
+		}
+		return { ...res, summary, data: { ...res.data, normalized: items } };
+	},
+};
 

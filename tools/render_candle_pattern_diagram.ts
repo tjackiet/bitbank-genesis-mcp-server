@@ -11,6 +11,7 @@ import {
   RenderCandlePatternDiagramInputSchema,
   RenderCandlePatternDiagramOutputSchema,
 } from '../src/schemas.js';
+import type { ToolDefinition } from '../src/tool-definition.js';
 
 // ----- 型定義 -----
 interface DiagramCandle {
@@ -303,4 +304,51 @@ function escapeXml(str: string): string {
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&apos;');
 }
+
+// ── MCP ツール定義（tool-registry から自動収集） ──
+export const toolDef: ToolDefinition = {
+	name: 'render_candle_pattern_diagram',
+	description: `analyze_candle_patternsで検出されたパターンを教育用の構造図として視覚化。
+【重要】ユーザーが明示的に「図で見せて」「視覚的に確認したい」等と要求した場合のみ使用。自発的な呼び出しは避けること。分析結果のテキスト説明で十分な場合は不要。
+ローソク足5本を表示し、パターン該当2本をオレンジ枠でハイライト。「前日」「確定日」ラベル（オレンジ）、関係性を示す矢印（淡いブルー）付き。初心者が直感的に理解できる構造図。
+
+【返却形式】
+- data.svg: 完全なSVG文字列
+- meta.patternName: パターン名
+
+【表示方法】
+data.svgをHTMLファイルに埋め込んで保存し、ユーザーに提示。
+※ SVGを直接Markdownに貼っても表示されないため、ファイル出力が必要。
+- Claude.ai: /mnt/user-data/outputs/ に保存してpresent_filesで提示
+- Cursor/他環境: プロジェクト内(例: assets/)に保存してパスを案内`,
+	inputSchema: RenderCandlePatternDiagramInputSchema,
+	handler: async (args: any) => {
+		const res: any = await renderCandlePatternDiagram(args);
+		if (!res?.ok) return res;
+		const data: any = res.data || {};
+		const meta: any = res.meta || {};
+		if (data?.svg) {
+			const patternName = meta?.patternName || args?.pattern?.name || 'ローソク足パターン';
+			const identifier = `candle-pattern-${patternName.replace(/[^a-z0-9]+/gi, '-')}-${Date.now()}`;
+			const title = `${patternName}構造図`;
+			const text = [
+				'--- Candle Pattern Diagram ---',
+				`identifier: ${identifier}`,
+				`title: ${title}`,
+				'type: image/svg+xml', '',
+				String(data.svg), '',
+				'Chart Info:',
+				`- Pattern: ${patternName}`,
+				`- Size: ${meta?.width || 800}x${meta?.height || 450}px`,
+				`- Candles: ${meta?.candleCount || 5}本`,
+			].join('\n');
+			const enriched = {
+				...res,
+				artifactHint: { renderHint: 'ARTIFACT_REQUIRED', displayType: 'image/svg+xml', source: 'inline_svg' },
+			};
+			return { content: [{ type: 'text', text }], structuredContent: enriched };
+		}
+		return { content: [{ type: 'text', text: res.summary || 'Diagram rendered' }], structuredContent: res };
+	},
+};
 

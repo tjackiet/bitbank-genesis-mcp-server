@@ -3,7 +3,8 @@ import { fetchJson, BITBANK_API_BASE, DEFAULT_RETRIES } from '../lib/http.js';
 import { ok, fail, failFromError, failFromValidation } from '../lib/result.js';
 import { formatPair, formatPrice, formatPercent } from '../lib/formatter.js';
 import { toIsoTime, toDisplayTime } from '../lib/datetime.js';
-import { GetTickerOutputSchema } from '../src/schemas.js';
+import { GetTickerInputSchema, GetTickerOutputSchema } from '../src/schemas.js';
+import type { ToolDefinition } from '../src/tool-definition.js';
 import type { Result, GetTickerData, GetTickerMeta } from '../src/types/domain.d.ts';
 
 export interface GetTickerOptions {
@@ -108,4 +109,10 @@ export default async function getTicker(
   }
 }
 
-
+// ── MCP ツール定義（tool-registry から自動収集） ──
+export const toolDef: ToolDefinition = {
+	name: 'get_ticker',
+	description: '単一ペアのティッカーを取得（/ticker）。価格・出来高・24h高安。',
+	inputSchema: GetTickerInputSchema,
+	handler: async ({ pair }: any) => getTicker(pair),
+};

@@ -3,7 +3,8 @@ import { ok, fail, failFromError, failFromValidation } from '../lib/result.js';
 import { createMeta, ensurePair } from '../lib/validate.js';
 import { formatSummary } from '../lib/formatter.js';
 import { today } from '../lib/datetime.js';
-import { AnalyzeSmaSnapshotOutputSchema } from '../src/schemas.js';
+import { AnalyzeSmaSnapshotInputSchema, AnalyzeSmaSnapshotOutputSchema } from '../src/schemas.js';
+import type { ToolDefinition } from '../src/tool-definition.js';
 
 export default async function analyzeSmaSnapshot(
   pair: string = 'btc_jpy',
@@ -195,4 +196,10 @@ export default async function analyzeSmaSnapshot(
   }
 }
 
-
+// ── MCP ツール定義（tool-registry から自動収集） ──
+export const toolDef: ToolDefinition = {
+	name: 'analyze_sma_snapshot',
+	description: 'SMA の数値スナップショット。指定periodsの最新値、近傍のクロス（golden/dead）、整列状態（bullish/bearish/mixed）。視覚的主張は行いません。',
+	inputSchema: AnalyzeSmaSnapshotInputSchema,
+	handler: async ({ pair, type, limit, periods }: any) => analyzeSmaSnapshot(pair, type, limit, periods),
+};

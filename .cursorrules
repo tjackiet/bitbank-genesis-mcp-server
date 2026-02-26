@@ -46,11 +46,14 @@ npm run sync:manifest && npm run sync:prompts && npm run gen:types && npm run ty
 
 | パス | 役割 |
 |------|------|
-| `src/server.ts` | MCP サーバー本体（ツール・プロンプト登録） |
+| `src/server.ts` | MCP サーバー本体（自動登録ループ・プロンプト・トランスポート） |
+| `src/tool-registry.ts` | **全ツール定義の集約**（allToolDefs 配列） |
+| `src/tool-definition.ts` | ToolDefinition インターフェース |
+| `src/handlers/` | 複雑なハンドラロジック（100行超のツール用） |
 | `src/schemas.ts` | Zod スキーマ定義（**単一ソース**） |
 | `src/prompts.ts` | MCP プロンプト定義 |
 | `src/http.ts` | Express HTTP トランスポート |
-| `tools/` | 各ツール実装（40+ファイル） |
+| `tools/` | 各ツール実装（40+ファイル）＋ `toolDef` エクスポート |
 | `tools/render_chart_svg.ts` | チャート描画（**AI は必ずこれを使う**） |
 | `tools/tests/` | テストファイル |
 | `lib/` | 共有ユーティリティ |
@@ -58,7 +61,7 @@ npm run sync:manifest && npm run sync:prompts && npm run gen:types && npm run ty
 | `lib/result.ts` | `ok()` / `fail()` 結果ラッパー |
 | `lib/http.ts` | `fetchJson()` HTTP リクエスト＋リトライ |
 | `lib/logger.ts` | JSONL ロガー |
-| `lib/formatter.ts` | 価格・ペア名フォーマット |
+| `lib/formatter.ts` | 価格・ペア名フォーマット・`timeframeLabel` |
 | `lib/datetime.ts` | 日時処理（dayjs ベース） |
 
 ## コードスタイル・規約
@@ -78,11 +81,29 @@ npm test
 - テストファイル: `tools/tests/test_get_tickers_jpy.ts`
 - 現状は tsx による直接実行。専用テストフレームワーク（Jest 等）は未導入。
 
+## ツール追加・修正手順（自動登録アーキテクチャ）
+
+ツールは各ファイルが `toolDef` をエクスポートし、`src/tool-registry.ts` が集約、`src/server.ts` がループで自動登録する。
+**server.ts を直接編集する必要はない。**
+
+### 新規ツール追加
+
+1. `tools/<name>.ts` にツール関数を実装
+2. 同ファイル末尾に `export const toolDef: ToolDefinition = { name, description, inputSchema, handler }` を追加
+   - ハンドラが複雑（100行超）な場合は `src/handlers/<name>Handler.ts` に分離
+3. `src/tool-registry.ts` に import + `allToolDefs` 配列に追加
+4. `npm run sync:manifest && npm run typecheck`
+
+### 既存ツール修正
+
+- ツールの説明・スキーマ・ハンドラは `tools/<name>.ts` または `src/handlers/<name>Handler.ts` の `toolDef` を編集するだけでよい
+- server.ts の修正は不要
+
 ## 開発フロー
 
 1. `src/schemas.ts` を更新（Zod スキーマ）
 2. `npm run gen:types` で型定義を生成
-3. ツール / サーバーの実装を更新
+3. ツール実装を更新（`tools/` または `src/handlers/`）
 4. `npm run typecheck` で型チェック
 5. PR 前に `sync:manifest` / `sync:prompts` / `gen:types` / `typecheck` を実行
 

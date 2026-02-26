@@ -2,7 +2,8 @@ import analyzeIndicators from './analyze_indicators.js';
 import { ALLOWED_PAIRS } from '../lib/validate.js';
 import { ok, fail, failFromError } from '../lib/result.js';
 import { formatSummary } from '../lib/formatter.js';
-// removed unused GetMarketSummaryOutputSchema import
+import { z } from 'zod';
+import type { ToolDefinition } from '../src/tool-definition.js';
 
 export default async function detectMacdCross(
   market: 'all' | 'jpy' = 'all',
@@ -200,4 +201,50 @@ export default async function detectMacdCross(
   }
 }
 
+// ── MCP ツール定義（tool-registry から自動収集） ──
+export const toolDef: ToolDefinition = {
+	name: 'detect_macd_cross',
+	description: `既にクロスした銘柄のスクリーニング専用。forming 中の検出は analyze_macd_pattern を使用。
 
+市場内の銘柄で直近のMACDゴールデンクロス/デッドクロスを検出します（1day）。
+
+view: summary|detailed（既定=summary）
+- summary: 簡潔な一覧（高速スキャン用）
+- detailed: クロス強度・価格変化等の詳細（分析用）
+推奨: まず summary で全体把握 → 気になる銘柄のみ detailed で深掘り
+
+lookback（既定=3）: 用途別の目安
+- リアルタイム監視: 1-2
+- 週次レビュー: 5-7
+
+pairs で検査対象ペアを限定可能。
+
+screen（任意）: スクリーニング用フィルタ/ソート
+- minHistogramDelta: ヒストグラム変化の下限
+- maxBarsAgo: 直近バー数以内
+- minReturnPct: クロス以降の騰落率下限
+- crossType: golden|dead|both
+- sortBy: date|histogram|return|barsAgo（既定=date）
+- sortOrder: asc|desc（既定=desc）
+- limit: 上位N件`,
+	inputSchema: z.object({ market: z.enum(['all', 'jpy']).default('all'), lookback: z.number().int().min(1).max(10).default(3), pairs: z.array(z.string()).optional(), view: z.enum(['summary', 'detailed']).optional().default('summary'), screen: z.object({ minHistogramDelta: z.number().optional(), maxBarsAgo: z.number().int().min(0).optional(), minReturnPct: z.number().optional(), crossType: z.enum(['golden', 'dead', 'both']).optional().default('both'), sortBy: z.enum(['date', 'histogram', 'return', 'barsAgo']).optional().default('date'), sortOrder: z.enum(['asc', 'desc']).optional().default('desc'), limit: z.number().int().min(1).max(100).optional(), withPrice: z.boolean().optional() }).optional() }),
+	handler: async ({ market, lookback, pairs, view, screen }: any) => {
+		const res: any = await detectMacdCross(market, lookback, pairs, view, screen);
+		if (!res?.ok || view !== 'detailed') return res;
+		try {
+			const detRaw: any[] = Array.isArray(res?.data?.screenedDetailed)
+				? (res as any).data.screenedDetailed
+				: (Array.isArray(res?.data?.resultsDetailed) ? (res as any).data.resultsDetailed : []);
+			if (!detRaw.length) return res;
+			const fmtDelta = (v: any) => v == null ? 'n/a' : `${v >= 0 ? '+' : ''}${Number(v).toFixed(2)}`;
+			const fmtRet = (v: any) => v == null ? 'n/a' : `${v >= 0 ? '+' : ''}${Number(v).toFixed(2)}%`;
+			const lines = detRaw.map((r) => {
+				const date = (r?.crossDate || '').slice(0, 10);
+				const prevDays = r?.prevCross?.barsAgo != null ? `${r.prevCross.barsAgo}日` : 'n/a';
+				return `${String(r.pair)}: ${String(r.type)}@${date} (ヒストグラム${fmtDelta(r?.histogramDelta)}, 前回クロスから${prevDays}${r?.returnSinceCrossPct != null ? `, ${fmtRet(r.returnSinceCrossPct)}` : ''})`;
+			});
+			const text = `${String(res?.summary || '')}\n${lines.join('\n')}`.trim();
+			return { content: [{ type: 'text', text }], structuredContent: res as Record<string, unknown> };
+		} catch { return res; }
+	},
+};

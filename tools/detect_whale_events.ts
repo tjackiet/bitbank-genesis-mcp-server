@@ -4,6 +4,8 @@ import { ok, fail, failFromError, failFromValidation } from '../lib/result.js';
 import { ensurePair, createMeta } from '../lib/validate.js';
 import { nowIso } from '../lib/datetime.js';
 import { TtlCache } from '../lib/cache.js';
+import { z } from 'zod';
+import type { ToolDefinition } from '../src/tool-definition.js';
 
 type Lookback = '30min' | '1hour' | '2hour';
 
@@ -144,4 +146,11 @@ export default async function detectWhaleEvents(
   }
 }
 
+// ── MCP ツール定義（tool-registry から自動収集） ──
+export const toolDef: ToolDefinition = {
+	name: 'detect_whale_events',
+	description: '大口投資家の動向を簡易に検出（板×ローソク足）。lookback=30min|1hour|2hour、minSize=0.5BTC既定。推測ベースで、実約定・寿命照合は未実装。',
+	inputSchema: z.object({ pair: z.string().default('btc_jpy'), lookback: z.enum(['30min', '1hour', '2hour']).default('1hour'), minSize: z.number().min(0).default(0.5) }),
+	handler: async ({ pair, lookback, minSize }: any) => detectWhaleEvents(pair, lookback, minSize),
+};
 
