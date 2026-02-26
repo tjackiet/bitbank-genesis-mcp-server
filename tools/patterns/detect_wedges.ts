@@ -1,7 +1,15 @@
 /**
  * Wedge 検出（Rising / Falling — 完成済み＋形成中）
- * - 4b) 回帰ベース（完成済みの主力検出）
- * - 4d) 形成中ウェッジ検出（緩い条件）
+ *
+ * v2: UAlgo + TradingPatternScanner ベースの改善
+ * - Savitzky-Golay フィルタによるノイズ除去（ピボット品質向上）
+ * - Apex（頂点）計算による収束バリデーション（UAlgo 方式）
+ * - 包含ルール（Containment）による偽パターン棄却
+ * - 収束閾値の緩和（0.30→0.70）とApexベース補完
+ * - プローブ用ハードコードの除去
+ *
+ * 4b) 回帰ベース（完成済みの主力検出）
+ * 4d) 形成中ウェッジ検出（緩い条件）
  */
 import { generatePatternDiagram } from '../../src/utils/pattern-diagrams.js';
 import {
@@ -16,13 +24,39 @@ import {
   calcATR,
   detectWedgeBreak,
   deduplicatePatterns,
+  calcApex,
+  checkContainment,
 } from './helpers.js';
+import { smoothCandleExtremes } from './smoothing.js';
 import type { DetectContext, DetectResult } from './types.js';
 
 export function detectWedges(ctx: DetectContext): DetectResult {
   const { candles, pivots, want, tolerancePct, minDist, swingDepth, lrWithR2, debugCandidates } = ctx;
   const push = (arr: any[], item: any) => { arr.push(item); };
   const patterns: any[] = [];
+
+  // --- SG フィルタによる平滑化ピボットの生成 ---
+  // 元の pivots はそのまま使い、追加で SG 平滑化ピボットも用意する。
+  // 4b では SG ピボットを優先し、フォールバックとして元 pivots を使う。
+  const sgWindowSize = Math.max(5, Math.min(11, Math.floor(candles.length / 20) * 2 + 1));
+  const { smoothHigh, smoothLow } = smoothCandleExtremes(candles, sgWindowSize, 2);
+
+  // SG 平滑化データからスイングポイントを検出
+  const sgPeaks: Array<{ index: number; price: number }> = [];
+  const sgValleys: Array<{ index: number; price: number }> = [];
+  const sgDepth = Math.max(2, swingDepth);
+  for (let i = sgDepth; i < candles.length - sgDepth; i++) {
+    let isHigh = true;
+    let isLow = true;
+    for (let k = 1; k <= sgDepth; k++) {
+      if (!(smoothHigh[i] > smoothHigh[i - k] && smoothHigh[i] > smoothHigh[i + k])) isHigh = false;
+      if (!(smoothLow[i] < smoothLow[i - k] && smoothLow[i] < smoothLow[i + k])) isLow = false;
+      if (!isHigh && !isLow) break;
+    }
+    // 価格は元データの close を使用（SG はピボット検出のみに使用）
+    if (isHigh) sgPeaks.push({ index: i, price: candles[i].close });
+    else if (isLow) sgValleys.push({ index: i, price: candles[i].close });
+  }
 
   // 4b) Revamped Wedge scanning (rising/falling)
   {
@@ -37,14 +71,23 @@ export function detectWedges(ctx: DetectContext): DetectResult {
       maxSlope: 0.08,
       slopeRatioMin: 1.15,
       slopeRatioMinRising: 1.20,
-      minWeakerSlopeRatio: 0.3, // ★ 追加: 弱い方のラインの最小傾き比率
+      minWeakerSlopeRatio: 0.3,
       minTouchesPerLine: 3,
       minScore: 0.5,
+      minContainment: 0.85, // 包含率: 85%以上の終値が境界内
     };
+
+    // SG ピボットと元ピボットをマージ（SG 優先、元で補完）
+    const origHighs = pivots.filter(p => p.kind === 'H').map(p => ({ index: p.idx, price: p.price }));
+    const origLows = pivots.filter(p => p.kind === 'L').map(p => ({ index: p.idx, price: p.price }));
+
+    // SG ピボットが十分にある場合はそちらを使用
+    const useSmoothed = sgPeaks.length >= 6 && sgValleys.length >= 6;
     const swings = {
-      highs: pivots.filter(p => p.kind === 'H').map(p => ({ index: p.idx, price: p.price })),
-      lows: pivots.filter(p => p.kind === 'L').map(p => ({ index: p.idx, price: p.price })),
+      highs: useSmoothed ? sgPeaks : origHighs,
+      lows: useSmoothed ? sgValleys : origLows,
     };
+
     const allowRising = (want.size === 0) || want.has('rising_wedge' as any);
     const allowFalling = (want.size === 0) || want.has('falling_wedge' as any);
     const windows = generateWindows(candles.length, params.windowSizeMin, params.windowSizeMax, params.windowStep);
@@ -56,7 +99,6 @@ export function detectWedges(ctx: DetectContext): DetectResult {
       const upper = lrWithR2(highsIn.map(s => ({ x: s.index, y: s.price })));
       const lower = lrWithR2(lowsIn.map(s => ({ x: s.index, y: s.price })));
       if (upper.r2 < 0.40 || lower.r2 < 0.40) {
-        // Debug: R^2不足で却下（0.25→0.40 に引き上げ: フィットの悪い回帰線を除外）
         const dbgType = (upper.slope < 0 && lower.slope < 0) ? 'falling_wedge' : ((upper.slope > 0 && lower.slope > 0) ? 'rising_wedge' : 'triangle_symmetrical');
         debugCandidates.push({
           type: dbgType as any,
@@ -67,7 +109,7 @@ export function detectWedges(ctx: DetectContext): DetectResult {
         });
         continue;
       }
-      // Phase 1: Rising Wedge の「有意な上昇」チェック（動的なしきい値）
+      // Rising Wedge の「有意な上昇」チェック（動的なしきい値）
       if (upper.slope > 0 && lower.slope > 0) {
         let hiMax = -Infinity, loMin = Infinity;
         for (let i = w.startIdx; i <= w.endIdx; i++) {
@@ -78,52 +120,8 @@ export function detectWedges(ctx: DetectContext): DetectResult {
         }
         const priceRange = Number.isFinite(hiMax) && Number.isFinite(loMin) ? (hiMax - loMin) : 0;
         const barsSpan = Math.max(1, w.endIdx - w.startIdx);
-        const minMeaningfulSlope = (priceRange * 0.01) / barsSpan; // 期間中に価格レンジの1%以上
+        const minMeaningfulSlope = (priceRange * 0.01) / barsSpan;
         const absHi = Math.abs(upper.slope);
-        const absLo = Math.abs(lower.slope);
-        // 汎用プローブ: 指定窓群で詳細情報を出す
-        const probeWindows: Array<[number, number]> = [
-          [105, 175], [140, 210], [140, 225], [135, 225], [140, 230]
-        ];
-        const isProbe = probeWindows.some(([s, e]) => s === w.startIdx && e === w.endIdx);
-        if (isProbe) {
-          const highsArr = highsIn.map(s => ({ index: s.index, price: s.price }));
-          const lowsArr = lowsIn.map(s => ({ index: s.index, price: s.price }));
-          const slopeRatioLH = absLo / Math.max(1e-12, absHi);
-          const firstHalfProbe = highsIn.slice(0, Math.floor(highsIn.length / 2));
-          const secondHalfProbe = highsIn.slice(Math.floor(highsIn.length / 2));
-          const firstAvgProbe = firstHalfProbe.reduce((s, p) => s + Number(p.price), 0) / Math.max(1, firstHalfProbe.length);
-          const secondAvgProbe = secondHalfProbe.reduce((s, p) => s + Number(p.price), 0) / Math.max(1, secondHalfProbe.length);
-          const ratioProbe = Number((secondAvgProbe / Math.max(1e-12, firstAvgProbe)).toFixed(4));
-          debugCandidates.unshift({
-            type: 'rising_wedge' as any,
-            accepted: false,
-            reason: 'rising_probe',
-            indices: [w.startIdx, w.endIdx],
-            details: {
-              highsCount: highsIn.length,
-              r2High: upper.r2, r2Low: lower.r2,
-              slopeHigh: upper.slope, slopeLow: lower.slope,
-              slopeRatioLH,
-              priceRange, barsSpan, minMeaningfulSlope,
-              firstAvg: firstAvgProbe, secondAvg: secondAvgProbe, ratio: ratioProbe,
-              highsIn: highsArr, lowsIn: lowsArr
-            }
-          });
-        }
-        // 指定窓の詳細プローブ（5/21-8/19 などの検証用）
-        if (w.startIdx === 105 && w.endIdx === 175) {
-          const highsArr = highsIn.map(s => ({ index: s.index, price: s.price }));
-          const lowsArr = lowsIn.map(s => ({ index: s.index, price: s.price }));
-          // 先頭に挿入して cap=200 に切られないようにする
-          debugCandidates.unshift({
-            type: 'rising_wedge' as any,
-            accepted: false,
-            reason: 'probe_window',
-            indices: [w.startIdx, w.endIdx],
-            details: { slopeHigh: upper.slope, slopeLow: lower.slope, hiSlope: upper.slope, loSlope: lower.slope, priceRange, barsSpan, minMeaningfulSlope, highsIn: highsArr, lowsIn: lowsArr }
-          });
-        }
         if (absHi < minMeaningfulSlope) {
           debugCandidates.push({
             type: 'rising_wedge' as any,
@@ -134,7 +132,7 @@ export function detectWedges(ctx: DetectContext): DetectResult {
           });
           continue;
         }
-        // 新規: 高値トレンドチェック（後半の平均高値が前半の99%未満なら切り下がりとして却下）
+        // 高値トレンドチェック（後半の平均高値が前半の99%未満なら切り下がりとして却下）
         if (highsIn.length >= 3) {
           const mid = Math.floor(highsIn.length / 2);
           const firstHalf = highsIn.slice(0, mid);
@@ -142,16 +140,6 @@ export function detectWedges(ctx: DetectContext): DetectResult {
           const firstAvg = firstHalf.reduce((s, p) => s + Number(p.price), 0) / Math.max(1, firstHalf.length);
           const secondAvg = secondHalf.reduce((s, p) => s + Number(p.price), 0) / Math.max(1, secondHalf.length);
           const ratio = Number((secondAvg / Math.max(1e-12, firstAvg)).toFixed(4));
-          // デバッグ用プローブ（対象窓の場合は必ずログ）
-          if (w.startIdx === 105 && w.endIdx === 175) {
-            debugCandidates.unshift({
-              type: 'rising_wedge' as any,
-              accepted: false,
-              reason: 'declining_highs_probe',
-              indices: [w.startIdx, w.endIdx],
-              details: { highsCount: highsIn.length, firstAvg, secondAvg, ratio }
-            });
-          }
           if (Number.isFinite(firstAvg) && Number.isFinite(secondAvg) && ratio < 0.99) {
             debugCandidates.push({
               type: 'rising_wedge' as any,
@@ -172,7 +160,6 @@ export function detectWedges(ctx: DetectContext): DetectResult {
         const slopeRatioLH = absLo / Math.max(1e-12, absHi);
         let failureReason: 'slope_ratio_too_small' | 'slopes_too_flat' | 'wrong_side_steeper' = 'slope_ratio_too_small';
         if ((upper.slope > 0 && lower.slope > 0)) {
-          // rising wedge候補: 下側が急、absLo/absHi > ratioMin
           if (absHi < (params.minSlope ?? 0.0001) || absLo < (params.minSlope ?? 0.0001)) {
             failureReason = 'slopes_too_flat';
           } else if (!(absLo > absHi)) {
@@ -181,7 +168,6 @@ export function detectWedges(ctx: DetectContext): DetectResult {
             failureReason = 'slope_ratio_too_small';
           }
         } else if ((upper.slope < 0 && lower.slope < 0)) {
-          // falling wedge候補: 上側が急、absHi/absLo > ratioMin
           if (absHi < (params.minSlope ?? 0.0001) || absLo < (params.minSlope ?? 0.0001)) {
             failureReason = 'slopes_too_flat';
           } else if (!(absHi > absLo)) {
@@ -190,7 +176,6 @@ export function detectWedges(ctx: DetectContext): DetectResult {
             failureReason = 'slope_ratio_too_small';
           }
         } else {
-          // 逆向き（ウェッジの対象外）→ 比率不足扱いに寄せる
           failureReason = 'slope_ratio_too_small';
         }
         const dbgType = (upper.slope < 0 && lower.slope < 0) ? 'falling_wedge' : ((upper.slope > 0 && lower.slope > 0) ? 'rising_wedge' : 'triangle_symmetrical');
@@ -223,6 +208,21 @@ export function detectWedges(ctx: DetectContext): DetectResult {
         });
         continue;
       }
+
+      // --- Apex バリデーション（UAlgo 方式） ---
+      const apex = calcApex(upper, lower, w.endIdx);
+      if (!apex.isValid) {
+        debugCandidates.push({
+          type: wedgeType as any,
+          accepted: false,
+          reason: 'apex_not_in_future',
+          indices: [w.startIdx, w.endIdx],
+          details: { apexIdx: apex.apexIdx, barsToApex: apex.barsToApex, endIdx: w.endIdx }
+        });
+        continue;
+      }
+
+      // --- 収束チェック（Apexベース強化版） ---
       const conv = checkConvergenceEx(upper, lower, w.startIdx, w.endIdx);
       if (!conv.isConverging) {
         debugCandidates.push({
@@ -230,10 +230,29 @@ export function detectWedges(ctx: DetectContext): DetectResult {
           accepted: false,
           reason: 'convergence_failed',
           indices: [w.startIdx, w.endIdx],
-          details: { gapStart: conv.gapStart, gapEnd: conv.gapEnd, ratio: conv.ratio, isAccelerating: conv.isAccelerating }
+          details: { gapStart: conv.gapStart, gapEnd: conv.gapEnd, ratio: conv.ratio }
         });
         continue;
       }
+
+      // --- 包含ルール（UAlgo 方式: 終値が境界内） ---
+      const containment = checkContainment(candles, upper, lower, w.startIdx, w.endIdx);
+      if (containment.closeInsideRatio < params.minContainment) {
+        debugCandidates.push({
+          type: wedgeType as any,
+          accepted: false,
+          reason: 'containment_violated',
+          indices: [w.startIdx, w.endIdx],
+          details: {
+            closeInsideRatio: Number(containment.closeInsideRatio.toFixed(3)),
+            violations: containment.violations,
+            total: containment.total,
+            minRequired: params.minContainment
+          }
+        });
+        continue;
+      }
+
       const touches = evaluateTouchesEx(candles as any, upper, lower, w.startIdx, w.endIdx);
       if (touches.upperQuality < (params.minTouchesPerLine ?? 2) || touches.lowerQuality < (params.minTouchesPerLine ?? 2)) {
         debugCandidates.push({
@@ -255,7 +274,7 @@ export function detectWedges(ctx: DetectContext): DetectResult {
         }
         return maxGap;
       };
-      const maxTouchGap = 25; // 日足で25本（約1ヶ月）
+      const maxTouchGap = 25;
       const upperMaxGap = calcMaxGap(touches.upperTouches);
       const lowerMaxGap = calcMaxGap(touches.lowerTouches);
       const maxGap = Math.max(upperMaxGap, lowerMaxGap);
@@ -269,8 +288,8 @@ export function detectWedges(ctx: DetectContext): DetectResult {
         });
         continue;
       }
-      // 開始日ギャップチェック（上下ラインのファーストタッチが離れすぎていないか）
-      const maxStartGap = 10; // 日足で10本以内
+      // 開始日ギャップチェック
+      const maxStartGap = 10;
       const firstUpperTouch = touches.upperTouches.find((t: any) => !t.isBreak);
       const firstLowerTouch = touches.lowerTouches.find((t: any) => !t.isBreak);
       if (firstUpperTouch && firstLowerTouch) {
@@ -292,7 +311,7 @@ export function detectWedges(ctx: DetectContext): DetectResult {
         }
       }
       const alternation = calcAlternationScoreEx(touches);
-      // 上下タッチのバランスチェック（極端な偏りを除外）
+      // 上下タッチのバランスチェック
       {
         const upQ = Number(touches?.upperQuality ?? 0);
         const loQ = Number(touches?.lowerQuality ?? 0);
@@ -324,9 +343,9 @@ export function detectWedges(ctx: DetectContext): DetectResult {
         insideScore: insideRatio,
         durationScore: calcDurationScoreEx(w.endIdx - w.startIdx, params),
       });
-      // 最低交互性チェック（再有効化: 上下タッチの交互性が低い場合は除外）
+      // 最低交互性チェック
       {
-        const minAlternation = 0.25; // 0.3→0.25 に下げて適度な閾値に
+        const minAlternation = 0.25;
         if (Number(alternation ?? 0) < minAlternation) {
           debugCandidates.push({
             type: wedgeType as any,
@@ -373,7 +392,6 @@ export function detectWedges(ctx: DetectContext): DetectResult {
       const atr = calcATR(candles, w.startIdx, w.endIdx, 14);
       const breakInfo = detectWedgeBreak(candles, wedgeType, upper, lower, w.startIdx, w.endIdx, lastIdx, atr);
 
-
       // 終点: ブレイクが検出された場合はブレイク日、そうでなければウィンドウ終端
       const actualEndIdx = breakInfo.detected ? breakInfo.breakIdx : w.endIdx;
       const end = (candles[actualEndIdx] as any)?.isoTime ?? theoreticalEnd;
@@ -404,7 +422,6 @@ export function detectWedges(ctx: DetectContext): DetectResult {
           const pos = Math.round((i / Math.max(1, maxPoints - 1)) * lastIdxPts);
           out.push(pts[pos]);
         }
-        // 重複を除去（同じ idx が選ばれた場合）
         return out.filter((p, i, arr) => arr.findIndex(q => q.idx === p.idx && q.kind === p.kind) === i);
       };
       const sel = downsample(allPts, 6);
@@ -419,14 +436,12 @@ export function detectWedges(ctx: DetectContext): DetectResult {
         diagram = generatePatternDiagram(
           wedgeType,
           pivForDiagram,
-          { price: 0 }, // ウェッジでは未使用
+          { price: 0 },
           { start, end }
         );
       } catch { /* noop */ }
 
-      // aftermath情報（ブレイク後の結果）
-      // falling_wedge: 上方ブレイクが成功、下方ブレイクは失敗
-      // rising_wedge: 下方ブレイクが成功、上方ブレイクは失敗
+      // aftermath情報
       const isSuccessfulBreakout = breakInfo.detected ? (
         wedgeType === 'falling_wedge'
           ? breakoutDirection === 'up'
@@ -436,7 +451,7 @@ export function detectWedges(ctx: DetectContext): DetectResult {
       const aftermath = breakInfo.detected ? {
         breakoutDate: breakInfo.breakIsoTime,
         breakoutConfirmed: true,
-        targetReached: false, // TODO: 目標価格到達の判定を追加
+        targetReached: false,
         outcome: isSuccessfulBreakout
           ? (wedgeType === 'falling_wedge' ? 'bullish_breakout' : 'bearish_breakout')
           : (wedgeType === 'falling_wedge' ? 'bearish_breakdown' : 'bullish_breakdown'),
@@ -446,6 +461,7 @@ export function detectWedges(ctx: DetectContext): DetectResult {
         type: wedgeType,
         confidence,
         range: { start, end },
+        apex: { idx: apex.apexIdx, barsToApex: apex.barsToApex },
         ...(aftermath ? { aftermath } : {}),
         ...(diagram ? { structureDiagram: diagram } : {})
       });
@@ -456,7 +472,10 @@ export function detectWedges(ctx: DetectContext): DetectResult {
         indices: [w.startIdx, actualEndIdx],
         details: {
           slopeHigh: upper.slope, slopeLow: lower.slope, r2High: upper.r2, r2Low: lower.r2,
+          apex: { idx: apex.apexIdx, barsToApex: apex.barsToApex },
+          containment: { ratio: containment.closeInsideRatio, violations: containment.violations },
           converge: conv, touches: { up: touches.upperQuality, lo: touches.lowerQuality }, alternation, insideRatio, score,
+          smoothed: useSmoothed,
           breakInfo: breakInfo.detected ? { ...breakInfo, direction: breakoutDirection } : null
         }
       });
@@ -467,32 +486,31 @@ export function detectWedges(ctx: DetectContext): DetectResult {
   // 4b（回帰ベース）が完成済みの主力。4d は形成中向け（緩い条件）
   {
     const formingWedgeDebug: any[] = [];
-    const fWindowSizeMin = 20;  // 短いウィンドウも許容
+    const fWindowSizeMin = 20;
     const fWindowSizeMax = 120;
     const fWindowStep = 5;
 
     const fAllowFalling = (want.size === 0) || want.has('falling_wedge' as any);
     const fAllowRising = (want.size === 0) || want.has('rising_wedge' as any);
 
-    // 緩いピボット検出（swingDepth=1）
+    // SG 平滑化データからリラックスピボットを検出（swingDepth=1 相当）
     const relaxedPeaks: Array<{ idx: number; price: number }> = [];
     const relaxedValleys: Array<{ idx: number; price: number }> = [];
     for (let idx = 1; idx < candles.length - 1; idx++) {
-      const c = candles[idx];
-      const isPeak = c.high > candles[idx - 1].high && c.high > candles[idx + 1].high;
-      const isValley = c.low < candles[idx - 1].low && c.low < candles[idx + 1].low;
-      if (isPeak) relaxedPeaks.push({ idx, price: c.close });
-      if (isValley) relaxedValleys.push({ idx, price: c.close });
+      const isPeak = smoothHigh[idx] > smoothHigh[idx - 1] && smoothHigh[idx] > smoothHigh[idx + 1];
+      const isValley = smoothLow[idx] < smoothLow[idx - 1] && smoothLow[idx] < smoothLow[idx + 1];
+      if (isPeak) relaxedPeaks.push({ idx, price: candles[idx].close });
+      if (isValley) relaxedValleys.push({ idx, price: candles[idx].close });
     }
 
-    // 2点直線作成（4c と同じ）
+    // 2点直線作成
     function makeLineF(p1: { idx: number; price: number }, p2: { idx: number; price: number }) {
       const slope = (p2.price - p1.price) / Math.max(1, p2.idx - p1.idx);
       const intercept = p1.price - slope * p1.idx;
       return { slope, intercept, valueAt: (idx: number) => slope * idx + intercept, p1, p2 };
     }
 
-    // 上側トレンドライン（1/2分割、緩い条件）
+    // 上側トレンドライン
     function findUpperTrendlineF(highs: { idx: number; price: number }[], startIdx: number, endIdx: number, tolerance: number) {
       const inRange = highs.filter(h => h.idx >= startIdx && h.idx <= endIdx);
       if (inRange.length < 2) return null;
@@ -517,15 +535,15 @@ export function detectWedges(ctx: DetectContext): DetectResult {
           }
           if (valid) {
             const touches = inRange.filter(h => Math.abs(h.price - line.valueAt(h.idx)) <= tolerance).length;
-            const score = touches + (line.slope < 0 ? 1 : 0);
-            if (score > bestScore) { bestScore = score; bestLine = line; }
+            const lineScore = touches + (line.slope < 0 ? 1 : 0);
+            if (lineScore > bestScore) { bestScore = lineScore; bestLine = line; }
           }
         }
       }
       return bestLine;
     }
 
-    // 下側トレンドライン（1/2分割、緩い条件）
+    // 下側トレンドライン
     function findLowerTrendlineF(lows: { idx: number; price: number }[], startIdx: number, endIdx: number, tolerance: number) {
       const inRange = lows.filter(l => l.idx >= startIdx && l.idx <= endIdx);
       if (inRange.length < 2) return null;
@@ -550,8 +568,8 @@ export function detectWedges(ctx: DetectContext): DetectResult {
           }
           if (valid) {
             const touches = inRange.filter(l => Math.abs(l.price - line.valueAt(l.idx)) <= tolerance).length;
-            const score = touches + (line.slope < 0 ? 1 : 0);
-            if (score > bestScore) { bestScore = score; bestLine = line; }
+            const lineScore = touches + (line.slope < 0 ? 1 : 0);
+            if (lineScore > bestScore) { bestScore = lineScore; bestLine = line; }
           }
         }
       }
@@ -606,6 +624,18 @@ export function detectWedges(ctx: DetectContext): DetectResult {
       const convRatio = gapEnd / gapStart;
       if (convRatio >= 0.80) continue;
 
+      // Apex バリデーション（形成中でも未来にあることを確認）
+      const fApex = calcApex(
+        { slope: upperLine.slope, intercept: upperLine.intercept, valueAt: upperLine.valueAt },
+        { slope: lowerLine.slope, intercept: lowerLine.intercept, valueAt: lowerLine.valueAt },
+        endIdx,
+      );
+      if (!fApex.isValid) continue;
+
+      // 包含チェック（形成中は緩めに 75%）
+      const fContainment = checkContainment(candles, upperLine, lowerLine, startIdx, endIdx, 0.005);
+      if (fContainment.closeInsideRatio < 0.75) continue;
+
       // ブレイク検出（終値ベース、トレンドライン乖離1.5%）
       let breakoutIdx = -1;
       let breakoutDirection: 'up' | 'down' | null = null;
@@ -614,7 +644,6 @@ export function detectWedges(ctx: DetectContext): DetectResult {
         const uVal = upperLine.valueAt(i);
         const lVal = lowerLine.valueAt(i);
 
-        // 終値ベースでブレイク判定（視覚的にわかりやすい）
         if (close > uVal * 1.015) {
           breakoutIdx = i; breakoutDirection = 'up'; break;
         }
@@ -630,7 +659,7 @@ export function detectWedges(ctx: DetectContext): DetectResult {
       const end = (candles[actualEndIdx] as any)?.isoTime;
       if (!start || !end) continue;
 
-      // 重複チェック: 既に同じパターンが検出されていないか
+      // 重複チェック
       const alreadyExists = patterns.some((p: any) => {
         if (p.type !== wedgeType) return false;
         const pStart = Date.parse(p.range?.start || '');
@@ -638,7 +667,6 @@ export function detectWedges(ctx: DetectContext): DetectResult {
         const thisStart = Date.parse(start);
         const thisEnd = Date.parse(end);
         if (!Number.isFinite(pStart) || !Number.isFinite(thisStart)) return false;
-        // 開始日が5日以内、終了日が5日以内なら重複
         return Math.abs(pStart - thisStart) < 5 * 86400000 && Math.abs(pEnd - thisEnd) < 5 * 86400000;
       });
       if (alreadyExists) continue;
@@ -663,14 +691,8 @@ export function detectWedges(ctx: DetectContext): DetectResult {
           status = breakoutDirection === 'down' ? 'completed' : 'invalid';
           outcome = breakoutDirection === 'down' ? 'success' : 'failure';
         }
-      } else {
-        // アペックス計算
-        const denom = upperLine.slope - lowerLine.slope;
-        if (Math.abs(denom) > 1e-12) {
-          const apexIdx = Math.round((lowerLine.intercept - upperLine.intercept) / denom);
-          const daysToApex = Math.max(0, apexIdx - lastIdx);
-          if (daysToApex <= 10) status = 'near_completion';
-        }
+      } else if (fApex.barsToApex <= 10) {
+        status = 'near_completion';
       }
 
       // ブレイク日の取得
@@ -681,13 +703,18 @@ export function detectWedges(ctx: DetectContext): DetectResult {
         confidence,
         range: { start, end },
         status,
+        apex: { idx: fApex.apexIdx, barsToApex: fApex.barsToApex },
         breakoutDirection,
         outcome,
         breakoutDate,
         _method: 'forming_relaxed',
       });
 
-      formingWedgeDebug.push({ type: wedgeType, accepted: true, indices: [startIdx, actualEndIdx], status, breakoutDirection });
+      formingWedgeDebug.push({
+        type: wedgeType, accepted: true, indices: [startIdx, actualEndIdx],
+        status, breakoutDirection,
+        details: { apex: { idx: fApex.apexIdx, barsToApex: fApex.barsToApex }, containment: fContainment.closeInsideRatio }
+      });
     }
 
     for (const d of formingWedgeDebug) {

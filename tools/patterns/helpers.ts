@@ -134,8 +134,95 @@ export function determineWedgeType(slopeHigh: number, slopeLow: number, params: 
 }
 
 // ---------------------------------------------------------------------------
+// Apex（頂点）計算 — UAlgo 方式
+// ---------------------------------------------------------------------------
+/**
+ * 2本のトレンドラインの交差点（Apex）を計算する。
+ *
+ * UAlgo: apex_x = (y2 - y1 + m1*x1 - m2*x2) / (m1 - m2)
+ * 線形回帰の場合: upper = slope_u * x + intercept_u, lower = slope_l * x + intercept_l
+ * 交点: slope_u * x + intercept_u = slope_l * x + intercept_l
+ *   =>  x = (intercept_l - intercept_u) / (slope_u - slope_l)
+ */
+export interface ApexResult {
+  /** Apex のバーインデックス */
+  apexIdx: number;
+  /** Apex の価格 */
+  apexPrice: number;
+  /** Apex が有効か（未来にあるか） */
+  isValid: boolean;
+  /** 現在のバーからApexまでのバー数 */
+  barsToApex: number;
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function calcApex(upper: any, lower: any, endIdx: number): ApexResult {
+  const slopeDiff = upper.slope - lower.slope;
+  if (Math.abs(slopeDiff) < 1e-15) {
+    // 平行 — Apex は無限遠
+    return { apexIdx: Infinity, apexPrice: NaN, isValid: false, barsToApex: Infinity };
+  }
+  const apexIdx = Math.round((lower.intercept - upper.intercept) / slopeDiff);
+  const apexPrice = upper.valueAt(apexIdx);
+  const barsToApex = apexIdx - endIdx;
+  // UAlgo: Apex がウィンドウ終端より先（未来）にあること
+  const isValid = barsToApex > 0;
+  return { apexIdx, apexPrice, isValid, barsToApex };
+}
+
+// ---------------------------------------------------------------------------
+// 包含ルール（Containment） — UAlgo 方式
+// ---------------------------------------------------------------------------
+/**
+ * ウェッジ形成中に終値が境界外に出ていないかチェックする。
+ *
+ * UAlgo: "no candle close is allowed outside the upper or lower boundary"
+ * 厳格モードではハード棄却。緩和モードでは許容率を返す。
+ *
+ * @returns closeInsideRatio: 終値が境界内に収まっている割合 (0-1)
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function checkContainment(
+  candles: CandleData[],
+  upper: { valueAt: (x: number) => number },
+  lower: { valueAt: (x: number) => number },
+  startIdx: number,
+  endIdx: number,
+  tolerancePct: number = 0.003,
+): { closeInsideRatio: number; violations: number; total: number } {
+  let inside = 0;
+  let total = 0;
+  let violations = 0;
+  for (let i = startIdx; i <= endIdx; i++) {
+    const c = candles[i];
+    if (!c) continue;
+    total++;
+    const close = c.close;
+    const u = upper.valueAt(i);
+    const l = lower.valueAt(i);
+    const tol = Math.abs(u - l) * tolerancePct;
+    if (close > u + tol || close < l - tol) {
+      violations++;
+    } else {
+      inside++;
+    }
+  }
+  return { closeInsideRatio: total > 0 ? inside / total : 0, violations, total };
+}
+
+// ---------------------------------------------------------------------------
 // ウェッジ品質スコアリング関数群
 // ---------------------------------------------------------------------------
+/**
+ * 収束チェック — Apexベースに移行
+ *
+ * 旧: gapEnd/gapStart < 0.30（非常に厳しい固定閾値）
+ * 新: gapEnd > 0 かつ gapEnd < gapStart（基本収束条件）
+ *     + Apex が未来にある（UAlgo 方式）
+ *     + ratio を 0.70 以下に緩和（ギャップが30%以上狭まっていればOK）
+ *
+ * スコアは ratio と加速度で決まる。
+ */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function checkConvergenceEx(upper: any, lower: any, startIdx: number, endIdx: number) {
   const midIdx = Math.floor((startIdx + endIdx) / 2);
@@ -143,12 +230,24 @@ export function checkConvergenceEx(upper: any, lower: any, startIdx: number, end
   const gapMid = upper.valueAt(midIdx) - lower.valueAt(midIdx);
   const gapEnd = upper.valueAt(endIdx) - lower.valueAt(endIdx);
   const ratio = gapEnd / Math.max(1e-12, gapStart);
-  if (!(gapEnd > 0) || !(ratio < 0.30)) return { isConverging: false };
+
+  // 基本条件: ギャップが正で、かつ少なくとも30%収束している
+  if (!(gapEnd > 0) || !(ratio < 0.70)) return { isConverging: false, gapStart, gapEnd, ratio };
+
+  // Apex が未来にあるかチェック（スコアへのボーナス）
+  const apex = calcApex(upper, lower, endIdx);
+
   const firstHalf = gapStart - gapMid;
   const secondHalf = gapMid - gapEnd;
   const isAccelerating = secondHalf > firstHalf * 1.2;
-  const score = Math.max(0, Math.min(1, 0.5 * (1 - ratio) + 0.3 * 1 + 0.2 * (isAccelerating ? 1 : 0)));
-  return { isConverging: true, gapStart, gapMid, gapEnd, ratio, isAccelerating, score };
+
+  // スコア計算: 収束度 + Apexの位置 + 加速度
+  const convergenceComponent = 0.4 * (1 - ratio);
+  const apexComponent = 0.35 * (apex.isValid ? 1 : 0.3);
+  const accelComponent = 0.25 * (isAccelerating ? 1 : 0.4);
+  const score = Math.max(0, Math.min(1, convergenceComponent + apexComponent + accelComponent));
+
+  return { isConverging: true, gapStart, gapMid, gapEnd, ratio, isAccelerating, apex, score };
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
