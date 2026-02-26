@@ -46,7 +46,7 @@ function getTriangleParams(tf: string) {
   const maxDurationDays = 90;           // triangles > 90 days → different pattern
   const minWindowBars = 15;             // absolute minimum bars
   const maxWindowBars = Math.max(minWindowBars, Math.round(maxDurationDays * bpd));
-  const minR2 = 0.25;
+  const minR2 = 0.60;  // 収束形状なので多少の揺れは許容 — 0.25 では偽陽性が多すぎた
   const flatThreshold = 0.03;           // |relSlope| < 3% over window → "flat"
   const moveThreshold = 0.015;          // |relSlope| > 1.5% over window → "rising/falling"
   const minConvergence = 0.90;          // gap must narrow by ≥ 10%
