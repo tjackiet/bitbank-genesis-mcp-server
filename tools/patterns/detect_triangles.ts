@@ -413,6 +413,41 @@ export function detectTriangles(ctx: DetectContext): DetectResult {
         finalConfidence = confidence;
       }
 
+      // --- ターゲット価格計算 ---
+      const patternHeight = gapStart; // パターン入口の高さ
+      let breakoutTarget: number | undefined;
+      let targetReachedPct: number | undefined;
+      let targetMethod: 'flagpole_projection' | 'pattern_height' | undefined;
+      if (hasBreakout && breakoutDirection) {
+        const bp = candles[breakoutIdx].close;
+        if (finalType === 'pennant' && flagpoleHeight !== undefined) {
+          // ペナント: フラッグポール投影
+          breakoutTarget = breakoutDirection === 'up' ? bp + flagpoleHeight : bp - flagpoleHeight;
+          targetMethod = 'flagpole_projection';
+        } else {
+          // トライアングル: パターン高さ投影
+          breakoutTarget = breakoutDirection === 'up' ? bp + patternHeight : bp - patternHeight;
+          targetMethod = 'pattern_height';
+        }
+        breakoutTarget = Math.round(breakoutTarget);
+        const curPrice = Number(candles[lastIdx]?.close);
+        if (Number.isFinite(curPrice) && Math.abs(breakoutTarget - bp) > 1e-12) {
+          targetReachedPct = Math.round(((curPrice - bp) / (breakoutTarget - bp)) * 100);
+        }
+      }
+
+      // --- 用語正規化ラベル ---
+      let trendlineLabel: string | undefined;
+      if (finalType === 'pennant') {
+        trendlineLabel = 'コンソリデーション境界線';
+      } else if (triangleType === 'triangle_ascending') {
+        trendlineLabel = '上限トレンドライン（レジスタンス）';
+      } else if (triangleType === 'triangle_descending') {
+        trendlineLabel = '下限トレンドライン（サポート）';
+      } else {
+        trendlineLabel = 'トレンドライン（ブレイク側）';
+      }
+
       patterns.push({
         type: finalType,
         confidence: finalConfidence,
@@ -420,12 +455,16 @@ export function detectTriangles(ctx: DetectContext): DetectResult {
         status,
         pivots: allPivots,
         neckline,
+        trendlineLabel,
         breakoutDirection: breakoutDirection ?? undefined,
         outcome: hasBreakout
           ? (finalType === 'pennant'
             ? (isTrendContinuation ? 'success' : 'failure')
             : (status === 'completed' ? 'success' : 'failure'))
           : undefined,
+        breakoutBarIndex: hasBreakout ? breakoutIdx : undefined,
+        ...(breakoutTarget !== undefined ? { breakoutTarget, targetMethod } : {}),
+        ...(targetReachedPct !== undefined ? { targetReachedPct } : {}),
         ...(poleDirection ? {
           poleDirection,
           priorTrendDirection: poleDirection === 'up' ? 'bullish' : 'bearish',

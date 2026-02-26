@@ -642,10 +642,17 @@ export const DetectedPatternSchema = z.object({
   completionPct: z.number().int().optional(), // 完成度（%）
   // 完成済みパターン用フィールド
   breakoutDate: z.string().optional(),       // ブレイクアウト日
+  breakoutBarIndex: z.number().int().optional(), // ブレイクアウトしたローソク足のインデックス
   daysSinceBreakout: z.number().int().optional(), // ブレイクアウトからの経過日数
   // ブレイク方向と結果
   breakoutDirection: z.enum(['up', 'down']).optional(),  // ブレイク方向
   outcome: z.enum(['success', 'failure']).optional(),    // パターン結果（期待通り=success, 逆方向=failure）
+  // ターゲット価格（ブレイクアウト後の想定到達価格）
+  breakoutTarget: z.number().optional(),     // 想定ターゲット価格（円）
+  targetMethod: z.enum(['flagpole_projection', 'pattern_height', 'neckline_projection']).optional(), // 計算根拠
+  targetReachedPct: z.number().optional(),   // ターゲットまでの進捗率（%）
+  // 用語正規化ラベル（neckline フィールドが何を指すかをパターン種別ごとに明示）
+  trendlineLabel: z.string().optional(),
   // ペナント用: フラッグポール（旗竿）情報
   poleDirection: z.enum(['up', 'down']).optional(),             // フラッグポールの方向
   priorTrendDirection: z.enum(['bullish', 'bearish']).optional(), // 先行トレンド方向

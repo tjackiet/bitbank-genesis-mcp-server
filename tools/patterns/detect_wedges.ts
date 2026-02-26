@@ -410,6 +410,22 @@ export function detectWedges(ctx: DetectContext): DetectResult {
       }
 
       const confidence = Math.max(0, Math.min(1, Number(score.toFixed(2))));
+
+      // --- ターゲット価格計算（pattern_height 方式） ---
+      const patternHeight = Math.abs(upper.valueAt(w.startIdx) - lower.valueAt(w.startIdx));
+      let breakoutTarget: number | undefined;
+      let targetReachedPct: number | undefined;
+      if (breakInfo.detected && breakoutDirection && Number.isFinite(breakInfo.breakPrice)) {
+        const bp = breakInfo.breakPrice as number;
+        breakoutTarget = breakoutDirection === 'up' ? bp + patternHeight : bp - patternHeight;
+        breakoutTarget = Math.round(breakoutTarget);
+        // 進捗率: 最新価格がターゲットにどれだけ近づいたか
+        const currentPrice = Number(candles[candles.length - 1]?.close);
+        if (Number.isFinite(currentPrice) && Math.abs(breakoutTarget - bp) > 1e-12) {
+          targetReachedPct = Math.round(((currentPrice - bp) / (breakoutTarget - bp)) * 100);
+        }
+      }
+
       // ダイアグラム用にタッチポイントから主要点を間引きして pivots を構成
       const upTouchPts = (touches.upperTouches || []).filter((t: any) => !t.isBreak).map((t: any) => ({ idx: t.index, kind: 'H' as const }));
       const loTouchPts = (touches.lowerTouches || []).filter((t: any) => !t.isBreak).map((t: any) => ({ idx: t.index, kind: 'L' as const }));
@@ -475,6 +491,9 @@ export function detectWedges(ctx: DetectContext): DetectResult {
         breakoutDirection: breakoutDirection ?? undefined,
         outcome: outcome4b,
         breakoutDate: breakInfo.detected ? breakInfo.breakIsoTime : undefined,
+        breakoutBarIndex: breakInfo.detected ? breakInfo.breakIdx : undefined,
+        ...(breakoutTarget !== undefined ? { breakoutTarget, targetMethod: 'pattern_height' as const } : {}),
+        ...(targetReachedPct !== undefined ? { targetReachedPct } : {}),
         ...(aftermath ? { aftermath } : {}),
         ...(diagram ? { structureDiagram: diagram } : {})
       });
@@ -726,6 +745,22 @@ export function detectWedges(ctx: DetectContext): DetectResult {
       // ブレイク日の取得
       const breakoutDate = breakoutIdx !== -1 ? (candles[breakoutIdx] as any)?.isoTime : undefined;
 
+      // --- ターゲット価格計算（pattern_height 方式） ---
+      const fPatternHeight = Math.abs(upperLine.valueAt(startIdx) - lowerLine.valueAt(startIdx));
+      let fBreakoutTarget: number | undefined;
+      let fTargetReachedPct: number | undefined;
+      if (breakoutDirection && breakoutIdx !== -1) {
+        const bp = Number(candles[breakoutIdx]?.close);
+        if (Number.isFinite(bp)) {
+          fBreakoutTarget = breakoutDirection === 'up' ? bp + fPatternHeight : bp - fPatternHeight;
+          fBreakoutTarget = Math.round(fBreakoutTarget);
+          const curPrice = Number(candles[candles.length - 1]?.close);
+          if (Number.isFinite(curPrice) && Math.abs(fBreakoutTarget - bp) > 1e-12) {
+            fTargetReachedPct = Math.round(((curPrice - bp) / (fBreakoutTarget - bp)) * 100);
+          }
+        }
+      }
+
       push(patterns, {
         type: wedgeType,
         confidence,
@@ -735,6 +770,9 @@ export function detectWedges(ctx: DetectContext): DetectResult {
         breakoutDirection,
         outcome,
         breakoutDate,
+        breakoutBarIndex: breakoutIdx !== -1 ? breakoutIdx : undefined,
+        ...(fBreakoutTarget !== undefined ? { breakoutTarget: fBreakoutTarget, targetMethod: 'pattern_height' as const } : {}),
+        ...(fTargetReachedPct !== undefined ? { targetReachedPct: fTargetReachedPct } : {}),
         _method: 'forming_relaxed',
       });
 

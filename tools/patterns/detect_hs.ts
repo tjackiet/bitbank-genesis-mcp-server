@@ -50,7 +50,12 @@ export function detectHeadAndShoulders(ctx: DetectContext): DetectResult {
             { price: nlAvg },
             { start, end }
           );
-          push(patterns, { type: 'inverse_head_and_shoulders', confidence, range: { start, end }, pivots: [p0, p1, p2, p3, p4], neckline, structureDiagram: diagram });
+          // --- ターゲット価格計算（neckline_projection 方式） ---
+          // Inverse H&S: ネックライン + (ネックライン平均 - ヘッド)
+          const ihsNlAvg = (p1.price + p3.price) / 2;
+          const ihsTarget = Math.round(ihsNlAvg + (ihsNlAvg - p2.price));
+
+          push(patterns, { type: 'inverse_head_and_shoulders', confidence, range: { start, end }, pivots: [p0, p1, p2, p3, p4], neckline, trendlineLabel: 'ネックライン', breakoutTarget: ihsTarget, targetMethod: 'neckline_projection' as const, structureDiagram: diagram });
           foundInverseHS = true;
           debugCandidates.push({
             type: 'inverse_head_and_shoulders',
@@ -120,7 +125,12 @@ export function detectHeadAndShoulders(ctx: DetectContext): DetectResult {
             { price: nlAvg },
             { start, end }
           );
-          push(patterns, { type: 'head_and_shoulders', confidence, range: { start, end }, pivots: [p0, p1, p2, p3, p4], neckline, structureDiagram: diagram });
+          // --- ターゲット価格計算（neckline_projection 方式） ---
+          // H&S: ネックライン - (ヘッド - ネックライン平均)
+          const hsNlAvg = (p1.price + p3.price) / 2;
+          const hsTarget = Math.round(hsNlAvg - (p2.price - hsNlAvg));
+
+          push(patterns, { type: 'head_and_shoulders', confidence, range: { start, end }, pivots: [p0, p1, p2, p3, p4], neckline, trendlineLabel: 'ネックライン', breakoutTarget: hsTarget, targetMethod: 'neckline_projection' as const, structureDiagram: diagram });
           foundHS = true;
           debugCandidates.push({
             type: 'head_and_shoulders',
@@ -193,7 +203,9 @@ export function detectHeadAndShoulders(ctx: DetectContext): DetectResult {
           { price: nlAvg },
           { start, end }
         );
-        push(patterns, { type: 'head_and_shoulders', confidence, range: { start, end }, pivots: [p0, p1, p2, p3, p4], neckline, structureDiagram: diagram, _fallback: `relaxed_hs_${factors.tag}` });
+        const hsRelNlAvg = (Number(p1.price) + Number(p3.price)) / 2;
+        const hsRelTarget = Math.round(nlY - (p2.price - nlY));
+        push(patterns, { type: 'head_and_shoulders', confidence, range: { start, end }, pivots: [p0, p1, p2, p3, p4], neckline, trendlineLabel: 'ネックライン', breakoutTarget: hsRelTarget, targetMethod: 'neckline_projection' as const, structureDiagram: diagram, _fallback: `relaxed_hs_${factors.tag}` });
         foundHS = true;
         debugCandidates.push({
           type: 'head_and_shoulders',
@@ -242,7 +254,8 @@ export function detectHeadAndShoulders(ctx: DetectContext): DetectResult {
             { price: nlAvg },
             { start, end }
           );
-          push(patterns, { type: 'inverse_head_and_shoulders', confidence, range: { start, end }, pivots: [p0, p1, p2, p3, p4], neckline, structureDiagram: diagram, _fallback: `relaxed_ihs_${factors.tag}` });
+          const ihsRelTarget = Math.round(nlY + (nlY - p2.price));
+          push(patterns, { type: 'inverse_head_and_shoulders', confidence, range: { start, end }, pivots: [p0, p1, p2, p3, p4], neckline, trendlineLabel: 'ネックライン', breakoutTarget: ihsRelTarget, targetMethod: 'neckline_projection' as const, structureDiagram: diagram, _fallback: `relaxed_ihs_${factors.tag}` });
           foundInverseHS = true;
           debugCandidates.push({
             type: 'inverse_head_and_shoulders',
@@ -329,6 +342,9 @@ export function detectHeadAndShoulders(ctx: DetectContext): DetectResult {
                 const start = isoAt(left.idx);
                 const end = isoAt(rightShoulder.idx);
 
+                // 形成中 H&S ターゲット: ネックライン - (ヘッド - ネックライン)
+                const formHsNl = neckline[0].y;
+                const formHsTarget = Math.round(formHsNl - (head.price - formHsNl));
                 push(patterns, {
                   type: 'head_and_shoulders',
                   confidence,
@@ -341,6 +357,9 @@ export function detectHeadAndShoulders(ctx: DetectContext): DetectResult {
                     { idx: rightShoulder.idx, price: rightShoulder.price, kind: 'H' as const },
                   ],
                   neckline,
+                  trendlineLabel: 'ネックライン',
+                  breakoutTarget: formHsTarget,
+                  targetMethod: 'neckline_projection' as const,
                   completionPct: Math.round(completion * 100),
                   _method: isProvisional ? 'forming_hs_provisional' : 'forming_hs',
                 });
@@ -424,6 +443,9 @@ export function detectHeadAndShoulders(ctx: DetectContext): DetectResult {
                 const start = isoAt(left.idx);
                 const end = isoAt(rightShoulder.idx);
 
+                // 形成中 Inverse H&S ターゲット: ネックライン + (ネックライン - ヘッド)
+                const formIhsNl = neckline[0].y;
+                const formIhsTarget = Math.round(formIhsNl + (formIhsNl - head.price));
                 push(patterns, {
                   type: 'inverse_head_and_shoulders',
                   confidence,
@@ -436,6 +458,9 @@ export function detectHeadAndShoulders(ctx: DetectContext): DetectResult {
                     { idx: rightShoulder.idx, price: rightShoulder.price, kind: 'L' as const },
                   ],
                   neckline,
+                  trendlineLabel: 'ネックライン',
+                  breakoutTarget: formIhsTarget,
+                  targetMethod: 'neckline_projection' as const,
                   completionPct: Math.round(completion * 100),
                   _method: isProvisional ? 'forming_ihs_provisional' : 'forming_ihs',
                 });
