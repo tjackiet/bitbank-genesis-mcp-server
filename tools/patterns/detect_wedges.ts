@@ -621,7 +621,7 @@ export function detectWedges(ctx: DetectContext): DetectResult {
       const bothDown = upperLine.slope < 0 && lowerLine.slope < 0;
       const bothUp = upperLine.slope > 0 && lowerLine.slope > 0;
       if (!bothDown && !bothUp) {
-        formingWedgeDebug.push({ type: 'wedge_4d', accepted: false, reason: 'slopes_not_same_direction', indices: [startIdx, endIdx], details: { slopeU: upperLine.slope, slopeL: lowerLine.slope } });
+        formingWedgeDebug.push({ type: upperLine.slope < 0 ? 'falling_wedge' : 'rising_wedge', accepted: false, reason: 'slopes_not_same_direction', indices: [startIdx, endIdx], details: { slopeU: upperLine.slope, slopeL: lowerLine.slope } });
         continue;
       }
 
