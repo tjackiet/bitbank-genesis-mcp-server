@@ -420,27 +420,44 @@ export function globalDedup(patterns: any[]): any[] {
     const minD = Math.min(ad, bd);
     return ov / minD;
   }
+
+  // 同一カテゴリとして扱うパターン群（期間重複する場合は同カテゴリ内でも dedup 対象）
+  const categoryMap: Record<string, string> = {
+    rising_wedge: 'wedge',
+    falling_wedge: 'wedge',
+    triangle_ascending: 'triangle',
+    triangle_descending: 'triangle',
+    triangle_symmetrical: 'triangle',
+  };
+  function isSameCategory(a: string, b: string): boolean {
+    if (a === b) return true;
+    const ca = categoryMap[a];
+    const cb = categoryMap[b];
+    return !!(ca && cb && ca === cb);
+  }
+
   const dedupThreshold = 0.70;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const out: any[] = [];
   for (const p of patterns) {
-    const sameTypeIdx = out.findIndex(q =>
-      String(q?.type) === String(p?.type) &&
-      overlapRatio(String(q?.range?.start), String(q?.range?.end ?? q?.range?.current), String(p?.range?.start), String(p?.range?.end ?? p?.range?.current)) >= dedupThreshold
+    const pRange = { s: String(p?.range?.start), e: String(p?.range?.end ?? p?.range?.current) };
+    const overlapIdx = out.findIndex(q =>
+      isSameCategory(String(q?.type), String(p?.type)) &&
+      overlapRatio(String(q?.range?.start), String(q?.range?.end ?? q?.range?.current), pRange.s, pRange.e) >= dedupThreshold
     );
-    if (sameTypeIdx < 0) {
+    if (overlapIdx < 0) {
       out.push(p);
     } else {
-      const existing = out[sameTypeIdx];
+      const existing = out[overlapIdx];
       const eConf = Number(existing?.confidence ?? 0);
       const pConf = Number(p?.confidence ?? 0);
       if (pConf > eConf) {
-        out[sameTypeIdx] = p;
+        out[overlapIdx] = p;
       } else if (pConf === eConf) {
         const eEnd = toMs(existing?.range?.end ?? existing?.range?.current);
         const pEnd = toMs(p?.range?.end ?? p?.range?.current);
         if (Number.isFinite(pEnd) && Number.isFinite(eEnd) && pEnd > eEnd) {
-          out[sameTypeIdx] = p;
+          out[overlapIdx] = p;
         }
       }
     }

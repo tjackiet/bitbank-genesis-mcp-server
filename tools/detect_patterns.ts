@@ -306,7 +306,12 @@ export default async function detectPatterns(
         detectionPeriodText = `\n検出対象期間: ${s} ~ ${e}（${days}日間）`;
       }
     }
-    const summaryText = `${pair.toUpperCase()} ${tfLabel}（${type}） ${limit}本から${patterns.length}件を検出（${patterns.map((p: any) => p.type).join('×1、')}×1）${detectionPeriodText}\n\n【検出パターン（全件）】\n${patternSummaries || 'なし'}${statsText}\n\nチャート連携: data.overlays を render_chart_svg.overlays に渡すと注釈/範囲を描画できます。\n\nパターン整合度について（形状一致度・対称性・期間から算出）:\n  0.8以上 = 理想的な形状（教科書的パターン）\n  0.7-0.8 = 標準的な形状（他指標と併用推奨）\n  0.6-0.7 = やや不明瞭（慎重に判断）\n  0.6未満 = 形状不十分`
+    // タイプ別件数を集約（例: rising_wedge×3, falling_wedge×2）
+    const typeCounts: Record<string, number> = {};
+    for (const p of patterns) { typeCounts[p.type] = (typeCounts[p.type] || 0) + 1; }
+    const typeCountStr = Object.entries(typeCounts).map(([t, c]) => `${t}×${c}`).join(', ');
+
+    const summaryText = `${pair.toUpperCase()} ${tfLabel}（${type}） ${limit}本から${patterns.length}件を検出（${typeCountStr}）${detectionPeriodText}\n\n【検出パターン（全件）】\n${patternSummaries || 'なし'}${statsText}\n\nチャート連携: data.overlays を render_chart_svg.overlays に渡すと注釈/範囲を描画できます。\n\nパターン整合度について（形状一致度・対称性・期間から算出）:\n  0.8以上 = 理想的な形状（教科書的パターン）\n  0.7-0.8 = 標準的な形状（他指標と併用推奨）\n  0.6-0.7 = やや不明瞭（慎重に判断）\n  0.6未満 = 形状不十分`
       + `\n\n---\n📌 含まれるもの: チャートパターン検出（種類・整合度・期間）、ブレイク情報、統計`
       + `\n📌 含まれないもの: 出来高によるパターン確認、テクニカル指標値、板情報`
       + `\n📌 補完ツール: analyze_indicators（指標でパターンを裏付け）, get_flow_metrics（出来高確認）, get_orderbook（板情報）`;

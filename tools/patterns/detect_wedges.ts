@@ -457,17 +457,24 @@ export function detectWedges(ctx: DetectContext): DetectResult {
           : (wedgeType === 'falling_wedge' ? 'bearish_breakdown' : 'bullish_breakdown'),
       } : undefined;
 
-      // Apex 日付の推定（ウィンドウ終端のisoTimeからbarsToApex分先を推算）
-      const apexDate = apex.isValid && Number.isFinite(apex.barsToApex) && theoreticalEnd
-        ? undefined  // 正確な日付は時間軸に依存するため、barsToApex で代替
-        : undefined;
+      // status / outcome 判定（4b: 完成済み主力検出）
+      let status4b: 'completed' | 'invalid' | 'near_completion' = breakInfo.detected ? 'completed' : 'near_completion';
+      let outcome4b: 'success' | 'failure' | undefined;
+      if (breakInfo.detected && breakoutDirection) {
+        const expected = wedgeType === 'falling_wedge' ? 'up' : 'down';
+        // outcome で成功/失敗を区別する（'invalid' にすると includeInvalid フィルタで除外されてしまう）
+        outcome4b = breakoutDirection === expected ? 'success' : 'failure';
+      }
 
       push(patterns, {
         type: wedgeType,
         confidence,
         range: { start, end },
+        status: status4b,
         daysToApex: apex.isValid ? apex.barsToApex : undefined,
-        ...(apexDate ? { apexDate } : {}),
+        breakoutDirection: breakoutDirection ?? undefined,
+        outcome: outcome4b,
+        breakoutDate: breakInfo.detected ? breakInfo.breakIsoTime : undefined,
         ...(aftermath ? { aftermath } : {}),
         ...(diagram ? { structureDiagram: diagram } : {})
       });
@@ -613,12 +620,18 @@ export function detectWedges(ctx: DetectContext): DetectResult {
       // 両方下向き = Falling Wedge、両方上向き = Rising Wedge
       const bothDown = upperLine.slope < 0 && lowerLine.slope < 0;
       const bothUp = upperLine.slope > 0 && lowerLine.slope > 0;
-      if (!bothDown && !bothUp) continue;
+      if (!bothDown && !bothUp) {
+        formingWedgeDebug.push({ type: 'wedge_4d', accepted: false, reason: 'slopes_not_same_direction', indices: [startIdx, endIdx], details: { slopeU: upperLine.slope, slopeL: lowerLine.slope } });
+        continue;
+      }
 
       // minWeakerSlopeRatio チェック
       const absU = Math.abs(upperLine.slope), absL = Math.abs(lowerLine.slope);
       const weakerRatio = Math.min(absU, absL) / Math.max(absU, absL);
-      if (weakerRatio < 0.3) continue;
+      if (weakerRatio < 0.3) {
+        formingWedgeDebug.push({ type: bothDown ? 'falling_wedge' : 'rising_wedge', accepted: false, reason: 'weaker_slope_ratio_low', indices: [startIdx, endIdx], details: { weakerRatio } });
+        continue;
+      }
 
       const wedgeType: 'falling_wedge' | 'rising_wedge' = bothDown ? 'falling_wedge' : 'rising_wedge';
       if ((wedgeType === 'falling_wedge' && !fAllowFalling) || (wedgeType === 'rising_wedge' && !fAllowRising)) continue;
@@ -626,9 +639,15 @@ export function detectWedges(ctx: DetectContext): DetectResult {
       // 収束チェック
       const gapStart = upperLine.valueAt(startIdx) - lowerLine.valueAt(startIdx);
       const gapEnd = upperLine.valueAt(endIdx) - lowerLine.valueAt(endIdx);
-      if (gapStart <= 0 || gapEnd <= 0 || gapEnd >= gapStart) continue;
+      if (gapStart <= 0 || gapEnd <= 0 || gapEnd >= gapStart) {
+        formingWedgeDebug.push({ type: wedgeType, accepted: false, reason: 'no_convergence', indices: [startIdx, endIdx], details: { gapStart, gapEnd } });
+        continue;
+      }
       const convRatio = gapEnd / gapStart;
-      if (convRatio >= 0.80) continue;
+      if (convRatio >= 0.80) {
+        formingWedgeDebug.push({ type: wedgeType, accepted: false, reason: 'conv_ratio_too_high', indices: [startIdx, endIdx], details: { convRatio } });
+        continue;
+      }
 
       // Apex バリデーション（形成中でも未来にあることを確認）
       const fApex = calcApex(
@@ -636,11 +655,17 @@ export function detectWedges(ctx: DetectContext): DetectResult {
         { slope: lowerLine.slope, intercept: lowerLine.intercept, valueAt: lowerLine.valueAt },
         endIdx,
       );
-      if (!fApex.isValid) continue;
+      if (!fApex.isValid) {
+        formingWedgeDebug.push({ type: wedgeType, accepted: false, reason: 'apex_invalid', indices: [startIdx, endIdx], details: { apex: fApex } });
+        continue;
+      }
 
       // 包含チェック（形成中は緩めに 75%）
       const fContainment = checkContainment(candles, upperLine, lowerLine, startIdx, endIdx, 0.005);
-      if (fContainment.closeInsideRatio < 0.75) continue;
+      if (fContainment.closeInsideRatio < 0.75) {
+        formingWedgeDebug.push({ type: wedgeType, accepted: false, reason: 'containment_low', indices: [startIdx, endIdx], details: { containment: fContainment.closeInsideRatio } });
+        continue;
+      }
 
       // ブレイク検出（終値ベース、トレンドライン乖離1.5%）
       let breakoutIdx = -1;
@@ -690,13 +715,10 @@ export function detectWedges(ctx: DetectContext): DetectResult {
       let outcome: 'success' | 'failure' | undefined;
 
       if (breakoutDirection) {
-        if (wedgeType === 'falling_wedge') {
-          status = breakoutDirection === 'up' ? 'completed' : 'invalid';
-          outcome = breakoutDirection === 'up' ? 'success' : 'failure';
-        } else {
-          status = breakoutDirection === 'down' ? 'completed' : 'invalid';
-          outcome = breakoutDirection === 'down' ? 'success' : 'failure';
-        }
+        // outcome で success/failure を区別する（'invalid' にすると includeInvalid フィルタで除外されてしまう）
+        const expected = wedgeType === 'falling_wedge' ? 'up' : 'down';
+        status = 'completed';
+        outcome = breakoutDirection === expected ? 'success' : 'failure';
       } else if (fApex.barsToApex <= 10) {
         status = 'near_completion';
       }
