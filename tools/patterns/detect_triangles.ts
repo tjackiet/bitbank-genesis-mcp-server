@@ -390,11 +390,11 @@ export function detectTriangles(ctx: DetectContext): DetectResult {
             retracementRatio = Math.max(0, Math.min(1, retracementRatio));
           }
 
-          // Re-evaluate status for pennant: breakout must match pole direction (trend continuation)
+          // Set isTrendContinuation for pennant
+          // ペナント失敗（ダマシ）は構造的には有効なパターンなので status は 'completed' のまま維持
+          // outcome で success/failure を区別する（'invalid' にすると includeInvalid フィルタで除外されてしまう）
           if (hasBreakout) {
-            const pennantExpected = pole.poleDirection === breakoutDirection;
-            isTrendContinuation = pennantExpected;
-            status = pennantExpected ? 'completed' : 'invalid';
+            isTrendContinuation = pole.poleDirection === breakoutDirection;
           }
         }
       }
@@ -421,7 +421,11 @@ export function detectTriangles(ctx: DetectContext): DetectResult {
         pivots: allPivots,
         neckline,
         breakoutDirection: breakoutDirection ?? undefined,
-        outcome: hasBreakout ? (status === 'completed' ? 'success' : 'failure') : undefined,
+        outcome: hasBreakout
+          ? (finalType === 'pennant'
+            ? (isTrendContinuation ? 'success' : 'failure')
+            : (status === 'completed' ? 'success' : 'failure'))
+          : undefined,
         ...(poleDirection ? {
           poleDirection,
           priorTrendDirection: poleDirection === 'up' ? 'bullish' : 'bearish',

@@ -235,7 +235,8 @@ export default async function detectPatterns(
         const expectedDirMap: Record<string, string | undefined> = {
           falling_wedge: '上方', rising_wedge: '下方',
           triangle_ascending: '上方', triangle_descending: '下方',
-          pennant: undefined, flag: undefined,
+          pennant: p.poleDirection === 'up' ? '上方' : p.poleDirection === 'down' ? '下方' : undefined,
+          flag: undefined,
         };
         const expectedDir = expectedDirMap[p.type];
 
@@ -244,6 +245,10 @@ export default async function detectPatterns(
           rising_wedge: { success: '弱気転換', failure: '強気継続' },
           triangle_ascending: { success: '上方ブレイク（強気）', failure: '下方ブレイク（弱気転換）' },
           triangle_descending: { success: '下方ブレイク（弱気）', failure: '上方ブレイク（強気転換）' },
+          pennant: {
+            success: `トレンド継続（${p.poleDirection === 'up' ? '強気' : '弱気'}）`,
+            failure: `ダマシ（${p.poleDirection === 'up' ? '弱気転換' : '強気転換'}）`,
+          },
         };
         const meaning = meaningMap[p.type]?.[p.outcome] || `${directionJa}ブレイク`;
 
@@ -255,6 +260,26 @@ export default async function detectPatterns(
       // ネックラインがある場合
       if (p.neckline && Array.isArray(p.neckline) && p.neckline.length >= 2) {
         detail += `\n   - ネックライン: ${Math.round(p.neckline[0]?.y || 0).toLocaleString()}円 → ${Math.round(p.neckline[1]?.y || 0).toLocaleString()}円`;
+      }
+
+      // ペナント固有フィールド
+      if (p.type === 'pennant') {
+        if (p.poleDirection) {
+          detail += `\n   - フラッグポール方向: ${p.poleDirection === 'up' ? '上昇' : '下降'}`;
+        }
+        if (p.priorTrendDirection) {
+          detail += `\n   - 先行トレンド: ${p.priorTrendDirection === 'bullish' ? '強気（上昇トレンド）' : '弱気（下降トレンド）'}`;
+        }
+        if (p.flagpoleHeight != null) {
+          detail += `\n   - フラッグポール値幅: ${Math.round(p.flagpoleHeight).toLocaleString()}円`;
+        }
+        if (p.retracementRatio != null) {
+          const pctStr = (p.retracementRatio * 100).toFixed(0);
+          detail += `\n   - 戻し比率: ${pctStr}%${p.retracementRatio > 0.38 ? '（高め — トライアングル寄り）' : '（正常範囲）'}`;
+        }
+        if (p.isTrendContinuation !== undefined) {
+          detail += `\n   - トレンド継続: ${p.isTrendContinuation ? 'はい（成功）' : 'いいえ（ダマシ）'}`;
+        }
       }
 
       return detail;
