@@ -262,6 +262,11 @@ export default async function detectPatterns(
         detail += `\n   - ネックライン: ${Math.round(p.neckline[0]?.y || 0).toLocaleString()}円 → ${Math.round(p.neckline[1]?.y || 0).toLocaleString()}円`;
       }
 
+      // ウェッジ固有: Apex（頂点）情報
+      if ((p.type === 'falling_wedge' || p.type === 'rising_wedge') && p.daysToApex != null) {
+        detail += `\n   - Apex（収束点）まで: ${p.daysToApex}本`;
+      }
+
       // ペナント固有フィールド
       if (p.type === 'pennant') {
         if (p.poleDirection) {

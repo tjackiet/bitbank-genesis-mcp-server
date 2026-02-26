@@ -457,11 +457,17 @@ export function detectWedges(ctx: DetectContext): DetectResult {
           : (wedgeType === 'falling_wedge' ? 'bearish_breakdown' : 'bullish_breakdown'),
       } : undefined;
 
+      // Apex 日付の推定（ウィンドウ終端のisoTimeからbarsToApex分先を推算）
+      const apexDate = apex.isValid && Number.isFinite(apex.barsToApex) && theoreticalEnd
+        ? undefined  // 正確な日付は時間軸に依存するため、barsToApex で代替
+        : undefined;
+
       push(patterns, {
         type: wedgeType,
         confidence,
         range: { start, end },
-        apex: { idx: apex.apexIdx, barsToApex: apex.barsToApex },
+        daysToApex: apex.isValid ? apex.barsToApex : undefined,
+        ...(apexDate ? { apexDate } : {}),
         ...(aftermath ? { aftermath } : {}),
         ...(diagram ? { structureDiagram: diagram } : {})
       });
@@ -703,7 +709,7 @@ export function detectWedges(ctx: DetectContext): DetectResult {
         confidence,
         range: { start, end },
         status,
-        apex: { idx: fApex.apexIdx, barsToApex: fApex.barsToApex },
+        daysToApex: fApex.isValid ? fApex.barsToApex : undefined,
         breakoutDirection,
         outcome,
         breakoutDate,
