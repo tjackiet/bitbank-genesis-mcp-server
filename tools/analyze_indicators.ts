@@ -40,6 +40,8 @@ export function sma(values: number[], period: number = 25): NumericSeries {
     sum += values[i];
     if (i >= period) {
       sum -= values[i - period];
+    }
+    if (i >= period - 1) {
       results.push(Number((sum / period).toFixed(2)));
     } else {
       results.push(null);
@@ -66,8 +68,12 @@ export function rsi(values: number[], period: number = 14): NumericSeries {
     }
 
     if (i === period) {
-      const rs = gains / (losses || 1);
-      results.push(Number((100 - 100 / (1 + rs)).toFixed(2)));
+      // First RSI: use simple averages, store them for Wilder smoothing continuity
+      const avgGain = gains / period;
+      const avgLoss = losses / period;
+      const rs = avgGain / (avgLoss || 1);
+      const rsiValue = Number((100 - 100 / (1 + rs)).toFixed(2));
+      results.push({ value: rsiValue, gains: avgGain, losses: avgLoss });
     } else if (i > period) {
       const prev = results[i - 1];
       const prevGains = typeof prev === 'object' && prev ? prev.gains : 0;
@@ -153,9 +159,20 @@ export function macd(values: number[], fast = 12, slow = 26, signal = 9): { line
     if (a == null || b == null) line.push(null);
     else line.push(Number(((a as number) - (b as number)).toFixed(2)));
   }
-  // signal EMA over MACD line
-  const sig = ema(line.map((v) => (v == null ? 0 : (v as number))) as number[], signal);
-  const signalSeries: NumericSeries = sig.map((v, i) => (line[i] == null ? null : v));
+  // signal EMA over MACD line — compute only from non-null MACD values
+  // to avoid zero-padding distortion in the signal EMA seed
+  const validStart = line.findIndex(v => v != null);
+  let signalSeries: NumericSeries;
+  if (validStart < 0) {
+    signalSeries = line.map(() => null);
+  } else {
+    const validLine = line.slice(validStart).map(v => v as number);
+    const sigFromValid = ema(validLine, signal);
+    signalSeries = [
+      ...new Array(validStart).fill(null) as null[],
+      ...sigFromValid,
+    ];
+  }
   const hist: NumericSeries = line.map((v, i) => (v == null || signalSeries[i] == null ? null : Number(((v as number) - (signalSeries[i] as number)).toFixed(2))));
   return { line, signal: signalSeries, hist };
 }
