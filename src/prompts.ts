@@ -1876,26 +1876,6 @@ MACD（中央が0、左が弱気・右が強気）:
   },
 
 
-  {
-    name: 'test_simple',
-    description: 'テスト用シンプルPrompt',
-    messages: [
-      {
-        role: 'user',
-        content: [
-          { type: 'text', text: 'ビットコインの現在の価格を教えてください。' }
-        ]
-      }
-    ],
-    metadata: {
-      level: PromptLevel.BEGINNER,
-      category: PromptCategory.ANALYSIS,
-      tags: ['test']
-    }
-  },
-  // === Beginner analysis-only prompts (tools only; no chart rendering) ===
-
-
 
 ];
 

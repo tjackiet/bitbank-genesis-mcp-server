@@ -16,8 +16,6 @@
     "ci:typecheck": "npm run gen:types && tsc --noEmit -p tsconfig.json",
     "build": "npm run ci:typecheck",
     "gen:types": "tsx tools/gen_types.ts",
-    "sync:manifest": "tsx tools/sync_manifest.ts",
-    "sync:prompts": "tsx tools/sync_prompts.ts",
     "postinstall": "mkdir -p assets && cp node_modules/lightweight-charts/dist/lightweight-charts.standalone.production.js assets/lightweight-charts.standalone.js || true"
   },
   "keywords": [],

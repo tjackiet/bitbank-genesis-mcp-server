@@ -8,7 +8,7 @@
  * 1. tools/<name>.ts にツール関数を実装
  * 2. 同ファイル（または src/handlers/<name>Handler.ts）に toolDef を export
  * 3. ★ 本ファイルに import + allToolDefs に追加 ★
- * 4. npm run sync:manifest && npm run typecheck
+ * 4. npm run gen:types && npm run typecheck
  */
 
 import type { ToolDefinition } from './tool-definition.js';
