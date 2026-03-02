@@ -114,7 +114,7 @@ BTCの今の市場状況を分析して
 ## 詳細ドキュメント
 - プロンプト集（初心者〜中級者向け）: [docs/prompts-table.md](docs/prompts-table.md)
 - ツール一覧と使い分け: [docs/tools.md](docs/tools.md)
-- 開発者向けガイド（スキーマ同期・型生成・CI など）: [CONTRIBUTING.md](CONTRIBUTING.md)
+- 開発者向けガイド（型生成・CI など）: [CONTRIBUTING.md](CONTRIBUTING.md)
 - 運用・監視（ログ集計／Docker起動 ほか）: [docs/ops.md](docs/ops.md)
 
 ## よくある質問（FAQ）
