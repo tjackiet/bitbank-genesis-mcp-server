@@ -1067,15 +1067,17 @@ MACD（中央が0、左が弱気・右が強気）:
 
 【核心ルール】
 - 完成後80日以上のパターン → 完全に無視（言及しない）
-- ネックライン/ターゲットから10%超離れている → 自動的に低影響度⚪
+- 現在価格がネックライン/ターゲットから10%超離れている → 自動的に低影響度⚪
 - 中間処理の説明は出力しない（最終結果のみ表示）
 
 【ツール（2つ）】
 1) detect_patterns(pair=btc_jpy, type=1day, limit=180, view=detailed, includeForming=true, includeCompleted=true, requireCurrentInPattern=true, currentRelevanceDays=80)
 2) analyze_candle_patterns(pair=btc_jpy, type=1day, allow_partial_patterns=false)
-   → パターン検出時は render_candle_pattern_diagram でSVG生成
+   ※図の生成タイミングはセクション3参照
 
 【影響度判定】
+整合度スコア基準: 0.8以上＝高評価 / 0.7〜0.8＝中評価 / 0.7未満＝低評価
+
 | 条件 | 影響度 |
 |------|--------|
 | ±10%以内 + 高評価 | 🔴高 |
@@ -1101,6 +1103,7 @@ MACD（中央が0、左が弱気・右が強気）:
 ## 3. 短期ローソク足パターン（1〜3本足）
 1本足（ハンマー/流れ星/十字線）、2本足（包み線/はらみ線等）、3本足（明星/三兵等）
 パターン名、確定日、方向性、過去実績（1/3/5日後）
+🔧 パターン検出時 → 必ず render_candle_pattern_diagram でSVG生成・表示
 なければ「ℹ️ 検出なし」
 
 ## 4. 総合解釈
