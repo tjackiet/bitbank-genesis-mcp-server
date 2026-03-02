@@ -188,9 +188,39 @@ export function detectTriangles(ctx: DetectContext): DetectResult {
 
       if (peaks.length < 2 || valleys.length < 2) continue;
 
-      // R²-based regression
-      const upperLine = lrWithR2(peaks.map(p => ({ x: p.idx, y: p.price })));
-      const lowerLine = lrWithR2(valleys.map(p => ({ x: p.idx, y: p.price })));
+      // R²-based regression with robust outlier removal fallback.
+      // When initial R² is below threshold, iteratively remove the point
+      // with the largest residual and re-fit, keeping at least 3 points.
+      // This handles noisy relaxed-swing valleys that don't sit on the
+      // true support/resistance line (common in descending/ascending triangles).
+      const robustFit = (
+        pts: Array<{ idx: number; price: number }>,
+        minPoints: number,
+      ): { line: ReturnType<typeof lrWithR2>; filtered: typeof pts } => {
+        let current = [...pts];
+        let line = lrWithR2(current.map(p => ({ x: p.idx, y: p.price })));
+        const maxRemovals = Math.max(0, pts.length - minPoints);
+        for (let r = 0; r < maxRemovals && line.r2 < params.minR2; r++) {
+          // Find point with largest absolute residual
+          let worstIdx = 0;
+          let worstResidual = 0;
+          for (let j = 0; j < current.length; j++) {
+            const residual = Math.abs(current[j].price - line.valueAt(current[j].idx));
+            if (residual > worstResidual) {
+              worstResidual = residual;
+              worstIdx = j;
+            }
+          }
+          current = current.filter((_, j) => j !== worstIdx);
+          if (current.length < minPoints) break;
+          line = lrWithR2(current.map(p => ({ x: p.idx, y: p.price })));
+        }
+        return { line, filtered: current };
+      };
+
+      const minPtsForFit = 3;
+      let { line: upperLine, filtered: filteredPeaks } = robustFit(peaks, minPtsForFit);
+      let { line: lowerLine, filtered: filteredValleys } = robustFit(valleys, minPtsForFit);
 
       if (upperLine.r2 < params.minR2 || lowerLine.r2 < params.minR2) {
         debugCandidates.push({
@@ -198,7 +228,14 @@ export function detectTriangles(ctx: DetectContext): DetectResult {
           accepted: false,
           reason: 'poor_trendline_fit',
           indices: [winStart, winEnd],
-          details: { r2Upper: Number(upperLine.r2.toFixed(3)), r2Lower: Number(lowerLine.r2.toFixed(3)) }
+          details: {
+            r2Upper: Number(upperLine.r2.toFixed(3)),
+            r2Lower: Number(lowerLine.r2.toFixed(3)),
+            peaksUsed: filteredPeaks.length,
+            valleysUsed: filteredValleys.length,
+            peaksTotal: peaks.length,
+            valleysTotal: valleys.length,
+          }
         });
         continue;
       }
@@ -212,9 +249,10 @@ export function detectTriangles(ctx: DetectContext): DetectResult {
       if (convergenceRatio >= params.minConvergence) continue; // not converging enough
 
       // Slope classification (relative slope over window)
+      // Use filtered points (post outlier-removal) for slope analysis
       const barsSpan = Math.max(1, winEnd - winStart);
-      const avgHigh = peaks.reduce((s, p) => s + p.price, 0) / peaks.length;
-      const avgLow = valleys.reduce((s, p) => s + p.price, 0) / valleys.length;
+      const avgHigh = filteredPeaks.reduce((s, p) => s + p.price, 0) / filteredPeaks.length;
+      const avgLow = filteredValleys.reduce((s, p) => s + p.price, 0) / filteredValleys.length;
       const upperRelSlope = upperLine.slope * barsSpan / Math.max(1e-12, avgHigh);
       const lowerRelSlope = lowerLine.slope * barsSpan / Math.max(1e-12, avgLow);
 
@@ -258,8 +296,8 @@ export function detectTriangles(ctx: DetectContext): DetectResult {
       const localATR = calcATR(candles, Math.max(1, winStart), winEnd, 14);
 
       const patternEndIdx = Math.max(
-        peaks[peaks.length - 1].idx,
-        valleys[valleys.length - 1].idx,
+        filteredPeaks[filteredPeaks.length - 1].idx,
+        filteredValleys[filteredValleys.length - 1].idx,
       );
 
       let breakoutIdx = -1;
@@ -338,7 +376,7 @@ export function detectTriangles(ctx: DetectContext): DetectResult {
       // --- Scoring ---
       const fitScore = (upperLine.r2 + lowerLine.r2) / 2;
       const convScore = clamp01((1 - convergenceRatio) / 0.5);
-      const touchScore = clamp01((peaks.length + valleys.length) / 8);
+      const touchScore = clamp01((filteredPeaks.length + filteredValleys.length) / 8);
       // Symmetry: how close are the two slope magnitudes? (relevant for symmetrical type)
       const symScore = triangleType === 'triangle_symmetrical'
         ? clamp01(1 - Math.abs(Math.abs(upperRelSlope) - Math.abs(lowerRelSlope))
@@ -485,7 +523,9 @@ export function detectTriangles(ctx: DetectContext): DetectResult {
           r2Lower: Number(lowerLine.r2.toFixed(3)),
           upperRelSlope: Number(upperRelSlope.toFixed(4)),
           lowerRelSlope: Number(lowerRelSlope.toFixed(4)),
-          touchCount: peaks.length + valleys.length,
+          touchCount: filteredPeaks.length + filteredValleys.length,
+          outlierPeaksRemoved: peaks.length - filteredPeaks.length,
+          outlierValleysRemoved: valleys.length - filteredValleys.length,
           breakout: hasBreakout ? { idx: breakoutIdx, direction: breakoutDirection } : null,
           status,
           confidence: finalConfidence,
