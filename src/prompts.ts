@@ -1586,10 +1586,8 @@ MACD（中央が0、左が弱気・右が強気）:
 4. get_flow_metrics(pair="btc_jpy", hours=8, bucketMs=60000) → 直近8時間の急騰/急落スパイク、売買バランス
 5. analyze_support_resistance(pair="btc_jpy", lookbackDays=90, topN=3) → サポート/レジスタンスライン
 6. get_orderbook(pair="btc_jpy", mode=pressure, bandsPct=[0.005, 0.01, 0.02]) → 板の買い/売り圧力
-7. analyze_sma_snapshot(pair="btc_jpy", type="1hour") → 1時間足の SMA 配列・クロス・乖離率
-8. analyze_sma_snapshot(pair="btc_jpy", type="4hour") → 4時間足の SMA 配列・クロス・乖離率
-9. analyze_sma_snapshot(pair="btc_jpy", type="1day") → 日足の SMA 配列・クロス・乖離率
-10. analyze_ichimoku_snapshot(pair="btc_jpy", type="1day") → 日足の一目均衡表（雲の位置関係・三役好転/逆転）
+7. analyze_mtf_sma(pair="btc_jpy") → 1h/4h/日足の SMA 配列を一括取得＋方向合流判定（内部並列実行）
+8. analyze_ichimoku_snapshot(pair="btc_jpy", type="1day") → 日足の一目均衡表（雲の位置関係・三役好転/逆転）
 
 【出力形式】
 取得したデータを使って、以下の構成の **HTML ファイル** を生成してください。
@@ -1654,18 +1652,19 @@ MACD（中央が0、左が弱気・右が強気）:
 - 判定ラベル（🟢買い圧力優勢 / 🔴売り圧力優勢 / 🟡均衡）
 
 ### 7. トレンド方向チェック（MTF）
+- データ元: analyze_mtf_sma の結果（data.timeframes["1hour" | "4hour" | "1day"]）
 - 3列レイアウト: 1時間足 / 4時間足 / 日足
 - 各列に以下を表示:
-  - SMA配列判定アイコン: 🟢上昇配列 / 🔴下降配列 / 🟡混合（analyze_sma_snapshot の alignment）
-  - 価格 vs SMA25: ▲上 / ▼下（smas.SMA_25.pricePosition）
-  - 価格 vs SMA75: ▲上 / ▼下（smas.SMA_75.pricePosition）
-  - 直近クロス（recentCrosses が空でなければ表示: GC/DC + 何本前）
+  - SMA配列判定アイコン: 🟢上昇配列 / 🔴下降配列 / 🟡混合（timeframes[tf].alignment）
+  - 価格 vs SMA25: ▲上 / ▼下（timeframes[tf].smas["25"].pricePosition）
+  - 価格 vs SMA75: ▲上 / ▼下（timeframes[tf].smas["75"].pricePosition）
+  - 直近クロス（timeframes[tf].recentCrosses が空でなければ表示: GC/DC + 何本前）
 - 日足列に追加:
   - 一目均衡表: 雲の{上/中/下}（assessment.pricePosition）+ 雲の方向（assessment.cloudSlope）
   - 三役好転/逆転（signals.sanpuku.kouten / gyakuten が true なら表示）
 - 下部に総合判定バー:
-  - 全TF一致（alignment が全て bullish or 全て bearish）→ 「✅ 全時間軸の方向が一致（上昇 or 下降）」
-  - 不一致 → 「⚠️ 時間軸間で乖離あり（短期:X / 中長期:Y）」と具体的に表示
+  - data.confluence.aligned === true → 「✅ 全時間軸の方向が一致」+ confluence.summary
+  - data.confluence.aligned === false → 「⚠️ 時間軸間で乖離あり」+ confluence.summary
 
 ### 8. ポイントセクション
 - 1-2行で今日の判断材料をまとめる（テキスト）

@@ -19,6 +19,7 @@ import { toolDef as getOrderbook } from '../tools/get_orderbook.js';
 import { toolDef as analyzeIchimokuSnapshot } from '../tools/analyze_ichimoku_snapshot.js';
 import { toolDef as analyzeBbSnapshot } from '../tools/analyze_bb_snapshot.js';
 import { toolDef as analyzeSmaSnapshot } from '../tools/analyze_sma_snapshot.js';
+import { toolDef as analyzeMtfSma } from '../tools/analyze_mtf_sma.js';
 import { toolDef as analyzeSupportResistance } from '../tools/analyze_support_resistance.js';
 import { toolDef as analyzeCandlePatterns } from '../tools/analyze_candle_patterns.js';
 import { toolDef as detectWhaleEvents } from '../tools/detect_whale_events.js';
@@ -62,6 +63,7 @@ export const allToolDefs: ToolDefinition[] = [
 	analyzeBbSnapshot,
 	analyzeIchimokuSnapshot,
 	analyzeSmaSnapshot,
+	analyzeMtfSma,
 	analyzeSupportResistance,
 	analyzeCandlePatterns,
 	analyzeMacdPattern,
