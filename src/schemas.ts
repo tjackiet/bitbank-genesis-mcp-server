@@ -1125,6 +1125,7 @@ export const AnalyzeSupportResistanceOutputSchema = z.union([
 // === Candle Patterns (2-bar patterns: engulfing, harami, etc.) ===
 
 export const CandlePatternTypeEnum = z.enum([
+  // 2本足パターン (Phase 1-2)
   'bullish_engulfing',
   'bearish_engulfing',
   'bullish_harami',
@@ -1133,6 +1134,15 @@ export const CandlePatternTypeEnum = z.enum([
   'tweezer_bottom',
   'dark_cloud_cover',
   'piercing_line',
+  // 1本足パターン (Phase 3)
+  'hammer',
+  'shooting_star',
+  'doji',
+  // 3本足パターン (Phase 3)
+  'morning_star',
+  'evening_star',
+  'three_white_soldiers',
+  'three_black_crows',
 ]);
 
 export const AnalyzeCandlePatternsInputSchema = z.object({
@@ -1170,7 +1180,7 @@ const LocalContextSchema = z.object({
 const DetectedCandlePatternSchema = z.object({
   pattern: CandlePatternTypeEnum,
   pattern_jp: z.string(),
-  direction: z.enum(['bullish', 'bearish']),
+  direction: z.enum(['bullish', 'bearish', 'neutral']),
   strength: z.number().min(0).max(1),
   candle_range_index: z.tuple([z.number().int(), z.number().int()]),
   uses_partial_candle: z.boolean(),

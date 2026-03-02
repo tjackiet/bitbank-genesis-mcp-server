@@ -31,3 +31,18 @@ export function bodyTop(c: Candle): number {
 export function bodyBottom(c: Candle): number {
   return Math.min(c.open, c.close);
 }
+
+/** 上ヒゲの長さ */
+export function upperShadow(c: Candle): number {
+  return c.high - bodyTop(c);
+}
+
+/** 下ヒゲの長さ */
+export function lowerShadow(c: Candle): number {
+  return bodyBottom(c) - c.low;
+}
+
+/** ローソク足全体のレンジ（高値 - 安値） */
+export function totalRange(c: Candle): number {
+  return c.high - c.low;
+}
