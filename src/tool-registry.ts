@@ -30,6 +30,7 @@ import { toolDef as getFlowMetrics } from '../tools/get_flow_metrics.js';
 import { toolDef as renderDepthSvg } from '../tools/render_depth_svg.js';
 import { toolDef as renderCandlePatternDiagram } from '../tools/render_candle_pattern_diagram.js';
 import { toolDef as detectMacdCross } from '../tools/detect_macd_cross.js';
+import { toolDef as analyzeVolumeProfile } from '../tools/analyze_volume_profile.js';
 
 // ── Complex tools（toolDef + handler は src/handlers/ に分離） ──
 import { toolDef as analyzeIndicators } from './handlers/analyzeIndicatorsHandler.js';
@@ -64,6 +65,7 @@ export const allToolDefs: ToolDefinition[] = [
 	analyzeCandlePatterns,
 	analyzeMacdPattern,
 	analyzeMarketSignal,
+	analyzeVolumeProfile,
 
 	// Detection
 	detectPatterns,
