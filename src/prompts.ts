@@ -1586,6 +1586,10 @@ MACD（中央が0、左が弱気・右が強気）:
 4. get_flow_metrics(pair="btc_jpy", hours=8, bucketMs=60000) → 直近8時間の急騰/急落スパイク、売買バランス
 5. analyze_support_resistance(pair="btc_jpy", lookbackDays=90, topN=3) → サポート/レジスタンスライン
 6. get_orderbook(pair="btc_jpy", mode=pressure, bandsPct=[0.005, 0.01, 0.02]) → 板の買い/売り圧力
+7. analyze_sma_snapshot(pair="btc_jpy", type="1hour") → 1時間足の SMA 配列・クロス・乖離率
+8. analyze_sma_snapshot(pair="btc_jpy", type="4hour") → 4時間足の SMA 配列・クロス・乖離率
+9. analyze_sma_snapshot(pair="btc_jpy", type="1day") → 日足の SMA 配列・クロス・乖離率
+10. analyze_ichimoku_snapshot(pair="btc_jpy", type="1day") → 日足の一目均衡表（雲の位置関係・三役好転/逆転）
 
 【出力形式】
 取得したデータを使って、以下の構成の **HTML ファイル** を生成してください。
@@ -1649,10 +1653,25 @@ MACD（中央が0、左が弱気・右が強気）:
 - BTC数量表示
 - 判定ラベル（🟢買い圧力優勢 / 🔴売り圧力優勢 / 🟡均衡）
 
-### 7. ポイントセクション
-- 1-2行で今日の判断材料をまとめる（テキスト）
+### 7. MTF 合流チェック（マルチタイムフレーム）
+- 3列レイアウト: 1時間足 / 4時間足 / 日足
+- 各列に以下を表示:
+  - SMA配列判定アイコン: 🟢上昇配列 / 🔴下降配列 / 🟡混合（analyze_sma_snapshot の alignment）
+  - 価格 vs SMA25: ▲上 / ▼下（smas.SMA_25.pricePosition）
+  - 価格 vs SMA75: ▲上 / ▼下（smas.SMA_75.pricePosition）
+  - 直近クロス（recentCrosses が空でなければ表示: GC/DC + 何本前）
+- 日足列に追加:
+  - 一目均衡表: 雲の{上/中/下}（assessment.pricePosition）+ 雲の方向（assessment.cloudSlope）
+  - 三役好転/逆転（signals.sanpuku.kouten / gyakuten が true なら表示）
+- 下部に総合判定バー:
+  - 全TF一致（alignment が全て bullish or 全て bearish）→ 「✅ 全時間軸の方向が一致（上昇 or 下降）」
+  - 不一致 → 「⚠️ 時間軸間で乖離あり（短期:X / 中長期:Y）」と具体的に表示
 
-### 8. 免責事項フッター
+### 8. ポイントセクション
+- 1-2行で今日の判断材料をまとめる（テキスト）
+- MTF 合流の結果も踏まえて総合的にまとめること
+
+### 9. 免責事項フッター
 - 「この分析は参考情報です。投資判断はご自身で行ってください。」
 
 ## デザイン要件
@@ -1781,6 +1800,54 @@ MACD（中央が0、左が弱気・右が強気）:
       <!-- ±1%帯域の買い/売り圧力バー -->
     </section>
     
+    <!-- MTF 合流チェック -->
+    <section class="bg-card rounded-lg p-6">
+      <h2 class="font-bold mb-4">🔀 マルチタイムフレーム合流</h2>
+      <div class="grid grid-cols-3 gap-4 mb-4">
+        <!-- 1時間足 -->
+        <div class="bg-accent rounded-lg p-4 text-center">
+          <p class="text-xs text-gray-400 mb-1">1時間足</p>
+          <p class="text-2xl mb-1">{1h_alignment_icon}</p>
+          <p class="text-sm font-bold mb-2">{1h_alignment_label}</p>
+          <div class="text-xs text-gray-400 space-y-1">
+            <p>SMA25: {1h_sma25_position}</p>
+            <p>SMA75: {1h_sma75_position}</p>
+            <p>{1h_recent_cross}</p>
+          </div>
+        </div>
+        <!-- 4時間足 -->
+        <div class="bg-accent rounded-lg p-4 text-center">
+          <p class="text-xs text-gray-400 mb-1">4時間足</p>
+          <p class="text-2xl mb-1">{4h_alignment_icon}</p>
+          <p class="text-sm font-bold mb-2">{4h_alignment_label}</p>
+          <div class="text-xs text-gray-400 space-y-1">
+            <p>SMA25: {4h_sma25_position}</p>
+            <p>SMA75: {4h_sma75_position}</p>
+            <p>{4h_recent_cross}</p>
+          </div>
+        </div>
+        <!-- 日足 -->
+        <div class="bg-accent rounded-lg p-4 text-center">
+          <p class="text-xs text-gray-400 mb-1">日足</p>
+          <p class="text-2xl mb-1">{1d_alignment_icon}</p>
+          <p class="text-sm font-bold mb-2">{1d_alignment_label}</p>
+          <div class="text-xs text-gray-400 space-y-1">
+            <p>SMA25: {1d_sma25_position}</p>
+            <p>SMA75: {1d_sma75_position}</p>
+            <p>{1d_recent_cross}</p>
+          </div>
+          <div class="border-t border-gray-600 mt-2 pt-2 text-xs text-gray-400">
+            <p>一目: 雲の{cloud_position}</p>
+            <p>{sanpuku_label}</p>
+          </div>
+        </div>
+      </div>
+      <!-- 総合判定 -->
+      <div class="bg-accent rounded-lg p-3 text-center">
+        <p class="text-sm font-bold">{confluence_judgment}</p>
+      </div>
+    </section>
+
     <!-- ポイント -->
     <section class="bg-card rounded-lg p-6">
       <h2 class="font-bold mb-3">💡 ポイント</h2>
