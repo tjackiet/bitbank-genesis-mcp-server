@@ -1653,7 +1653,7 @@ MACD（中央が0、左が弱気・右が強気）:
 - BTC数量表示
 - 判定ラベル（🟢買い圧力優勢 / 🔴売り圧力優勢 / 🟡均衡）
 
-### 7. MTF 合流チェック（マルチタイムフレーム）
+### 7. トレンド方向チェック（MTF）
 - 3列レイアウト: 1時間足 / 4時間足 / 日足
 - 各列に以下を表示:
   - SMA配列判定アイコン: 🟢上昇配列 / 🔴下降配列 / 🟡混合（analyze_sma_snapshot の alignment）
@@ -1800,9 +1800,10 @@ MACD（中央が0、左が弱気・右が強気）:
       <!-- ±1%帯域の買い/売り圧力バー -->
     </section>
     
-    <!-- MTF 合流チェック -->
+    <!-- トレンド方向チェック（MTF） -->
     <section class="bg-card rounded-lg p-6">
-      <h2 class="font-bold mb-4">🔀 マルチタイムフレーム合流</h2>
+      <h2 class="font-bold mb-1">🔀 トレンド方向チェック（MTF）</h2>
+      <p class="text-sm text-gray-400 mb-4">→ 移動平均線（SMA）を用いて短期〜長期の方向が揃っているかを確認</p>
       <div class="grid grid-cols-3 gap-4 mb-4">
         <!-- 1時間足 -->
         <div class="bg-accent rounded-lg p-4 text-center">
