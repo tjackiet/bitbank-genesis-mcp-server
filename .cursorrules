@@ -2,7 +2,7 @@
 
 ## プロジェクト概要
 
-bitbank 暗号資産取引所の MCP サーバー。40+ ツールでリアルタイム市場データ取得・テクニカル分析・チャート描画・バックテストを提供。
+bitbank 暗号資産取引所の MCP サーバー。22 ツールでリアルタイム市場データ取得・テクニカル分析・チャート描画・バックテストを提供。
 
 ## 技術スタック
 
@@ -25,7 +25,7 @@ npm run build               # gen:types + typecheck
 npm test                    # tools/tests/test_get_tickers_jpy.ts を実行
 
 # PR 前に必ず実行
-npm run sync:manifest && npm run sync:prompts && npm run gen:types && npm run typecheck
+npm run gen:types && npm run typecheck
 ```
 
 ## 重要なファイル
@@ -35,7 +35,7 @@ npm run sync:manifest && npm run sync:prompts && npm run gen:types && npm run ty
 | `src/server.ts` | MCP サーバー本体（自動登録ループ・トランスポート） |
 | `src/tool-registry.ts` | **全ツール定義の集約**（allToolDefs 配列） |
 | `src/schemas.ts` | Zod スキーマ定義（**単一ソース**） |
-| `tools/` | 各ツール実装（40+ ファイル）＋ `toolDef` エクスポート |
+| `tools/` | 各ツール実装＋ `toolDef` エクスポート |
 | `src/handlers/` | 複雑なハンドラロジック（100行超のツール用） |
 | `lib/` | 共有ユーティリティ（`result.ts`, `validate.ts`, `http.ts`, `datetime.ts` 等） |
 
@@ -56,7 +56,7 @@ npm run sync:manifest && npm run sync:prompts && npm run gen:types && npm run ty
 1. `tools/<name>.ts` に実装 + `export const toolDef: ToolDefinition = { name, description, inputSchema, handler }`
    - ハンドラが100行超なら `src/handlers/<name>Handler.ts` に分離
 2. `src/tool-registry.ts` の `allToolDefs` に追加
-3. `npm run sync:manifest && npm run typecheck`
+3. `npm run gen:types && npm run typecheck`
 
 ### 既存修正
 
