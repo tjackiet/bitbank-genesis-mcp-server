@@ -1581,13 +1581,14 @@ MACD（中央が0、左が弱気・右が強気）:
 
 【使用ツール】
 1. get_ticker(pair="btc_jpy") → リアルタイム現在価格
-2. get_candles(pair="btc_jpy", type="1hour", limit=24) → 直近24時間の1時間足（出来高棒グラフ用）
-3. render_chart_svg(pair="btc_jpy", type="1hour", limit=8, style="line", outputFormat="dataUri") → 直近8時間の価格折れ線チャート（data URI で返却）
-4. get_flow_metrics(pair="btc_jpy", hours=8, bucketMs=60000) → 直近8時間の急騰/急落スパイク、売買バランス
-5. analyze_support_resistance(pair="btc_jpy", lookbackDays=90, topN=3) → サポート/レジスタンスライン
-6. get_orderbook(pair="btc_jpy", mode=pressure, bandsPct=[0.005, 0.01, 0.02]) → 板の買い/売り圧力
-7. analyze_mtf_sma(pair="btc_jpy") → 1h/4h/日足の SMA 配列を一括取得＋方向合流判定（内部並列実行）
-8. analyze_ichimoku_snapshot(pair="btc_jpy", type="1day") → 日足の一目均衡表（雲の位置関係・三役好転/逆転）
+2. get_candles(pair="btc_jpy", type="1hour", limit=24) → 直近24時間の1時間足（出来高棒グラフ＋スパークライン用）
+3. get_flow_metrics(pair="btc_jpy", hours=8, bucketMs=60000) → 直近8時間の急騰/急落スパイク、売買バランス
+4. analyze_support_resistance(pair="btc_jpy", lookbackDays=90, topN=3) → サポート/レジスタンスライン
+5. get_orderbook(pair="btc_jpy", mode=pressure, bandsPct=[0.005, 0.01, 0.02]) → 板の買い/売り圧力
+6. analyze_mtf_sma(pair="btc_jpy") → 1h/4h/日足の SMA 配列を一括取得＋方向合流判定（内部並列実行）
+7. analyze_ichimoku_snapshot(pair="btc_jpy", type="1day") → 日足の一目均衡表（雲の位置関係・三役好転/逆転）
+
+※ 価格チャートは get_candles の直近8本の close 値からインライン SVG スパークラインを生成（render_chart_svg は不要）
 
 【出力形式】
 取得したデータを使って、以下の構成の **HTML ファイル** を生成してください。
@@ -1602,7 +1603,10 @@ MACD（中央が0、左が弱気・右が強気）:
 - 8時間前の価格 → 現在価格
 - 変動率（±X.X%）と方向アイコン（📈上昇 / 📉下落 / ➡️横ばい）
 - 高値・安値とその時刻
-- render_chart_svg の折れ線チャート（data URI）を \`<img>\` タグで埋め込み
+- インライン SVG スパークライン（get_candles の直近8本 close 値から生成）
+  - 生成手順: close 配列の min/max を求め、各値を viewBox="0 0 600 120" 内の (x, y) 座標に正規化
+  - \`<polyline>\` で折れ線、\`<polygon>\` で半透明の面塗り、始点・終点に \`<circle>\` マーカー
+  - 下部に始値・終値・変動率(%)を表示
   - 途中の値動き（下がってから戻した等）がひと目でわかる
 
 ### 3. イベントタイムライン

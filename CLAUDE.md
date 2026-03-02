@@ -89,6 +89,8 @@ AI はチャートや可視化を求められた場合、**必ず本プロジェ
 
 Cursor では `savePng: true` + ワークスペース内の `outputDir` を推奨（ワークスペース外はパスがクリック不可）。
 
+**例外**: おはようレポート（`src/prompts.ts` の ohayo プロンプト）では、`get_candles` の close 配列から `<svg><polyline>` による簡易スパークラインをインライン生成してよい。`render_chart_svg` の呼び出し削減が目的。
+
 ### HTML 出力時の Tailwind CSS
 
 - `cdn.tailwindcss.com`（Play CDN）は**使用禁止**。
