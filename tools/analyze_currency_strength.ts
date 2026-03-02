@@ -1,7 +1,7 @@
 import getTickersJpy from './get_tickers_jpy.js';
 import analyzeIndicators from './analyze_indicators.js';
 import { ok, fail, failFromError } from '../lib/result.js';
-import { formatPercent, formatVolumeJPY } from '../lib/formatter.js';
+import { formatPercent, formatVolumeJPY, formatPriceJPY } from '../lib/formatter.js';
 import { nowIso } from '../lib/datetime.js';
 import {
 	AnalyzeCurrencyStrengthInputSchema,
@@ -191,7 +191,8 @@ export default async function analyzeCurrencyStrength(
 			const rsiStr = item.components.rsi != null ? `RSI=${Math.round(item.components.rsi)}` : 'RSI=n/a';
 			const smaStr = item.components.smaDeviation != null ? `SMA25乖離${formatPercent(item.components.smaDeviation, { sign: true, digits: 2 })}` : '';
 			const volStr = formatVolumeJPY(item.volumeJPY);
-			lines.push(`${item.rank}. ${emoji} ${item.currency} score=${item.score} | 24h:${chgStr} | ${rsiStr} | ${smaStr} | 出来高${volStr}`);
+			const priceStr = item.price != null ? formatPriceJPY(item.price) : 'n/a';
+			lines.push(`${item.rank}. ${emoji} ${item.currency} ${priceStr} score=${item.score} | 24h:${chgStr} | ${rsiStr} | ${smaStr} | 出来高${volStr}`);
 		}
 		if (strongBullish.length > 0) {
 			lines.push('');
