@@ -1443,3 +1443,46 @@ export const AnalyzeVolumeProfileMetaSchemaOut = BaseMetaSchema.extend({
 });
 
 export const AnalyzeVolumeProfileOutputSchema = toolResultSchema(AnalyzeVolumeProfileDataSchemaOut, AnalyzeVolumeProfileMetaSchemaOut);
+
+// ── analyze_currency_strength ──
+
+export const AnalyzeCurrencyStrengthInputSchema = z.object({
+  topN: z.number().int().min(3).max(30).optional().default(10).describe('分析対象の上位ペア数（出来高順で選出）'),
+  type: CandleTypeEnum.optional().default('1day').describe('RSI/SMA 算出に使うローソク足の種類'),
+});
+
+const CurrencyStrengthItemSchema = z.object({
+  pair: z.string(),
+  currency: z.string().describe('通貨コード（例: BTC）'),
+  score: z.number().describe('総合強弱スコア（-100〜+100）'),
+  rank: z.number().int(),
+  components: z.object({
+    change24h: z.number().nullable().describe('24h変化率 %'),
+    rsi: z.number().nullable().describe('RSI(14)'),
+    smaDeviation: z.number().nullable().describe('現在価格のSMA25からの乖離率 %'),
+    volumeRank: z.number().int().describe('出来高順位（1=最大）'),
+  }),
+  price: z.number().nullable(),
+  volumeJPY: z.number().nullable(),
+  interpretation: z.enum(['strong_bullish', 'bullish', 'neutral', 'bearish', 'strong_bearish']),
+});
+
+export const AnalyzeCurrencyStrengthDataSchemaOut = z.object({
+  rankings: z.array(CurrencyStrengthItemSchema),
+  summary: z.object({
+    totalPairs: z.number().int(),
+    analyzedPairs: z.number().int(),
+    strongBullish: z.array(z.string()).describe('強気トップ銘柄'),
+    strongBearish: z.array(z.string()).describe('弱気ボトム銘柄'),
+    marketBias: z.enum(['bullish', 'bearish', 'neutral']).describe('市場全体のバイアス'),
+    avgScore: z.number(),
+  }),
+});
+
+export const AnalyzeCurrencyStrengthMetaSchemaOut = z.object({
+  fetchedAt: z.string(),
+  type: z.string(),
+  topN: z.number().int(),
+});
+
+export const AnalyzeCurrencyStrengthOutputSchema = toolResultSchema(AnalyzeCurrencyStrengthDataSchemaOut, AnalyzeCurrencyStrengthMetaSchemaOut);
