@@ -1367,7 +1367,7 @@ export const RunBacktestOutputSchema = z.union([
 
 // === Analyze Volume Profile (VWAP + Volume Profile + Trade Size Distribution) ===
 export const AnalyzeVolumeProfileInputSchema = BasePairInputSchema.extend({
-  hours: z.number().min(0.5).max(24).optional().describe('直近N時間分の約定を取得（推奨）。limit より優先'),
+  hours: z.number().min(0.5).max(24).optional().default(4).describe('直近N時間分の約定を取得（デフォルト4h）。limit より優先'),
   limit: z.number().int().min(50).max(2000).optional().default(500).describe('取得する約定件数。hours 指定時は無視'),
   bins: z.number().int().min(5).max(100).optional().default(20).describe('Volume Profile の価格帯分割数'),
   valueAreaPct: z.number().min(0.5).max(0.95).optional().default(0.70).describe('Value Area のカバー率（デフォルト70%）'),
