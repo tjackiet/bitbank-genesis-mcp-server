@@ -222,6 +222,34 @@ export function detectTriangles(ctx: DetectContext): DetectResult {
       let { line: upperLine, filtered: filteredPeaks } = robustFit(peaks, minPtsForFit);
       let { line: lowerLine, filtered: filteredValleys } = robustFit(valleys, minPtsForFit);
 
+      // Flat-line fallback: when R² is low but points cluster around the same
+      // price level (low relative std deviation), use a horizontal line instead.
+      // This is critical for descending triangles (flat support) and ascending
+      // triangles (flat resistance) where non-monotonic oscillation around a
+      // level produces artificially low R² despite genuine flatness.
+      const tryFlatFallback = (
+        line: ReturnType<typeof lrWithR2>,
+        pts: Array<{ idx: number; price: number }>,
+      ): ReturnType<typeof lrWithR2> => {
+        if (line.r2 >= params.minR2 || pts.length < 3) return line;
+        const mean = pts.reduce((s, p) => s + p.price, 0) / pts.length;
+        const variance = pts.reduce((s, p) => s + (p.price - mean) ** 2, 0) / pts.length;
+        const relStd = Math.sqrt(variance) / mean;
+        if (relStd < params.flatThreshold) {
+          // Points are level enough — use horizontal fit
+          return {
+            slope: 0,
+            intercept: mean,
+            r2: clamp01(1 - relStd / params.flatThreshold),
+            valueAt: (_x: number) => mean,
+          };
+        }
+        return line;
+      };
+
+      upperLine = tryFlatFallback(upperLine, filteredPeaks);
+      lowerLine = tryFlatFallback(lowerLine, filteredValleys);
+
       if (upperLine.r2 < params.minR2 || lowerLine.r2 < params.minR2) {
         debugCandidates.push({
           type: 'triangle_symmetrical' as any,
@@ -323,7 +351,24 @@ export function detectTriangles(ctx: DetectContext): DetectResult {
       }
 
       // --- Status determination ---
-      const hasBreakout = breakoutIdx !== -1;
+      let hasBreakout = breakoutIdx !== -1;
+
+      // Whipsaw / false-breakout detection: if the breakout occurred but the
+      // latest candle's close is back inside the triangle boundaries, treat
+      // the breakout as a whipsaw and consider the pattern still forming.
+      let isWhipsaw = false;
+      if (hasBreakout && lastIdx > breakoutIdx) {
+        const latestClose = candles[lastIdx].close;
+        const uLatest = upperLine.valueAt(lastIdx);
+        const lLatest = lowerLine.valueAt(lastIdx);
+        if (latestClose > lLatest && latestClose < uLatest) {
+          isWhipsaw = true;
+          hasBreakout = false;
+          breakoutIdx = -1;
+          breakoutDirection = null;
+        }
+      }
+
       const resultEndIdx = hasBreakout ? breakoutIdx : patternEndIdx;
 
       // Expected breakout direction by type
