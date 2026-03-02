@@ -397,7 +397,9 @@ export const toolDef: ToolDefinition = {
 - VWAP: 出来高加重平均価格 ±1σ/2σバンド → 割高/割安判定
 - Volume Profile: 価格帯別出来高。POC（最大出来高帯）・Value Area（70%集中帯）
 - 約定サイズ分布: 四分位で4分類（小口≤P25, 中口P25–P75, 大口P75–P95, 特大口>P95）。大口売買偏りで蓄積/分配を推定
-hours（推奨）で期間指定、bins=20で価格帯分割。`,
+hours（推奨）で期間指定、bins=20で価格帯分割。
+用途別推奨: スキャルピング hours=0.5〜1 / デイトレ hours=4〜8 / スイング hours=12〜24
+※ 24h超は非対応（API上限1000件/日による精度低下のため）`,
 	inputSchema: AnalyzeVolumeProfileInputSchema,
 	handler: async ({ pair, hours, limit, bins, valueAreaPct, tz }: any) =>
 		analyzeVolumeProfile(pair, hours != null ? Number(hours) : undefined, Number(limit), Number(bins), Number(valueAreaPct), tz),
