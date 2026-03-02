@@ -1420,6 +1420,7 @@ export const AnalyzeVolumeProfileDataSchemaOut = z.object({
   }),
   tradeSizes: z.object({
     categories: z.array(TradeSizeCategorySchema),
+    thresholds: z.object({ p25: z.number(), p75: z.number(), p95: z.number() }),
     largeTradeBias: z.object({
       buyVolume: z.number(),
       sellVolume: z.number(),

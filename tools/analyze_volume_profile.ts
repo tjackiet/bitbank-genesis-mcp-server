@@ -251,6 +251,7 @@ function calcTradeSizeDistribution(txs: Tx[]) {
 
 	return {
 		categories: result,
+		thresholds: { p25: Number(p25.toFixed(8)), p75: Number(p75.toFixed(8)), p95: Number(p95.toFixed(8)) },
 		largeTradeBias: {
 			buyVolume: Number(largeBuyVol.toFixed(8)),
 			sellVolume: Number(largeSellVol.toFixed(8)),
@@ -369,7 +370,8 @@ export default async function analyzeVolumeProfile(
 			`  POC: ${fmtPx(profile.poc.price)} (最大出来高価格帯)`,
 			`  Value Area: ${fmtPx(profile.valueArea.low)}〜${fmtPx(profile.valueArea.high)} (${profile.valueArea.pct}%)`,
 			'',
-			'💰 約定サイズ分布:',
+			`💰 約定サイズ分布 (閾値: P25=${tradeSizes.thresholds.p25}, P75=${tradeSizes.thresholds.p75}, P95=${tradeSizes.thresholds.p95}):`,
+			`  分類基準: 小口≤P25, 中口P25–P75, 大口P75–P95, 特大口>P95`,
 			...tradeSizes.categories.map(c =>
 				`  ${c.label}: ${c.count}件 ${c.volume.toFixed(4)} (${c.pct}%) 買${c.buyVolume.toFixed(4)}/売${c.sellVolume.toFixed(4)}`
 			),
@@ -391,18 +393,11 @@ export default async function analyzeVolumeProfile(
 // ── MCP ツール定義（tool-registry から自動収集） ──
 export const toolDef: ToolDefinition = {
 	name: 'analyze_volume_profile',
-	description: `約定データから Volume Profile・VWAP・約定サイズ分布を算出する分析ツール。
-
-【3つの指標】
-1. VWAP（出来高加重平均価格）: 「今の価格は割高？割安？」に直接回答。±1σ/2σバンド付き
-2. Volume Profile: 価格帯別の出来高分布。POC（最大出来高価格帯）とValue Area（出来高70%集中帯）
-3. Trade Size Distribution: 小口/中口/大口/特大口の分類。大口の売買偏りで機関投資家の動向を推定
-
-【パラメータ】
-- hours（推奨）: 直近N時間の約定を分析（例: 4 → 直近4時間）
-- limit: 約定件数ベース（hours未指定時のフォールバック）
-- bins: Volume Profile の価格帯分割数（デフォルト20）
-- valueAreaPct: Value Area のカバー率（デフォルト0.70 = 70%）`,
+	description: `約定データから VWAP・Volume Profile・約定サイズ分布を算出。
+- VWAP: 出来高加重平均価格 ±1σ/2σバンド → 割高/割安判定
+- Volume Profile: 価格帯別出来高。POC（最大出来高帯）・Value Area（70%集中帯）
+- 約定サイズ分布: 四分位で4分類（小口≤P25, 中口P25–P75, 大口P75–P95, 特大口>P95）。大口売買偏りで蓄積/分配を推定
+hours（推奨）で期間指定、bins=20で価格帯分割。`,
 	inputSchema: AnalyzeVolumeProfileInputSchema,
 	handler: async ({ pair, hours, limit, bins, valueAreaPct, tz }: any) =>
 		analyzeVolumeProfile(pair, hours != null ? Number(hours) : undefined, Number(limit), Number(bins), Number(valueAreaPct), tz),
