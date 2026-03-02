@@ -1364,3 +1364,81 @@ export const RunBacktestOutputSchema = z.union([
     availableStrategies: z.array(StrategyTypeEnum).optional(),
   }),
 ]);
+
+// === Analyze Volume Profile (VWAP + Volume Profile + Trade Size Distribution) ===
+export const AnalyzeVolumeProfileInputSchema = BasePairInputSchema.extend({
+  hours: z.number().min(0.5).max(24).optional().describe('直近N時間分の約定を取得（推奨）。limit より優先'),
+  limit: z.number().int().min(50).max(2000).optional().default(500).describe('取得する約定件数。hours 指定時は無視'),
+  bins: z.number().int().min(5).max(100).optional().default(20).describe('Volume Profile の価格帯分割数'),
+  valueAreaPct: z.number().min(0.5).max(0.95).optional().default(0.70).describe('Value Area のカバー率（デフォルト70%）'),
+  tz: z.string().optional().default('Asia/Tokyo'),
+});
+
+const VwapBandSchema = z.object({
+  upper2sigma: z.number(),
+  upper1sigma: z.number(),
+  lower1sigma: z.number(),
+  lower2sigma: z.number(),
+});
+
+const VolumeProfileBinSchema = z.object({
+  low: z.number(),
+  high: z.number(),
+  label: z.string(),
+  buyVolume: z.number(),
+  sellVolume: z.number(),
+  totalVolume: z.number(),
+  pct: z.number(),
+  dominant: z.enum(['buy', 'sell', 'balanced']),
+});
+
+const TradeSizeCategorySchema = z.object({
+  label: z.string(),
+  minSize: z.number(),
+  maxSize: z.number().nullable(),
+  count: z.number().int(),
+  volume: z.number(),
+  pct: z.number(),
+  buyVolume: z.number(),
+  sellVolume: z.number(),
+});
+
+export const AnalyzeVolumeProfileDataSchemaOut = z.object({
+  vwap: z.object({
+    price: z.number(),
+    stdDev: z.number(),
+    bands: VwapBandSchema,
+    currentPrice: z.number(),
+    deviationPct: z.number(),
+    position: z.enum(['above_2sigma', 'above_1sigma', 'at_vwap', 'below_1sigma', 'below_2sigma']),
+    interpretation: z.string(),
+  }),
+  profile: z.object({
+    bins: z.array(VolumeProfileBinSchema),
+    poc: z.object({ price: z.number(), volume: z.number(), binIndex: z.number().int() }),
+    valueArea: z.object({ high: z.number(), low: z.number(), volume: z.number(), pct: z.number() }),
+  }),
+  tradeSizes: z.object({
+    categories: z.array(TradeSizeCategorySchema),
+    largeTradeBias: z.object({
+      buyVolume: z.number(),
+      sellVolume: z.number(),
+      ratio: z.number().nullable(),
+      interpretation: z.string(),
+    }),
+  }),
+  params: z.object({
+    totalTrades: z.number().int(),
+    totalVolume: z.number(),
+    priceRange: z.object({ high: z.number(), low: z.number() }),
+    timeRange: z.object({ start: z.string(), end: z.string(), durationMin: z.number() }),
+    bins: z.number().int(),
+    valueAreaPct: z.number(),
+  }),
+});
+
+export const AnalyzeVolumeProfileMetaSchemaOut = BaseMetaSchema.extend({
+  count: z.number().int(),
+});
+
+export const AnalyzeVolumeProfileOutputSchema = toolResultSchema(AnalyzeVolumeProfileDataSchemaOut, AnalyzeVolumeProfileMetaSchemaOut);
