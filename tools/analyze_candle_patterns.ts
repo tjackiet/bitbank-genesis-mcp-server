@@ -1,14 +1,17 @@
 /**
- * analyze_candle_patterns - 2本足パターン検出（包み線・はらみ線等）
+ * analyze_candle_patterns - ローソク足パターン検出（1〜3本足）
  *
  * 設計思想:
  * - 目的: BTC/JPY の直近5日間のローソク足から短期反転パターンを検出
- * - 対象: 2営業日の短期パターン（包み線、はらみ線等）
+ * - 対象:
+ *   - 1本足: ハンマー、シューティングスター、十字線
+ *   - 2本足: 包み線、はらみ線、毛抜き、かぶせ線、切り込み線
+ *   - 3本足: 明けの明星、宵の明星、赤三兵、黒三兵
  * - 用途: 初心者向けの自然言語解説 + 過去統計付与
  *
  * 既存ツールとの違い:
  * - detect_patterns: 数週間〜数ヶ月スケールの大型チャートパターン
- * - 本ツール: 2本足の短期反転パターンに特化
+ * - 本ツール: 1〜3本足の短期反転パターンに特化
  *
  * 🚨 CRITICAL: 配列順序の明示
  * candles配列の順序は常に [最古, ..., 最新] です
@@ -28,7 +31,10 @@ import {
 } from '../src/schemas.js';
 import type { Candle, Pair } from '../src/types/domain.d.ts';
 import type { ToolDefinition } from '../src/tool-definition.js';
-import { isBullish, isBearish, bodySize, bodyTop, bodyBottom } from '../lib/candle-utils.js';
+import {
+  isBullish, isBearish, bodySize, bodyTop, bodyBottom,
+  upperShadow, lowerShadow, totalRange,
+} from '../lib/candle-utils.js';
 
 // ----- 型定義 -----
 type CandlePatternType = typeof CandlePatternTypeEnum._type;
@@ -63,7 +69,7 @@ interface LocalContext {
 interface DetectedCandlePattern {
   pattern: CandlePatternType;
   pattern_jp: string;
-  direction: 'bullish' | 'bearish';
+  direction: 'bullish' | 'bearish' | 'neutral';
   strength: number;
   candle_range_index: [number, number];
   uses_partial_candle: boolean;
@@ -72,31 +78,22 @@ interface DetectedCandlePattern {
   history_stats: HistoryStats | null;
 }
 
-// ----- パターン日本語名マッピング -----
-const PATTERN_JP_NAMES: Record<CandlePatternType, string> = {
-  bullish_engulfing: '陽線包み線',
-  bearish_engulfing: '陰線包み線',
-  bullish_harami: '陽線はらみ線',
-  bearish_harami: '陰線はらみ線',
-  tweezer_top: '毛抜き天井',
-  tweezer_bottom: '毛抜き底',
-  dark_cloud_cover: 'かぶせ線',
-  piercing_line: '切り込み線',
-};
+// ----- パターンコンテキスト -----
+interface PatternContext {
+  rangeHigh: number;
+  rangeLow: number;
+  avgBodySize: number;
+}
 
-const PATTERN_DIRECTIONS: Record<CandlePatternType, 'bullish' | 'bearish'> = {
-  bullish_engulfing: 'bullish',
-  bearish_engulfing: 'bearish',
-  bullish_harami: 'bullish',
-  bearish_harami: 'bearish',
-  tweezer_top: 'bearish',
-  tweezer_bottom: 'bullish',
-  dark_cloud_cover: 'bearish',
-  piercing_line: 'bullish',
-};
+// ----- 統一パターン定義 -----
+interface PatternConfig {
+  span: 1 | 2 | 3;
+  direction: 'bullish' | 'bearish' | 'neutral';
+  jp_name: string;
+  detect: (candles: Candle[], context?: PatternContext) => { detected: boolean; strength: number };
+}
 
 // ----- ヘルパー関数 -----
-// isBullish, isBearish, bodySize, bodyTop, bodyBottom → lib/candle-utils.ts
 
 /**
  * トレンド判定（直前n本の終値で判定）
@@ -146,316 +143,352 @@ function detectVolatilityLevel(
   return 'medium';
 }
 
-// ----- パターン検出関数 -----
+// =====================================================================
+// パターン検出関数
+// =====================================================================
+
+// ----- 1本足パターン (Phase 3) -----
 
 /**
- * 陽線包み線 (bullish_engulfing) の検出
- * 条件: 陰線 → それを完全に包む陽線
+ * ハンマー (hammer) の検出
+ * 条件: 長い下ヒゲ、小さい実体（上部）、短い上ヒゲ
  */
-function detectBullishEngulfing(candle1: Candle, candle2: Candle): { detected: boolean; strength: number } {
-  // candle1: 1本目（前日）、candle2: 2本目（当日）
-  if (!isBearish(candle1) || !isBullish(candle2)) {
-    return { detected: false, strength: 0 };
-  }
+function detectHammer(candles: Candle[], _context?: PatternContext): { detected: boolean; strength: number } {
+  const c = candles[0];
+  const range = totalRange(c);
+  if (range === 0) return { detected: false, strength: 0 };
 
-  // 2本目の実体が1本目の実体を完全に包む
-  // 2本目の始値 < 1本目の終値（または同値）かつ 2本目の終値 > 1本目の始値
-  const engulfs = candle2.open <= candle1.close && candle2.close >= candle1.open;
+  const body = bodySize(c);
+  const lower = lowerShadow(c);
+  const upper = upperShadow(c);
+  const bodyRatio = body / range;
 
-  if (!engulfs) {
-    return { detected: false, strength: 0 };
-  }
+  // 実体はレンジの5%〜35%（dojiと区別 & 大きすぎない）
+  if (bodyRatio < 0.05 || bodyRatio > 0.35) return { detected: false, strength: 0 };
+  // 下ヒゲが実体の2倍以上
+  if (lower < body * 2) return { detected: false, strength: 0 };
+  // 上ヒゲがレンジの25%以下
+  if (upper / range > 0.25) return { detected: false, strength: 0 };
+  // 下ヒゲがレンジの60%以上
+  if (lower / range < 0.60) return { detected: false, strength: 0 };
 
-  // 強度の計算: 包み込み度合い
-  const body1 = bodySize(candle1);
-  const body2 = bodySize(candle2);
-  const coverageRatio = body1 > 0 ? body2 / body1 : 1;
-
-  // 強度を0〜1に正規化（2倍以上包んでいれば1.0）
-  const strength = Math.min(coverageRatio / 2, 1.0);
-
+  const strength = Math.min((lower / range - 0.4) / 0.6, 1.0);
   return { detected: true, strength };
 }
 
 /**
- * 陰線包み線 (bearish_engulfing) の検出
- * 条件: 陽線 → それを完全に包む陰線
+ * シューティングスター (shooting_star) の検出
+ * 条件（ハンマーの逆）: 長い上ヒゲ、小さい実体（下部）、短い下ヒゲ
  */
-function detectBearishEngulfing(candle1: Candle, candle2: Candle): { detected: boolean; strength: number } {
-  if (!isBullish(candle1) || !isBearish(candle2)) {
-    return { detected: false, strength: 0 };
-  }
+function detectShootingStar(candles: Candle[], _context?: PatternContext): { detected: boolean; strength: number } {
+  const c = candles[0];
+  const range = totalRange(c);
+  if (range === 0) return { detected: false, strength: 0 };
 
-  // 2本目の実体が1本目の実体を完全に包む
-  const engulfs = candle2.open >= candle1.close && candle2.close <= candle1.open;
+  const body = bodySize(c);
+  const lower = lowerShadow(c);
+  const upper = upperShadow(c);
+  const bodyRatio = body / range;
 
-  if (!engulfs) {
-    return { detected: false, strength: 0 };
-  }
+  if (bodyRatio < 0.05 || bodyRatio > 0.35) return { detected: false, strength: 0 };
+  if (upper < body * 2) return { detected: false, strength: 0 };
+  if (lower / range > 0.25) return { detected: false, strength: 0 };
+  if (upper / range < 0.60) return { detected: false, strength: 0 };
 
-  const body1 = bodySize(candle1);
-  const body2 = bodySize(candle2);
-  const coverageRatio = body1 > 0 ? body2 / body1 : 1;
-  const strength = Math.min(coverageRatio / 2, 1.0);
-
+  const strength = Math.min((upper / range - 0.4) / 0.6, 1.0);
   return { detected: true, strength };
 }
 
 /**
- * 陽線はらみ線 (bullish_harami) の検出
- * 条件: 大陰線 → 小さいローソク足が内包される
+ * 十字線 (doji) の検出
+ * 条件: 実体がレンジの5%未満（始値≒終値）
+ * ヒゲの偏りで亜種を判別:
+ *   - 上下均等 → 通常十字線, 下ヒゲ優勢 → トンボ型, 上ヒゲ優勢 → トウバ型
  */
-function detectBullishHarami(candle1: Candle, candle2: Candle): { detected: boolean; strength: number } {
-  if (!isBearish(candle1)) {
-    return { detected: false, strength: 0 };
-  }
+function detectDoji(candles: Candle[], _context?: PatternContext): { detected: boolean; strength: number } {
+  const c = candles[0];
+  const range = totalRange(c);
+  if (range === 0) return { detected: false, strength: 0 };
 
-  // 2本目が1本目の実体内に収まる
-  const isContained =
-    bodyTop(candle2) <= bodyTop(candle1) && bodyBottom(candle2) >= bodyBottom(candle1);
+  const body = bodySize(c);
+  if (body / range >= 0.05) return { detected: false, strength: 0 };
 
-  if (!isContained) {
-    return { detected: false, strength: 0 };
-  }
-
-  // 2本目が1本目より十分小さい
-  const body1 = bodySize(candle1);
-  const body2 = bodySize(candle2);
-  if (body1 === 0 || body2 >= body1 * 0.7) {
-    return { detected: false, strength: 0 };
-  }
-
-  // 強度: 1本目の大きさと2本目の小ささの比率
-  const sizeRatio = 1 - body2 / body1;
-  const strength = Math.min(sizeRatio, 1.0);
+  const upper = upperShadow(c);
+  const lower = lowerShadow(c);
+  const shadowImbalance = Math.abs(upper - lower) / range;
+  const strength = Math.min(0.5 + shadowImbalance * 0.5, 1.0);
 
   return { detected: true, strength };
 }
 
-/**
- * 陰線はらみ線 (bearish_harami) の検出
- * 条件: 大陽線 → 小さいローソク足が内包される
- */
-function detectBearishHarami(candle1: Candle, candle2: Candle): { detected: boolean; strength: number } {
-  if (!isBullish(candle1)) {
-    return { detected: false, strength: 0 };
-  }
+// ----- 2本足パターン (Phase 1-2) -----
 
-  const isContained =
-    bodyTop(candle2) <= bodyTop(candle1) && bodyBottom(candle2) >= bodyBottom(candle1);
+/** 陽線包み線 (bullish_engulfing): 陰線 → それを完全に包む陽線 */
+function detectBullishEngulfing(candles: Candle[]): { detected: boolean; strength: number } {
+  const [c1, c2] = candles;
+  if (!isBearish(c1) || !isBullish(c2)) return { detected: false, strength: 0 };
+  if (!(c2.open <= c1.close && c2.close >= c1.open)) return { detected: false, strength: 0 };
 
-  if (!isContained) {
-    return { detected: false, strength: 0 };
-  }
-
-  const body1 = bodySize(candle1);
-  const body2 = bodySize(candle2);
-  if (body1 === 0 || body2 >= body1 * 0.7) {
-    return { detected: false, strength: 0 };
-  }
-
-  const sizeRatio = 1 - body2 / body1;
-  const strength = Math.min(sizeRatio, 1.0);
-
+  const body1 = bodySize(c1);
+  const body2 = bodySize(c2);
+  const strength = Math.min((body1 > 0 ? body2 / body1 : 1) / 2, 1.0);
   return { detected: true, strength };
 }
 
-// ----- Phase 2 パターン -----
+/** 陰線包み線 (bearish_engulfing): 陽線 → それを完全に包む陰線 */
+function detectBearishEngulfing(candles: Candle[]): { detected: boolean; strength: number } {
+  const [c1, c2] = candles;
+  if (!isBullish(c1) || !isBearish(c2)) return { detected: false, strength: 0 };
+  if (!(c2.open >= c1.close && c2.close <= c1.open)) return { detected: false, strength: 0 };
 
-/**
- * 毛抜き天井 (tweezer_top) の検出
- * 条件: 2営業日の高値がほぼ同じ（許容誤差 ±0.5%）
- * 注: 高値圏での出現判定はコンテキスト付きで行う
- */
-function detectTweezerTop(candle1: Candle, candle2: Candle, context?: PatternContext): { detected: boolean; strength: number } {
-  const avgHigh = (candle1.high + candle2.high) / 2;
-  const tolerance = avgHigh * 0.005; // ±0.5%（緩和: 元は0.2%）
-  const highDiff = Math.abs(candle1.high - candle2.high);
+  const body1 = bodySize(c1);
+  const body2 = bodySize(c2);
+  const strength = Math.min((body1 > 0 ? body2 / body1 : 1) / 2, 1.0);
+  return { detected: true, strength };
+}
 
-  if (highDiff > tolerance) {
-    return { detected: false, strength: 0 };
-  }
+/** 陽線はらみ線 (bullish_harami): 大陰線 → 小さいローソク足が内包 */
+function detectBullishHarami(candles: Candle[]): { detected: boolean; strength: number } {
+  const [c1, c2] = candles;
+  if (!isBearish(c1)) return { detected: false, strength: 0 };
+  if (!(bodyTop(c2) <= bodyTop(c1) && bodyBottom(c2) >= bodyBottom(c1))) return { detected: false, strength: 0 };
 
-  // 高値圏判定（コンテキストがある場合）
+  const body1 = bodySize(c1);
+  const body2 = bodySize(c2);
+  if (body1 === 0 || body2 >= body1 * 0.7) return { detected: false, strength: 0 };
+
+  return { detected: true, strength: Math.min(1 - body2 / body1, 1.0) };
+}
+
+/** 陰線はらみ線 (bearish_harami): 大陽線 → 小さいローソク足が内包 */
+function detectBearishHarami(candles: Candle[]): { detected: boolean; strength: number } {
+  const [c1, c2] = candles;
+  if (!isBullish(c1)) return { detected: false, strength: 0 };
+  if (!(bodyTop(c2) <= bodyTop(c1) && bodyBottom(c2) >= bodyBottom(c1))) return { detected: false, strength: 0 };
+
+  const body1 = bodySize(c1);
+  const body2 = bodySize(c2);
+  if (body1 === 0 || body2 >= body1 * 0.7) return { detected: false, strength: 0 };
+
+  return { detected: true, strength: Math.min(1 - body2 / body1, 1.0) };
+}
+
+/** 毛抜き天井 (tweezer_top): 2日連続で高値がほぼ同じ（±0.5%） */
+function detectTweezerTop(candles: Candle[], context?: PatternContext): { detected: boolean; strength: number } {
+  const [c1, c2] = candles;
+  const avgHigh = (c1.high + c2.high) / 2;
+  const highDiff = Math.abs(c1.high - c2.high);
+  if (highDiff > avgHigh * 0.005) return { detected: false, strength: 0 };
+
   if (context) {
-    const { rangeHigh, rangeLow } = context;
-    const range = rangeHigh - rangeLow;
-    const highZoneThreshold = rangeHigh - range * 0.2;
-
-    // どちらかの高値が上位20%にあること
-    if (candle1.high < highZoneThreshold && candle2.high < highZoneThreshold) {
-      return { detected: false, strength: 0 };
-    }
+    const range = context.rangeHigh - context.rangeLow;
+    const threshold = context.rangeHigh - range * 0.2;
+    if (c1.high < threshold && c2.high < threshold) return { detected: false, strength: 0 };
   }
 
-  // 強度: 高値の一致度（完全一致で1.0）
-  const matchRate = 1 - (highDiff / avgHigh) * 100;
-  const strength = Math.max(0, Math.min(matchRate, 1.0));
-
+  const strength = Math.max(0, Math.min(1 - (highDiff / avgHigh) * 100, 1.0));
   return { detected: true, strength };
 }
 
-/**
- * 毛抜き底 (tweezer_bottom) の検出
- * 条件: 2営業日の安値がほぼ同じ（許容誤差 ±0.5%）
- */
-function detectTweezerBottom(candle1: Candle, candle2: Candle, context?: PatternContext): { detected: boolean; strength: number } {
-  const avgLow = (candle1.low + candle2.low) / 2;
-  const tolerance = avgLow * 0.005; // ±0.5%（緩和: 元は0.2%）
-  const lowDiff = Math.abs(candle1.low - candle2.low);
+/** 毛抜き底 (tweezer_bottom): 2日連続で安値がほぼ同じ（±0.5%） */
+function detectTweezerBottom(candles: Candle[], context?: PatternContext): { detected: boolean; strength: number } {
+  const [c1, c2] = candles;
+  const avgLow = (c1.low + c2.low) / 2;
+  const lowDiff = Math.abs(c1.low - c2.low);
+  if (lowDiff > avgLow * 0.005) return { detected: false, strength: 0 };
 
-  if (lowDiff > tolerance) {
-    return { detected: false, strength: 0 };
-  }
-
-  // 安値圏判定（コンテキストがある場合）
   if (context) {
-    const { rangeHigh, rangeLow } = context;
-    const range = rangeHigh - rangeLow;
-    const lowZoneThreshold = rangeLow + range * 0.2;
-
-    // どちらかの安値が下位20%にあること
-    if (candle1.low > lowZoneThreshold && candle2.low > lowZoneThreshold) {
-      return { detected: false, strength: 0 };
-    }
+    const range = context.rangeHigh - context.rangeLow;
+    const threshold = context.rangeLow + range * 0.2;
+    if (c1.low > threshold && c2.low > threshold) return { detected: false, strength: 0 };
   }
 
-  // 強度: 安値の一致度
-  const matchRate = 1 - (lowDiff / avgLow) * 100;
-  const strength = Math.max(0, Math.min(matchRate, 1.0));
-
+  const strength = Math.max(0, Math.min(1 - (lowDiff / avgLow) * 100, 1.0));
   return { detected: true, strength };
+}
+
+/** かぶせ線 (dark_cloud_cover) */
+function detectDarkCloudCover(candles: Candle[], context?: PatternContext): { detected: boolean; strength: number } {
+  const [c1, c2] = candles;
+  if (!isBullish(c1) || !isBearish(c2)) return { detected: false, strength: 0 };
+
+  const body1 = bodySize(c1);
+  const avgBody = context?.avgBodySize || body1;
+  if (body1 < avgBody * 1.5) return { detected: false, strength: 0 };
+
+  const gapTol = body1 * 0.1;
+  if (c2.open < c1.close - gapTol) return { detected: false, strength: 0 };
+
+  const midPoint = (c1.open + c1.close) / 2;
+  if (c2.close >= midPoint) return { detected: false, strength: 0 };
+  if (c2.close <= c1.open) return { detected: false, strength: 0 };
+
+  return { detected: true, strength: Math.min((midPoint - c2.close) / body1, 1.0) };
+}
+
+/** 切り込み線 (piercing_line) */
+function detectPiercingLine(candles: Candle[], context?: PatternContext): { detected: boolean; strength: number } {
+  const [c1, c2] = candles;
+  if (!isBearish(c1) || !isBullish(c2)) return { detected: false, strength: 0 };
+
+  const body1 = bodySize(c1);
+  const avgBody = context?.avgBodySize || body1;
+  if (body1 < avgBody * 1.5) return { detected: false, strength: 0 };
+
+  const gapTol = body1 * 0.1;
+  if (c2.open > c1.close + gapTol) return { detected: false, strength: 0 };
+
+  const midPoint = (c1.open + c1.close) / 2;
+  if (c2.close <= midPoint) return { detected: false, strength: 0 };
+  if (c2.close >= c1.open) return { detected: false, strength: 0 };
+
+  return { detected: true, strength: Math.min((c2.close - midPoint) / body1, 1.0) };
+}
+
+// ----- 3本足パターン (Phase 3) -----
+
+/**
+ * 明けの明星 (morning_star)
+ * 大陰線→小さい実体→大陽線で1本目の中心値超え
+ */
+function detectMorningStar(candles: Candle[], context?: PatternContext): { detected: boolean; strength: number } {
+  const [c1, c2, c3] = candles;
+  if (!isBearish(c1) || !isBullish(c3)) return { detected: false, strength: 0 };
+
+  const body1 = bodySize(c1);
+  const body2 = bodySize(c2);
+  const body3 = bodySize(c3);
+  const avgBody = context?.avgBodySize || body1;
+
+  if (body1 < avgBody * 0.8) return { detected: false, strength: 0 };
+  if (body2 > body1 * 0.4) return { detected: false, strength: 0 };
+  if (body3 < avgBody * 0.8) return { detected: false, strength: 0 };
+
+  const midPointC1 = (c1.open + c1.close) / 2;
+  if (c3.close < midPointC1) return { detected: false, strength: 0 };
+
+  // BTC24h緩和: 2本目の実体下端が1本目の実体下端以下
+  if (bodyBottom(c2) > bodyBottom(c1)) return { detected: false, strength: 0 };
+
+  const recovery = c3.close - midPointC1;
+  return { detected: true, strength: Math.min(recovery / body1 + 0.3, 1.0) };
 }
 
 /**
- * かぶせ線 (dark_cloud_cover) の検出
- * 条件: 
- *   - 前日: 大陽線（平均実体の1.5倍以上）
- *   - 当日: 前日終値より高く始まる（ギャップアップ）
- *   - 当日: 陰線で、前日の中心値より下で引ける
- *   - ただし、前日の始値は下回らない
+ * 宵の明星 (evening_star)
+ * 大陽線→小さい実体→大陰線で1本目の中心値割れ
  */
-function detectDarkCloudCover(candle1: Candle, candle2: Candle, context?: PatternContext): { detected: boolean; strength: number } {
-  // 前日は陽線
-  if (!isBullish(candle1)) {
-    return { detected: false, strength: 0 };
-  }
+function detectEveningStar(candles: Candle[], context?: PatternContext): { detected: boolean; strength: number } {
+  const [c1, c2, c3] = candles;
+  if (!isBullish(c1) || !isBearish(c3)) return { detected: false, strength: 0 };
 
-  // 当日は陰線
-  if (!isBearish(candle2)) {
-    return { detected: false, strength: 0 };
-  }
-
-  const body1 = bodySize(candle1);
+  const body1 = bodySize(c1);
+  const body2 = bodySize(c2);
+  const body3 = bodySize(c3);
   const avgBody = context?.avgBodySize || body1;
-  const minBodySize = avgBody * 1.5;
 
-  // 前日は大陽線
-  if (body1 < minBodySize) {
-    return { detected: false, strength: 0 };
-  }
+  if (body1 < avgBody * 0.8) return { detected: false, strength: 0 };
+  if (body2 > body1 * 0.4) return { detected: false, strength: 0 };
+  if (body3 < avgBody * 0.8) return { detected: false, strength: 0 };
 
-  // 当日は前日終値より高く始まる（ギャップアップ）
-  // ※ 厳密なギャップでなくても、ほぼ同値から始まる場合も許容
-  const gapTolerance = body1 * 0.1; // 前日実体の10%以内の誤差を許容
-  if (candle2.open < candle1.close - gapTolerance) {
-    return { detected: false, strength: 0 };
-  }
+  const midPointC1 = (c1.open + c1.close) / 2;
+  if (c3.close > midPointC1) return { detected: false, strength: 0 };
 
-  // 前日の中心値
-  const midPoint = (candle1.open + candle1.close) / 2;
+  // BTC24h緩和: 2本目の実体上端が1本目の実体上端以上
+  if (bodyTop(c2) < bodyTop(c1)) return { detected: false, strength: 0 };
 
-  // 当日終値が中心値より下
-  if (candle2.close >= midPoint) {
-    return { detected: false, strength: 0 };
-  }
-
-  // 当日終値が前日始値より上（完全には下抜けない）
-  if (candle2.close <= candle1.open) {
-    return { detected: false, strength: 0 };
-  }
-
-  // 強度: 中心値からの侵入度
-  const penetration = midPoint - candle2.close;
-  const strength = Math.min(penetration / body1, 1.0);
-
-  return { detected: true, strength };
+  const decline = midPointC1 - c3.close;
+  return { detected: true, strength: Math.min(decline / body1 + 0.3, 1.0) };
 }
 
 /**
- * 切り込み線 (piercing_line) の検出
- * 条件（かぶせ線の逆）:
- *   - 前日: 大陰線
- *   - 当日: 前日終値より安く始まる（ギャップダウン）
- *   - 当日: 陽線で、前日の中心値を超える
- *   - ただし、前日の始値は超えない
+ * 赤三兵 (three_white_soldiers)
+ * 3本連続陽線、各終値が前を上回る、始値は前の実体内
  */
-function detectPiercingLine(candle1: Candle, candle2: Candle, context?: PatternContext): { detected: boolean; strength: number } {
-  // 前日は陰線
-  if (!isBearish(candle1)) {
-    return { detected: false, strength: 0 };
+function detectThreeWhiteSoldiers(candles: Candle[], context?: PatternContext): { detected: boolean; strength: number } {
+  const [c1, c2, c3] = candles;
+  if (!isBullish(c1) || !isBullish(c2) || !isBullish(c3)) return { detected: false, strength: 0 };
+  if (c2.close <= c1.close || c3.close <= c2.close) return { detected: false, strength: 0 };
+
+  const body1 = bodySize(c1);
+  const body2 = bodySize(c2);
+  const body3 = bodySize(c3);
+  const avgBody = context?.avgBodySize || (body1 + body2 + body3) / 3;
+
+  if (body1 < avgBody * 0.5 || body2 < avgBody * 0.5 || body3 < avgBody * 0.5) return { detected: false, strength: 0 };
+
+  // 各始値が前の実体内またはその近辺
+  const tol2 = body1 * 0.5;
+  const tol3 = body2 * 0.5;
+  if (c2.open < bodyBottom(c1) - tol2 || c2.open > bodyTop(c1) + tol2) return { detected: false, strength: 0 };
+  if (c3.open < bodyBottom(c2) - tol3 || c3.open > bodyTop(c2) + tol3) return { detected: false, strength: 0 };
+
+  // 上ヒゲが短い
+  for (const c of [c1, c2, c3]) {
+    const r = totalRange(c);
+    if (r > 0 && upperShadow(c) / r > 0.4) return { detected: false, strength: 0 };
   }
 
-  // 当日は陽線
-  if (!isBullish(candle2)) {
-    return { detected: false, strength: 0 };
-  }
-
-  const body1 = bodySize(candle1);
-  const avgBody = context?.avgBodySize || body1;
-  const minBodySize = avgBody * 1.5;
-
-  // 前日は大陰線
-  if (body1 < minBodySize) {
-    return { detected: false, strength: 0 };
-  }
-
-  // 当日は前日終値より安く始まる（ギャップダウン）
-  // ※ 厳密なギャップでなくても、ほぼ同値から始まる場合も許容
-  const gapTolerance = body1 * 0.1; // 前日実体の10%以内の誤差を許容
-  if (candle2.open > candle1.close + gapTolerance) {
-    return { detected: false, strength: 0 };
-  }
-
-  // 前日の中心値
-  const midPoint = (candle1.open + candle1.close) / 2;
-
-  // 当日終値が中心値より上
-  if (candle2.close <= midPoint) {
-    return { detected: false, strength: 0 };
-  }
-
-  // 当日終値が前日始値より下（完全には上抜けない）
-  if (candle2.close >= candle1.open) {
-    return { detected: false, strength: 0 };
-  }
-
-  // 強度: 中心値からの突破度
-  const penetration = candle2.close - midPoint;
-  const strength = Math.min(penetration / body1, 1.0);
-
-  return { detected: true, strength };
+  const maxBody = Math.max(body1, body2, body3);
+  const minBody = Math.min(body1, body2, body3);
+  return { detected: true, strength: Math.min(minBody / maxBody + 0.2, 1.0) };
 }
 
-// ----- パターンコンテキスト（Phase 2用） -----
-interface PatternContext {
-  rangeHigh: number;   // 直近の高値
-  rangeLow: number;    // 直近の安値
-  avgBodySize: number; // 平均実体サイズ
+/**
+ * 黒三兵 (three_black_crows)
+ * 3本連続陰線、各終値が前を下回る
+ */
+function detectThreeBlackCrows(candles: Candle[], context?: PatternContext): { detected: boolean; strength: number } {
+  const [c1, c2, c3] = candles;
+  if (!isBearish(c1) || !isBearish(c2) || !isBearish(c3)) return { detected: false, strength: 0 };
+  if (c2.close >= c1.close || c3.close >= c2.close) return { detected: false, strength: 0 };
+
+  const body1 = bodySize(c1);
+  const body2 = bodySize(c2);
+  const body3 = bodySize(c3);
+  const avgBody = context?.avgBodySize || (body1 + body2 + body3) / 3;
+
+  if (body1 < avgBody * 0.5 || body2 < avgBody * 0.5 || body3 < avgBody * 0.5) return { detected: false, strength: 0 };
+
+  const tol2 = body1 * 0.5;
+  const tol3 = body2 * 0.5;
+  if (c2.open < bodyBottom(c1) - tol2 || c2.open > bodyTop(c1) + tol2) return { detected: false, strength: 0 };
+  if (c3.open < bodyBottom(c2) - tol3 || c3.open > bodyTop(c2) + tol3) return { detected: false, strength: 0 };
+
+  // 下ヒゲが短い
+  for (const c of [c1, c2, c3]) {
+    const r = totalRange(c);
+    if (r > 0 && lowerShadow(c) / r > 0.4) return { detected: false, strength: 0 };
+  }
+
+  const maxBody = Math.max(body1, body2, body3);
+  const minBody = Math.min(body1, body2, body3);
+  return { detected: true, strength: Math.min(minBody / maxBody + 0.2, 1.0) };
 }
 
-// ----- パターン検出のディスパッチャー -----
-type PatternDetector = (c1: Candle, c2: Candle, context?: PatternContext) => { detected: boolean; strength: number };
+// =====================================================================
+// パターン定義レジストリ
+// =====================================================================
 
-const PATTERN_DETECTORS: Record<CandlePatternType, PatternDetector> = {
-  bullish_engulfing: detectBullishEngulfing,
-  bearish_engulfing: detectBearishEngulfing,
-  bullish_harami: detectBullishHarami,
-  bearish_harami: detectBearishHarami,
-  tweezer_top: detectTweezerTop,
-  tweezer_bottom: detectTweezerBottom,
-  dark_cloud_cover: detectDarkCloudCover,
-  piercing_line: detectPiercingLine,
+const PATTERN_CONFIGS: Record<CandlePatternType, PatternConfig> = {
+  // 1本足
+  hammer:         { span: 1, direction: 'bullish', jp_name: 'ハンマー（カラカサ）', detect: detectHammer },
+  shooting_star:  { span: 1, direction: 'bearish', jp_name: 'シューティングスター（流れ星）', detect: detectShootingStar },
+  doji:           { span: 1, direction: 'neutral', jp_name: '十字線（Doji）', detect: detectDoji },
+  // 2本足
+  bullish_engulfing:  { span: 2, direction: 'bullish', jp_name: '陽線包み線', detect: detectBullishEngulfing },
+  bearish_engulfing:  { span: 2, direction: 'bearish', jp_name: '陰線包み線', detect: detectBearishEngulfing },
+  bullish_harami:     { span: 2, direction: 'bullish', jp_name: '陽線はらみ線', detect: detectBullishHarami },
+  bearish_harami:     { span: 2, direction: 'bearish', jp_name: '陰線はらみ線', detect: detectBearishHarami },
+  tweezer_top:        { span: 2, direction: 'bearish', jp_name: '毛抜き天井', detect: detectTweezerTop },
+  tweezer_bottom:     { span: 2, direction: 'bullish', jp_name: '毛抜き底', detect: detectTweezerBottom },
+  dark_cloud_cover:   { span: 2, direction: 'bearish', jp_name: 'かぶせ線', detect: detectDarkCloudCover },
+  piercing_line:      { span: 2, direction: 'bullish', jp_name: '切り込み線', detect: detectPiercingLine },
+  // 3本足
+  morning_star:           { span: 3, direction: 'bullish', jp_name: '明けの明星', detect: detectMorningStar },
+  evening_star:           { span: 3, direction: 'bearish', jp_name: '宵の明星', detect: detectEveningStar },
+  three_white_soldiers:   { span: 3, direction: 'bullish', jp_name: '赤三兵', detect: detectThreeWhiteSoldiers },
+  three_black_crows:      { span: 3, direction: 'bearish', jp_name: '黒三兵', detect: detectThreeBlackCrows },
 };
 
 // ----- 過去統計計算 -----
@@ -466,21 +499,21 @@ interface PatternOccurrence {
 }
 
 /**
- * 過去のパターン出現を検索
+ * 過去のパターン出現を検索（span 対応）
  */
 function findHistoricalPatterns(
   candles: Candle[],
   pattern: CandlePatternType,
   excludeLastN: number = 1
 ): PatternOccurrence[] {
-  const detector = PATTERN_DETECTORS[pattern];
+  const config = PATTERN_CONFIGS[pattern];
   const occurrences: PatternOccurrence[] = [];
 
-  // 最後のn本は除外（未確定または検出対象のため）
   const endIndex = candles.length - 1 - excludeLastN;
 
-  for (let i = 1; i <= endIndex; i++) {
-    const result = detector(candles[i - 1], candles[i]);
+  for (let i = config.span - 1; i <= endIndex; i++) {
+    const slice = candles.slice(i - config.span + 1, i + 1);
+    const result = config.detect(slice);
     if (result.detected) {
       occurrences.push({
         index: i,
@@ -564,7 +597,7 @@ function generateSummary(
     const trend = windowCandles.length >= 3
       ? (windowCandles[windowCandles.length - 1].close > windowCandles[0].close ? '上昇' : '下落')
       : '横ばい';
-    return `直近${windowCandles.length}日間で${trend}傾向ですが、特徴的な2本足パターンは検出されませんでした。`;
+    return `直近${windowCandles.length}日間で${trend}傾向ですが、特徴的なローソク足パターンは検出されませんでした。`;
   }
 
   const parts: string[] = [];
@@ -572,7 +605,11 @@ function generateSummary(
   for (const p of patterns) {
     const trendText = p.local_context.trend_before === 'down' ? '下落傾向' : p.local_context.trend_before === 'up' ? '上昇傾向' : '横ばい';
     const statusText = p.status === 'forming' ? '形成中（未確定）' : '確定';
-    const directionText = p.direction === 'bullish' ? '上昇転換のサイン' : '下落転換のサイン';
+    const directionText = p.direction === 'bullish'
+      ? '上昇転換のサイン'
+      : p.direction === 'bearish'
+        ? '下落転換のサイン'
+        : '方向感の迷いを示すサイン';
 
     let statsPart = '';
     if (p.history_stats && p.history_stats.horizons['1']) {
@@ -645,65 +682,126 @@ function generateContent(
     lines.push('=== 検出パターン ===');
     lines.push('なし');
     lines.push('');
-    lines.push('直近の値動きには特徴的な2本足パターンは見られませんでした。');
+    lines.push('直近の値動きには特徴的なローソク足パターンは見られませんでした。');
     lines.push('');
   } else {
     for (const p of patterns) {
       lines.push(`■ ${p.pattern_jp}（${p.pattern}）`);
-      lines.push(`  方向性: ${p.direction === 'bullish' ? '強気（上昇転換シグナル）' : '弱気（下落転換シグナル）'}`);
+      const dirLabel = p.direction === 'bullish' ? '強気（上昇転換シグナル）' : p.direction === 'bearish' ? '弱気（下落転換シグナル）' : '中立（方向性の迷い）';
+      lines.push(`  方向性: ${dirLabel}`);
       lines.push(`  状態: ${p.status === 'forming' ? '形成中（終値未確定）' : '確定'}`);
       lines.push(`  強度: ${(p.strength * 100).toFixed(0)}%`);
       lines.push(`  直前トレンド: ${p.local_context.trend_before === 'up' ? '上昇' : p.local_context.trend_before === 'down' ? '下落' : '中立'}`);
       lines.push('');
 
       // === 3. パターン該当箇所の詳細 ===
-      const [idx1, idx2] = p.candle_range_index;
-      if (idx1 >= 0 && idx2 < windowCandles.length) {
-        const c1 = windowCandles[idx1];
-        const c2 = windowCandles[idx2];
-        const date1 = formatDateWithDay(c1.timestamp);
-        const date2 = formatDateWithDay(c2.timestamp);
-        const body1 = c1.close - c1.open;
-        const body2 = c2.close - c2.open;
-        const type1 = body1 >= 0 ? '陽線' : '陰線';
-        const type2 = body2 >= 0 ? '陽線' : '陰線';
+      const [idxStart, idxEnd] = p.candle_range_index;
+      const spanSize = idxEnd - idxStart + 1;
 
-        lines.push('  === 検出パターンの詳細 ===');
-        // パターンは2本目の終値で確定するため、確定日（2本目）を強調
+      if (idxStart >= 0 && idxEnd < windowCandles.length) {
         const statusMark = p.uses_partial_candle ? '（形成中）' : '（確定）';
-        lines.push(`  📍 ${date2} に${p.pattern_jp}を検出${statusMark}（${date1}-${date2}で形成）`);
-        lines.push(`    ${date1}(前日): ${type1} 始値${formatPrice(c1.open)} → 終値${formatPrice(c1.close)} (実体 ${body1 >= 0 ? '+' : '-'}${formatPrice(Math.abs(body1)).replace('¥', '')}円)`);
-        lines.push(`    ${date2}(確定日): ${type2} 始値${formatPrice(c2.open)} → 終値${formatPrice(c2.close)} (実体 ${body2 >= 0 ? '+' : '-'}${formatPrice(Math.abs(body2)).replace('¥', '')}円) ← パターン確定`);
+        lines.push('  === 検出パターンの詳細 ===');
 
-        // パターンの判定理由
-        if (p.pattern === 'bullish_engulfing') {
-          lines.push(`    判定: 当日の陽線が前日の陰線を完全に包む（始値が前日終値以下、終値が前日始値以上）`);
-        } else if (p.pattern === 'bearish_engulfing') {
-          lines.push(`    判定: 当日の陰線が前日の陽線を完全に包む（始値が前日終値以上、終値が前日始値以下）`);
-        } else if (p.pattern === 'bullish_harami') {
-          lines.push(`    判定: 当日のローソク足が前日の大陰線の実体内に収まる`);
-        } else if (p.pattern === 'bearish_harami') {
-          lines.push(`    判定: 当日のローソク足が前日の大陽線の実体内に収まる`);
-        } else if (p.pattern === 'tweezer_top') {
-          const highDiff = Math.abs(c1.high - c2.high);
-          const matchPct = (1 - highDiff / ((c1.high + c2.high) / 2)) * 100;
-          lines.push(`    判定: 2日連続で高値がほぼ同じ（誤差${highDiff.toLocaleString()}円, 一致率${matchPct.toFixed(1)}%）`);
-          lines.push(`    高値: ${formatPrice(c1.high)} → ${formatPrice(c2.high)}`);
-        } else if (p.pattern === 'tweezer_bottom') {
-          const lowDiff = Math.abs(c1.low - c2.low);
-          const matchPct = (1 - lowDiff / ((c1.low + c2.low) / 2)) * 100;
-          lines.push(`    判定: 2日連続で安値がほぼ同じ（誤差${lowDiff.toLocaleString()}円, 一致率${matchPct.toFixed(1)}%）`);
-          lines.push(`    安値: ${formatPrice(c1.low)} → ${formatPrice(c2.low)}`);
-        } else if (p.pattern === 'dark_cloud_cover') {
-          const midPoint = (c1.open + c1.close) / 2;
-          lines.push(`    判定: 高寄り後に陰線で前日陽線の中心値（${formatPrice(midPoint)}）を下回る`);
-          lines.push(`    ギャップ: ${formatPrice(c2.open)} > 前日終値${formatPrice(c1.close)}`);
-        } else if (p.pattern === 'piercing_line') {
-          const midPoint = (c1.open + c1.close) / 2;
-          lines.push(`    判定: 安寄り後に陽線で前日陰線の中心値（${formatPrice(midPoint)}）を上回る`);
-          lines.push(`    ギャップ: ${formatPrice(c2.open)} < 前日終値${formatPrice(c1.close)}`);
+        if (spanSize === 1) {
+          // ----- 1本足パターン -----
+          const c = windowCandles[idxStart];
+          const dateStr = formatDateWithDay(c.timestamp);
+          const body = c.close - c.open;
+          const candleType = body >= 0 ? '陽線' : '陰線';
+
+          lines.push(`  📍 ${dateStr} に${p.pattern_jp}を検出${statusMark}`);
+          lines.push(`    ${dateStr}: ${candleType} 始値${formatPrice(c.open)} → 終値${formatPrice(c.close)} (実体 ${body >= 0 ? '+' : '-'}${formatPrice(Math.abs(body)).replace('¥', '')}円)`);
+          lines.push(`    高値${formatPrice(c.high)} 安値${formatPrice(c.low)} (レンジ ${formatPrice(c.high - c.low).replace('¥', '')}円)`);
+
+          if (p.pattern === 'hammer') {
+            const lower = Math.min(c.open, c.close) - c.low;
+            lines.push(`    判定: 小さい実体 + 長い下ヒゲ（${formatPrice(lower).replace('¥', '')}円）→ 下値の強い買い圧力`);
+          } else if (p.pattern === 'shooting_star') {
+            const upper = c.high - Math.max(c.open, c.close);
+            lines.push(`    判定: 小さい実体 + 長い上ヒゲ（${formatPrice(upper).replace('¥', '')}円）→ 上値の強い売り圧力`);
+          } else if (p.pattern === 'doji') {
+            const upper = c.high - Math.max(c.open, c.close);
+            const lower = Math.min(c.open, c.close) - c.low;
+            const variant = upper > lower * 1.5 ? 'トウバ型（上ヒゲ優勢）' : lower > upper * 1.5 ? 'トンボ型（下ヒゲ優勢）' : '通常型（上下均等）';
+            lines.push(`    判定: 始値≒終値で売り買い拮抗 → ${variant}`);
+          }
+          lines.push('');
+        } else if (spanSize === 2) {
+          // ----- 2本足パターン -----
+          const c1 = windowCandles[idxStart];
+          const c2 = windowCandles[idxEnd];
+          const date1 = formatDateWithDay(c1.timestamp);
+          const date2 = formatDateWithDay(c2.timestamp);
+          const body1 = c1.close - c1.open;
+          const body2 = c2.close - c2.open;
+          const type1 = body1 >= 0 ? '陽線' : '陰線';
+          const type2 = body2 >= 0 ? '陽線' : '陰線';
+
+          lines.push(`  📍 ${date2} に${p.pattern_jp}を検出${statusMark}（${date1}-${date2}で形成）`);
+          lines.push(`    ${date1}(前日): ${type1} 始値${formatPrice(c1.open)} → 終値${formatPrice(c1.close)} (実体 ${body1 >= 0 ? '+' : '-'}${formatPrice(Math.abs(body1)).replace('¥', '')}円)`);
+          lines.push(`    ${date2}(確定日): ${type2} 始値${formatPrice(c2.open)} → 終値${formatPrice(c2.close)} (実体 ${body2 >= 0 ? '+' : '-'}${formatPrice(Math.abs(body2)).replace('¥', '')}円) ← パターン確定`);
+
+          if (p.pattern === 'bullish_engulfing') {
+            lines.push(`    判定: 当日の陽線が前日の陰線を完全に包む（始値が前日終値以下、終値が前日始値以上）`);
+          } else if (p.pattern === 'bearish_engulfing') {
+            lines.push(`    判定: 当日の陰線が前日の陽線を完全に包む（始値が前日終値以上、終値が前日始値以下）`);
+          } else if (p.pattern === 'bullish_harami') {
+            lines.push(`    判定: 当日のローソク足が前日の大陰線の実体内に収まる`);
+          } else if (p.pattern === 'bearish_harami') {
+            lines.push(`    判定: 当日のローソク足が前日の大陽線の実体内に収まる`);
+          } else if (p.pattern === 'tweezer_top') {
+            const highDiff = Math.abs(c1.high - c2.high);
+            const matchPct = (1 - highDiff / ((c1.high + c2.high) / 2)) * 100;
+            lines.push(`    判定: 2日連続で高値がほぼ同じ（誤差${highDiff.toLocaleString()}円, 一致率${matchPct.toFixed(1)}%）`);
+            lines.push(`    高値: ${formatPrice(c1.high)} → ${formatPrice(c2.high)}`);
+          } else if (p.pattern === 'tweezer_bottom') {
+            const lowDiff = Math.abs(c1.low - c2.low);
+            const matchPct = (1 - lowDiff / ((c1.low + c2.low) / 2)) * 100;
+            lines.push(`    判定: 2日連続で安値がほぼ同じ（誤差${lowDiff.toLocaleString()}円, 一致率${matchPct.toFixed(1)}%）`);
+            lines.push(`    安値: ${formatPrice(c1.low)} → ${formatPrice(c2.low)}`);
+          } else if (p.pattern === 'dark_cloud_cover') {
+            const midPoint = (c1.open + c1.close) / 2;
+            lines.push(`    判定: 高寄り後に陰線で前日陽線の中心値（${formatPrice(midPoint)}）を下回る`);
+            lines.push(`    ギャップ: ${formatPrice(c2.open)} > 前日終値${formatPrice(c1.close)}`);
+          } else if (p.pattern === 'piercing_line') {
+            const midPoint = (c1.open + c1.close) / 2;
+            lines.push(`    判定: 安寄り後に陽線で前日陰線の中心値（${formatPrice(midPoint)}）を上回る`);
+            lines.push(`    ギャップ: ${formatPrice(c2.open)} < 前日終値${formatPrice(c1.close)}`);
+          }
+          lines.push('');
+        } else if (spanSize === 3) {
+          // ----- 3本足パターン -----
+          const c1 = windowCandles[idxStart];
+          const c2 = windowCandles[idxStart + 1];
+          const c3 = windowCandles[idxEnd];
+          const date1 = formatDateWithDay(c1.timestamp);
+          const date2 = formatDateWithDay(c2.timestamp);
+          const date3 = formatDateWithDay(c3.timestamp);
+
+          lines.push(`  📍 ${date1}-${date3} に${p.pattern_jp}を検出${statusMark}（3本足パターン）`);
+          for (const [label, c, dateStr] of [
+            ['1本目', c1, date1],
+            ['2本目', c2, date2],
+            ['3本目（確定日）', c3, date3],
+          ] as const) {
+            const body = c.close - c.open;
+            const ct = body >= 0 ? '陽線' : '陰線';
+            lines.push(`    ${dateStr}(${label}): ${ct} 始値${formatPrice(c.open)} → 終値${formatPrice(c.close)} (実体 ${body >= 0 ? '+' : '-'}${formatPrice(Math.abs(body)).replace('¥', '')}円)`);
+          }
+
+          if (p.pattern === 'morning_star') {
+            const midPoint = (c1.open + c1.close) / 2;
+            lines.push(`    判定: 大陰線→コマ→大陽線が1本目の中心値（${formatPrice(midPoint)}）超え → 底打ち反転`);
+          } else if (p.pattern === 'evening_star') {
+            const midPoint = (c1.open + c1.close) / 2;
+            lines.push(`    判定: 大陽線→コマ→大陰線が1本目の中心値（${formatPrice(midPoint)}）割れ → 天井反転`);
+          } else if (p.pattern === 'three_white_soldiers') {
+            lines.push(`    判定: 3本連続陽線で各終値が前日を上回る → 力強い上昇トレンド`);
+          } else if (p.pattern === 'three_black_crows') {
+            lines.push(`    判定: 3本連続陰線で各終値が前日を下回る → 力強い下落トレンド`);
+          }
+          lines.push('');
         }
-        lines.push('');
       }
 
       // === 4. 過去統計データ ===
@@ -733,13 +831,23 @@ function generateContent(
 
   // 補足説明
   lines.push('【パターンの読み方】');
-  lines.push('・陽線包み線: 下落後に出現すると上昇転換のサインとされます');
-  lines.push('・陰線包み線: 上昇後に出現すると下落転換のサインとされます');
-  lines.push('・はらみ線: 大きなローソク足の中に小さなローソク足が収まる形で、トレンド転換の予兆とされます');
+  lines.push('〈1本足〉');
+  lines.push('・ハンマー: 下落局面で長い下ヒゲ→買い圧力が強く、上昇転換のサイン');
+  lines.push('・シューティングスター: 上昇局面で長い上ヒゲ→売り圧力が強く、下落転換のサイン');
+  lines.push('・十字線: 始値≒終値で売り買い拮抗→トレンド転換の予兆（前のトレンドの逆方向に注目）');
+  lines.push('〈2本足〉');
+  lines.push('・陽線包み線: 下落後に出現すると上昇転換のサイン');
+  lines.push('・陰線包み線: 上昇後に出現すると下落転換のサイン');
+  lines.push('・はらみ線: 大きなローソク足の中に小さなローソク足が収まる形で、トレンド転換の予兆');
   lines.push('・毛抜き天井: 高値圏で2日連続同じ高値→上昇の限界、下落転換のサイン');
   lines.push('・毛抜き底: 安値圏で2日連続同じ安値→下落の限界、上昇転換のサイン');
   lines.push('・かぶせ線: 高寄り後に陰線で前日陽線の中心以下→上昇一服、調整のサイン');
   lines.push('・切り込み線: 安寄り後に陽線で前日陰線の中心超え→下落一服、反発のサイン');
+  lines.push('〈3本足〉');
+  lines.push('・明けの明星: 大陰線→コマ→大陽線で底打ち反転のサイン');
+  lines.push('・宵の明星: 大陽線→コマ→大陰線で天井反転のサイン');
+  lines.push('・赤三兵: 3本連続陽線で力強い上昇の開始・継続');
+  lines.push('・黒三兵: 3本連続陰線で力強い下落の開始・継続');
   lines.push('');
   lines.push('※勝率50%超でもリスク管理は必須です。統計は参考値であり、将来を保証するものではありません。');
 
@@ -796,7 +904,7 @@ export default async function analyzeCandlePatterns(
     const targetDate = normalizeDateToYYYYMMDD(rawDate);
     const windowDays = input.window_days;
     const focusLastN = input.focus_last_n;
-    const targetPatterns = input.patterns || (Object.keys(PATTERN_DETECTORS) as CandlePatternType[]);
+    const targetPatterns = input.patterns || (Object.keys(PATTERN_CONFIGS) as CandlePatternType[]);
     const historyLookbackDays = input.history_lookback_days;
     const historyHorizons = input.history_horizons;
     const allowPartial = input.allow_partial_patterns;
@@ -863,14 +971,12 @@ export default async function analyzeCandlePatterns(
     }));
 
     // パターン検出
-    // focus_last_n: 直近n本の組み合わせを重点的にチェック
     // CRITICAL: windowCandles配列は [最古, ..., 最新] の順序
-    // - index 0: 最古
-    // - index windowDays-1: 最新（is_partialの可能性）
     const detectedPatterns: DetectedCandlePattern[] = [];
-    const startCheckIndex = Math.max(1, windowCandles.length - focusLastN);
+    // startCheckIndex: 1本足はindex 0から、spanチェックでガード
+    const startCheckIndex = Math.max(0, windowCandles.length - focusLastN);
 
-    // Phase 2パターン用のコンテキストを計算
+    // パターンコンテキストを計算
     const highs = windowCandles.map(c => c.high);
     const lows = windowCandles.map(c => c.low);
     const bodies = windowCandles.map(c => Math.abs(c.close - c.open));
@@ -881,26 +987,34 @@ export default async function analyzeCandlePatterns(
     };
 
     for (let i = startCheckIndex; i < windowCandles.length; i++) {
-      const candle1 = windowCandles[i - 1];
-      const candle2 = windowCandles[i];
       const usesPartial = i === windowCandles.length - 1 && isLastPartial;
 
-      // 未確定ローソクを使うかどうか
       if (usesPartial && !allowPartial) {
         continue;
       }
 
       for (const patternType of targetPatterns) {
-        const detector = PATTERN_DETECTORS[patternType];
-        const result = detector(candle1, candle2, patternContext);
+        const config = PATTERN_CONFIGS[patternType];
+
+        // spanに必要な本数があるかチェック
+        if (i < config.span - 1) continue;
+
+        const slice = windowCandles.slice(i - config.span + 1, i + 1);
+        const result = config.detect(slice, patternContext);
 
         if (result.detected) {
-          // ローカルコンテキストの計算
-          // トレンドは1本目より前の3本で判定
-          const trendBefore = detectTrendBefore(windowCandles, i - 1, 3);
+          // トレンドはパターン開始位置より前で判定
+          const patternStartIdx = i - config.span + 1;
+          const trendBefore = detectTrendBefore(windowCandles, patternStartIdx > 0 ? patternStartIdx - 1 : 0, 3);
           const volatilityLevel = detectVolatilityLevel(windowCandles, i, 5);
 
-          // 過去統計の計算（フィルタリング前の全データを使用）
+          // doji は直前トレンドで方向を動的決定
+          let direction = config.direction;
+          if (direction === 'neutral' && patternType === 'doji') {
+            if (trendBefore === 'up') direction = 'bearish';
+            else if (trendBefore === 'down') direction = 'bullish';
+          }
+
           const historyStats = calculateHistoryStats(
             allCandlesForStats,
             patternType,
@@ -910,10 +1024,10 @@ export default async function analyzeCandlePatterns(
 
           detectedPatterns.push({
             pattern: patternType,
-            pattern_jp: PATTERN_JP_NAMES[patternType],
-            direction: PATTERN_DIRECTIONS[patternType],
+            pattern_jp: config.jp_name,
+            direction,
             strength: Number(result.strength.toFixed(2)),
-            candle_range_index: [i - 1, i] as [number, number],
+            candle_range_index: [i - config.span + 1, i] as [number, number],
             uses_partial_candle: usesPartial,
             status: usesPartial ? 'forming' : 'confirmed',
             local_context: {
@@ -977,7 +1091,7 @@ export default async function analyzeCandlePatterns(
 // ── MCP ツール定義（tool-registry から自動収集） ──
 export const toolDef: ToolDefinition = {
 	name: 'analyze_candle_patterns',
-	description: '2本足ローソクパターン検出（包み線・はらみ線・毛抜き・かぶせ線・切り込み線）。BTC/JPY日足の直近5日間から短期反転パターンを検出し、過去180日間の統計（勝率・平均リターン）を付与。初心者向けに自然言語で解説。未確定ローソク対応。\n\n【パラメータ制約】\npair: btc_jpy 固定、timeframe: 1day 固定（現時点ではBTC/JPY日足のみ統計データ蓄積済みのため）。他ペア/時間軸は統計精度が不十分なため非対応。\n\n【視覚化】ユーザーが図での確認を希望した場合、本ツールの結果を render_candle_pattern_diagram に渡してSVG構造図を生成できる。',
+	description: 'ローソク足パターン検出（1〜3本足: ハンマー・流れ星・十字線・包み線・はらみ線・毛抜き・かぶせ線・切り込み線・明けの明星・宵の明星・赤三兵・黒三兵）。BTC/JPY日足の直近5日間から短期反転パターンを検出し、過去180日間の統計（勝率・平均リターン）を付与。初心者向けに自然言語で解説。未確定ローソク対応。\n\n【パラメータ制約】\npair: btc_jpy 固定、timeframe: 1day 固定（現時点ではBTC/JPY日足のみ統計データ蓄積済みのため）。他ペア/時間軸は統計精度が不十分なため非対応。\n\n【視覚化】ユーザーが図での確認を希望した場合、本ツールの結果を render_candle_pattern_diagram に渡してSVG構造図を生成できる。',
 	inputSchema: AnalyzeCandlePatternsInputSchema,
 	handler: async (args: any) => analyzeCandlePatterns(args),
 };
