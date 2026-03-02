@@ -1,41 +1,40 @@
-# Promptsリスト（公開版）
+# プロンプト一覧（全 9 種）
 
 このMCPサーバーでは、以下のプロンプトを提供しています。
+ツール名を指定する必要はなく、自然な質問でも適切なプロンプトが選択されます。
 
-| # | レベル | プロンプト名 | 主な使用ツール | 概要 | 出力構成 |
-|---|--------|-------------|---------------|------|---------|
-| 1 | 中級 | 🌅 おはようレポート | create_file<br>present_files | 直近8時間の価格動向をHTMLダッシュボードで視覚化（Claude Desktop推奨） | HTMLダッシュボード |
-| 2 | 初級 | 🔰 BTCの価格を分析して | get_candles<br>analyze_market_signal<br>analyze_indicators | 価格の最近の動きとトレンドを、RSI・移動平均・一目を使って初心者向けに説明 | 1. 市場の動き<br>2. 3つの主要指標<br>3. 関係性<br>4. 今後の注目点<br>5. まとめ |
-| 3 | 初級 | 🔰 ETHの価格を分析して | get_candles<br>analyze_market_signal<br>analyze_indicators | ETHの価格動向とトレンドを、RSI・移動平均・一目を使って初心者向けに説明 | 1. 市場の動き<br>2. 3つの主要指標<br>3. 関係性<br>4. 今後の注目点<br>5. まとめ |
-| 4 | 初級 | 🔰 今注目のコインは？ | get_tickers_jpy | 出来高と24時間変化率から、注目度の高い通貨ペアをランキング表示 | 1. 24時間上昇率Top3<br>2. 取引量Top3 |
-| 5 | 中級 | 中級：主要指標でBTCを分析して | analyze_indicators | RSI / MACD / BB / 一目 / SMA を一括取得し、中級者向けに総合分析 | 1. 勢い指標<br>2. トレンド指標<br>3. 重要価格帯<br>4. 指標の総合判断<br>5. RSI/MACDプログレスバー |
-| 6 | 中級 | 中級：BTCのフロー分析をして | get_flow_metrics<br>get_transactions（任意） | CVD・Aggressor Ratio・出来高スパイクから直近のフローと短期モメンタムを分析 | 1. タイムスタンプ<br>2. 結論<br>3. CVD推移<br>4. スパイク<br>5. 価格への影響予測 |
-| 7 | 中級 | 中級：BTCの板の状況を詳しく見て | get_orderbook(mode=statistics)<br>get_orderbook(mode=raw)（任意） | 板の厚み・流動性分布・大口注文から短期サポレジと売買圧力を分析 | 1. タイムスタンプ<br>2. 結論<br>3. 重要価格帯<br>4. 大口注文<br>5. 短期トレード示唆 |
-| 8 | 中級 | 中級：BTCのパターン分析をして | detect_patterns<br>analyze_candle_patterns | 過去6ヶ月の完成済み＆形成中チャートパターン＋2本足パターンを統合検出・評価 | 1. 形成中パターン<br>2. 完成済みパターン（影響度順）<br>3. 2本足パターン<br>4. 総合解釈<br>5. シナリオ |
-| 9 | 中級 | 中級：BTCのサポレジを分析して | analyze_support_resistance<br>get_orderbook(mode=raw)<br>get_orderbook(mode=pressure)<br>analyze_sma_snapshot（任意） | 過去90日の反応と現在の板・圧力を統合してサポート/レジスタンスの強度を評価 | 1. サポレジツール解釈<br>2. 板・圧力との照合<br>3. 最終強度評価とまとめ |
+---
 
-## 主な特徴
+## 初級（3 種）
 
-### 初級プロンプト（🔰マーク付き）
-- 専門用語を避け、わかりやすい言葉で説明
-- 視覚的なゲージや絵文字を活用
-- 「買い時/売り時」の断定を避け、中立的な表現
-- 段階的な理解を促す構成
+専門用語を避け、わかりやすい言葉で説明。視覚的なゲージや絵文字を活用。
 
-### 中級プロンプト
-- 専門用語を適切に使用
-- 数値と根拠を明確に提示
-- 複数ツールを組み合わせた総合分析
-- タイムスタンプを明記してデータの鮮度を担保
+| # | プロンプト名 | 主な使用ツール | 概要 |
+|---|-------------|---------------|------|
+| 1 | 🔰 BTCの価格を分析して | get_candles, analyze_market_signal, analyze_indicators | 価格動向とトレンドを RSI・移動平均・一目で初心者向けに説明 |
+| 2 | 🔰 ETHの価格を分析して | get_candles, analyze_market_signal, analyze_indicators | ETH版。構成は BTC 版と同じ |
+| 3 | 🔰 今注目のコインは？ | get_tickers_jpy | 出来高と24h変化率から注目通貨をランキング表示 |
 
-### 🌅 おはようレポート
-- **朝のルーティン向け**: 起きたときに「直近8時間で何が起きたか」を素早く把握
-- **HTMLダッシュボード**: 視覚的にわかりやすいレポートを生成
-- **Claude Desktop推奨**: `create_file` と `present_files` を使用
+**出力構成（BTC/ETH分析）**: 1. 市場の動き → 2. 3つの主要指標 → 3. 関係性 → 4. 今後の注目点 → 5. まとめ
+
+## 中級（6 種）
+
+専門用語を適切に使用。数値と根拠を明確に提示。複数ツールを組み合わせた総合分析。
+
+| # | プロンプト名 | 主な使用ツール | 概要 |
+|---|-------------|---------------|------|
+| 4 | 中級：主要指標でBTCを分析して | analyze_indicators | RSI / MACD / BB / 一目 / SMA を一括取得し総合分析 |
+| 5 | 中級：BTCのフロー分析をして | get_flow_metrics, get_transactions | CVD・Aggressor Ratio・スパイクから短期モメンタムを分析 |
+| 6 | 中級：BTCの板の状況を詳しく見て | get_orderbook (statistics, raw) | 板の厚み・流動性分布・大口注文から短期サポレジと売買圧力を分析 |
+| 7 | 中級：BTCのパターン分析をして | detect_patterns, analyze_candle_patterns | 完成済み＆形成中チャートパターン＋ローソク足パターンを統合検出 |
+| 8 | 中級：BTCのサポレジを分析して | analyze_support_resistance, get_orderbook, analyze_sma_snapshot | 過去90日の反応と現在の板・圧力を統合してサポレジ強度を評価 |
+| 9 | 🌅 おはようレポート | create_file, present_files | 直近8時間の価格動向をHTMLダッシュボードで視覚化（Claude Desktop推奨） |
+
+---
 
 ## 使い方
 
-Claude Desktopなどのクライアントから、プロンプト名をそのまま呼び出せます：
+Claude Desktop などのクライアントから、プロンプト名をそのまま呼び出せます：
 
 ```
 🔰 BTCの価格を分析して
