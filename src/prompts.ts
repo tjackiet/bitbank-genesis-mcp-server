@@ -1586,9 +1586,12 @@ MACD（中央が0、左が弱気・右が強気）:
 4. analyze_support_resistance(pair="btc_jpy", lookbackDays=90, topN=3) → サポート/レジスタンスライン
 5. get_orderbook(pair="btc_jpy", mode=pressure, bandsPct=[0.005, 0.01, 0.02]) → 板の買い/売り圧力
 6. analyze_mtf_sma(pair="btc_jpy") → 1h/4h/日足の SMA 配列を一括取得＋方向合流判定（内部並列実行）
+   - 各時間軸の SMA 値・乖離率・傾き・クロス状態・位置 (above_all/below_all/between) をすべて含む
+   - ⚠️ analyze_sma_snapshot の個別呼び出しは不要（MTF が全データを返却済み）
 7. analyze_ichimoku_snapshot(pair="btc_jpy", type="1day") → 日足の一目均衡表（雲の位置関係・三役好転/逆転）
 
 ※ 価格チャートは get_candles の直近8本の close 値からインライン SVG スパークラインを生成（render_chart_svg は不要）
+※ 上記7ツールのみ使用すること。追加のツール呼び出しは行わない
 
 【出力形式】
 取得したデータを使って、以下の構成の **HTML ファイル** を生成してください。
@@ -1604,7 +1607,7 @@ MACD（中央が0、左が弱気・右が強気）:
 - 変動率（±X.X%）と方向アイコン（📈上昇 / 📉下落 / ➡️横ばい）
 - 高値・安値とその時刻
 - インライン SVG スパークライン（get_candles の直近8本 close 値から生成）
-  - 生成手順: close 配列の min/max を求め、各値を viewBox="0 0 600 120" 内の (x, y) 座標に正規化
+  - 生成手順: close 配列の min/max を求め、各値を viewBox="0 0 600 120" 内の (x, y) 座標に正規化。上下左右に 10px のパディングを確保（x は 10〜590、y は 10〜110 の範囲にマッピング）し、端の点が切れないようにする
   - \`<polyline>\` で折れ線、\`<polygon>\` で半透明の面塗り、始点・終点に \`<circle>\` マーカー
   - 下部に始値・終値・変動率(%)を表示
   - 途中の値動き（下がってから戻した等）がひと目でわかる
@@ -1616,16 +1619,17 @@ MACD（中央が0、左が弱気・右が強気）:
 
 ### 4. 売買バランスカード（横並び2カード）
 
-**カード A: 出来高（24時間棒グラフ）**
-- 直近24時間の出来高を時間ごとの棒グラフで表示
-- 直近8時間分は色を変えてハイライト（例：緑系 bg-green-500）
-- それ以前の16時間分は薄い色（例：グレー系 bg-gray-600）
+**カード A: 出来高（棒グラフ）**
+- get_candles で取得した24本分だけを棒グラフで表示（データのない未来時間の枠は作らない）
+- 直近8本は色を変えてハイライト（例：緑系 bg-green-500）
+- それ以前の16本は薄い色（例：グレー系 bg-gray-600）
 - **重要**: 棒の高さは px 単位で直接指定（例: style="height: 48px"）。パーセント指定は効かないため禁止
 - 最大出来高の棒を 96px とし、他は比率で計算（例: 出来高が最大の50%なら 48px）
-- 8時間合計: XXX BTC を数値で明記
+- 8時間合計: XXX BTC（≈ X.X億円）を明記。JPY換算は get_ticker の現在価格 × BTC数量で算出
 - 突出した時間帯があれば注記（例：「09時台が突出」）
 
-**カード B: 売買比率**
+**カード B: 売買比率（直近8時間）**
+- 見出しに対象期間を明記（例：「売買比率（直近8時間）」）— get_flow_metrics の hours=8 に対応
 - 買い/売りの比率バー（CSS グラデーション）
 - パーセント表示
 - 判定ラベル（🟢買い優勢 / 🔴売り優勢 / 🟡拮抗）
@@ -1651,6 +1655,7 @@ MACD（中央が0、左が弱気・右が強気）:
 - サポートなしの場合は「本日安値 X円 が直近の底」と表示
 
 ### 6. 板状況カード
+- 見出しにスナップショット時刻を明記（例：「板状況（HH:MM JST 時点）」）— get_orderbook 呼び出し時のタイムスタンプを使用
 - ±1%帯域の買い/売り圧力バー
 - BTC数量表示
 - 判定ラベル（🟢買い圧力優勢 / 🔴売り圧力優勢 / 🟡均衡）
@@ -1660,8 +1665,8 @@ MACD（中央が0、左が弱気・右が強気）:
 - 3列レイアウト: 1時間足 / 4時間足 / 日足
 - 各列に以下を表示:
   - SMA配列判定アイコン: 🟢上昇配列 / 🔴下降配列 / 🟡混合（timeframes[tf].alignment）
-  - 価格 vs SMA25: ▲上 / ▼下（timeframes[tf].smas["25"].pricePosition）
-  - 価格 vs SMA75: ▲上 / ▼下（timeframes[tf].smas["75"].pricePosition）
+  - 価格 vs SMA25: 「価格はSMA25の▲上（+X.X%）」/「価格はSMA25の▼下（-X.X%）」（timeframes[tf].smas["25"].pricePosition, deviationPct）
+  - 価格 vs SMA75: 「価格はSMA75の▲上（+X.X%）」/「価格はSMA75の▼下（-X.X%）」（timeframes[tf].smas["75"].pricePosition, deviationPct）
   - 直近クロス（timeframes[tf].recentCrosses が空でなければ表示: GC/DC + 何本前）
 - 日足列に追加:
   - 一目均衡表: 雲の{上/中/下}（assessment.pricePosition）+ 雲の方向（assessment.cloudSlope）
@@ -1734,7 +1739,7 @@ MACD（中央が0、左が弱気・右が強気）:
     
     <!-- 価格サマリー -->
     <section class="bg-card rounded-lg p-6">
-      <h2 class="font-bold mb-4">📊 価格の動き</h2>
+      <h2 class="font-bold mb-4">📊 BTC/JPY 価格の動き</h2>
       <div class="flex justify-between items-center mb-4">
         <div>
           <p class="text-gray-400 text-sm">8時間前</p>
@@ -1765,10 +1770,10 @@ MACD（中央が0、左が弱気・右が強気）:
       </div>
     </section>
     
-    <!-- 出来高（24時間棒グラフ） -->
+    <!-- 出来高（棒グラフ: 取得した24本分のみ。未来の空枠は作らない） -->
     <section class="bg-card rounded-lg p-6">
       <h2 class="font-bold mb-4">📈 出来高（直近24時間）</h2>
-      <!-- 24本の棒グラフ: 高さは必ず px 単位で指定（%は効かない） -->
+      <!-- 取得データ24本分の棒グラフ: 高さは必ず px 単位で指定（%は効かない） -->
       <div class="flex items-end gap-1" style="height: 96px;">
         <!-- 例: 最大出来高=96px, 50%なら48px, 25%なら24px -->
         <!-- 直近8時間: bg-green-500, それ以前: bg-gray-600 -->
@@ -1799,7 +1804,7 @@ MACD（中央が0、左が弱気・右が強気）:
     
     <!-- 板状況 -->
     <section class="bg-card rounded-lg p-6">
-      <h2 class="font-bold mb-4">🔮 今の板状況</h2>
+      <h2 class="font-bold mb-4">🔮 板状況（HH:MM JST 時点）</h2>
       <!-- ±1%帯域の買い/売り圧力バー -->
     </section>
     
@@ -1814,8 +1819,8 @@ MACD（中央が0、左が弱気・右が強気）:
           <p class="text-2xl mb-1">{1h_alignment_icon}</p>
           <p class="text-sm font-bold mb-2">{1h_alignment_label}</p>
           <div class="text-xs text-gray-400 space-y-1">
-            <p>SMA25: {1h_sma25_position}</p>
-            <p>SMA75: {1h_sma75_position}</p>
+            <p>価格はSMA25の{1h_sma25_position}</p>
+            <p>価格はSMA75の{1h_sma75_position}</p>
             <p>{1h_recent_cross}</p>
           </div>
         </div>
@@ -1825,8 +1830,8 @@ MACD（中央が0、左が弱気・右が強気）:
           <p class="text-2xl mb-1">{4h_alignment_icon}</p>
           <p class="text-sm font-bold mb-2">{4h_alignment_label}</p>
           <div class="text-xs text-gray-400 space-y-1">
-            <p>SMA25: {4h_sma25_position}</p>
-            <p>SMA75: {4h_sma75_position}</p>
+            <p>価格はSMA25の{4h_sma25_position}</p>
+            <p>価格はSMA75の{4h_sma75_position}</p>
             <p>{4h_recent_cross}</p>
           </div>
         </div>
@@ -1836,8 +1841,8 @@ MACD（中央が0、左が弱気・右が強気）:
           <p class="text-2xl mb-1">{1d_alignment_icon}</p>
           <p class="text-sm font-bold mb-2">{1d_alignment_label}</p>
           <div class="text-xs text-gray-400 space-y-1">
-            <p>SMA25: {1d_sma25_position}</p>
-            <p>SMA75: {1d_sma75_position}</p>
+            <p>価格はSMA25の{1d_sma25_position}</p>
+            <p>価格はSMA75の{1d_sma75_position}</p>
             <p>{1d_recent_cross}</p>
           </div>
           <div class="border-t border-gray-600 mt-2 pt-2 text-xs text-gray-400">
@@ -1873,6 +1878,12 @@ MACD（中央が0、左が弱気・右が強気）:
 - \`present_files\` で提示
 - コードブロックでの出力やテキスト説明は不要
 - Tailwind CSS（jsdelivr pre-built CSS）を使用。\`<script src="https://cdn.tailwindcss.com">\` は本番非推奨の警告が出るため使わない
+
+---
+
+⚠️ 免責事項：この分析は参考情報であり、解釈には誤差が含まれる場合があります。
+
+板情報は秒単位で変動するため、実際のトレード前には最新状況を再確認してください。
 `
         }]
       }

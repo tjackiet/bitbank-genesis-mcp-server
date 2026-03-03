@@ -1077,12 +1077,25 @@ export const AnalyzeMtfSmaInputSchema = BasePairInputSchema.extend({
 
 const MtfSmaPerTimeframeSchema = z.object({
   alignment: z.enum(['bullish', 'bearish', 'mixed', 'unknown']),
+  position: z.enum(['above_all', 'below_all', 'between', 'unknown']).optional(),
   latest: z.object({ close: z.number().nullable() }),
+  sma: z.record(z.string(), z.number().nullable()).optional(),
   smas: z.record(z.string(), z.object({
     value: z.number().nullable(),
     distancePct: z.number().nullable(),
+    distanceAbs: z.number().nullable().optional(),
     slope: z.enum(['rising', 'falling', 'flat']),
+    slopePctPerBar: z.number().nullable().optional(),
+    slopePctTotal: z.number().nullable().optional(),
+    barsWindow: z.number().int().nullable().optional(),
+    slopePctPerDay: z.number().nullable().optional(),
     pricePosition: z.enum(['above', 'below', 'equal']).optional(),
+  })).optional(),
+  crosses: z.array(z.object({
+    a: z.string(),
+    b: z.string(),
+    type: z.enum(['golden', 'dead']),
+    delta: z.number(),
   })).optional(),
   recentCrosses: z.array(z.object({
     type: z.enum(['golden_cross', 'dead_cross']),
@@ -1090,6 +1103,7 @@ const MtfSmaPerTimeframeSchema = z.object({
     barsAgo: z.number().int(),
     date: z.string(),
   })).optional(),
+  tags: z.array(z.string()).optional(),
 }).passthrough();
 
 export const AnalyzeMtfSmaDataSchemaOut = z.object({
