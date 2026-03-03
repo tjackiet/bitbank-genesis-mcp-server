@@ -5,3 +5,4 @@ reports/
 cache/
 *.mcpb
 .claude/worktrees/
+output/

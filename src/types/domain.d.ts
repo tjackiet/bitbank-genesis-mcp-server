@@ -111,6 +111,8 @@ export type ChartIndicators = IchimokuSeries & BollingerBandsSeries & SmaSeriesF
 	RSI_14?: number | null;
 	RSI_14_series?: NumericSeries;
 	macd_series?: { line: NumericSeries; signal: NumericSeries; hist: NumericSeries };
+	stoch_k_series?: NumericSeries;
+	stoch_d_series?: NumericSeries;
 };
 
 export interface ChartMeta {
@@ -188,6 +190,19 @@ export interface IndicatorsInternal {
 	sma_50_series?: NumericSeries;
 	sma_75_series?: NumericSeries;
 	sma_200_series?: NumericSeries;
+	// EMA
+	EMA_12?: number | null;
+	EMA_26?: number | null;
+	EMA_50?: number | null;
+	EMA_200?: number | null;
+	ema_12_series?: NumericSeries;
+	ema_26_series?: NumericSeries;
+	ema_50_series?: NumericSeries;
+	ema_200_series?: NumericSeries;
+	// MACD (structured)
+	macd_series?: { line: NumericSeries; signal: NumericSeries; hist: NumericSeries };
+	// RSI
+	RSI_14_series?: NumericSeries;
 }
 
 export interface GetIndicatorsData {

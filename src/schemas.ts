@@ -232,6 +232,8 @@ export const ChartIndicatorsSchema = IchimokuSeriesSchema.merge(BollingerBandsSe
     signal: NumericSeriesSchema,
     hist: NumericSeriesSchema,
   }).optional(),
+  stoch_k_series: NumericSeriesSchema.optional(),
+  stoch_d_series: NumericSeriesSchema.optional(),
 });
 
 export const ChartMetaSchema = z.object({
