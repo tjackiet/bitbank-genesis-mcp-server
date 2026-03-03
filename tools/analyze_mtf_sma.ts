@@ -28,13 +28,18 @@ export default async function analyzeMtfSma(
 
     for (const { timeframe, result } of results) {
       if (result?.ok && result?.data) {
+        const d = result.data;
         byTimeframe[timeframe] = {
-          alignment: result.data.alignment,
-          latest: result.data.latest,
-          smas: result.data.smas,
-          recentCrosses: result.data.recentCrosses,
+          alignment: d.alignment,
+          position: d.summary?.position ?? 'unknown',
+          latest: d.latest,
+          sma: d.sma,
+          smas: d.smas,
+          crosses: d.crosses,
+          recentCrosses: d.recentCrosses,
+          tags: d.tags,
         };
-        alignments.push(result.data.alignment);
+        alignments.push(d.alignment);
       } else {
         byTimeframe[timeframe] = { alignment: 'unknown', latest: { close: null } };
         alignments.push('unknown');
@@ -82,7 +87,7 @@ export default async function analyzeMtfSma(
 // ── MCP ツール定義（tool-registry から自動収集） ──
 export const toolDef: ToolDefinition = {
   name: 'analyze_mtf_sma',
-  description: '複数タイムフレームの SMA 配列を一括取得し、方向の合流（confluence）を判定。内部で各タイムフレームを並列実行するため、個別に analyze_sma_snapshot を複数回呼ぶより高速。',
+  description: '複数タイムフレームの SMA 配列を一括取得し、方向の合流（confluence）を判定。各TFの SMA値・乖離率・傾き・クロス状態・位置 (above_all等) をすべて含むため、analyze_sma_snapshot の個別呼び出しは不要。内部並列実行で高速。',
   inputSchema: AnalyzeMtfSmaInputSchema,
   handler: async ({ pair, timeframes, periods }: any) => analyzeMtfSma(pair, timeframes, periods),
 };

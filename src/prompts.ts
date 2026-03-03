@@ -1586,9 +1586,12 @@ MACD（中央が0、左が弱気・右が強気）:
 4. analyze_support_resistance(pair="btc_jpy", lookbackDays=90, topN=3) → サポート/レジスタンスライン
 5. get_orderbook(pair="btc_jpy", mode=pressure, bandsPct=[0.005, 0.01, 0.02]) → 板の買い/売り圧力
 6. analyze_mtf_sma(pair="btc_jpy") → 1h/4h/日足の SMA 配列を一括取得＋方向合流判定（内部並列実行）
+   - 各時間軸の SMA 値・乖離率・傾き・クロス状態・位置 (above_all/below_all/between) をすべて含む
+   - ⚠️ analyze_sma_snapshot の個別呼び出しは不要（MTF が全データを返却済み）
 7. analyze_ichimoku_snapshot(pair="btc_jpy", type="1day") → 日足の一目均衡表（雲の位置関係・三役好転/逆転）
 
 ※ 価格チャートは get_candles の直近8本の close 値からインライン SVG スパークラインを生成（render_chart_svg は不要）
+※ 上記7ツールのみ使用すること。追加のツール呼び出しは行わない
 
 【出力形式】
 取得したデータを使って、以下の構成の **HTML ファイル** を生成してください。
