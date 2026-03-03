@@ -147,6 +147,8 @@ export type ChartPayloadFromSchema = {
             signal: (number | null)[];
             hist: (number | null)[];
         } | undefined;
+        stoch_k_series?: (number | null)[] | undefined;
+        stoch_d_series?: (number | null)[] | undefined;
     };
     meta?: {
         pastBuffer?: number | undefined;
@@ -307,6 +309,8 @@ export type GetIndicatorsDataFromSchema = {
                 signal: (number | null)[];
                 hist: (number | null)[];
             } | undefined;
+            stoch_k_series?: (number | null)[] | undefined;
+            stoch_d_series?: (number | null)[] | undefined;
         };
         meta: {
             pastBuffer?: number | undefined;

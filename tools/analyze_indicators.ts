@@ -492,6 +492,8 @@ function createChartData(
       ICHI_chikou: indicators.ichi_series?.chikou,
       macd_series: indicators.macd_series,
       RSI_14_series: indicators.RSI_14_series,
+      stoch_k_series: indicators.stoch_k_series,
+      stoch_d_series: indicators.stoch_d_series,
     },
     meta: { pastBuffer, shift },
     stats: {
@@ -680,6 +682,7 @@ export default async function analyzeIndicators(
       'BB2_upper', 'BB2_middle', 'BB2_lower',
       'BB3_upper', 'BB3_middle', 'BB3_lower',
       'ICHI_tenkan', 'ICHI_kijun', 'ICHI_spanA', 'ICHI_spanB', 'ICHI_chikou',
+      'RSI_14_series', 'stoch_k_series', 'stoch_d_series',
     ];
     keys.forEach((k) => {
       const arr = seriesMap[k] as NumericSeries | undefined;
