@@ -919,6 +919,9 @@ export default async function renderChartSvg(args: RenderChartSvgOptions = {}): 
         // Y-axis ticks
         [0, 30, 50, 70, 100].forEach(v => { pc += `<text x="${padding.left - 8}" y="${py(v)}" text-anchor="end" dominant-baseline="middle" fill="#9ca3af" font-size="10">${v}</text>`; });
         pc += `<text x="${padding.left + 4}" y="${currentTop + 12}" fill="#9ca3af" font-size="10" font-weight="bold">RSI (14)</text>`;
+        // inline legend
+        pc += `<line x1="${padding.left + 65}" y1="${currentTop + 8}" x2="${padding.left + 77}" y2="${currentTop + 8}" stroke="#a78bfa" stroke-width="1.5"/>`;
+        pc += `<text x="${padding.left + 80}" y="${currentTop + 12}" fill="#9ca3af" font-size="9">RSI</text>`;
       } else if (panelType === 'volume') {
         const volumes = displayItems.map((d: any) => (d.volume as number) || 0);
         const vMax = Math.max(...volumes) || 1;
@@ -931,7 +934,8 @@ export default async function renderChartSvg(args: RenderChartSvgOptions = {}): 
           const bottomY = py(0);
           const up = (displayItems[i] as any).close >= (displayItems[i] as any).open;
           const color = up ? 'rgba(34,197,94,0.5)' : 'rgba(239,68,68,0.5)';
-          pc += `<rect x="${Number((cx - barW / 2).toFixed(1))}" y="${topY}" width="${Number(barW.toFixed(1))}" height="${Math.max(1, bottomY - topY)}" fill="${color}"/>`;
+          const vBarW = Math.max(1, barW * 0.7);
+          pc += `<rect x="${Number((cx - vBarW / 2).toFixed(1))}" y="${topY}" width="${Number(vBarW.toFixed(1))}" height="${Math.max(1, bottomY - topY)}" fill="${color}"/>`;
         });
         // Y-axis ticks
         const vt = niceTicks(0, vMax, 3);
@@ -940,6 +944,11 @@ export default async function renderChartSvg(args: RenderChartSvgOptions = {}): 
           pc += `<text x="${padding.left - 8}" y="${py(v)}" text-anchor="end" dominant-baseline="middle" fill="#9ca3af" font-size="10">${label}</text>`;
         });
         pc += `<text x="${padding.left + 4}" y="${currentTop + 12}" fill="#9ca3af" font-size="10" font-weight="bold">Volume</text>`;
+        // inline legend
+        pc += `<rect x="${padding.left + 55}" y="${currentTop + 4}" width="8" height="8" fill="rgba(34,197,94,0.5)"/>`;
+        pc += `<text x="${padding.left + 66}" y="${currentTop + 12}" fill="#9ca3af" font-size="9">Up</text>`;
+        pc += `<rect x="${padding.left + 85}" y="${currentTop + 4}" width="8" height="8" fill="rgba(239,68,68,0.5)"/>`;
+        pc += `<text x="${padding.left + 96}" y="${currentTop + 12}" fill="#9ca3af" font-size="9">Down</text>`;
       }
       // panel Y-axis line
       pc += `<line x1="${padding.left}" y1="${currentTop}" x2="${padding.left}" y2="${panelBottom}" stroke="#4b5563" stroke-width="1"/>`;
