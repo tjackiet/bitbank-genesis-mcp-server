@@ -1737,7 +1737,7 @@ MACD（中央が0、左が弱気・右が強気）:
     
     <!-- 価格サマリー -->
     <section class="bg-card rounded-lg p-6">
-      <h2 class="font-bold mb-4">📊 価格の動き</h2>
+      <h2 class="font-bold mb-4">📊 BTC/JPY 価格の動き</h2>
       <div class="flex justify-between items-center mb-4">
         <div>
           <p class="text-gray-400 text-sm">8時間前</p>
