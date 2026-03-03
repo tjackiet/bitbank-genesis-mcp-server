@@ -1069,6 +1069,45 @@ export const AnalyzeSmaSnapshotMetaSchemaOut = BaseMetaSchema.extend({ type: Can
 
 export const AnalyzeSmaSnapshotOutputSchema = toolResultSchema(AnalyzeSmaSnapshotDataSchemaOut, AnalyzeSmaSnapshotMetaSchemaOut);
 
+// === MTF SMA (Multi-Timeframe SMA Snapshot) ===
+export const AnalyzeMtfSmaInputSchema = BasePairInputSchema.extend({
+  timeframes: z.array(CandleTypeEnum).optional().default(['1hour', '4hour', '1day']),
+  periods: z.array(z.number().int()).optional().default([25, 75, 200]),
+});
+
+const MtfSmaPerTimeframeSchema = z.object({
+  alignment: z.enum(['bullish', 'bearish', 'mixed', 'unknown']),
+  latest: z.object({ close: z.number().nullable() }),
+  smas: z.record(z.string(), z.object({
+    value: z.number().nullable(),
+    distancePct: z.number().nullable(),
+    slope: z.enum(['rising', 'falling', 'flat']),
+    pricePosition: z.enum(['above', 'below', 'equal']).optional(),
+  })).optional(),
+  recentCrosses: z.array(z.object({
+    type: z.enum(['golden_cross', 'dead_cross']),
+    pair: z.tuple([z.number(), z.number()]),
+    barsAgo: z.number().int(),
+    date: z.string(),
+  })).optional(),
+}).passthrough();
+
+export const AnalyzeMtfSmaDataSchemaOut = z.object({
+  timeframes: z.record(z.string(), MtfSmaPerTimeframeSchema),
+  confluence: z.object({
+    aligned: z.boolean(),
+    direction: z.enum(['bullish', 'bearish', 'mixed', 'unknown']),
+    summary: z.string(),
+  }),
+}).passthrough();
+
+export const AnalyzeMtfSmaMetaSchemaOut = BaseMetaSchema.extend({
+  timeframes: z.array(z.string()),
+  periods: z.array(z.number().int()),
+});
+
+export const AnalyzeMtfSmaOutputSchema = toolResultSchema(AnalyzeMtfSmaDataSchemaOut, AnalyzeMtfSmaMetaSchemaOut);
+
 // === Support Resistance Analysis ===
 export const AnalyzeSupportResistanceInputSchema = BasePairInputSchema.extend({
   lookbackDays: z.number().int().min(30).max(200).optional().default(90),
