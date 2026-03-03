@@ -1665,8 +1665,8 @@ MACD（中央が0、左が弱気・右が強気）:
 - 3列レイアウト: 1時間足 / 4時間足 / 日足
 - 各列に以下を表示:
   - SMA配列判定アイコン: 🟢上昇配列 / 🔴下降配列 / 🟡混合（timeframes[tf].alignment）
-  - 価格 vs SMA25: ▲上 / ▼下（timeframes[tf].smas["25"].pricePosition）
-  - 価格 vs SMA75: ▲上 / ▼下（timeframes[tf].smas["75"].pricePosition）
+  - 価格 vs SMA25: 「価格はSMA25の▲上（+X.X%）」/「価格はSMA25の▼下（-X.X%）」（timeframes[tf].smas["25"].pricePosition, deviationPct）
+  - 価格 vs SMA75: 「価格はSMA75の▲上（+X.X%）」/「価格はSMA75の▼下（-X.X%）」（timeframes[tf].smas["75"].pricePosition, deviationPct）
   - 直近クロス（timeframes[tf].recentCrosses が空でなければ表示: GC/DC + 何本前）
 - 日足列に追加:
   - 一目均衡表: 雲の{上/中/下}（assessment.pricePosition）+ 雲の方向（assessment.cloudSlope）
@@ -1819,8 +1819,8 @@ MACD（中央が0、左が弱気・右が強気）:
           <p class="text-2xl mb-1">{1h_alignment_icon}</p>
           <p class="text-sm font-bold mb-2">{1h_alignment_label}</p>
           <div class="text-xs text-gray-400 space-y-1">
-            <p>SMA25: {1h_sma25_position}</p>
-            <p>SMA75: {1h_sma75_position}</p>
+            <p>価格はSMA25の{1h_sma25_position}</p>
+            <p>価格はSMA75の{1h_sma75_position}</p>
             <p>{1h_recent_cross}</p>
           </div>
         </div>
@@ -1830,8 +1830,8 @@ MACD（中央が0、左が弱気・右が強気）:
           <p class="text-2xl mb-1">{4h_alignment_icon}</p>
           <p class="text-sm font-bold mb-2">{4h_alignment_label}</p>
           <div class="text-xs text-gray-400 space-y-1">
-            <p>SMA25: {4h_sma25_position}</p>
-            <p>SMA75: {4h_sma75_position}</p>
+            <p>価格はSMA25の{4h_sma25_position}</p>
+            <p>価格はSMA75の{4h_sma75_position}</p>
             <p>{4h_recent_cross}</p>
           </div>
         </div>
@@ -1841,8 +1841,8 @@ MACD（中央が0、左が弱気・右が強気）:
           <p class="text-2xl mb-1">{1d_alignment_icon}</p>
           <p class="text-sm font-bold mb-2">{1d_alignment_label}</p>
           <div class="text-xs text-gray-400 space-y-1">
-            <p>SMA25: {1d_sma25_position}</p>
-            <p>SMA75: {1d_sma75_position}</p>
+            <p>価格はSMA25の{1d_sma25_position}</p>
+            <p>価格はSMA75の{1d_sma75_position}</p>
             <p>{1d_recent_cross}</p>
           </div>
           <div class="border-t border-gray-600 mt-2 pt-2 text-xs text-gray-400">
