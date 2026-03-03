@@ -13,6 +13,7 @@ export type RenderChartSvgInput = {
         levels?: number;
     } | undefined;
     withSMA?: number[];
+    withEMA?: number[];
     withBB?: boolean;
     bbMode?: ("default" | "extended" | "light" | "full");
     withIchimoku?: boolean;
@@ -43,6 +44,8 @@ export type RenderChartSvgInput = {
     preferFile?: boolean;
     /** Output format: svg (default), base64, or dataUri (for embedding in HTML/Markdown). */
     outputFormat?: ("svg" | "base64" | "dataUri");
+    /** サブパネル: macd(MACD線+シグナル+ヒストグラム), rsi(RSI 14 + 70/30ゾーン), volume(出来高バー) */
+    subPanels?: ("macd" | "rsi" | "volume")[];
     /** X軸ラベルのタイムゾーン（例: Asia/Tokyo, UTC） */
     tz?: string;
     overlays?: {
@@ -133,7 +136,17 @@ export type ChartPayloadFromSchema = {
         SMA_50: (number | null)[];
         SMA_75: (number | null)[];
         SMA_200: (number | null)[];
+        EMA_12: (number | null)[];
+        EMA_26: (number | null)[];
+        EMA_50: (number | null)[];
+        EMA_200: (number | null)[];
         RSI_14?: (number | null) | undefined;
+        RSI_14_series?: (number | null)[] | undefined;
+        macd_series?: {
+            line: (number | null)[];
+            signal: (number | null)[];
+            hist: (number | null)[];
+        } | undefined;
     };
     meta?: {
         pastBuffer?: number | undefined;
@@ -214,6 +227,14 @@ export type GetIndicatorsDataFromSchema = {
         sma_50_series?: (number | null)[] | undefined;
         sma_75_series?: (number | null)[] | undefined;
         sma_200_series?: (number | null)[] | undefined;
+        EMA_12?: (number | null) | undefined;
+        EMA_26?: (number | null) | undefined;
+        EMA_50?: (number | null) | undefined;
+        EMA_200?: (number | null) | undefined;
+        ema_12_series?: (number | null)[] | undefined;
+        ema_26_series?: (number | null)[] | undefined;
+        ema_50_series?: (number | null)[] | undefined;
+        ema_200_series?: (number | null)[] | undefined;
         MACD_line?: (number | null) | undefined;
         MACD_signal?: (number | null) | undefined;
         MACD_hist?: (number | null) | undefined;
@@ -222,6 +243,12 @@ export type GetIndicatorsDataFromSchema = {
             signal: (number | null)[];
             hist: (number | null)[];
         } | undefined;
+        STOCH_K?: (number | null) | undefined;
+        STOCH_D?: (number | null) | undefined;
+        STOCH_prevK?: (number | null) | undefined;
+        STOCH_prevD?: (number | null) | undefined;
+        stoch_k_series?: (number | null)[] | undefined;
+        stoch_d_series?: (number | null)[] | undefined;
         STOCH_RSI_K?: (number | null) | undefined;
         STOCH_RSI_D?: (number | null) | undefined;
         STOCH_RSI_prevK?: (number | null) | undefined;
@@ -269,7 +296,17 @@ export type GetIndicatorsDataFromSchema = {
             SMA_50: (number | null)[];
             SMA_75: (number | null)[];
             SMA_200: (number | null)[];
+            EMA_12: (number | null)[];
+            EMA_26: (number | null)[];
+            EMA_50: (number | null)[];
+            EMA_200: (number | null)[];
             RSI_14?: (number | null) | undefined;
+            RSI_14_series?: (number | null)[] | undefined;
+            macd_series?: {
+                line: (number | null)[];
+                signal: (number | null)[];
+                hist: (number | null)[];
+            } | undefined;
         };
         meta: {
             pastBuffer?: number | undefined;

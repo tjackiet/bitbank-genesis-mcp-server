@@ -19,6 +19,8 @@ import { toolDef as getOrderbook } from '../tools/get_orderbook.js';
 import { toolDef as analyzeIchimokuSnapshot } from '../tools/analyze_ichimoku_snapshot.js';
 import { toolDef as analyzeBbSnapshot } from '../tools/analyze_bb_snapshot.js';
 import { toolDef as analyzeSmaSnapshot } from '../tools/analyze_sma_snapshot.js';
+import { toolDef as analyzeEmaSnapshot } from '../tools/analyze_ema_snapshot.js';
+import { toolDef as analyzeStochSnapshot } from '../tools/analyze_stoch_snapshot.js';
 import { toolDef as analyzeMtfSma } from '../tools/analyze_mtf_sma.js';
 import { toolDef as analyzeSupportResistance } from '../tools/analyze_support_resistance.js';
 import { toolDef as analyzeCandlePatterns } from '../tools/analyze_candle_patterns.js';
@@ -41,7 +43,6 @@ import { toolDef as renderChartSvg } from './handlers/renderChartSvgHandler.js';
 import { toolDef as detectPatterns } from './handlers/detectPatternsHandler.js';
 import { toolDef as analyzeMarketSignal } from './handlers/analyzeMarketSignalHandler.js';
 import { toolDef as getTickersJpy } from './handlers/getTickersJpyHandler.js';
-import { toolDef as analyzeMacdPattern } from './handlers/analyzeMacdPattern.js';
 import { toolDef as runBacktest } from './handlers/runBacktestHandler.js';
 
 /**
@@ -63,10 +64,11 @@ export const allToolDefs: ToolDefinition[] = [
 	analyzeBbSnapshot,
 	analyzeIchimokuSnapshot,
 	analyzeSmaSnapshot,
+	analyzeEmaSnapshot,
+	analyzeStochSnapshot,
 	analyzeMtfSma,
 	analyzeSupportResistance,
 	analyzeCandlePatterns,
-	analyzeMacdPattern,
 	analyzeMarketSignal,
 	analyzeVolumeProfile,
 	analyzeCurrencyStrength,

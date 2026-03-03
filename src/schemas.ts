@@ -49,6 +49,7 @@ export const RenderChartSvgInputSchema = z
     depth: z.object({ levels: z.number().int().min(10).max(500).optional().default(200) }).optional(),
     // デフォルトは描画しない（明示時のみ描画）
     withSMA: z.array(z.number().int()).optional().default([]),
+    withEMA: z.array(z.number().int()).optional().default([]),
     // 既定でBBはオフ（必要時のみ指定）
     withBB: z.boolean().optional().default(false),
     // backward-compat: accept legacy values and normalize in implementation
@@ -82,6 +83,8 @@ export const RenderChartSvgInputSchema = z
     // 出力フォーマット: 'svg'(デフォルト), 'base64'(Base64文字列), 'dataUri'(data:image/svg+xml;base64,...形式)
     // Claude.ai等でpresent_filesがうまく動作しない場合の回避策として使用
     outputFormat: z.enum(['svg', 'base64', 'dataUri']).optional().default('svg').describe('Output format: svg (default), base64, or dataUri (for embedding in HTML/Markdown).'),
+    // サブパネル（価格パネルの下に独立Y軸で描画）
+    subPanels: z.array(z.enum(['macd', 'rsi', 'volume'])).optional().default([]).describe('サブパネル: macd(MACD線+シグナル+ヒストグラム), rsi(RSI 14 + 70/30ゾーン), volume(出来高バー)'),
     // X軸ラベルのタイムゾーン
     tz: z.string().optional().default('Asia/Tokyo').describe('X軸ラベルのタイムゾーン（例: Asia/Tokyo, UTC）'),
     // Optional pattern overlays (ranges/annotations)
@@ -214,8 +217,21 @@ export const SmaSeriesFixedSchema = z.object({
   SMA_200: NumericSeriesSchema,
 });
 
-export const ChartIndicatorsSchema = IchimokuSeriesSchema.merge(BollingerBandsSeriesSchema).merge(SmaSeriesFixedSchema).extend({
+export const EmaSeriesFixedSchema = z.object({
+  EMA_12: NumericSeriesSchema,
+  EMA_26: NumericSeriesSchema,
+  EMA_50: NumericSeriesSchema,
+  EMA_200: NumericSeriesSchema,
+});
+
+export const ChartIndicatorsSchema = IchimokuSeriesSchema.merge(BollingerBandsSeriesSchema).merge(SmaSeriesFixedSchema).merge(EmaSeriesFixedSchema).extend({
   RSI_14: z.number().nullable().optional(),
+  RSI_14_series: NumericSeriesSchema.optional(),
+  macd_series: z.object({
+    line: NumericSeriesSchema,
+    signal: NumericSeriesSchema,
+    hist: NumericSeriesSchema,
+  }).optional(),
 });
 
 export const ChartMetaSchema = z.object({
@@ -241,6 +257,7 @@ export const ChartPayloadSchema = z
     const len = val.candles.length;
     const seriesKeys = [
       'SMA_5', 'SMA_20', 'SMA_25', 'SMA_50', 'SMA_75', 'SMA_200',
+      'EMA_12', 'EMA_26', 'EMA_50', 'EMA_200',
       'BB_upper', 'BB_middle', 'BB_lower', 'BB1_upper', 'BB1_middle', 'BB1_lower', 'BB2_upper', 'BB2_middle', 'BB2_lower', 'BB3_upper', 'BB3_middle', 'BB3_lower',
       'ICHI_tenkan', 'ICHI_kijun', 'ICHI_spanA', 'ICHI_spanB', 'ICHI_chikou',
     ];
@@ -310,6 +327,16 @@ export const IndicatorsInternalSchema = z.object({
   sma_50_series: NumericSeriesSchema.optional(),
   sma_75_series: NumericSeriesSchema.optional(),
   sma_200_series: NumericSeriesSchema.optional(),
+  // EMA latest values
+  EMA_12: z.number().nullable().optional(),
+  EMA_26: z.number().nullable().optional(),
+  EMA_50: z.number().nullable().optional(),
+  EMA_200: z.number().nullable().optional(),
+  // EMA series
+  ema_12_series: NumericSeriesSchema.optional(),
+  ema_26_series: NumericSeriesSchema.optional(),
+  ema_50_series: NumericSeriesSchema.optional(),
+  ema_200_series: NumericSeriesSchema.optional(),
   // MACD latest values
   MACD_line: z.number().nullable().optional(),
   MACD_signal: z.number().nullable().optional(),
@@ -318,6 +345,13 @@ export const IndicatorsInternalSchema = z.object({
   macd_series: z
     .object({ line: NumericSeriesSchema, signal: NumericSeriesSchema, hist: NumericSeriesSchema })
     .optional(),
+  // Classic Stochastic Oscillator
+  STOCH_K: z.number().nullable().optional(),
+  STOCH_D: z.number().nullable().optional(),
+  STOCH_prevK: z.number().nullable().optional(),
+  STOCH_prevD: z.number().nullable().optional(),
+  stoch_k_series: NumericSeriesSchema.optional(),
+  stoch_d_series: NumericSeriesSchema.optional(),
   // Stochastic RSI
   STOCH_RSI_K: z.number().nullable().optional(),
   STOCH_RSI_D: z.number().nullable().optional(),
@@ -1068,6 +1102,89 @@ export const AnalyzeSmaSnapshotDataSchemaOut = z.object({
 export const AnalyzeSmaSnapshotMetaSchemaOut = BaseMetaSchema.extend({ type: CandleTypeEnum.or(z.string()), count: z.number().int(), periods: z.array(z.number().int()) });
 
 export const AnalyzeSmaSnapshotOutputSchema = toolResultSchema(AnalyzeSmaSnapshotDataSchemaOut, AnalyzeSmaSnapshotMetaSchemaOut);
+
+// === EMA snapshot ===
+export const AnalyzeEmaSnapshotInputSchema = BasePairInputSchema.extend({
+  type: CandleTypeEnum.optional().default('1day'),
+  limit: z.number().int().min(200).max(365).optional().default(220),
+  periods: z.array(z.number().int()).optional().default([12, 26, 50, 200])
+});
+
+export const AnalyzeEmaSnapshotDataSchemaOut = z.object({
+  latest: z.object({ close: z.number().nullable() }),
+  ema: z.record(z.string(), z.number().nullable()),
+  crosses: z.array(z.object({ a: z.string(), b: z.string(), type: z.enum(['golden', 'dead']), delta: z.number() })),
+  alignment: z.enum(['bullish', 'bearish', 'mixed', 'unknown']),
+  tags: z.array(z.string()),
+  summary: z.object({
+    close: z.number().nullable(),
+    align: z.enum(['bullish', 'bearish', 'mixed', 'unknown']),
+    position: z.enum(['above_all', 'below_all', 'between', 'unknown']),
+  }).optional(),
+  emas: z.record(z.string(), z.object({
+    value: z.number().nullable(),
+    distancePct: z.number().nullable(),
+    distanceAbs: z.number().nullable(),
+    slope: z.enum(['rising', 'falling', 'flat']),
+    slopePctPerBar: z.number().nullable(),
+    slopePctTotal: z.number().nullable(),
+    barsWindow: z.number().nullable(),
+    slopePctPerDay: z.number().nullable().optional(),
+  })).optional(),
+  recentCrosses: z.array(z.object({
+    type: z.enum(['golden_cross', 'dead_cross']),
+    pair: z.tuple([z.number(), z.number()]),
+    barsAgo: z.number().int(),
+    date: z.string(),
+  })).optional(),
+}).passthrough();
+
+export const AnalyzeEmaSnapshotMetaSchemaOut = BaseMetaSchema.extend({ type: CandleTypeEnum.or(z.string()), count: z.number().int(), periods: z.array(z.number().int()) });
+
+export const AnalyzeEmaSnapshotOutputSchema = toolResultSchema(AnalyzeEmaSnapshotDataSchemaOut, AnalyzeEmaSnapshotMetaSchemaOut);
+
+// === Stochastic Oscillator snapshot ===
+export const AnalyzeStochSnapshotInputSchema = BasePairInputSchema.extend({
+  type: CandleTypeEnum.optional().default('1day'),
+  limit: z.number().int().min(40).max(365).optional().default(120),
+  kPeriod: z.number().int().min(2).max(50).optional().default(14),
+  smoothK: z.number().int().min(1).max(10).optional().default(3),
+  smoothD: z.number().int().min(1).max(10).optional().default(3),
+});
+
+export const AnalyzeStochSnapshotDataSchemaOut = z.object({
+  latest: z.object({ close: z.number().nullable() }),
+  stoch: z.object({
+    k: z.number().nullable(),
+    d: z.number().nullable(),
+    prevK: z.number().nullable(),
+    prevD: z.number().nullable(),
+  }),
+  zone: z.enum(['overbought', 'oversold', 'neutral']),
+  crossover: z.object({
+    type: z.enum(['bullish_cross', 'bearish_cross', 'none']),
+    description: z.string(),
+  }),
+  recentCrosses: z.array(z.object({
+    type: z.enum(['bullish_cross', 'bearish_cross']),
+    barsAgo: z.number().int(),
+    date: z.string(),
+    zone: z.enum(['overbought', 'oversold', 'neutral']),
+  })),
+  divergence: z.object({
+    type: z.enum(['bullish', 'bearish', 'none']),
+    description: z.string(),
+  }),
+  tags: z.array(z.string()),
+}).passthrough();
+
+export const AnalyzeStochSnapshotMetaSchemaOut = BaseMetaSchema.extend({
+  type: CandleTypeEnum.or(z.string()),
+  count: z.number().int(),
+  params: z.object({ kPeriod: z.number().int(), smoothK: z.number().int(), smoothD: z.number().int() }),
+});
+
+export const AnalyzeStochSnapshotOutputSchema = toolResultSchema(AnalyzeStochSnapshotDataSchemaOut, AnalyzeStochSnapshotMetaSchemaOut);
 
 // === MTF SMA (Multi-Timeframe SMA Snapshot) ===
 export const AnalyzeMtfSmaInputSchema = BasePairInputSchema.extend({

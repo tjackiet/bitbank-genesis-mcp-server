@@ -99,11 +99,18 @@ export interface SmaSeriesFixed {
 	SMA_200?: NumericSeries;
 }
 
+export interface EmaSeriesFixed {
+	EMA_12?: NumericSeries;
+	EMA_26?: NumericSeries;
+	EMA_50?: NumericSeries;
+	EMA_200?: NumericSeries;
+}
+
 // Chart-side indicator series shape (flattened series only)
-export type ChartIndicators = IchimokuSeries & BollingerBandsSeries & SmaSeriesFixed & {
-	// RSI is latest-value only even in chart payload
+export type ChartIndicators = IchimokuSeries & BollingerBandsSeries & SmaSeriesFixed & EmaSeriesFixed & {
 	RSI_14?: number | null;
 	RSI_14_series?: NumericSeries;
+	macd_series?: { line: NumericSeries; signal: NumericSeries; hist: NumericSeries };
 };
 
 export interface ChartMeta {
@@ -163,6 +170,13 @@ export interface IndicatorsInternal {
 	ICHIMOKU_base?: number | null;
 	ICHIMOKU_spanA?: number | null;
 	ICHIMOKU_spanB?: number | null;
+	// Classic Stochastic Oscillator
+	STOCH_K?: number | null;
+	STOCH_D?: number | null;
+	STOCH_prevK?: number | null;
+	STOCH_prevD?: number | null;
+	stoch_k_series?: NumericSeries;
+	stoch_d_series?: NumericSeries;
 	// series fields
 	bb1_series?: { upper: NumericSeries; middle: NumericSeries; lower: NumericSeries };
 	bb2_series?: { upper: NumericSeries; middle: NumericSeries; lower: NumericSeries };
@@ -243,6 +257,7 @@ export interface RenderChartSvgOptions {
 	bbMode?: BbMode;
 	withIchimoku?: boolean; // default false
 	ichimoku?: IchimokuOptions; // default { mode: 'default' }
+	subPanels?: Array<'macd' | 'rsi' | 'volume'>; // sub-panels below price chart
 	withLegend?: boolean; // default true
 	barWidthRatio?: number; // 0.1 - 0.9, default 0.6
 	yPaddingPct?: number; // 0-0.2, default 0.03 (縦方向バッファ率)

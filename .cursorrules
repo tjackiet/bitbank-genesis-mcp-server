@@ -2,7 +2,7 @@
 
 ## プロジェクト概要
 
-bitbank 暗号資産取引所の MCP サーバー。22 ツールでリアルタイム市場データ取得・テクニカル分析・チャート描画・バックテストを提供。
+bitbank 暗号資産取引所の MCP サーバー。26 ツールでリアルタイム市場データ取得・テクニカル分析・チャート描画・バックテストを提供。
 
 ## 技術スタック
 
@@ -88,6 +88,8 @@ AI はチャートや可視化を求められた場合、**必ず本プロジェ
 | `render_candle_pattern_diagram` | `tools/render_candle_pattern_diagram.ts` | ローソク足パターン図解 |
 
 Cursor では `savePng: true` + ワークスペース内の `outputDir` を推奨（ワークスペース外はパスがクリック不可）。
+
+**例外**: おはようレポート（`src/prompts.ts` の ohayo プロンプト）では、`get_candles` の close 配列から `<svg><polyline>` による簡易スパークラインをインライン生成してよい。`render_chart_svg` の呼び出し削減が目的。
 
 ### HTML 出力時の Tailwind CSS
 

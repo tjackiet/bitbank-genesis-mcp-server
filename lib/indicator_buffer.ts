@@ -5,8 +5,13 @@ export type IndicatorBufferKey =
 	| 'SMA_50'
 	| 'SMA_75'
 	| 'SMA_200'
+	| 'EMA_12'
+	| 'EMA_26'
+	| 'EMA_50'
+	| 'EMA_200'
 	| 'BB_20'
 	| 'RSI_14'
+	| 'STOCH'
 	| 'ICHIMOKU';
 
 const INDICATOR_PERIODS: Record<IndicatorBufferKey, number> = {
@@ -16,8 +21,13 @@ const INDICATOR_PERIODS: Record<IndicatorBufferKey, number> = {
 	SMA_50: 50,
 	SMA_75: 75,
 	SMA_200: 200,
+	EMA_12: 12,
+	EMA_26: 26,
+	EMA_50: 50,
+	EMA_200: 200,
 	BB_20: 20,
 	RSI_14: 15,
+	STOCH: 20,
 	ICHIMOKU: 78,
 };
 

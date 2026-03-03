@@ -319,6 +319,71 @@ export function computeStochRSI(
 }
 
 /**
+ * Classic Stochastic Oscillator: 価格のレンジ内位置を測定。
+ * %K_raw = (Close - Low_n) / (High_n - Low_n) * 100
+ * %K = SMA(%K_raw, smoothK)
+ * %D = SMA(%K, smoothD)
+ */
+export function computeClassicStochastic(
+  highs: number[],
+  lows: number[],
+  closes: number[],
+  kPeriod = 14,
+  smoothK = 3,
+  smoothD = 3
+): { kSeries: (number | null)[]; dSeries: (number | null)[]; k: number | null; d: number | null; prevK: number | null; prevD: number | null } {
+  const n = Math.min(highs.length, lows.length, closes.length);
+  if (n < kPeriod + smoothK + smoothD) {
+    const empty = new Array(n).fill(null);
+    return { kSeries: empty, dSeries: empty, k: null, d: null, prevK: null, prevD: null };
+  }
+
+  const rawK: (number | null)[] = [];
+  for (let i = 0; i < n; i++) {
+    if (i < kPeriod - 1) { rawK.push(null); continue; }
+    let hi = -Infinity;
+    let lo = Infinity;
+    for (let j = i - kPeriod + 1; j <= i; j++) {
+      if (highs[j] > hi) hi = highs[j];
+      if (lows[j] < lo) lo = lows[j];
+    }
+    const range = hi - lo;
+    rawK.push(range === 0 ? 50 : Number((((closes[i] - lo) / range) * 100).toFixed(2)));
+  }
+
+  const smoothedK: (number | null)[] = [];
+  for (let i = 0; i < rawK.length; i++) {
+    if (i < smoothK - 1 || rawK[i] == null) { smoothedK.push(null); continue; }
+    let sum = 0;
+    let cnt = 0;
+    for (let j = i - smoothK + 1; j <= i; j++) {
+      if (rawK[j] != null) { sum += rawK[j] as number; cnt++; }
+    }
+    smoothedK.push(cnt === smoothK ? Number((sum / cnt).toFixed(2)) : null);
+  }
+
+  const dSeriesArr: (number | null)[] = [];
+  for (let i = 0; i < smoothedK.length; i++) {
+    if (i < smoothD - 1 || smoothedK[i] == null) { dSeriesArr.push(null); continue; }
+    let sum = 0;
+    let cnt = 0;
+    for (let j = i - smoothD + 1; j <= i; j++) {
+      if (smoothedK[j] != null) { sum += smoothedK[j] as number; cnt++; }
+    }
+    dSeriesArr.push(cnt === smoothD ? Number((sum / cnt).toFixed(2)) : null);
+  }
+
+  return {
+    kSeries: smoothedK,
+    dSeries: dSeriesArr,
+    k: smoothedK.at(-1) ?? null,
+    d: dSeriesArr.at(-1) ?? null,
+    prevK: smoothedK.at(-2) ?? null,
+    prevD: dSeriesArr.at(-2) ?? null,
+  };
+}
+
+/**
  * OBV (On-Balance Volume): 出来高を価格方向に応じて累積加算/減算。
  * close > prev_close → OBV += volume
  * close < prev_close → OBV -= volume
@@ -403,6 +468,10 @@ function createChartData(
       SMA_50: indicators.sma_50_series,
       SMA_75: indicators.sma_75_series,
       SMA_200: indicators.sma_200_series,
+      EMA_12: indicators.ema_12_series,
+      EMA_26: indicators.ema_26_series,
+      EMA_50: indicators.ema_50_series,
+      EMA_200: indicators.ema_200_series,
       RSI_14: indicators.RSI_14,
       BB1_upper: indicators.bb1_series?.upper,
       BB1_middle: indicators.bb1_series?.middle,
@@ -421,6 +490,8 @@ function createChartData(
       ICHI_spanA: indicators.ichi_series?.spanA,
       ICHI_spanB: indicators.ichi_series?.spanB,
       ICHI_chikou: indicators.ichi_series?.chikou,
+      macd_series: indicators.macd_series,
+      RSI_14_series: indicators.RSI_14_series,
     },
     meta: { pastBuffer, shift },
     stats: {
@@ -465,7 +536,7 @@ export default async function analyzeIndicators(
 
   const displayCount = limit || 60;
 
-  const indicatorKeys = ['SMA_5', 'SMA_20', 'SMA_25', 'SMA_50', 'SMA_75', 'SMA_200', 'RSI_14', 'BB_20', 'ICHIMOKU'] as const;
+  const indicatorKeys = ['SMA_5', 'SMA_20', 'SMA_25', 'SMA_50', 'SMA_75', 'SMA_200', 'EMA_12', 'EMA_26', 'EMA_50', 'EMA_200', 'RSI_14', 'BB_20', 'STOCH', 'ICHIMOKU'] as const;
   const fetchCount = getFetchCount(displayCount, indicatorKeys as unknown as any);
 
   // Check cache before fetching & computing
@@ -493,6 +564,10 @@ export default async function analyzeIndicators(
   const sma_50_series = sma(allCloses, 50);
   const sma_75_series = sma(allCloses, 75);
   const sma_200_series = sma(allCloses, 200);
+  const ema_12_series = ema(allCloses, 12);
+  const ema_26_series = ema(allCloses, 26);
+  const ema_50_series = ema(allCloses, 50);
+  const ema_200_series = ema(allCloses, 200);
 
   const indicators: any = {
     SMA_5: sma_5_series.at(-1),
@@ -526,6 +601,14 @@ export default async function analyzeIndicators(
     sma_50_series,
     sma_75_series,
     sma_200_series,
+    EMA_12: ema_12_series.at(-1),
+    EMA_26: ema_26_series.at(-1),
+    EMA_50: ema_50_series.at(-1),
+    EMA_200: ema_200_series.at(-1),
+    ema_12_series,
+    ema_26_series,
+    ema_50_series,
+    ema_200_series,
   };
 
   // latest MACD values
@@ -540,6 +623,15 @@ export default async function analyzeIndicators(
     indicators.ICHIMOKU_spanA = ichiSimple.spanA;
     indicators.ICHIMOKU_spanB = ichiSimple.spanB;
   }
+
+  // Classic Stochastic Oscillator
+  const stoch = computeClassicStochastic(allHighs, allLows, allCloses, 14, 3, 3);
+  indicators.STOCH_K = stoch.k;
+  indicators.STOCH_D = stoch.d;
+  indicators.STOCH_prevK = stoch.prevK;
+  indicators.STOCH_prevD = stoch.prevD;
+  indicators.stoch_k_series = stoch.kSeries;
+  indicators.stoch_d_series = stoch.dSeries;
 
   // Stochastic RSI
   const stochRsi = computeStochRSI(allCloses, 14, 14, 3, 3);
@@ -562,9 +654,14 @@ export default async function analyzeIndicators(
   if (allCloses.length < 50) warnings.push('SMA_50: データ不足');
   if (allCloses.length < 75) warnings.push('SMA_75: データ不足');
   if (allCloses.length < 200) warnings.push('SMA_200: データ不足');
+  if (allCloses.length < 12) warnings.push('EMA_12: データ不足');
+  if (allCloses.length < 26) warnings.push('EMA_26: データ不足');
+  if (allCloses.length < 50) warnings.push('EMA_50: データ不足');
+  if (allCloses.length < 200) warnings.push('EMA_200: データ不足');
   if (allCloses.length < 15) warnings.push('RSI_14: データ不足');
   if (allCloses.length < 20) warnings.push('Bollinger_Bands: データ不足');
   if (allCloses.length < 52) warnings.push('Ichimoku: データ不足');
+  if (allCloses.length < 20) warnings.push('Stochastic: データ不足'); // 14(kPeriod) + 3(smoothK) + 3(smoothD)
   if (allCloses.length < 34) warnings.push('StochRSI: データ不足'); // 14(RSI) + 14(stoch) + 3(smoothK) + 3(smoothD)
   if (normalized.length < 2) warnings.push('OBV: データ不足');
 
@@ -577,6 +674,7 @@ export default async function analyzeIndicators(
     const seriesMap = chartData.indicators as unknown as Record<string, NumericSeries | number | null | undefined>;
     const keys = [
       'SMA_5', 'SMA_20', 'SMA_25', 'SMA_50', 'SMA_75', 'SMA_200',
+      'EMA_12', 'EMA_26', 'EMA_50', 'EMA_200',
       'BB_upper', 'BB_middle', 'BB_lower',
       'BB1_upper', 'BB1_middle', 'BB1_lower',
       'BB2_upper', 'BB2_middle', 'BB2_lower',

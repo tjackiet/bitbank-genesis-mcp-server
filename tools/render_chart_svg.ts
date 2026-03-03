@@ -68,6 +68,7 @@ export default async function renderChartSvg(args: RenderChartSvgOptions = {}): 
   // デフォルト: 明示されない限りSMAは描画しない
   // 互換: 以前の仕様からの流入に備え、withIchimoku時は引き続きBB/SMAをオフ
   let withSMA = args.withSMA ?? [];
+  let withEMA = (args as any).withEMA ?? [];
   let withBB = args.withBB ?? (withIchimoku ? false : false);
   const svgPrecision = Math.max(0, Math.min(3, Number((args as any)?.svgPrecision ?? 1)));
   const effectivePrecision = Math.max(1, svgPrecision);
@@ -84,6 +85,7 @@ export default async function renderChartSvg(args: RenderChartSvgOptions = {}): 
   const bbMode: 'default' | 'extended' = normalizeBbMode(args.bbMode || 'default');
   if (withIchimoku) {
     withSMA = [];
+    withEMA = [];
     withBB = false;
   }
 
@@ -99,6 +101,13 @@ export default async function renderChartSvg(args: RenderChartSvgOptions = {}): 
   const debugEnabled = Boolean((args as any)?.debug);
   const debugInfo: Record<string, any> = debugEnabled ? { notes: [] } : {};
   const forceLayers = (args as any)?.forceLayers === true || (args as any)?.noAutoLighten === true;
+
+  // Sub-panel configuration
+  const subPanelTypes: Array<'macd' | 'rsi' | 'volume'> = (
+    ((args as any).subPanels || []) as string[]
+  ).filter((t): t is 'macd' | 'rsi' | 'volume' => ['macd', 'rsi', 'volume'].includes(t));
+  const SUB_PANEL_HEIGHT = 120;
+  const SUB_PANEL_GAP = 24;
 
   // === Depth チャート（独立描画） ===
   if (isDepth) {
@@ -199,12 +208,13 @@ export default async function renderChartSvg(args: RenderChartSvgOptions = {}): 
   }
 
   // --- 事前見積もりヒューリスティクス（重そうなら candles-only にフォールバック） ---
-  const estimatedLayers = (withIchimoku ? 1 : 0) + (withBB ? (bbMode === 'extended' ? 3 : 1) : 0) + (Array.isArray(withSMA) ? withSMA.length : 0) + 1; // +1 for base series
+  const estimatedLayers = (withIchimoku ? 1 : 0) + (withBB ? (bbMode === 'extended' ? 3 : 1) : 0) + (Array.isArray(withSMA) ? withSMA.length : 0) + (Array.isArray(withEMA) ? withEMA.length : 0) + 1; // +1 for base series
   let summaryNotes: string[] = [];
   if (!forceLayers && limit * estimatedLayers > 500) {
-    if (withBB || (withSMA && withSMA.length > 0) || withIchimoku) {
+    if (withBB || (withSMA && withSMA.length > 0) || (withEMA && withEMA.length > 0) || withIchimoku) {
       withBB = false;
       withSMA = [];
+      withEMA = [];
       if (withIchimoku) {
         // keep user intent for ichimoku unless very heavy
         if (limit * (1 + (bbMode === 'extended' ? 3 : 1)) > 800) {
@@ -339,6 +349,21 @@ export default async function renderChartSvg(args: RenderChartSvgOptions = {}): 
       allYValues.push(...(series.slice(pastBuffer).filter((v: number | null) => v !== null)));
     });
   }
+  if (withEMA && withEMA.length > 0) {
+    const pickEmaSeries = (p: number) => {
+      switch (p) {
+        case 12: return indicators.EMA_12 as number[] | undefined;
+        case 26: return indicators.EMA_26 as number[] | undefined;
+        case 50: return indicators.EMA_50 as number[] | undefined;
+        case 200: return indicators.EMA_200 as number[] | undefined;
+        default: return (indicators as any)[`EMA_${p}`] as number[] | undefined;
+      }
+    };
+    withEMA.forEach((period: number) => {
+      const series = pickEmaSeries(period) || [];
+      allYValues.push(...(series.slice(pastBuffer).filter((v: number | null) => v !== null)));
+    });
+  }
 
   const dataYMin = Math.min(...allYValues);
   const dataYMax = Math.max(...allYValues);
@@ -369,6 +394,13 @@ export default async function renderChartSvg(args: RenderChartSvgOptions = {}): 
   const padding = viewBoxTight ? { top: 36, right: 12, bottom: 32, left: dynamicPaddingLeft } : { top: 48, right: 16, bottom: 40, left: dynamicPaddingLeft };
   const plotW = w - padding.left - padding.right;
   const plotH = h - padding.top - padding.bottom;
+
+  // Dynamic total height: price panel + sub-panels
+  const subPanelsTotalH = subPanelTypes.length > 0
+    ? subPanelTypes.length * SUB_PANEL_HEIGHT + (subPanelTypes.length) * SUB_PANEL_GAP
+    : 0;
+  const totalH = h + subPanelsTotalH;
+  const xAxisBottom = totalH - padding.bottom;
 
   // X座標計算: 描画ウィンドウ内での相対位置を計算
   // Xはバー中心を(i+0.5)に置き、左右に半スロットの余白を確保して端の切れを防ぐ
@@ -527,6 +559,28 @@ export default async function renderChartSvg(args: RenderChartSvgOptions = {}): 
   if (withSMA?.includes(50) && sma50.length > 0) smaLayers += createLinePath(sma50, smaColors[50], { simplify: false });
   if (withSMA?.includes(75) && sma75.length > 0) smaLayers += createLinePath(sma75, smaColors[75], { simplify: false });
   if (withSMA?.includes(200) && sma200.length > 0) smaLayers += createLinePath(sma200, smaColors[200], { simplify: false });
+
+  // EMAレイヤー（SMAと区別するため暖色系・破線）
+  const emaColors: Record<number, string> = { 12: '#ff6b35', 26: '#ffd166', 50: '#ef476f', 200: '#06d6a0' };
+  let emaLayers = '';
+  if (withEMA && withEMA.length > 0) {
+    const pickEmaSeries = (p: number) => {
+      switch (p) {
+        case 12: return indicators.EMA_12 as number[] | undefined;
+        case 26: return indicators.EMA_26 as number[] | undefined;
+        case 50: return indicators.EMA_50 as number[] | undefined;
+        case 200: return indicators.EMA_200 as number[] | undefined;
+        default: return (indicators as any)[`EMA_${p}`] as number[] | undefined;
+      }
+    };
+    for (const period of withEMA) {
+      const series = (pickEmaSeries(period) || []) as Array<number | null>;
+      if (series.length > 0) {
+        const color = emaColors[period] || '#ff9f1c';
+        emaLayers += createLinePath(series, color, { simplify: false, dash: '6,3' });
+      }
+    }
+  }
 
   // ボリンジャーバンド
   let bbLayers = '';
@@ -690,6 +744,12 @@ export default async function renderChartSvg(args: RenderChartSvgOptions = {}): 
         legendItems.push({ text: `SMA ${p}`, color: smaColors[p] || '#e5e7eb' });
       });
     }
+    if (withEMA?.length > 0) {
+      withEMA.forEach((p: number) => {
+        legendMeta[`EMA_${p}`] = `EMA ${p} (${emaColors[p] || '#ff9f1c'})`;
+        legendItems.push({ text: `EMA ${p}`, color: emaColors[p] || '#ff9f1c' });
+      });
+    }
     if (withBB) {
       if (bbMode === 'extended') {
         legendMeta.BB1 = 'BB ±1σ';
@@ -756,6 +816,7 @@ export default async function renderChartSvg(args: RenderChartSvgOptions = {}): 
 
   const xAxis = `
     <line x1="${padding.left}" y1="${h - padding.bottom}" x2="${w - padding.right}" y2="${h - padding.bottom}" stroke="#4b5563" stroke-width="1"/>
+    ${subPanelTypes.length > 0 ? `<line x1="${padding.left}" y1="${xAxisBottom}" x2="${w - padding.right}" y2="${xAxisBottom}" stroke="#4b5563" stroke-width="1"/>` : ''}
     <g font-size="12" fill="#9ca3af">
       ${displayItems
       .map((d: any, i: number) => {
@@ -765,15 +826,131 @@ export default async function renderChartSvg(args: RenderChartSvgOptions = {}): 
         const date = toDayjs(d);
         if (!date.isValid()) return '';
         const label = formatXLabel(date);
-        return `<text x="${xPos}" y="${h - padding.bottom + 16}" text-anchor="middle" fill="#9ca3af" font-size="10">${label}</text>`;
+        return `<text x="${xPos}" y="${xAxisBottom + 16}" text-anchor="middle" fill="#9ca3af" font-size="10">${label}</text>`;
       })
       .join('')}
     </g>
   `;
 
+  // --- Sub-panel rendering ---
+  let subPanelSvg = '';
+  if (subPanelTypes.length > 0) {
+    const pricePanelBottom = h - padding.bottom;
+    let currentTop = pricePanelBottom + SUB_PANEL_GAP;
+
+    const LEGEND_H = 18;
+    const subPanelY = (v: number, min: number, max: number, top: number) => {
+      const dataH = SUB_PANEL_HEIGHT - LEGEND_H;
+      const range = Math.max(1e-10, max - min);
+      return Number((top + SUB_PANEL_HEIGHT - ((v - min) * dataH) / range).toFixed(effectivePrecision));
+    };
+
+    for (const panelType of subPanelTypes) {
+      const panelBottom = currentTop + SUB_PANEL_HEIGHT;
+      let pc = '';
+      // panel background + top border
+      pc += `<rect x="${padding.left}" y="${currentTop}" width="${plotW}" height="${SUB_PANEL_HEIGHT}" fill="rgba(255,255,255,0.02)"/>`;
+      pc += `<line x1="${padding.left}" y1="${currentTop}" x2="${w - padding.right}" y2="${currentTop}" stroke="#374151" stroke-width="0.5"/>`;
+
+      if (panelType === 'macd') {
+        const ms = indicators?.macd_series as { line?: number[]; signal?: number[]; hist?: number[] } | undefined;
+        const mLine = (ms?.line || []) as Array<number | null>;
+        const mSig = (ms?.signal || []) as Array<number | null>;
+        const mHist = (ms?.hist || []) as Array<number | null>;
+        const vals: number[] = [];
+        [mLine, mSig, mHist].forEach(s => s.slice(pastBuffer).forEach((v, i) => { if (v != null && i < displayItems.length) vals.push(v as number); }));
+        if (vals.length > 0) {
+          const mMin = Math.min(...vals);
+          const mMax = Math.max(...vals);
+          const pad = (mMax - mMin) * 0.1 || 1;
+          const yMin = mMin - pad;
+          const yMax = mMax + pad;
+          const py = (v: number) => subPanelY(v, yMin, yMax, currentTop);
+
+          // zero line
+          if (yMin < 0 && yMax > 0) {
+            pc += `<line x1="${padding.left}" y1="${py(0)}" x2="${w - padding.right}" y2="${py(0)}" stroke="#4b5563" stroke-width="0.5" stroke-dasharray="4 4"/>`;
+          }
+          // histogram bars
+          const hBarW = Math.max(1, barW * 0.7);
+          mHist.forEach((val, i) => {
+            if (val == null) return;
+            const idx = i - pastBuffer;
+            if (idx < 0 || idx >= displayItems.length) return;
+            const cx = x(idx);
+            const topY = py(val as number);
+            const zeroY = py(0);
+            const color = (val as number) >= 0 ? 'rgba(34,197,94,0.6)' : 'rgba(239,68,68,0.6)';
+            pc += `<rect x="${Number((cx - hBarW / 2).toFixed(1))}" y="${Math.min(topY, zeroY)}" width="${Number(hBarW.toFixed(1))}" height="${Math.max(1, Math.abs(topY - zeroY))}" fill="${color}"/>`;
+          });
+          // MACD line
+          const lPts: string[] = [];
+          mLine.forEach((v, i) => { if (v != null) { const idx = i - pastBuffer; if (idx >= 0 && idx < displayItems.length) lPts.push(`${x(idx)},${py(v as number)}`); } });
+          if (lPts.length > 1) pc += `<path d="M ${lPts.join(' L ')}" fill="none" stroke="#3b82f6" stroke-width="1.5"/>`;
+          // Signal line
+          const sPts: string[] = [];
+          mSig.forEach((v, i) => { if (v != null) { const idx = i - pastBuffer; if (idx >= 0 && idx < displayItems.length) sPts.push(`${x(idx)},${py(v as number)}`); } });
+          if (sPts.length > 1) pc += `<path d="M ${sPts.join(' L ')}" fill="none" stroke="#f97316" stroke-width="1.5"/>`;
+          // Y-axis ticks
+          const mt = niceTicks(yMin, yMax, 3);
+          mt.forEach(v => { pc += `<text x="${padding.left - 8}" y="${py(v)}" text-anchor="end" dominant-baseline="middle" fill="#9ca3af" font-size="10">${v.toFixed(0)}</text>`; });
+        }
+        pc += `<text x="${padding.left + 4}" y="${currentTop + 12}" fill="#9ca3af" font-size="10" font-weight="bold">MACD</text>`;
+        // legend
+        pc += `<line x1="${padding.left + 50}" y1="${currentTop + 8}" x2="${padding.left + 62}" y2="${currentTop + 8}" stroke="#3b82f6" stroke-width="1.5"/>`;
+        pc += `<text x="${padding.left + 65}" y="${currentTop + 12}" fill="#9ca3af" font-size="9">MACD</text>`;
+        pc += `<line x1="${padding.left + 100}" y1="${currentTop + 8}" x2="${padding.left + 112}" y2="${currentTop + 8}" stroke="#f97316" stroke-width="1.5"/>`;
+        pc += `<text x="${padding.left + 115}" y="${currentTop + 12}" fill="#9ca3af" font-size="9">Signal</text>`;
+      } else if (panelType === 'rsi') {
+        const rsiSeries = (indicators?.RSI_14_series || []) as Array<number | null>;
+        const rMin = 0, rMax = 100;
+        const py = (v: number) => subPanelY(v, rMin, rMax, currentTop);
+        // zone fills
+        pc += `<rect x="${padding.left}" y="${py(100)}" width="${plotW}" height="${Math.abs(py(70) - py(100))}" fill="rgba(239,68,68,0.06)"/>`;
+        pc += `<rect x="${padding.left}" y="${py(30)}" width="${plotW}" height="${Math.abs(py(0) - py(30))}" fill="rgba(34,197,94,0.06)"/>`;
+        // reference lines
+        ([{ v: 70, c: '#ef4444', d: '2 2' }, { v: 50, c: '#4b5563', d: '4 4' }, { v: 30, c: '#22c55e', d: '2 2' }] as const).forEach(({ v, c, d }) => {
+          pc += `<line x1="${padding.left}" y1="${py(v)}" x2="${w - padding.right}" y2="${py(v)}" stroke="${c}" stroke-width="0.5" stroke-dasharray="${d}"/>`;
+        });
+        // RSI line
+        const rPts: string[] = [];
+        rsiSeries.forEach((v, i) => { if (v != null) { const idx = i - pastBuffer; if (idx >= 0 && idx < displayItems.length) rPts.push(`${x(idx)},${py(v as number)}`); } });
+        if (rPts.length > 1) pc += `<path d="M ${rPts.join(' L ')}" fill="none" stroke="#a78bfa" stroke-width="1.5"/>`;
+        // Y-axis ticks
+        [0, 30, 50, 70, 100].forEach(v => { pc += `<text x="${padding.left - 8}" y="${py(v)}" text-anchor="end" dominant-baseline="middle" fill="#9ca3af" font-size="10">${v}</text>`; });
+        pc += `<text x="${padding.left + 4}" y="${currentTop + 12}" fill="#9ca3af" font-size="10" font-weight="bold">RSI (14)</text>`;
+      } else if (panelType === 'volume') {
+        const volumes = displayItems.map((d: any) => (d.volume as number) || 0);
+        const vMax = Math.max(...volumes) || 1;
+        const py = (v: number) => subPanelY(v, 0, vMax, currentTop);
+        // volume bars
+        volumes.forEach((vol, i) => {
+          if (vol <= 0) return;
+          const cx = x(i);
+          const topY = py(vol);
+          const bottomY = py(0);
+          const up = (displayItems[i] as any).close >= (displayItems[i] as any).open;
+          const color = up ? 'rgba(34,197,94,0.5)' : 'rgba(239,68,68,0.5)';
+          pc += `<rect x="${Number((cx - barW / 2).toFixed(1))}" y="${topY}" width="${Number(barW.toFixed(1))}" height="${Math.max(1, bottomY - topY)}" fill="${color}"/>`;
+        });
+        // Y-axis ticks
+        const vt = niceTicks(0, vMax, 3);
+        vt.forEach(v => {
+          const label = v >= 1e9 ? `${(v / 1e9).toFixed(1)}B` : v >= 1e6 ? `${(v / 1e6).toFixed(1)}M` : v >= 1e3 ? `${(v / 1e3).toFixed(0)}K` : v.toFixed(0);
+          pc += `<text x="${padding.left - 8}" y="${py(v)}" text-anchor="end" dominant-baseline="middle" fill="#9ca3af" font-size="10">${label}</text>`;
+        });
+        pc += `<text x="${padding.left + 4}" y="${currentTop + 12}" fill="#9ca3af" font-size="10" font-weight="bold">Volume</text>`;
+      }
+      // panel Y-axis line
+      pc += `<line x1="${padding.left}" y1="${currentTop}" x2="${padding.left}" y2="${panelBottom}" stroke="#4b5563" stroke-width="1"/>`;
+      subPanelSvg += pc;
+      currentTop = panelBottom + SUB_PANEL_GAP;
+    }
+  }
+
   // --- 2種類のSVGを構築 ---
-  const createSvgString = (layers: { ichimoku: string; bb: string; sma: string }) => `
-    <svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg" style="background-color: #1f2937; color: #e5e7eb; font-family: sans-serif; max-width: 100%; height: auto;">
+  const createSvgString = (layers: { ichimoku: string; bb: string; sma: string; ema: string }) => `
+    <svg width="${w}" height="${totalH}" viewBox="0 0 ${w} ${totalH}" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg" style="background-color: #1f2937; color: #e5e7eb; font-family: sans-serif; max-width: 100%; height: auto;">
       <title>${formatPair(pair)} ${type} chart</title>
       <style>.u{fill:#16a34a}.d{fill:#ef4444}.w{stroke:#9ca3af;stroke-width:1}</style>
       <defs>
@@ -792,6 +969,7 @@ export default async function renderChartSvg(args: RenderChartSvgOptions = {}): 
   ${bodies}
 ${priceLine}
         ${layers.sma}
+        ${layers.ema}
         ${(() => {
       if (!overlays || !overlays.ranges) return '';
       const mkRect = (startIso: string, endIso: string, color?: string, label?: string) => {
@@ -842,11 +1020,14 @@ ${priceLine}
       <g class="legend">
         ${legendLayers}
       </g>
+      <g class="sub-panels">
+        ${subPanelSvg}
+      </g>
     </svg>
   `;
 
-  let fullSvg = createSvgString({ ichimoku: ichimokuLayers, bb: bbLayers, sma: smaLayers });
-  let lightSvg = createSvgString({ ichimoku: withIchimoku ? ichimokuLayers : '', bb: bbLayers, sma: smaLayers });
+  let fullSvg = createSvgString({ ichimoku: ichimokuLayers, bb: bbLayers, sma: smaLayers, ema: emaLayers });
+  let lightSvg = createSvgString({ ichimoku: withIchimoku ? ichimokuLayers : '', bb: bbLayers, sma: smaLayers, ema: emaLayers });
   if (svgMinify) {
     const minify = (s: string) => s.replace(/\s{2,}/g, ' ').replace(/>\s+</g, '><');
     fullSvg = minify(fullSvg);
@@ -903,7 +1084,7 @@ ${priceLine}
     (metaBase as any).debug = {
       x: { count: xs.length, totalSlots, padding, plotW },
       y: { yMin, yMax, ticks: yTicks },
-      data: { withBB, withSMA, withIchimoku, forwardShift, pastBuffer },
+      data: { withBB, withSMA, withEMA, withIchimoku, forwardShift, pastBuffer },
       ...debugInfo,
     };
   }
