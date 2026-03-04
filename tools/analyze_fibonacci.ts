@@ -313,13 +313,8 @@ function generateContent(
 		lines.push('【リトレースメント水準】');
 		for (const level of levels) {
 			const nearest = level.isNearest ? ' ← 最寄り' : '';
-			const stat = levelStats.find((s) => s.ratio === level.ratio);
-			let statStr = '';
-			if (stat && stat.samplesCount > 0) {
-				statStr = ` [反発率 ${(stat.bounceRate * 100).toFixed(0)}%, ${stat.samplesCount}回, 信頼度: ${stat.confidence}]`;
-			}
 			lines.push(
-				`  ${(level.ratio * 100).toFixed(1)}%: ${formatPrice(level.price, pair)} (${formatPercent(level.distancePct, { sign: true })})${nearest}${statStr}`
+				`  ${(level.ratio * 100).toFixed(1)}%: ${formatPrice(level.price, pair)} (${formatPercent(level.distancePct, { sign: true })})${nearest}`
 			);
 		}
 		lines.push('');
@@ -336,14 +331,33 @@ function generateContent(
 		lines.push('');
 	}
 
-	// Reaction stats summary
-	const meaningfulStats = levelStats.filter((s) => s.samplesCount >= 2);
+	// Reaction stats — all levels with full detail
+	const meaningfulStats = levelStats.filter((s) => s.samplesCount >= 1);
 	if (meaningfulStats.length > 0) {
-		lines.push('【過去の反応実績】');
-		const bestBounce = [...meaningfulStats].sort((a, b) => b.bounceRate - a.bounceRate)[0];
-		if (bestBounce) {
-			lines.push(`  最も反発率が高い水準: ${(bestBounce.ratio * 100).toFixed(1)}%（${(bestBounce.bounceRate * 100).toFixed(0)}%反発、${bestBounce.samplesCount}回中）`);
+		lines.push('【過去の反応実績（各水準の統計）】');
+		for (const stat of meaningfulStats) {
+			const ratioLabel = `${(stat.ratio * 100).toFixed(1)}%`;
+			if (stat.samplesCount === 0) {
+				lines.push(`  ${ratioLabel}: データなし`);
+				continue;
+			}
+			const bounceRatePct = (stat.bounceRate * 100).toFixed(0);
+			lines.push(`  ${ratioLabel}: 反発率 ${bounceRatePct}%（${stat.samplesCount}回中${Math.round(stat.bounceRate * stat.samplesCount)}回反発）`);
+			lines.push(`    - 反発後の平均リターン: ${formatPercent(stat.avgBounceReturnPct, { sign: true })}`);
+			lines.push(`    - ブレイク後の平均リターン: ${formatPercent(stat.avgBreakthroughReturnPct, { sign: true })}`);
+			lines.push(`    - 水準付近の滞在足数（中央値）: ${stat.medianDwellBars}本`);
+			lines.push(`    - 信頼度: ${stat.confidence}（サンプル${stat.samplesCount}件）`);
 		}
+		lines.push('');
+
+		// Highlight best bounce
+		const bestBounce = [...meaningfulStats].filter(s => s.samplesCount >= 2).sort((a, b) => b.bounceRate - a.bounceRate)[0];
+		if (bestBounce) {
+			lines.push(`注目: ${(bestBounce.ratio * 100).toFixed(1)}% 水準が最も反発率が高い（${(bestBounce.bounceRate * 100).toFixed(0)}%、${bestBounce.samplesCount}回中）`);
+			lines.push('');
+		}
+	} else {
+		lines.push('【過去の反応実績】該当データなし（分析期間内に各水準へのタッチがありませんでした）');
 		lines.push('');
 	}
 

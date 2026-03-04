@@ -125,11 +125,9 @@ function generateMtfContent(
 		lines.push(`  スイングハイ: ${formatPrice(d.swingHigh.price, pair)}（${d.swingHigh.date}）`);
 		lines.push(`  スイングロー: ${formatPrice(d.swingLow.price, pair)}（${d.swingLow.date}）`);
 
-		// Key levels only (38.2%, 50%, 61.8%)
-		const keyLevels = (d.levels as FibLevel[]).filter((l: FibLevel) =>
-			[0.382, 0.5, 0.618].includes(l.ratio)
-		);
-		for (const kl of keyLevels) {
+		// All retracement levels (0% and 100% are swing points, still useful for reference)
+		const allLevels = (d.levels as FibLevel[]) ?? [];
+		for (const kl of allLevels) {
 			const nearest = kl.isNearest ? ' ← 最寄り' : '';
 			lines.push(
 				`  ${(kl.ratio * 100).toFixed(1)}%: ${formatPrice(kl.price, pair)} (${formatPercent(kl.distancePct, { sign: true })})${nearest}`
