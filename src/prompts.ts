@@ -142,7 +142,7 @@ const promptsAll: PromptDef[] = [
     description: 'ビットコインの最近の価格動向とトレンドを初心者向けに分析',
     messages: [
       {
-        role: 'assistant', content: [{
+        role: 'user', content: [{
           type: 'text', text: `最近のBTCの動きを初級者向けに分析してください。
 
 【表現ルール】
@@ -375,7 +375,7 @@ const promptsAll: PromptDef[] = [
     description: 'イーサリアムの最近の価格動向とトレンドを初心者向けに分析',
     messages: [
       {
-        role: 'assistant', content: [{
+        role: 'user', content: [{
           type: 'text', text: `最近のETHの動きを初級者向けに分析してください。
 
 【表現ルール】
@@ -610,7 +610,7 @@ const promptsAll: PromptDef[] = [
     description: '中級者向け：RSI/MACD/ボリンジャーバンド/一目均衡表/移動平均線を一括取得して総合的に分析',
     messages: [
       {
-        role: 'assistant',
+        role: 'user',
         content: [{
           type: 'text',
           text: `代表的な指標を使ってBTCを分析して
@@ -935,7 +935,7 @@ MACD（中央が0、左が弱気・右が強気）:
     description: '中級者向け：直近の売買フロー（CVD/aggressor ratio）からマーケットの方向性を分析',
     messages: [
       {
-        role: 'assistant',
+        role: 'user',
         content: [{
           type: 'text',
           text: `BTCのフロー分析をやって
@@ -996,7 +996,7 @@ MACD（中央が0、左が弱気・右が強気）:
     description: '中級者向け：板の厚み・流動性分布・大口注文から短期的なサポート/レジスタンスを分析',
     messages: [
       {
-        role: 'assistant',
+        role: 'user',
         content: [{
           type: 'text',
           text: `BTCの板の状況を詳しく見て
@@ -1060,7 +1060,7 @@ MACD（中央が0、左が弱気・右が強気）:
     description: '中級者向け：短期（1〜3本足）から中長期（大型パターン）まで、複数の時間軸でパターンを検出',
     messages: [
       {
-        role: 'assistant',
+        role: 'user',
         content: [{
           type: 'text',
           text: `BTCのチャートパターン分析
@@ -1135,7 +1135,7 @@ MACD（中央が0、左が弱気・右が強気）:
     description: '中級者向け：過去の反応×板の厚み×直近の攻防から、価格帯の強弱を統合的に分析',
     messages: [
       {
-        role: 'assistant',
+        role: 'user',
         content: [{
           type: 'text',
           text: `BTCのサポート・レジスタンスを分析して
@@ -1574,7 +1574,7 @@ MACD（中央が0、左が弱気・右が強気）:
     description: '【検証用】直近8時間の価格動向を HTML ダッシュボードで視覚化。Claude Desktop 推奨。',
     messages: [
       {
-        role: 'assistant',
+        role: 'user',
         content: [{
           type: 'text',
           text: `直近8時間で何が起きたかを **HTML ファイル** で視覚化してください。
@@ -1900,7 +1900,7 @@ MACD（中央が0、左が弱気・右が強気）:
     description: '通貨強弱スコアと出来高・変化率から注目されている銘柄を抽出',
     messages: [
       {
-        role: 'assistant', content: [{
+        role: 'user', content: [{
           type: 'text', text: `今注目されているコインある？
 
 【効率的な回答方法】

@@ -207,7 +207,7 @@ function registerPromptSafe(name: string, def: { description: string; messages: 
 					})
 					.filter(Boolean)
 					.join('\n');
-				return { role: msg.role === 'system' ? 'user' : 'assistant', content: { type: 'text', text } };
+				return { role: msg.role === 'assistant' ? 'assistant' : 'user', content: { type: 'text', text } };
 			});
 		registeredPrompts.push({ name, description: def.description });
 		s.registerPrompt(
@@ -237,7 +237,7 @@ try {
 	(server as any).setRequestHandler?.('prompts/list', async () => ({
 		prompts: registeredPrompts.map((p) => ({ name: p.name, description: p.description })),
 	}));
-	// prompts/get: return specific prompt definition as-is (no conversion)
+	// prompts/get: convert content arrays to single TextContent objects per MCP spec
 	(server as any).setRequestHandler?.('prompts/get', async (request: any) => {
 		try {
 			console.error('[prompts/get] Request received:', safeJson(request));
@@ -254,7 +254,19 @@ try {
 				throw new Error(`Prompt not found: ${name}`);
 			}
 			console.error('[prompts/get] Found prompt:', name, 'with', (promptDef as any)?.messages?.length ?? 0, 'messages');
-			const result = { description: (promptDef as any).description, messages: (promptDef as any).messages };
+			// Convert messages: flatten content arrays to single TextContent, fix roles for MCP spec
+			const messages = ((promptDef as any).messages ?? []).map((msg: any) => {
+				const blocks = Array.isArray(msg.content) ? msg.content : [msg.content];
+				const text = blocks
+					.map((b: any) => (b?.type === 'text' && typeof b.text === 'string') ? b.text : '')
+					.filter(Boolean)
+					.join('\n');
+				return {
+					role: msg.role === 'assistant' ? 'assistant' : 'user',
+					content: { type: 'text' as const, text },
+				};
+			});
+			const result = { description: (promptDef as any).description, messages };
 			console.error('[prompts/get] Returning result with', (result as any).messages?.length ?? 0, 'messages');
 			return result;
 		} catch (error: unknown) {
