@@ -1279,6 +1279,115 @@ export const AnalyzeSupportResistanceOutputSchema = z.union([
   FailResultSchema,
 ]);
 
+// === Fibonacci Retracement/Extension Analysis ===
+
+export const AnalyzeFibonacciInputSchema = BasePairInputSchema.extend({
+  type: CandleTypeEnum.optional().default('1day'),
+  lookbackDays: z.number().int().min(14).max(365).optional().default(90),
+  mode: z.enum(['retracement', 'extension', 'both']).optional().default('both'),
+  historyLookbackDays: z.number().int().min(30).max(365).optional().default(180),
+});
+
+const FibonacciLevelSchema = z.object({
+  ratio: z.number(),
+  price: z.number(),
+  distancePct: z.number(),
+  isNearest: z.boolean(),
+});
+
+const FibonacciLevelStatSchema = z.object({
+  ratio: z.number(),
+  samplesCount: z.number().int(),
+  bounceRate: z.number(),
+  avgBounceReturnPct: z.number(),
+  avgBreakthroughReturnPct: z.number(),
+  medianDwellBars: z.number().int(),
+  confidence: z.enum(['high', 'medium', 'low']),
+});
+
+export const AnalyzeFibonacciDataSchemaOut = z.object({
+  pair: z.string(),
+  timeframe: z.string(),
+  currentPrice: z.number(),
+  trend: z.enum(['up', 'down']),
+  swingHigh: z.object({ price: z.number(), date: z.string(), index: z.number().int() }),
+  swingLow: z.object({ price: z.number(), date: z.string(), index: z.number().int() }),
+  range: z.number(),
+  levels: z.array(FibonacciLevelSchema),
+  extensions: z.array(FibonacciLevelSchema),
+  position: z.object({
+    aboveLevel: FibonacciLevelSchema.nullable(),
+    belowLevel: FibonacciLevelSchema.nullable(),
+    nearestLevel: FibonacciLevelSchema.nullable(),
+  }),
+  levelStats: z.array(FibonacciLevelStatSchema).optional(),
+}).passthrough();
+
+export const AnalyzeFibonacciMetaSchemaOut = BaseMetaSchema.extend({
+  timeframe: z.string(),
+  lookbackDays: z.number().int(),
+  mode: z.string(),
+  historyLookbackDays: z.number().int().optional(),
+}).passthrough();
+
+export const AnalyzeFibonacciOutputSchema = z.union([
+  z.object({
+    ok: z.literal(true),
+    summary: z.string(),
+    content: z.array(z.object({ type: z.literal('text'), text: z.string() })).optional(),
+    data: AnalyzeFibonacciDataSchemaOut,
+    meta: AnalyzeFibonacciMetaSchemaOut,
+  }),
+  FailResultSchema,
+]);
+
+// === Multi-Timeframe Fibonacci Analysis ===
+
+export const AnalyzeMtfFibonacciInputSchema = BasePairInputSchema.extend({
+  lookbackDays: z.array(z.number().int().min(14).max(365)).optional().default([30, 90, 180]),
+});
+
+const MtfFibonacciPerPeriodSchema = z.object({
+  lookbackDays: z.number().int(),
+  trend: z.enum(['up', 'down']),
+  swingHigh: z.object({ price: z.number(), date: z.string() }),
+  swingLow: z.object({ price: z.number(), date: z.string() }),
+  levels: z.array(FibonacciLevelSchema),
+}).passthrough();
+
+const ConfluenceZoneSchema = z.object({
+  priceZone: z.tuple([z.number(), z.number()]),
+  matchedLevels: z.array(z.object({
+    lookbackDays: z.number().int(),
+    ratio: z.number(),
+    price: z.number(),
+  })),
+  strength: z.enum(['strong', 'moderate', 'weak']),
+  distancePct: z.number(),
+});
+
+export const AnalyzeMtfFibonacciDataSchemaOut = z.object({
+  pair: z.string(),
+  currentPrice: z.number(),
+  periods: z.record(z.string(), MtfFibonacciPerPeriodSchema),
+  confluence: z.array(ConfluenceZoneSchema),
+}).passthrough();
+
+export const AnalyzeMtfFibonacciMetaSchemaOut = BaseMetaSchema.extend({
+  lookbackDays: z.array(z.number().int()),
+}).passthrough();
+
+export const AnalyzeMtfFibonacciOutputSchema = z.union([
+  z.object({
+    ok: z.literal(true),
+    summary: z.string(),
+    content: z.array(z.object({ type: z.literal('text'), text: z.string() })).optional(),
+    data: AnalyzeMtfFibonacciDataSchemaOut,
+    meta: AnalyzeMtfFibonacciMetaSchemaOut,
+  }),
+  FailResultSchema,
+]);
+
 // === Candle Patterns (2-bar patterns: engulfing, harami, etc.) ===
 
 export const CandlePatternTypeEnum = z.enum([

@@ -1,255 +1,474 @@
 import getCandles from './get_candles.js';
 import { ok, fail, failFromError, failFromValidation } from '../lib/result.js';
 import { createMeta, ensurePair } from '../lib/validate.js';
-import { formatSummary, formatPrice, formatPercent } from '../lib/formatter.js';
-import {
-	AnalyzeFibonacciInputSchema,
-	AnalyzeFibonacciOutputSchema,
-} from '../src/schemas.js';
+import { formatPrice, formatPercent, formatPair, timeframeLabel } from '../lib/formatter.js';
+import { nowIso } from '../lib/datetime.js';
+import { AnalyzeFibonacciInputSchema, AnalyzeFibonacciOutputSchema } from '../src/schemas.js';
 import type { ToolDefinition } from '../src/tool-definition.js';
+import type { Pair } from '../src/types/domain.d.ts';
 
-// フィボナッチ比率定義
-const RETRACEMENT_RATIOS = [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1] as const;
-const EXTENSION_RATIOS = [1.272, 1.618] as const;
+// ── Constants ──
+
+/** Standard Fibonacci retracement ratios */
+const RETRACEMENT_RATIOS = [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1.0];
+
+/** Standard Fibonacci extension ratios */
+const EXTENSION_RATIOS = [1.272, 1.414, 1.618, 2.0, 2.618];
+
+// ── Types ──
+
+interface NormalizedCandle {
+	open: number;
+	high: number;
+	low: number;
+	close: number;
+	volume: number;
+	isoTime?: string;
+}
+
+interface SwingPoint {
+	price: number;
+	date: string;
+	index: number;
+}
 
 interface FibLevel {
 	ratio: number;
-	label: string;
 	price: number;
-	pctFromCurrent: number;
-	zone: 'retracement' | 'extension';
+	distancePct: number;
+	isNearest: boolean;
 }
 
-/**
- * ルックバック期間内の主要スイングハイ/ローを検出する。
- * 全期間の最高値・最安値を使い、その出現順序でトレンド方向を判定する。
- */
-function detectSwings(
-	candles: Array<{ isoTime: string; high: number; low: number }>
-): { swingHigh: { price: number; date: string; index: number }; swingLow: { price: number; date: string; index: number } } {
-	let highestPrice = -Infinity;
-	let highestDate = '';
-	let highestIndex = 0;
-	let lowestPrice = Infinity;
-	let lowestDate = '';
-	let lowestIndex = 0;
+interface LevelStat {
+	ratio: number;
+	samplesCount: number;
+	bounceRate: number;
+	avgBounceReturnPct: number;
+	avgBreakthroughReturnPct: number;
+	medianDwellBars: number;
+	confidence: 'high' | 'medium' | 'low';
+}
 
-	for (let i = 0; i < candles.length; i++) {
-		if (candles[i].high > highestPrice) {
-			highestPrice = candles[i].high;
-			highestDate = candles[i].isoTime.split('T')[0];
-			highestIndex = i;
-		}
-		if (candles[i].low < lowestPrice) {
-			lowestPrice = candles[i].low;
-			lowestDate = candles[i].isoTime.split('T')[0];
-			lowestIndex = i;
-		}
+// ── Swing Detection ──
+
+/**
+ * Detect the most significant swing high and swing low within the given candle range.
+ * Uses a simple approach: find the highest high and lowest low, then determine trend
+ * based on which came first.
+ */
+function detectSignificantSwings(
+	candles: NormalizedCandle[]
+): { swingHigh: SwingPoint; swingLow: SwingPoint; trend: 'up' | 'down' } {
+	let highestIdx = 0;
+	let lowestIdx = 0;
+
+	for (let i = 1; i < candles.length; i++) {
+		if (candles[i].high > candles[highestIdx].high) highestIdx = i;
+		if (candles[i].low < candles[lowestIdx].low) lowestIdx = i;
 	}
 
-	return {
-		swingHigh: { price: highestPrice, date: highestDate, index: highestIndex },
-		swingLow: { price: lowestPrice, date: lowestDate, index: lowestIndex },
+	const swingHigh: SwingPoint = {
+		price: candles[highestIdx].high,
+		date: candles[highestIdx].isoTime?.split('T')[0] ?? '',
+		index: highestIdx,
 	};
+
+	const swingLow: SwingPoint = {
+		price: candles[lowestIdx].low,
+		date: candles[lowestIdx].isoTime?.split('T')[0] ?? '',
+		index: lowestIdx,
+	};
+
+	// Trend is determined by which swing came last:
+	// If the low came after the high → downtrend (price fell from high to low)
+	// If the high came after the low → uptrend (price rose from low to high)
+	const trend: 'up' | 'down' = lowestIdx > highestIdx ? 'down' : 'up';
+
+	return { swingHigh, swingLow, trend };
 }
 
-/**
- * フィボナッチ水準を算出する。
- * - 上昇トレンド（安値→高値）: 高値からの戻り率
- * - 下降トレンド（高値→安値）: 安値からの戻り率
- */
+// ── Fibonacci Level Calculation ──
+
 function calculateLevels(
-	swingHigh: number,
-	swingLow: number,
-	trend: 'uptrend' | 'downtrend',
-	currentPrice: number
-): FibLevel[] {
-	const range = swingHigh - swingLow;
-	const levels: FibLevel[] = [];
-
-	for (const ratio of RETRACEMENT_RATIOS) {
-		// 上昇トレンド: 高値から下方へリトレース
-		// 下降トレンド: 安値から上方へリトレース
-		const price = trend === 'uptrend'
-			? swingHigh - range * ratio
-			: swingLow + range * ratio;
-
-		levels.push({
-			ratio,
-			label: ratio === 0 ? '0%' : ratio === 1 ? '100%' : `${(ratio * 100).toFixed(1)}%`,
-			price: Math.round(price * 100) / 100,
-			pctFromCurrent: ((price - currentPrice) / currentPrice) * 100,
-			zone: 'retracement',
-		});
-	}
-
-	for (const ratio of EXTENSION_RATIOS) {
-		const price = trend === 'uptrend'
-			? swingHigh - range * ratio
-			: swingLow + range * ratio;
-
-		levels.push({
-			ratio,
-			label: `${(ratio * 100).toFixed(1)}%`,
-			price: Math.round(price * 100) / 100,
-			pctFromCurrent: ((price - currentPrice) / currentPrice) * 100,
-			zone: 'extension',
-		});
-	}
-
-	return levels;
-}
-
-function findNearestLevel(levels: FibLevel[]): FibLevel | null {
-	if (levels.length === 0) return null;
-	return levels.reduce((nearest, level) =>
-		Math.abs(level.pctFromCurrent) < Math.abs(nearest.pctFromCurrent) ? level : nearest
-	);
-}
-
-function describePricePosition(
+	swingHigh: SwingPoint,
+	swingLow: SwingPoint,
+	trend: 'up' | 'down',
 	currentPrice: number,
-	levels: FibLevel[],
-	trend: 'uptrend' | 'downtrend'
-): string {
-	// リトレースメントレベルのみ対象（0%〜100%）
-	const retracementLevels = levels
-		.filter(l => l.zone === 'retracement')
-		.sort((a, b) => b.price - a.price); // 高い順
+	ratios: number[]
+): FibLevel[] {
+	const range = swingHigh.price - swingLow.price;
 
-	// 現在価格がどの2つのレベルの間にあるか
-	for (let i = 0; i < retracementLevels.length - 1; i++) {
-		const upper = retracementLevels[i];
-		const lower = retracementLevels[i + 1];
-		if (currentPrice <= upper.price && currentPrice >= lower.price) {
-			return `${upper.label}（${formatPrice(upper.price)}）と${lower.label}（${formatPrice(lower.price)}）の間`;
+	return ratios.map((ratio) => {
+		// In downtrend: retracement goes up from low
+		// In uptrend: retracement goes down from high
+		const price =
+			trend === 'down'
+				? swingLow.price + range * ratio
+				: swingHigh.price - range * ratio;
+
+		const distancePct = ((price - currentPrice) / currentPrice) * 100;
+
+		return { ratio, price: Math.round(price), distancePct: Number(distancePct.toFixed(2)), isNearest: false };
+	});
+}
+
+function calculateExtensions(
+	swingHigh: SwingPoint,
+	swingLow: SwingPoint,
+	trend: 'up' | 'down',
+	currentPrice: number,
+	ratios: number[]
+): FibLevel[] {
+	const range = swingHigh.price - swingLow.price;
+
+	return ratios.map((ratio) => {
+		// Extensions project beyond the swing points
+		const price =
+			trend === 'down'
+				? swingLow.price + range * ratio
+				: swingHigh.price - range * ratio;
+
+		const distancePct = ((price - currentPrice) / currentPrice) * 100;
+
+		return { ratio, price: Math.round(price), distancePct: Number(distancePct.toFixed(2)), isNearest: false };
+	});
+}
+
+function markNearest(levels: FibLevel[], currentPrice: number): FibLevel[] {
+	if (levels.length === 0) return levels;
+
+	let minDist = Infinity;
+	let nearestIdx = 0;
+
+	for (let i = 0; i < levels.length; i++) {
+		const dist = Math.abs(levels[i].price - currentPrice);
+		if (dist < minDist) {
+			minDist = dist;
+			nearestIdx = i;
 		}
 	}
 
-	const highest = retracementLevels[0];
-	const lowest = retracementLevels[retracementLevels.length - 1];
-	if (currentPrice > highest.price) {
-		return trend === 'uptrend'
-			? `スイングハイ（${formatPrice(highest.price)}）を上回る`
-			: `100%戻し（${formatPrice(highest.price)}）を上回る`;
-	}
-	return trend === 'uptrend'
-		? `100%戻し（${formatPrice(lowest.price)}）を下回る`
-		: `スイングロー（${formatPrice(lowest.price)}）を下回る`;
+	return levels.map((l, i) => ({ ...l, isNearest: i === nearestIdx }));
 }
 
-export default async function analyzeFibonacci(
-	pair: string = 'btc_jpy',
-	type: string = '1day',
-	lookbackDays: number = 90
-) {
+function findPosition(
+	levels: FibLevel[],
+	currentPrice: number
+): { aboveLevel: FibLevel | null; belowLevel: FibLevel | null; nearestLevel: FibLevel | null } {
+	const sorted = [...levels].sort((a, b) => a.price - b.price);
+
+	let aboveLevel: FibLevel | null = null;
+	let belowLevel: FibLevel | null = null;
+	const nearestLevel = levels.find((l) => l.isNearest) ?? null;
+
+	for (const level of sorted) {
+		if (level.price <= currentPrice) belowLevel = level;
+		if (level.price > currentPrice && !aboveLevel) aboveLevel = level;
+	}
+
+	return { aboveLevel, belowLevel, nearestLevel };
+}
+
+// ── Historical Reaction Statistics (Feature #3) ──
+
+/**
+ * Analyze how price has historically reacted at each Fibonacci level.
+ * Uses past candle data to count bounces vs breakthroughs at each level zone.
+ */
+function calculateLevelStats(
+	candles: NormalizedCandle[],
+	levels: FibLevel[],
+	tolerancePct: number = 0.5
+): LevelStat[] {
+	return levels.map((level) => {
+		const zone = level.price * (tolerancePct / 100);
+		const zoneMin = level.price - zone;
+		const zoneMax = level.price + zone;
+
+		let samplesCount = 0;
+		let bounceCount = 0;
+		let bounceReturns: number[] = [];
+		let breakthroughReturns: number[] = [];
+		let dwellBars: number[] = [];
+
+		for (let i = 0; i < candles.length; i++) {
+			const candle = candles[i];
+
+			// Check if price touched the zone
+			const touchedZone = candle.low <= zoneMax && candle.high >= zoneMin;
+			if (!touchedZone) continue;
+
+			samplesCount++;
+
+			// Count dwell bars (how many consecutive bars stayed in zone)
+			let dwell = 1;
+			for (let j = i + 1; j < candles.length; j++) {
+				if (candles[j].low <= zoneMax && candles[j].high >= zoneMin) {
+					dwell++;
+				} else {
+					break;
+				}
+			}
+			dwellBars.push(dwell);
+
+			// Check what happened after touching the zone (look ahead 5 bars)
+			const lookAhead = Math.min(i + dwell + 5, candles.length - 1);
+			if (lookAhead <= i + dwell) continue;
+
+			const afterCandle = candles[lookAhead];
+			const returnPct = ((afterCandle.close - candle.close) / candle.close) * 100;
+
+			// Determine if it bounced (reversed) or broke through
+			const priceWasAbove = candle.close > level.price;
+			const priceStayedAbove = afterCandle.close > level.price;
+
+			if (priceWasAbove === priceStayedAbove) {
+				// Bounced back to same side
+				bounceCount++;
+				bounceReturns.push(Math.abs(returnPct));
+			} else {
+				// Broke through
+				breakthroughReturns.push(returnPct);
+			}
+
+			// Skip the dwell period to avoid double-counting
+			i += dwell - 1;
+		}
+
+		const bounceRate = samplesCount > 0 ? bounceCount / samplesCount : 0;
+		const avgBounceReturnPct =
+			bounceReturns.length > 0
+				? bounceReturns.reduce((a, b) => a + b, 0) / bounceReturns.length
+				: 0;
+		const avgBreakthroughReturnPct =
+			breakthroughReturns.length > 0
+				? breakthroughReturns.reduce((a, b) => a + b, 0) / breakthroughReturns.length
+				: 0;
+
+		// Median dwell bars
+		const sortedDwell = [...dwellBars].sort((a, b) => a - b);
+		const medianDwellBars =
+			sortedDwell.length > 0
+				? sortedDwell[Math.floor(sortedDwell.length / 2)]
+				: 0;
+
+		const confidence: 'high' | 'medium' | 'low' =
+			samplesCount >= 8 ? 'high' : samplesCount >= 4 ? 'medium' : 'low';
+
+		return {
+			ratio: level.ratio,
+			samplesCount,
+			bounceRate: Number(bounceRate.toFixed(3)),
+			avgBounceReturnPct: Number(avgBounceReturnPct.toFixed(2)),
+			avgBreakthroughReturnPct: Number(avgBreakthroughReturnPct.toFixed(2)),
+			medianDwellBars,
+			confidence,
+		};
+	});
+}
+
+// ── Content Generation ──
+
+function generateContent(
+	pair: string,
+	timeframe: string,
+	currentPrice: number,
+	trend: 'up' | 'down',
+	swingHigh: SwingPoint,
+	swingLow: SwingPoint,
+	range: number,
+	levels: FibLevel[],
+	extensions: FibLevel[],
+	position: { aboveLevel: FibLevel | null; belowLevel: FibLevel | null; nearestLevel: FibLevel | null },
+	levelStats: LevelStat[],
+	mode: string,
+	lookbackDays: number
+): Array<{ type: 'text'; text: string }> {
+	const lines: string[] = [];
+	const pairLabel = formatPair(pair);
+	const tfLabel = timeframeLabel(timeframe);
+
+	lines.push(`【フィボナッチ分析】${pairLabel} ${tfLabel}（過去${lookbackDays}日）`);
+	lines.push(`現在価格: ${formatPrice(currentPrice, pair)}`);
+	lines.push(`トレンド: ${trend === 'up' ? '上昇↑' : '下降↓'}`);
+	lines.push('');
+
+	lines.push(`スイングハイ: ${formatPrice(swingHigh.price, pair)}（${swingHigh.date}）`);
+	lines.push(`スイングロー: ${formatPrice(swingLow.price, pair)}（${swingLow.date}）`);
+	lines.push(`レンジ幅: ${formatPrice(range, pair)}`);
+	lines.push('');
+
+	// Current position
+	if (position.nearestLevel) {
+		lines.push(`現在位置: ${(position.nearestLevel.ratio * 100).toFixed(1)}% 水準付近（距離 ${formatPercent(position.nearestLevel.distancePct, { sign: true })}）`);
+		if (position.belowLevel && position.aboveLevel) {
+			lines.push(`  下: ${(position.belowLevel.ratio * 100).toFixed(1)}% = ${formatPrice(position.belowLevel.price, pair)}`);
+			lines.push(`  上: ${(position.aboveLevel.ratio * 100).toFixed(1)}% = ${formatPrice(position.aboveLevel.price, pair)}`);
+		}
+	}
+	lines.push('');
+
+	// Retracement levels
+	if (mode !== 'extension') {
+		lines.push('【リトレースメント水準】');
+		for (const level of levels) {
+			const nearest = level.isNearest ? ' ← 最寄り' : '';
+			const stat = levelStats.find((s) => s.ratio === level.ratio);
+			let statStr = '';
+			if (stat && stat.samplesCount > 0) {
+				statStr = ` [反発率 ${(stat.bounceRate * 100).toFixed(0)}%, ${stat.samplesCount}回, 信頼度: ${stat.confidence}]`;
+			}
+			lines.push(
+				`  ${(level.ratio * 100).toFixed(1)}%: ${formatPrice(level.price, pair)} (${formatPercent(level.distancePct, { sign: true })})${nearest}${statStr}`
+			);
+		}
+		lines.push('');
+	}
+
+	// Extension levels
+	if (mode !== 'retracement' && extensions.length > 0) {
+		lines.push('【エクステンション水準】');
+		for (const ext of extensions) {
+			lines.push(
+				`  ${(ext.ratio * 100).toFixed(1)}%: ${formatPrice(ext.price, pair)} (${formatPercent(ext.distancePct, { sign: true })})`
+			);
+		}
+		lines.push('');
+	}
+
+	// Reaction stats summary
+	const meaningfulStats = levelStats.filter((s) => s.samplesCount >= 2);
+	if (meaningfulStats.length > 0) {
+		lines.push('【過去の反応実績】');
+		const bestBounce = [...meaningfulStats].sort((a, b) => b.bounceRate - a.bounceRate)[0];
+		if (bestBounce) {
+			lines.push(`  最も反発率が高い水準: ${(bestBounce.ratio * 100).toFixed(1)}%（${(bestBounce.bounceRate * 100).toFixed(0)}%反発、${bestBounce.samplesCount}回中）`);
+		}
+		lines.push('');
+	}
+
+	lines.push('【判定ロジック】');
+	lines.push(`- スイング検出: 期間内の最高値・最安値を自動検出`);
+	lines.push(`- トレンド判定: 高値→安値（下降）、安値→高値（上昇）の時系列順`);
+	lines.push(`- リトレースメント: 0%, 23.6%, 38.2%, 50%, 61.8%, 78.6%, 100%`);
+	lines.push(`- エクステンション: 127.2%, 141.4%, 161.8%, 200%, 261.8%`);
+	if (meaningfulStats.length > 0) {
+		lines.push(`- 反応実績: 各水準±0.5%ゾーンへのタッチを集計（過去データ）`);
+	}
+
+	return [{ type: 'text', text: lines.join('\n') }];
+}
+
+// ── Main Handler ──
+
+export default async function analyzeFibonacci(opts: Record<string, unknown> = {}) {
+	const input = AnalyzeFibonacciInputSchema.parse(opts);
+	const pair = input.pair as string;
+	const { type: timeframe, lookbackDays, mode, historyLookbackDays } = input;
+
 	const chk = ensurePair(pair);
 	if (!chk.ok) return failFromValidation(chk, AnalyzeFibonacciOutputSchema) as any;
 
 	try {
-		const candlesRes: any = await getCandles(chk.pair, type, undefined as any, lookbackDays + 10);
+		// Fetch candle data for analysis period
+		const candlesRes: any = await getCandles(chk.pair, timeframe, undefined as any, lookbackDays + 10);
 		if (!candlesRes?.ok) {
 			return AnalyzeFibonacciOutputSchema.parse(
 				fail(candlesRes?.summary || 'candles failed', (candlesRes?.meta as any)?.errorType || 'internal')
 			) as any;
 		}
 
-		const candles = candlesRes.data.normalized || [];
+		const candles: NormalizedCandle[] = candlesRes.data.normalized || [];
 		if (candles.length < 10) {
 			return AnalyzeFibonacciOutputSchema.parse(
 				fail('ローソク足データが不足しています（最低10本必要）', 'data')
 			) as any;
 		}
 
-		const currentCandle = candles[candles.length - 1];
-		const currentPrice = currentCandle.close;
+		const currentPrice = candles[candles.length - 1].close;
 
-		// スイングハイ/ロー検出
-		const { swingHigh, swingLow } = detectSwings(candles);
+		// Detect swings
+		const { swingHigh, swingLow, trend } = detectSignificantSwings(candles);
 		const range = swingHigh.price - swingLow.price;
 
 		if (range <= 0) {
 			return AnalyzeFibonacciOutputSchema.parse(
-				fail('高値と安値が同一のため分析できません', 'data')
+				fail('スイングハイとスイングローの差が検出できません', 'data')
 			) as any;
 		}
 
-		// トレンド方向判定: 安値が先→上昇トレンド、高値が先→下降トレンド
-		const trend: 'uptrend' | 'downtrend' = swingLow.index < swingHigh.index ? 'uptrend' : 'downtrend';
+		// Calculate levels
+		let levels: FibLevel[] = [];
+		let extensions: FibLevel[] = [];
 
-		// フィボナッチ水準算出
-		const levels = calculateLevels(swingHigh.price, swingLow.price, trend, currentPrice);
-		const nearestLevel = findNearestLevel(levels);
-		const pricePosition = describePricePosition(currentPrice, levels, trend);
-
-		// content 生成
-		const trendLabel = trend === 'uptrend' ? '上昇' : '下降';
-		let contentText = `フィボナッチ・リトレースメント分析（過去${lookbackDays}日）\n`;
-		contentText += `現在価格: ${formatPrice(currentPrice, chk.pair)}\n`;
-		contentText += `トレンド: ${trendLabel}トレンド（${trend === 'uptrend' ? `${swingLow.date} 安値 → ${swingHigh.date} 高値` : `${swingHigh.date} 高値 → ${swingLow.date} 安値`}）\n`;
-		contentText += `スイングハイ: ${formatPrice(swingHigh.price, chk.pair)}（${swingHigh.date}）\n`;
-		contentText += `スイングロー: ${formatPrice(swingLow.price, chk.pair)}（${swingLow.date}）\n`;
-		contentText += `値幅: ${formatPrice(range, chk.pair)}（${formatPercent((range / swingLow.price) * 100, { digits: 1 })}）\n\n`;
-
-		contentText += `【リトレースメント水準】\n`;
-		const retLevels = levels.filter(l => l.zone === 'retracement');
-		for (const level of retLevels) {
-			const dist = formatPercent(level.pctFromCurrent, { digits: 1, sign: true });
-			const marker = nearestLevel && level.ratio === nearestLevel.ratio && nearestLevel.zone === 'retracement' ? ' ← 最寄り' : '';
-			contentText += `  ${level.label.padStart(6)}: ${formatPrice(level.price, chk.pair)}（現在価格から ${dist}）${marker}\n`;
+		if (mode !== 'extension') {
+			levels = calculateLevels(swingHigh, swingLow, trend, currentPrice, RETRACEMENT_RATIOS);
+			levels = markNearest(levels, currentPrice);
 		}
 
-		contentText += `\n【エクステンション水準】\n`;
-		const extLevels = levels.filter(l => l.zone === 'extension');
-		for (const level of extLevels) {
-			const dist = formatPercent(level.pctFromCurrent, { digits: 1, sign: true });
-			const marker = nearestLevel && level.ratio === nearestLevel.ratio && nearestLevel.zone === 'extension' ? ' ← 最寄り' : '';
-			contentText += `  ${level.label.padStart(6)}: ${formatPrice(level.price, chk.pair)}（現在価格から ${dist}）${marker}\n`;
+		if (mode !== 'retracement') {
+			extensions = calculateExtensions(swingHigh, swingLow, trend, currentPrice, EXTENSION_RATIOS);
 		}
 
-		contentText += `\n【現在価格の位置】\n`;
-		contentText += `  ${pricePosition}\n`;
+		const allLevels = [...levels, ...extensions];
+		const position = findPosition(levels.length > 0 ? levels : extensions, currentPrice);
 
-		if (nearestLevel) {
-			contentText += `  最寄りレベル: ${nearestLevel.label}（${formatPrice(nearestLevel.price, chk.pair)}、距離 ${formatPercent(nearestLevel.pctFromCurrent, { digits: 2, sign: true })}）\n`;
+		// Calculate historical reaction stats (Feature #3)
+		// Fetch extended history for statistics
+		let levelStats: LevelStat[] = [];
+		if (levels.length > 0) {
+			let historyCandles: NormalizedCandle[] = candles;
+			if (historyLookbackDays > lookbackDays) {
+				try {
+					const histRes: any = await getCandles(chk.pair, timeframe, undefined as any, historyLookbackDays + 10);
+					if (histRes?.ok && histRes.data.normalized?.length > 0) {
+						historyCandles = histRes.data.normalized;
+					}
+				} catch {
+					// Fall back to current candle data
+				}
+			}
+			levelStats = calculateLevelStats(historyCandles, levels);
 		}
 
-		contentText += `\n【解釈ガイド】\n`;
-		if (trend === 'uptrend') {
-			contentText += `  上昇トレンドの押し目: 38.2%・50%・61.8%付近は反発の可能性が高い\n`;
-			contentText += `  61.8%超えの深い押し: トレンド転換リスクに注意\n`;
-		} else {
-			contentText += `  下降トレンドの戻り: 38.2%・50%・61.8%付近は反落の可能性が高い\n`;
-			contentText += `  61.8%超えの強い戻り: トレンド転換の兆候\n`;
-		}
+		// Generate content
+		const content = generateContent(
+			chk.pair, timeframe, currentPrice, trend,
+			swingHigh, swingLow, range,
+			levels, extensions, position, levelStats,
+			mode, lookbackDays
+		);
 
-		const summary = formatSummary({
-			pair: chk.pair,
-			latest: currentPrice,
-			extra: `fibonacci ${trendLabel} nearest=${nearestLevel?.label || 'n/a'}`,
-		});
+		const nearestLabel = position.nearestLevel
+			? `${(position.nearestLevel.ratio * 100).toFixed(1)}%水準付近`
+			: '';
+		const summaryText = `${formatPair(chk.pair)} フィボナッチ分析: ${trend === 'up' ? '上昇' : '下降'}トレンド、${nearestLabel}（${formatPrice(currentPrice, chk.pair)}）`;
 
 		const data = {
+			pair: chk.pair,
+			timeframe,
 			currentPrice,
-			swingHigh: { price: swingHigh.price, date: swingHigh.date },
-			swingLow: { price: swingLow.price, date: swingLow.date },
 			trend,
+			swingHigh,
+			swingLow,
+			range,
 			levels,
-			nearestLevel,
-			pricePosition,
+			extensions,
+			position,
+			levelStats: levelStats.length > 0 ? levelStats : undefined,
 		};
 
-		const meta = createMeta(chk.pair, {
+		const meta = createMeta(chk.pair as Pair, {
+			timeframe,
 			lookbackDays,
-			type,
-			swingRange: range,
-			swingRangePct: Number(((range / swingLow.price) * 100).toFixed(2)),
+			mode,
+			historyLookbackDays: levelStats.length > 0 ? historyLookbackDays : undefined,
 		});
 
 		return AnalyzeFibonacciOutputSchema.parse({
 			ok: true,
-			summary,
-			content: [{ type: 'text' as const, text: contentText }],
+			summary: summaryText,
+			content,
 			data,
 			meta,
 		}) as any;
@@ -261,8 +480,28 @@ export default async function analyzeFibonacci(
 // ── MCP ツール定義（tool-registry から自動収集） ──
 export const toolDef: ToolDefinition = {
 	name: 'analyze_fibonacci',
-	description: 'フィボナッチ・リトレースメント＆エクステンション分析。直近の高値・安値から主要水準（23.6%, 38.2%, 50%, 61.8%, 78.6%, 127.2%, 161.8%）を算出し、現在価格の位置と最寄りレベルを判定。上昇/下降トレンドを自動検出。',
+	description: `フィボナッチ・リトレースメント／エクステンション水準を自動計算。
+
+【機能】
+- スイングハイ・スイングローを自動検出しトレンド判定
+- リトレースメント水準（0%, 23.6%, 38.2%, 50%, 61.8%, 78.6%, 100%）を算出
+- エクステンション水準（127.2%, 141.4%, 161.8%, 200%, 261.8%）を算出
+- 現在価格と各水準の距離（%）、最寄り水準を特定
+- 過去の反応実績（反発率・平均リターン・滞在期間）を統計
+
+【出力】
+- content: LLM 向けテキスト解説
+- structuredContent.data: 全水準の価格・距離%・反応統計を含む JSON
+  → render_chart_svg や HTML アーティファクトで即座に可視化可能
+
+【パラメータ】
+- pair: 通貨ペア（デフォルト: btc_jpy）
+- type: 時間足（デフォルト: 1day）
+- lookbackDays: 分析期間（デフォルト: 90日）
+- mode: retracement / extension / both（デフォルト: both）
+- historyLookbackDays: 反応実績の集計期間（デフォルト: 180日）
+
+複数タイムフレーム分析が必要な場合は analyze_mtf_fibonacci を使用。`,
 	inputSchema: AnalyzeFibonacciInputSchema,
-	handler: async ({ pair, type, lookbackDays }: any) =>
-		analyzeFibonacci(pair, type, lookbackDays),
+	handler: async (args: any) => analyzeFibonacci(args),
 };
