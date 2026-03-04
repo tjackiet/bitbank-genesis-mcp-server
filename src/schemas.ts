@@ -517,6 +517,14 @@ export const GetFlowMetricsMetaSchemaOut = BaseMetaSchema.extend({
   timezone: z.string().optional(),
   timezoneOffset: z.string().optional(),
   serverTime: z.string().optional(),
+  hours: z.number().optional(),
+  mode: z.enum(['time_range']).optional(),
+  actualRange: z.object({
+    start: z.string(),
+    end: z.string(),
+    durationMinutes: z.number().int(),
+  }).optional(),
+  warning: z.string().optional(),
 });
 
 export const GetFlowMetricsOutputSchema = toolResultSchema(GetFlowMetricsDataSchemaOut, GetFlowMetricsMetaSchemaOut);
