@@ -72,17 +72,6 @@ export const RenderChartSvgInputSchema = z
     viewBoxTight: z.boolean().optional().default(true).describe('Use tighter paddings to reduce empty margins.'),
     barWidthRatio: z.number().min(0.1).max(0.9).optional().describe('Width ratio of each candle body (slot fraction).'),
     yPaddingPct: z.number().min(0).max(0.2).optional().describe('Vertical padding ratio to expand y-range.'),
-    // 自動保存（LLM利便性のため）
-    autoSave: z.boolean().optional().default(false).describe('If true, also save SVG to /mnt/user-data/outputs and return filePath/url.'),
-    // 自動保存時のファイル名（拡張子は自動で .svg を付与）
-    outputPath: z.string().optional().describe('File name (without extension) under /mnt/user-data/outputs when autoSave=true.'),
-    // サイズ制御（超過時は data.svg を省略し filePath のみ返却）
-    maxSvgBytes: z.number().int().min(1024).optional().default(100_000).describe('If set and svg exceeds this size (bytes), omit data.svg and return filePath only.'),
-    // 返却方針: true の場合は保存を最優先し、失敗時はエラーにする（inline返却にフォールバックしない）
-    preferFile: z.boolean().optional().default(false).describe('If true, prefer saving SVG to file and return error on save failure (no inline fallback).'),
-    // 出力フォーマット: 'svg'(デフォルト), 'base64'(Base64文字列), 'dataUri'(data:image/svg+xml;base64,...形式)
-    // Claude.ai等でpresent_filesがうまく動作しない場合の回避策として使用
-    outputFormat: z.enum(['svg', 'base64', 'dataUri']).optional().default('svg').describe('Output format: svg (default), base64, or dataUri (for embedding in HTML/Markdown).'),
     // サブパネル（価格パネルの下に独立Y軸で描画）
     subPanels: z.array(z.enum(['macd', 'rsi', 'volume'])).optional().default([]).describe('サブパネル: macd(MACD線+シグナル+ヒストグラム), rsi(RSI 14 + 70/30ゾーン), volume(出来高バー)'),
     // X軸ラベルのタイムゾーン
@@ -138,9 +127,6 @@ export const RenderChartSvgOutputSchema = z.object({
   summary: z.string(),
   data: z.object({
     svg: z.string().optional(),
-    base64: z.string().optional(),
-    filePath: z.string().optional(),
-    url: z.string().optional(),
     legend: z.record(z.string()).optional(),
   }).or(z.object({})),
   meta: z
@@ -153,7 +139,6 @@ export const RenderChartSvgOutputSchema = z.object({
       range: z.object({ start: z.string(), end: z.string() }).optional(),
       sizeBytes: z.number().optional(),
       layerCount: z.number().optional(),
-      truncated: z.boolean().optional(),
       fallback: z.string().optional(),
       warnings: z.array(z.string()).optional(),
     })

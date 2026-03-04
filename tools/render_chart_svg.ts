@@ -33,7 +33,7 @@ import { dayjs } from '../lib/datetime.js';
 import { getErrorMessage } from '../lib/error.js';
 import type { Result, Pair, CandleType, RenderChartSvgOptions, ChartPayload } from '../src/types/domain.d.ts';
 
-type RenderData = { svg?: string; filePath?: string; legend?: Record<string, string>; base64?: string };
+type RenderData = { svg?: string; filePath?: string; legend?: Record<string, string> };
 type RenderMeta = {
   pair: Pair;
   type: CandleType | string;
@@ -1052,21 +1052,10 @@ ${priceLine}
       .replace(/\son[a-z]+="[^"]*"/gi, '')
       .replace(/\son[a-z]+='[^']*'/gi, '');
 
-  // --- 返却ポリシー（preferFile / maxSvgBytes / outputFormat） ---
+  // --- 返却: 常に生 SVG をインライン返却 ---
   const finalSvg = sanitizeSvg(withIchimoku ? lightSvg : fullSvg);
   const sizeBytes = Buffer.byteLength(finalSvg, 'utf8');
   const layerCount = estimatedLayers;
-  const preferFile = Boolean((args as any)?.preferFile);
-  const autoSave = Boolean((args as any)?.autoSave);
-  const outputNameRaw = (args as any)?.outputPath as string | undefined;
-  const maxSvgBytesRaw = (args as any)?.maxSvgBytes as number | undefined;
-  const maxSvgBytes = typeof maxSvgBytesRaw === 'number' ? maxSvgBytesRaw : 100_000;
-  
-  // outputFormat: 'svg'(デフォルト), 'base64', 'dataUri'
-  // Claude.ai等でpresent_filesがうまく動作しない場合の回避策
-  const outputFormat = ((args as any)?.outputFormat || 'svg') as 'svg' | 'base64' | 'dataUri';
-  const toBase64 = (svg: string) => Buffer.from(svg, 'utf8').toString('base64');
-  const toDataUri = (svg: string) => `data:image/svg+xml;base64,${toBase64(svg)}`;
 
   // Human-friendly identifiers
   const title = `${formatPair(pair)} ${type} chart`;
@@ -1083,10 +1072,8 @@ ${priceLine}
     range: { start: rangeStart, end: rangeEnd },
     sizeBytes,
     layerCount,
-    // helpful hints for artifact renderers
     ...(identifier ? { identifier } : {}),
     ...(title ? { title } : {}),
-    // 警告メッセージ（データ不足等）
     ...(warnings.length > 0 ? { warnings } : {}),
   };
   if (debugEnabled) {
@@ -1098,182 +1085,15 @@ ${priceLine}
     };
   }
 
-  const filenameSuffix = withIchimoku ? '_light' : '';
-  const filename = `chart-${pair}-${type}-${Date.now()}${filenameSuffix}.svg`;
-  const assetsDir = path.join(process.cwd(), 'assets');
-  const outputPath = path.join(assetsDir, filename);
+  const summary = summaryNotes.length
+    ? `${formatPair(pair)} ${type} chart rendered (${summaryNotes.join('; ')})`
+    : `${formatPair(pair)} ${type} chart rendered`;
 
-  // preferFile: 必ずファイル保存、svgは返さない
-  // ただし outputFormat=base64/dataUri 指定時はエンコード済み文字列も返す
-  if (preferFile) {
-    try {
-      await fs.mkdir(assetsDir, { recursive: true });
-      await fs.writeFile(outputPath, finalSvg);
-      const savedUrl = `computer://${outputPath}`;
-      const resultData: RenderData & { url?: string } = { filePath: outputPath, svg: undefined, legend: legendMeta, url: savedUrl };
-      // outputFormat に応じてエンコード済み文字列も付与
-      if (outputFormat === 'base64') {
-        resultData.base64 = toBase64(finalSvg);
-      } else if (outputFormat === 'dataUri') {
-        resultData.base64 = toDataUri(finalSvg);
-      }
-      return ok<RenderData & { url?: string }, RenderMeta>(
-        `${formatPair(pair)} ${type} chart saved to ${outputPath}\nURL: ${savedUrl}`,
-        resultData,
-        metaBase
-      );
-    } catch (err) {
-      return fail(`render_chart_svg: failed to save SVG (${(err as any)?.message || 'io error'})`, 'io');
-    }
-  }
-
-  // preferFile=false: サイズが閾値以下ならinline、超える場合のみ保存
-  if (sizeBytes <= maxSvgBytes) {
-    if (autoSave) {
-      const autoName = (outputNameRaw && String(outputNameRaw).trim())
-        ? `${String(outputNameRaw).trim()}.svg`
-        : `${String(pair)}_${String(type)}_${Date.now()}.svg`;
-      const trySave = async (dir: string) => {
-        await fs.mkdir(dir, { recursive: true });
-        const p = path.join(dir, autoName);
-        await fs.writeFile(p, finalSvg);
-        return p;
-      };
-      // autoSave 時の返却データ生成
-      const buildAutoSaveData = (savedPath: string) => {
-        const base: RenderData & { url?: string } = {
-          filePath: savedPath,
-          legend: legendMeta,
-          url: `computer://${savedPath}`,
-        };
-        switch (outputFormat) {
-          case 'base64':
-            base.base64 = toBase64(finalSvg);
-            break;
-          case 'dataUri':
-            base.base64 = toDataUri(finalSvg);
-            break;
-          case 'svg':
-          default:
-            base.svg = finalSvg;
-            break;
-        }
-        return base;
-      };
-      
-      try {
-        const outDir = '/mnt/user-data/outputs';
-        const autoPath = await trySave(outDir);
-        const base = buildAutoSaveData(autoPath);
-        const suffix = `\nSaved to: ${autoPath}\nURL: ${base.url}`;
-        const msg = summaryNotes.length ? `${formatPair(pair)} ${type} chart rendered (${summaryNotes.join('; ')})${suffix}` : `${formatPair(pair)} ${type} chart rendered${suffix}`;
-        return ok<RenderData & { url?: string }, RenderMeta>(msg, base, metaBase);
-      } catch (e1) {
-        try {
-          // Fallback to repo assets dir when /mnt is not writable
-          const outDir = path.join(process.cwd(), 'assets');
-          const autoPath = await trySave(outDir);
-          const base = buildAutoSaveData(autoPath);
-          const suffix = `\nSaved to: ${autoPath}\nURL: ${base.url}`;
-          const msg = summaryNotes.length ? `${formatPair(pair)} ${type} chart rendered (${summaryNotes.join('; ')})${suffix}` : `${formatPair(pair)} ${type} chart rendered${suffix}`;
-          return ok<RenderData & { url?: string }, RenderMeta>(msg, base, metaBase);
-        } catch (e2) {
-          // autoSave失敗時は通常のinline返却にフォールバック
-          summaryNotes.push('autoSave failed');
-        }
-      }
-    }
-    // outputFormat に応じた返却データを生成
-    const buildInlineData = () => {
-      const baseData: RenderData & { meta?: any } = {
-        legend: legendMeta,
-        filePath: undefined,
-        meta: { identifier, title, sizeBytes, range: { start: rangeStart, end: rangeEnd } },
-      };
-      switch (outputFormat) {
-        case 'base64':
-          baseData.base64 = toBase64(finalSvg);
-          break;
-        case 'dataUri':
-          baseData.base64 = toDataUri(finalSvg);
-          break;
-        case 'svg':
-        default:
-          baseData.svg = finalSvg;
-          break;
-      }
-      return baseData;
-    };
-    
-    if (summaryNotes.length) {
-      // 軽量化メモをサマリーにのみ表示
-      const summary = `${formatPair(pair)} ${type} chart rendered (${summaryNotes.join('; ')})`;
-      return ok<RenderData & { meta?: any }, RenderMeta>(summary, buildInlineData(), metaBase);
-    }
-    return ok<RenderData & { meta?: any }, RenderMeta>(`${formatPair(pair)} ${type} chart rendered`, buildInlineData(), metaBase);
-  }
-
-  // 超過 → ファイル保存し、truncated=true で返す
-  // ファイル保存後の返却データ生成
-  const buildFileSaveData = (savedPath: string, includeInline = false): RenderData & { url?: string; meta?: any } => {
-    const base: RenderData & { url?: string; meta?: any } = {
-      filePath: savedPath,
-      legend: legendMeta,
-      url: `computer://${savedPath}`,
-      meta: { identifier, title, sizeBytes, range: { start: rangeStart, end: rangeEnd } },
-    };
-    if (includeInline) {
-      switch (outputFormat) {
-        case 'base64':
-          base.base64 = toBase64(finalSvg);
-          break;
-        case 'dataUri':
-          base.base64 = toDataUri(finalSvg);
-          break;
-        case 'svg':
-        default:
-          base.svg = finalSvg;
-          break;
-      }
-    }
-    return base;
-  };
-  
-  try {
-    await fs.mkdir(assetsDir, { recursive: true });
-    await fs.writeFile(outputPath, finalSvg);
-    const savedUrl = `computer://${outputPath}`;
-    return ok<RenderData & { url?: string; meta?: any }, RenderMeta>(
-      `${formatPair(pair)} ${type} chart saved to ${outputPath} (truncated)\nURL: ${savedUrl}`,
-      buildFileSaveData(outputPath, false),
-      { ...metaBase, truncated: true, fallback: summaryNotes[0] }
-    );
-  } catch (err) {
-    // preferFile が true の場合はフォールバックせずにエラーにする
-    console.warn(
-      `[Warning] Failed to save SVG to ${outputPath}. Fallback to inline SVG.`,
-      err
-    );
-    // 最後の手段: inline で返却（サイズ超過の可能性に注意）
-    const fallbackData: RenderData = { legend: legendMeta, filePath: undefined };
-    switch (outputFormat) {
-      case 'base64':
-        fallbackData.base64 = toBase64(finalSvg);
-        break;
-      case 'dataUri':
-        fallbackData.base64 = toDataUri(finalSvg);
-        break;
-      case 'svg':
-      default:
-        fallbackData.svg = finalSvg;
-        break;
-    }
-    return ok<RenderData, RenderMeta>(
-      `${formatPair(pair)} ${type} chart rendered (fallback inline)`,
-      fallbackData,
-      metaBase
-    );
-  }
+  return ok<RenderData, RenderMeta>(
+    summary,
+    { svg: finalSvg, legend: legendMeta },
+    metaBase,
+  );
 }
 
 
