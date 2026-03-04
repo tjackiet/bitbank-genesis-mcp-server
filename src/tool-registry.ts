@@ -35,7 +35,7 @@ import { toolDef as renderCandlePatternDiagram } from '../tools/render_candle_pa
 import { toolDef as detectMacdCross } from '../tools/detect_macd_cross.js';
 import { toolDef as analyzeVolumeProfile } from '../tools/analyze_volume_profile.js';
 import { toolDef as analyzeCurrencyStrength } from '../tools/analyze_currency_strength.js';
-import { toolDef as analyzeFibonacci } from '../tools/analyze_fibonacci.js';
+import { toolDef as analyzeMtfFibonacci } from '../tools/analyze_mtf_fibonacci.js';
 
 // ── Complex tools（toolDef + handler は src/handlers/ に分離） ──
 import { toolDef as analyzeIndicators } from './handlers/analyzeIndicatorsHandler.js';
@@ -45,6 +45,7 @@ import { toolDef as detectPatterns } from './handlers/detectPatternsHandler.js';
 import { toolDef as analyzeMarketSignal } from './handlers/analyzeMarketSignalHandler.js';
 import { toolDef as getTickersJpy } from './handlers/getTickersJpyHandler.js';
 import { toolDef as runBacktest } from './handlers/runBacktestHandler.js';
+import { toolDef as analyzeFibonacci } from './handlers/analyzeFibonacciHandler.js';
 
 /**
  * 全 MCP ツール定義の配列。
@@ -74,6 +75,7 @@ export const allToolDefs: ToolDefinition[] = [
 	analyzeVolumeProfile,
 	analyzeCurrencyStrength,
 	analyzeFibonacci,
+	analyzeMtfFibonacci,
 
 	// Detection
 	detectPatterns,
