@@ -191,7 +191,7 @@ export default async function getTickersJpy(opts?: { bypassCache?: boolean }) {
     );
   } catch (e: unknown) {
     const msg = getErrorMessage(e) || 'network error';
-    const isTimeout = msg.includes('AbortError') || msg.includes('timeout');
+    const isTimeout = msg.includes('AbortError') || msg.includes('timeout') || msg.includes('fetch failed') || msg.includes('ECONNREFUSED') || msg.includes('ENOTFOUND');
     return GetTickersJpyOutputSchema.parse(fail(isTimeout ? `TIMEOUT_OR_NETWORK` : `UPSTREAM_${msg}`, isTimeout ? 'timeout' : 'upstream'));
   }
 }
