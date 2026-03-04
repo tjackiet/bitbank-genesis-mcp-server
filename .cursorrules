@@ -53,7 +53,7 @@ npm run gen:types && npm run typecheck
 
 - LLM に伝えたい情報（数値・分析結果・要約）は必ず `content` テキストに含めること
 - `structuredContent` にだけデータを入れて `content` が空や不十分な状態にしないこと
-- `respond()`（`src/server.ts`）が `summary` → JSON フォールバックで `content` を自動生成するが、重要なツールは明示的に `content` / `summary` を返すべき
+- `respond()`（`src/server.ts`）が `summary` → JSON フォールバックで `content` を自動生成するが、JSON フォールバックは **4000 文字で切り詰める** ため、データが大きいツールは必ず `summary` または `content` を明示的に返し、フォールバックに頼らないこと
 
 **現在のパターン（遵守すること）**:
 
