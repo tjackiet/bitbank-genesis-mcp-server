@@ -1627,6 +1627,7 @@ MACD（中央が0、左が弱気・右が強気）:
 - 直近8本は色を変えてハイライト（例：緑系 bg-green-500）
 - それ以前の16本は薄い色（例：グレー系 bg-gray-600）
 - **重要**: 棒の高さは px 単位で直接指定（例: style="height: 48px"）。パーセント指定は効かないため禁止
+- 棒の間隔は gap-1.5（6px）を使用。gap-1（4px）だと棒同士が近すぎて視認性が悪い
 - 最大出来高の棒を 96px とし、他は比率で計算（例: 出来高が最大の50%なら 48px）
 - 8時間合計: XXX BTC（≈ X.X億円）を明記。JPY換算は get_ticker の現在価格 × BTC数量で算出
 - 突出した時間帯があれば注記（例：「09時台が突出」）
@@ -1778,7 +1779,7 @@ MACD（中央が0、左が弱気・右が強気）:
       <h2 class="font-bold mb-4">📈 出来高（直近24時間）</h2>
       <!-- 取得データ24本分の棒グラフ: 高さは必ず px 単位で指定（%は効かない） -->
       <!-- 各棒は flex:1 でコンテナ幅いっぱいに均等分配。w-3 固定だと右側に空白ができるため -->
-      <div class="flex items-end gap-1" style="height: 96px;">
+      <div class="flex items-end gap-1.5" style="height: 96px;">
         <!-- 例: 最大出来高=96px, 50%なら48px, 25%なら24px -->
         <!-- 直近8時間: #4ade80(green), それ以前: #4b5563(gray) -->
         <div class="rounded-t" style="flex:1; min-width:0; height: 24px; background:#4b5563;"></div>
