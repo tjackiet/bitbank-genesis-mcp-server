@@ -46,6 +46,22 @@ npm run gen:types && npm run typecheck
 - スキーマ変更は `src/schemas.ts` を起点（Zod が単一ソース）。
 - 日時処理は `lib/datetime.ts` を使用（`new Date` は避ける）。
 
+### MCP レスポンス構造（重要）
+
+現在の MCP 仕様では、LLM が参照できるのは **`content[].text` のみ**。
+`structuredContent` はクライアント（Claude Desktop / Cursor 等）がプログラム的に利用するもので、**LLM のコンテキストには注入されない**。
+
+- LLM に伝えたい情報（数値・分析結果・要約）は必ず `content` テキストに含めること
+- `structuredContent` にだけデータを入れて `content` が空や不十分な状態にしないこと
+- `respond()`（`src/server.ts`）が `summary` → JSON フォールバックで `content` を自動生成するが、重要なツールは明示的に `content` / `summary` を返すべき
+
+**現在のパターン（遵守すること）**:
+
+| パターン | 使用箇所 | content の出所 |
+|----------|----------|----------------|
+| `ok(summary, data, meta)` | `tools/` の単純なツール（18個） | `summary` 文字列 → `respond()` が `content` に変換 |
+| `{ content: [...], structuredContent }` | `src/handlers/` の複雑なツール（9個） | ハンドラが明示的に `content` テキストを構築 |
+
 ## ツール追加・修正
 
 ツールは各ファイルが `toolDef` をエクスポート → `src/tool-registry.ts` が集約 → `src/server.ts` が自動登録。
