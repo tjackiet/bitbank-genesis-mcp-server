@@ -1774,14 +1774,15 @@ MACD（中央が0、左が弱気・右が強気）:
     <section class="bg-card rounded-lg p-6">
       <h2 class="font-bold mb-4">📈 出来高（直近24時間）</h2>
       <!-- 取得データ24本分の棒グラフ: 高さは必ず px 単位で指定（%は効かない） -->
+      <!-- 各棒は flex:1 でコンテナ幅いっぱいに均等分配。w-3 固定だと右側に空白ができるため -->
       <div class="flex items-end gap-1" style="height: 96px;">
         <!-- 例: 最大出来高=96px, 50%なら48px, 25%なら24px -->
-        <!-- 直近8時間: bg-green-500, それ以前: bg-gray-600 -->
-        <div class="w-3 bg-gray-600 rounded-t" style="height: 24px;"></div>
-        <div class="w-3 bg-gray-600 rounded-t" style="height: 36px;"></div>
+        <!-- 直近8時間: #4ade80(green), それ以前: #4b5563(gray) -->
+        <div class="rounded-t" style="flex:1; min-width:0; height: 24px; background:#4b5563;"></div>
+        <div class="rounded-t" style="flex:1; min-width:0; height: 36px; background:#4b5563;"></div>
         <!-- ... 残り22本 ... -->
-        <div class="w-3 bg-green-500 rounded-t" style="height: 72px;"></div>
-        <div class="w-3 bg-green-500 rounded-t" style="height: 96px;"></div>
+        <div class="rounded-t" style="flex:1; min-width:0; height: 72px; background:#4ade80;"></div>
+        <div class="rounded-t" style="flex:1; min-width:0; height: 96px; background:#4ade80;"></div>
       </div>
       <p class="text-xs text-gray-500 mt-1">※ 時刻はJST。■ 直近8時間 / ■ それ以前</p>
       <p class="text-sm text-gray-400 mt-2">直近8時間合計: XXX BTC</p>
