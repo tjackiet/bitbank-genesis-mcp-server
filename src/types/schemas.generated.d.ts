@@ -34,16 +34,6 @@ export type RenderChartSvgInput = {
     barWidthRatio?: number | undefined;
     /** Vertical padding ratio to expand y-range. */
     yPaddingPct?: number | undefined;
-    /** If true, also save SVG to /mnt/user-data/outputs and return filePath/url. */
-    autoSave?: boolean;
-    /** File name (without extension) under /mnt/user-data/outputs when autoSave=true. */
-    outputPath?: string | undefined;
-    /** If set and svg exceeds this size (bytes), omit data.svg and return filePath only. */
-    maxSvgBytes?: number;
-    /** If true, prefer saving SVG to file and return error on save failure (no inline fallback). */
-    preferFile?: boolean;
-    /** Output format: svg (default), base64, or dataUri (for embedding in HTML/Markdown). */
-    outputFormat?: ("svg" | "base64" | "dataUri");
     /** サブパネル: macd(MACD線+シグナル+ヒストグラム), rsi(RSI 14 + 70/30ゾーン), volume(出来高バー) */
     subPanels?: ("macd" | "rsi" | "volume")[];
     /** X軸ラベルのタイムゾーン（例: Asia/Tokyo, UTC） */
@@ -72,9 +62,6 @@ export type RenderChartSvgOutput = {
     summary: string;
     data: {
         svg?: string | undefined;
-        base64?: string | undefined;
-        filePath?: string | undefined;
-        url?: string | undefined;
         legend?: {
             [x: string]: string;
         } | undefined;
@@ -91,7 +78,6 @@ export type RenderChartSvgOutput = {
         } | undefined;
         sizeBytes?: number | undefined;
         layerCount?: number | undefined;
-        truncated?: boolean | undefined;
         fallback?: string | undefined;
         warnings?: string[] | undefined;
     } | undefined;
