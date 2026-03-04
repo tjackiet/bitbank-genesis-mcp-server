@@ -297,8 +297,11 @@ B) 件数モード: limit を指定 → 直近N件の「約定」を取得
 		const n = Number(bucketsN ?? 10);
 		const last = buckets.slice(-n);
 		const fmt = (b: any) => `${b.displayTime || b.isoTime}  buy=${b.buyVolume} sell=${b.sellVolume} total=${b.totalVolume} cvd=${b.cvd}${b.spike ? ` spike=${b.spike}` : ''}`;
-		let text = `${String(pair).toUpperCase()} Flow Metrics (bucketMs=${res?.data?.params?.bucketMs ?? bucketMs})\n`;
-		text += `Totals: trades=${agg.totalTrades} buyVol=${agg.buyVolume} sellVol=${agg.sellVolume} net=${agg.netVolume} buy%=${(agg.aggressorRatio * 100 || 0).toFixed(1)} CVD=${agg.finalCvd}`;
+		const actualRange = res?.meta?.actualRange;
+		const rangeStr = actualRange ? ` 実取得範囲: ${actualRange.start}〜${actualRange.end}（${actualRange.durationMinutes}分間）` : '';
+		const warnStr = res?.meta?.warning ? `\n${res.meta.warning}` : '';
+		let text = `${String(pair).toUpperCase()} Flow Metrics (bucketMs=${res?.data?.params?.bucketMs ?? bucketMs})${rangeStr}\n`;
+		text += `Totals: trades=${agg.totalTrades} buyVol=${agg.buyVolume} sellVol=${agg.sellVolume} net=${agg.netVolume} buy%=${(agg.aggressorRatio * 100 || 0).toFixed(1)} CVD=${agg.finalCvd}${warnStr}`;
 		if (view === 'buckets') {
 			text += `\n\nRecent ${last.length} buckets:\n` + last.map(fmt).join('\n');
 			return { content: [{ type: 'text', text }], structuredContent: res as Record<string, unknown> };
