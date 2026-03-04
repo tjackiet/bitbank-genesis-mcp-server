@@ -1658,3 +1658,48 @@ export const AnalyzeCurrencyStrengthMetaSchemaOut = z.object({
 });
 
 export const AnalyzeCurrencyStrengthOutputSchema = toolResultSchema(AnalyzeCurrencyStrengthDataSchemaOut, AnalyzeCurrencyStrengthMetaSchemaOut);
+
+// === Fibonacci Retracement & Extension ===
+
+export const AnalyzeFibonacciInputSchema = BasePairInputSchema.extend({
+  lookbackDays: z.number().int().min(7).max(365).optional().default(90)
+    .describe('高値・安値を検出するルックバック期間（日）'),
+  type: CandleTypeEnum.optional().default('1day')
+    .describe('ローソク足の種類'),
+});
+
+const FibonacciLevelSchema = z.object({
+  ratio: z.number().describe('フィボナッチ比率（例: 0.382）'),
+  label: z.string().describe('表示ラベル（例: "38.2%"）'),
+  price: z.number().describe('算出価格'),
+  pctFromCurrent: z.number().describe('現在価格からの距離（%）'),
+  zone: z.enum(['retracement', 'extension']).describe('リトレースメントかエクステンションか'),
+});
+
+export const AnalyzeFibonacciDataSchemaOut = z.object({
+  currentPrice: z.number(),
+  swingHigh: z.object({ price: z.number(), date: z.string() }),
+  swingLow: z.object({ price: z.number(), date: z.string() }),
+  trend: z.enum(['uptrend', 'downtrend']).describe('自動判定されたトレンド方向'),
+  levels: z.array(FibonacciLevelSchema),
+  nearestLevel: FibonacciLevelSchema.nullable().describe('現在価格に最も近いレベル'),
+  pricePosition: z.string().describe('現在価格の位置の説明'),
+});
+
+export const AnalyzeFibonacciMetaSchemaOut = BaseMetaSchema.extend({
+  lookbackDays: z.number().int(),
+  type: z.string(),
+  swingRange: z.number().describe('高値-安値の値幅'),
+  swingRangePct: z.number().describe('高値-安値の変動率（%）'),
+});
+
+export const AnalyzeFibonacciOutputSchema = z.union([
+  z.object({
+    ok: z.literal(true),
+    summary: z.string(),
+    content: z.array(z.object({ type: z.literal('text'), text: z.string() })).optional(),
+    data: AnalyzeFibonacciDataSchemaOut,
+    meta: AnalyzeFibonacciMetaSchemaOut,
+  }),
+  FailResultSchema,
+]);

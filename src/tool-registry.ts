@@ -35,6 +35,7 @@ import { toolDef as renderCandlePatternDiagram } from '../tools/render_candle_pa
 import { toolDef as detectMacdCross } from '../tools/detect_macd_cross.js';
 import { toolDef as analyzeVolumeProfile } from '../tools/analyze_volume_profile.js';
 import { toolDef as analyzeCurrencyStrength } from '../tools/analyze_currency_strength.js';
+import { toolDef as analyzeFibonacci } from '../tools/analyze_fibonacci.js';
 
 // ── Complex tools（toolDef + handler は src/handlers/ に分離） ──
 import { toolDef as analyzeIndicators } from './handlers/analyzeIndicatorsHandler.js';
@@ -72,6 +73,7 @@ export const allToolDefs: ToolDefinition[] = [
 	analyzeMarketSignal,
 	analyzeVolumeProfile,
 	analyzeCurrencyStrength,
+	analyzeFibonacci,
 
 	// Detection
 	detectPatterns,
