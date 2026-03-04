@@ -6,3 +6,4 @@ cache/
 *.mcpb
 .claude/worktrees/
 output/
+.cursor/
