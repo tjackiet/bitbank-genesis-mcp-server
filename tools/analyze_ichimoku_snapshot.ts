@@ -170,8 +170,8 @@ export default async function analyzeIchimokuSnapshot(
     let overallSignal: 'strong_bullish' | 'bullish' | 'neutral' | 'bearish' | 'strong_bearish' = 'neutral';
     if (Number(bullishScore) >= 1.5) overallSignal = 'strong_bullish';
     else if (Number(bullishScore) >= 0.8) overallSignal = 'bullish';
-    else if (pricePosition === 'below_cloud' && tenkanKijun === 'bearish') overallSignal = 'bearish';
     else if (pricePosition === 'below_cloud' && tenkanKijun === 'bearish' && cloudSlope === 'falling') overallSignal = 'strong_bearish';
+    else if (pricePosition === 'below_cloud' && tenkanKijun === 'bearish') overallSignal = 'bearish';
     const overallConfidence: 'high' | 'medium' | 'low' = sanpuku.kouten || sanpuku.gyakuten ? 'high' : (recentCrosses.length ? 'medium' : 'low');
 
     // Phase 4: 時系列（雲位置の履歴とトレンド強度）
@@ -346,5 +346,5 @@ export const toolDef: ToolDefinition = {
 	name: 'analyze_ichimoku_snapshot',
 	description: '一目均衡表の数値スナップショットを返します（視覚的判定は行いません）。価格と雲の位置関係、転換線/基準線の関係、雲の傾き（spanA/Bの差分）を数値から評価します。SVGの見た目について断定しないでください。',
 	inputSchema: AnalyzeIchimokuSnapshotInputSchema,
-	handler: async ({ pair, type, limit }: any) => analyzeIchimokuSnapshot(pair, type, limit),
+	handler: async ({ pair, type, limit, lookback }: any) => analyzeIchimokuSnapshot(pair, type, limit, lookback),
 };
