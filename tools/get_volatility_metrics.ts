@@ -114,16 +114,17 @@ export default async function getVolatilityMetrics(
 
     // Aggregates over whole sample (use returns length for rv)
     const rvStd = stddev(ret);
-    const pkMean = pkSeries.slice(1).reduce((s, v) => s + v, 0) / Math.max(1, pkSeries.length - 1);
-    const gkMean = gkSeries.slice(1).reduce((s, v) => s + v, 0) / Math.max(1, gkSeries.length - 1);
-    const rsMean = rsSeries.slice(1).reduce((s, v) => s + v, 0) / Math.max(1, rsSeries.length - 1);
+    // Parkinson/GK/RS are per-candle estimators (not return-based), so use full series
+    const pkMean = pkSeries.reduce((s, v) => s + v, 0) / Math.max(1, pkSeries.length);
+    const gkMean = gkSeries.reduce((s, v) => s + v, 0) / Math.max(1, gkSeries.length);
+    const rsMean = rsSeries.reduce((s, v) => s + v, 0) / Math.max(1, rsSeries.length);
     const parkinson = Math.sqrt(Math.max(0, pkMean / (4 * Math.log(2))));
     const garmanKlass = Math.sqrt(Math.max(0, gkMean));
     const rogersSatchell = Math.sqrt(Math.max(0, rsMean));
 
     // ATR aggregate: use first window (default 14) SMA on TR, take last
     const primaryWindow = Math.max(2, (windows && windows[0]) || 14);
-    const atrSeries = slidingMean(trSeries.slice(1), primaryWindow);
+    const atrSeries = slidingMean(trSeries, primaryWindow);
     const atrAgg = atrSeries.length > 0 ? atrSeries[atrSeries.length - 1] : 0;
 
     const annFactor = withAnn ? Math.sqrt(periodsPerYear(type)) : 1;
@@ -137,10 +138,10 @@ export default async function getVolatilityMetrics(
       const rvStdRoll = slidingStddev(ret, w);
       const rvStdLatest = rvStdRoll.at(-1) ?? 0;
       const rvStdAnnLatest = withAnn ? rvStdLatest * annFactor : undefined;
-      const pkRoll = slidingMean(pkSeries.slice(1), w); // align to returns index
-      const gkRoll = slidingMean(gkSeries.slice(1), w);
-      const rsRoll = slidingMean(rsSeries.slice(1), w);
-      const atrRoll = slidingMean(trSeries.slice(1), w);
+      const pkRoll = slidingMean(pkSeries, w);
+      const gkRoll = slidingMean(gkSeries, w);
+      const rsRoll = slidingMean(rsSeries, w);
+      const atrRoll = slidingMean(trSeries, w);
       const p = pkRoll.length ? Math.sqrt(Math.max(0, (pkRoll.at(-1) as number) / (4 * Math.log(2)))) : undefined;
       const gk = gkRoll.length ? Math.sqrt(Math.max(0, gkRoll.at(-1) as number)) : undefined;
       const rs = rsRoll.length ? Math.sqrt(Math.max(0, rsRoll.at(-1) as number)) : undefined;
@@ -148,11 +149,11 @@ export default async function getVolatilityMetrics(
       rollingOut.push({ window: w, rv_std: rvStdLatest, rv_std_ann: rvStdAnnLatest, atr, parkinson: p, garmanKlass: gk, rogersSatchell: rs });
     }
 
-    // Tags (simple heuristic on annualized RV if available)
+    // Tags: always use annualized RV for consistent thresholds regardless of annualize flag
     const tags: string[] = [];
-    const rvRef = rvStdAnn ?? rvStd;
-    if (rvRef >= 0.8) tags.push('volatile');
-    else if (rvRef <= 0.3) tags.push('calm');
+    const rvRefAnn = rvStdAnn ?? rvStd * Math.sqrt(periodsPerYear(type));
+    if (rvRefAnn >= 0.8) tags.push('volatile');
+    else if (rvRefAnn <= 0.3) tags.push('calm');
 
     const data = {
       meta: {
@@ -196,7 +197,7 @@ export default async function getVolatilityMetrics(
       pair: chk.pair,
       timeframe: String(type),
       latest: close.at(-1),
-      extra: `rv=${(rvRef).toFixed(3)}${withAnn ? '(ann)' : ''}${tags.length ? ' ' + tags.join(',') : ''}`,
+      extra: `rv=${(rvRefAnn).toFixed(3)}(ann)${tags.length ? ' ' + tags.join(',') : ''}`,
     });
     // テキスト summary にボラティリティ詳細を含める（LLM が structuredContent.data を読めない対策）
     const aggLines = [

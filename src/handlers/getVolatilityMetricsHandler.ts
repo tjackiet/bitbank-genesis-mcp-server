@@ -19,7 +19,8 @@ export const toolDef: ToolDefinition = {
 		const lastClose = closeSeries.at(-1) ?? null;
 		const ann = !!meta.annualize;
 		const baseMs = Number(meta.baseIntervalMs ?? 0);
-		const annFactor = ann && baseMs > 0 ? Math.sqrt(365 * 24 * 3600 * 1000 / baseMs) : 1;
+		const annFactorFull = baseMs > 0 ? Math.sqrt(365 * 24 * 3600 * 1000 / baseMs) : 1;
+		const annFactor = ann ? annFactorFull : 1;
 		const rvAnn = a.rv_std_ann != null ? a.rv_std_ann : (a.rv_std != null ? a.rv_std * annFactor : null);
 		const pkAnn = a.parkinson != null ? a.parkinson * (ann ? annFactor : 1) : null;
 		const gkAnn = a.garmanKlass != null ? a.garmanKlass * (ann ? annFactor : 1) : null;
@@ -30,22 +31,25 @@ export const toolDef: ToolDefinition = {
 		// tags: base + derived
 		const tagsBase: string[] = Array.isArray(res?.data?.tags) ? [...res.data.tags] : [];
 		const tagsDerived: string[] = [];
+		// Always use annualized values for tag thresholds (consistent regardless of annualize flag)
 		if (Array.isArray(roll) && roll.length >= 2) {
 			const minW = Math.min(...roll.map(r => r.window));
 			const maxW = Math.max(...roll.map(r => r.window));
 			const short = roll.find(r => r.window === minW);
 			const long = roll.find(r => r.window === maxW);
-			const shortVal = short ? (short.rv_std_ann ?? (short.rv_std != null ? short.rv_std * annFactor : null)) : null;
-			const longVal = long ? (long.rv_std_ann ?? (long.rv_std != null ? long.rv_std * annFactor : null)) : null;
+			const shortVal = short ? (short.rv_std_ann ?? (short.rv_std != null ? short.rv_std * annFactorFull : null)) : null;
+			const longVal = long ? (long.rv_std_ann ?? (long.rv_std != null ? long.rv_std * annFactorFull : null)) : null;
 			if (shortVal != null && longVal != null) {
 				if (shortVal > longVal * 1.05) tagsDerived.push('expanding_vol');
 				else if (shortVal < longVal * 0.95) tagsDerived.push('contracting_vol');
 				if (shortVal > 0.4) tagsDerived.push('high_short_term_vol');
 			}
 		}
-		if (rvAnn != null) {
-			if (rvAnn > 0.5) tagsDerived.push('high_vol');
-			if (rvAnn < 0.2) tagsDerived.push('low_vol');
+		// Use annualized RV for threshold comparison even when annualize=false
+		const rvAnnForTags = a.rv_std_ann ?? (a.rv_std != null ? a.rv_std * annFactorFull : null);
+		if (rvAnnForTags != null) {
+			if (rvAnnForTags > 0.5) tagsDerived.push('high_vol');
+			if (rvAnnForTags < 0.2) tagsDerived.push('low_vol');
 		}
 		if (rvAnn != null && atrPct != null && rvAnn > 0) {
 			const diff = Math.abs(atrPct - rvAnn) / rvAnn;
