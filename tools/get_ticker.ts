@@ -82,9 +82,14 @@ export default async function getTicker(
 
   try {
     const json: unknown = await fetchJson(url, { timeoutMs, retries: DEFAULT_RETRIES });
-    const jsonObj = json as { data?: Record<string, unknown> };
+    const jsonObj = json as { success?: number; data?: Record<string, unknown> };
 
-    const d = jsonObj?.data ?? {};
+    // 上流レスポンスの構造バリデーション
+    if (jsonObj?.success !== 1 || !jsonObj?.data || typeof jsonObj.data !== 'object') {
+      return fail('上流レスポンスが不正です', 'upstream') as unknown as Result<GetTickerData, GetTickerMeta>;
+    }
+
+    const d = jsonObj.data;
     const summary = formatTickerSummary(chk.pair, d);
 
     const data: GetTickerData = {
