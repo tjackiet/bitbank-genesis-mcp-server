@@ -70,12 +70,13 @@ export default async function analyzeSmaSnapshot(
     }
 
     let alignment: 'bullish' | 'bearish' | 'mixed' | 'unknown' = 'unknown';
-    const v25 = map['SMA_25'];
-    const v75 = map['SMA_75'];
-    const v200 = map['SMA_200'];
-    if (v25 != null && v75 != null && v200 != null) {
-      if (v25 > v75 && v75 > v200) alignment = 'bullish';
-      else if (v25 < v75 && v75 < v200) alignment = 'bearish';
+    const sortedPeriods = [...periods].sort((a, b) => a - b);
+    const sortedVals = sortedPeriods.map(p => map[`SMA_${p}`]);
+    if (sortedVals.every(v => v != null)) {
+      const allDesc = sortedVals.every((v, i) => i === 0 || (v as number) < (sortedVals[i - 1] as number));
+      const allAsc = sortedVals.every((v, i) => i === 0 || (v as number) > (sortedVals[i - 1] as number));
+      if (allDesc) alignment = 'bullish';
+      else if (allAsc) alignment = 'bearish';
       else alignment = 'mixed';
     }
 
