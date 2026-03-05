@@ -1,0 +1,27 @@
+import { describe, it, expect, afterEach, vi } from 'vitest';
+import getTicker from '../get_ticker.js';
+
+describe('getTicker', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('未対応pairはバリデーションエラーを返す', async () => {
+    const res = await getTicker('unknown_jpy');
+    expect((res as any).ok).toBe(false);
+    expect((res as any).meta?.errorType).toBe('user');
+  });
+
+  it('上流レスポンスが不正な場合は ok:false を返すべき', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      json: async () => ({ success: 1 }),
+    } as any);
+
+    const res = await getTicker('btc_jpy', { timeoutMs: 100 });
+    expect((res as any).ok).toBe(false);
+    expect((res as any).meta?.errorType).toBe('upstream');
+  });
+});

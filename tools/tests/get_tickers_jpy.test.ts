@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import getTickersJpy from '../get_tickers_jpy.js';
 
 describe('getTickersJpy', () => {
@@ -7,6 +7,10 @@ describe('getTickersJpy', () => {
     delete process.env.TICKERS_JPY_URL;
     delete process.env.TICKERS_JPY_TIMEOUT_MS;
     delete process.env.TICKERS_JPY_RETRIES;
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
   });
 
   it('ファイルフィクスチャから正常取得できる', async () => {
@@ -35,5 +39,17 @@ describe('getTickersJpy', () => {
     process.env.TICKERS_JPY_RETRIES = '0';
     const res = await getTickersJpy({ bypassCache: false });
     expect((res as any).ok).toBe(true);
+  });
+
+  it('ネットワークエラーは TIMEOUT_OR_NETWORK に分類されるべき', async () => {
+    process.env.TICKERS_JPY_URL = 'https://public.bitbank.cc/tickers_jpy';
+    process.env.TICKERS_JPY_RETRIES = '0';
+
+    vi.spyOn(globalThis, 'fetch').mockRejectedValue(new TypeError('fetch failed'));
+
+    const res = await getTickersJpy({ bypassCache: true });
+    expect((res as any).ok).toBe(false);
+    expect((res as any).summary).toContain('TIMEOUT_OR_NETWORK');
+    expect((res as any).meta?.errorType).toBe('timeout');
   });
 });
