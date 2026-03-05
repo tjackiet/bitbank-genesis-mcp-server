@@ -187,7 +187,8 @@ export default async function getCandles(
       // 3並列 + バッチ間500ms遅延 → 約6リクエスト/秒
       const maxConcurrent = 3;
       const batchDelayMs = 500;
-      const dates = Array.from({ length: daysNeeded }, (_, i) => getDateNDaysAgo(i));
+      const baseDate = dayjs(dateCheck.value, 'YYYYMMDD');
+      const dates = Array.from({ length: daysNeeded }, (_, i) => baseDate.subtract(i, 'day').format('YYYYMMDD'));
       
       const allOhlcvs: Array<[unknown, unknown, unknown, unknown, unknown, unknown]> = [];
       
