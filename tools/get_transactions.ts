@@ -74,7 +74,7 @@ function formatTransactionsSummary(
 
 export default async function getTransactions(
   pair: string = 'btc_jpy',
-  limit: number = 100,
+  limit: number = 60,
   date?: string
 ) {
   const chk = ensurePair(pair);
@@ -124,7 +124,7 @@ export default async function getTransactions(
     const meta = createMeta(chk.pair, { count: latest.length, source: date ? 'by_date' : 'latest' });
     return GetTransactionsOutputSchema.parse(ok(summary, data as any, meta as any)) as any;
   } catch (e: unknown) {
-    return failFromError(e, { schema: GetTransactionsOutputSchema, defaultType: 'network', defaultMessage: 'ネットワークエラー' }) as any;
+    return failFromError(e, { schema: GetTransactionsOutputSchema, timeoutMs: 4000, defaultType: 'network', defaultMessage: 'ネットワークエラー' }) as any;
   }
 }
 
