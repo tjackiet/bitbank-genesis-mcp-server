@@ -64,22 +64,28 @@ function todayYyyymmdd(): string {
   return today('YYYYMMDD');
 }
 
+type OhlcvRow = [unknown, unknown, unknown, unknown, unknown, unknown];
+interface FetchChunkResult {
+  rows: OhlcvRow[];
+  error?: unknown;
+}
+
 // 単一年のデータを取得する内部関数
 async function fetchSingleYear(
   pair: string,
   type: string,
   year: number
-): Promise<Array<[unknown, unknown, unknown, unknown, unknown, unknown]>> {
+): Promise<FetchChunkResult> {
   const url = `${BITBANK_API_BASE}/${pair}/candlestick/${type}/${year}`;
   try {
     const json: unknown = await fetchJson(url, { timeoutMs: 8000, retries: DEFAULT_RETRIES });
     const jsonObj = json as { data?: { candlestick?: Array<{ ohlcv?: unknown[] }> } };
     const cs = jsonObj?.data?.candlestick?.[0];
     const ohlcvs = cs?.ohlcv ?? [];
-    return ohlcvs as Array<[unknown, unknown, unknown, unknown, unknown, unknown]>;
-  } catch {
-    // 存在しない年や取得失敗は空配列を返す
-    return [];
+    return { rows: ohlcvs as OhlcvRow[] };
+  } catch (e) {
+    // 存在しない年や取得失敗は空配列を返す（エラーも保持）
+    return { rows: [], error: e };
   }
 }
 
@@ -88,17 +94,17 @@ async function fetchSingleDay(
   pair: string,
   type: string,
   dateStr: string  // YYYYMMDD形式
-): Promise<Array<[unknown, unknown, unknown, unknown, unknown, unknown]>> {
+): Promise<FetchChunkResult> {
   const url = `${BITBANK_API_BASE}/${pair}/candlestick/${type}/${dateStr}`;
   try {
     const json: unknown = await fetchJson(url, { timeoutMs: 8000, retries: DEFAULT_RETRIES });
     const jsonObj = json as { data?: { candlestick?: Array<{ ohlcv?: unknown[] }> } };
     const cs = jsonObj?.data?.candlestick?.[0];
     const ohlcvs = cs?.ohlcv ?? [];
-    return ohlcvs as Array<[unknown, unknown, unknown, unknown, unknown, unknown]>;
-  } catch {
-    // 存在しない日や取得失敗は空配列を返す
-    return [];
+    return { rows: ohlcvs as OhlcvRow[] };
+  } catch (e) {
+    // 存在しない日や取得失敗は空配列を返す（エラーも保持）
+    return { rows: [], error: e };
   }
 }
 
@@ -166,9 +172,15 @@ export default async function getCandles(
       );
 
       // 古い年順にマージ（時系列順）
-      const allOhlcvs: Array<[unknown, unknown, unknown, unknown, unknown, unknown]> = [];
+      const allOhlcvs: OhlcvRow[] = [];
       for (let i = results.length - 1; i >= 0; i--) {
-        allOhlcvs.push(...results[i]);
+        allOhlcvs.push(...results[i].rows);
+      }
+
+      // 全チャンクがエラーの場合はネットワークエラーとして伝播
+      if (allOhlcvs.length === 0) {
+        const firstError = results.find(r => r.error);
+        if (firstError?.error) throw firstError.error;
       }
 
       // タイムスタンプでソート（念のため）
@@ -190,8 +202,9 @@ export default async function getCandles(
       const baseDate = dayjs(dateCheck.value, 'YYYYMMDD');
       const dates = Array.from({ length: daysNeeded }, (_, i) => baseDate.subtract(i, 'day').format('YYYYMMDD'));
       
-      const allOhlcvs: Array<[unknown, unknown, unknown, unknown, unknown, unknown]> = [];
-      
+      const allOhlcvs: OhlcvRow[] = [];
+      const allDayResults: FetchChunkResult[] = [];
+
       // バッチ処理で並列取得（バッチ間に遅延を入れる）
       for (let i = 0; i < dates.length; i += maxConcurrent) {
         if (i > 0) {
@@ -203,8 +216,15 @@ export default async function getCandles(
           batch.map(dateStr => fetchSingleDay(chk.pair, type, dateStr))
         );
         for (const result of results) {
-          allOhlcvs.push(...result);
+          allOhlcvs.push(...result.rows);
+          allDayResults.push(result);
         }
+      }
+
+      // 全チャンクがエラーの場合はネットワークエラーとして伝播
+      if (allOhlcvs.length === 0) {
+        const firstError = allDayResults.find(r => r.error);
+        if (firstError?.error) throw firstError.error;
       }
 
       // タイムスタンプでソート（古い順）
