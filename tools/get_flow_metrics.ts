@@ -83,7 +83,8 @@ export default async function getFlowMetrics(
       } else {
         // 日付指定なし: latest で取得し、不足なら日付ベースで補完
         const latestRes = await getTransactions(chk.pair, Math.min(lim.value, 1000));
-        const latestTxs = (latestRes?.ok ? latestRes.data.normalized : []) as Tx[];
+        const latestOk = !!(latestRes as any)?.ok;
+        const latestTxs = (latestOk ? (latestRes as any).data.normalized : []) as Tx[];
 
         if (latestTxs.length >= lim.value) {
           txs = latestTxs;
@@ -100,7 +101,13 @@ export default async function getFlowMetrics(
             );
           }
           const supplementResults = await Promise.all(supplementFetches);
-          const merged = mergeTxResults([latestRes, ...supplementResults]);
+          const allResults = [latestRes, ...supplementResults];
+          // 上流取得がすべて失敗した場合は network エラーとして返す
+          const anySuccess = allResults.some(r => !!(r as any)?.ok);
+          if (!anySuccess) {
+            return GetFlowMetricsOutputSchema.parse(fail('upstream fetch all failed', 'network')) as any;
+          }
+          const merged = mergeTxResults(allResults);
           txs = merged
             .sort((a, b) => a.timestampMs - b.timestampMs)
             .slice(-lim.value);
