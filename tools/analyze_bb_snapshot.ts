@@ -88,10 +88,10 @@ export default async function analyzeBbSnapshot(
 
         const avg = bandWidths.reduce((a, b) => a + b, 0) / bandWidths.length;
         const sorted = [...bandWidths].sort((a, b) => a - b);
-        const below = sorted.filter(bw => bw <= (bandWidthPct as number)).length;
+        const below = sorted.filter(bw => bw < (bandWidthPct as number)).length;
         const percentile = Math.round((below / sorted.length) * 100);
-        const diffPct = ((bandWidthPct as number) - avg) / avg * 100;
-        const current_vs_avg = `${diffPct >= 0 ? '+' : ''}${diffPct.toFixed(1)}%`;
+        const diffPct = avg !== 0 ? ((bandWidthPct as number) - avg) / avg * 100 : 0;
+        const current_vs_avg = `${diffPct > 0 ? '+' : ''}${diffPct.toFixed(1)}%`;
 
         return {
           bandWidthPct_30d_avg: Number(avg.toFixed(2)),
