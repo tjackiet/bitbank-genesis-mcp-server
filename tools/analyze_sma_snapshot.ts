@@ -72,7 +72,7 @@ export default async function analyzeSmaSnapshot(
     let alignment: 'bullish' | 'bearish' | 'mixed' | 'unknown' = 'unknown';
     const sortedPeriods = [...periods].sort((a, b) => a - b);
     const sortedVals = sortedPeriods.map(p => map[`SMA_${p}`]);
-    if (sortedVals.length >= 2 && sortedVals.every(v => v != null)) {
+    if (sortedVals.every(v => v != null)) {
       const allDesc = sortedVals.every((v, i) => i === 0 || (v as number) < (sortedVals[i - 1] as number));
       const allAsc = sortedVals.every((v, i) => i === 0 || (v as number) > (sortedVals[i - 1] as number));
       if (allDesc) alignment = 'bullish';
