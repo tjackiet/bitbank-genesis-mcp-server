@@ -365,8 +365,11 @@ export default async function getOrderbook(params: GetOrderbookParams | string =
     const json: unknown = await fetchJson(url, { timeoutMs, retries: DEFAULT_RETRIES });
     const jsonObj = json as { data?: Record<string, unknown> };
     const d = jsonObj?.data ?? {};
-    const rawAsks: RawLevel[] = Array.isArray(d.asks) ? (d.asks as RawLevel[]).slice(0, maxLevels) : [];
-    const rawBids: RawLevel[] = Array.isArray(d.bids) ? (d.bids as RawLevel[]).slice(0, maxLevels) : [];
+    if (!Array.isArray(d.asks) || !Array.isArray(d.bids)) {
+      return fail('上流レスポンスに bids/asks が含まれていません', 'upstream');
+    }
+    const rawAsks: RawLevel[] = (d.asks as RawLevel[]).slice(0, maxLevels);
+    const rawBids: RawLevel[] = (d.bids as RawLevel[]).slice(0, maxLevels);
     const timestamp = Number(d.timestamp ?? d.timestamp_ms ?? Date.now());
 
     // NumLevel 変換（summary / statistics で使用）
