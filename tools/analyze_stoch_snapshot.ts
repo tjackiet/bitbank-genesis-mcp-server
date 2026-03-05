@@ -184,7 +184,7 @@ export default async function analyzeStochSnapshot(
 
 export const toolDef: ToolDefinition = {
 	name: 'analyze_stoch_snapshot',
-	description: 'Classic Stochastic Oscillator のスナップショット。%K/%D の最新値、ゾーン判定（overbought/oversold/neutral）、クロスオーバー検出、ダイバージェンス検出。レンジ相場での反転シグナルに有効。デフォルト: (14, 3, 3)。',
+	description: 'Stochastic（%K/%D）の最新状態を算出し、ゾーン・クロス・ダイバージェンスを判定します。',
 	inputSchema: AnalyzeStochSnapshotInputSchema,
 	handler: async ({ pair, type, limit, kPeriod, smoothK, smoothD }: any) => analyzeStochSnapshot(pair, type, limit, kPeriod, smoothK, smoothD),
 };

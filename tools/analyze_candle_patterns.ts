@@ -1091,7 +1091,7 @@ export default async function analyzeCandlePatterns(
 // ── MCP ツール定義（tool-registry から自動収集） ──
 export const toolDef: ToolDefinition = {
 	name: 'analyze_candle_patterns',
-	description: 'ローソク足パターン検出（1〜3本足: ハンマー・流れ星・十字線・包み線・はらみ線・毛抜き・かぶせ線・切り込み線・明けの明星・宵の明星・赤三兵・黒三兵）。BTC/JPY日足の直近5日間から短期反転パターンを検出し、過去180日間の統計（勝率・平均リターン）を付与。初心者向けに自然言語で解説。未確定ローソク対応。\n\n【パラメータ制約】\npair: btc_jpy 固定、timeframe: 1day 固定（現時点ではBTC/JPY日足のみ統計データ蓄積済みのため）。他ペア/時間軸は統計精度が不十分なため非対応。\n\n【視覚化】ユーザーが図での確認を希望した場合、本ツールの結果を render_candle_pattern_diagram に渡してSVG構造図を生成できる。',
+	description: 'BTC/JPY日足の1〜3本足パターンを検出し、直近文脈と過去統計を付けて解説します（未確定足対応）。',
 	inputSchema: AnalyzeCandlePatternsInputSchema,
 	handler: async (args: any) => analyzeCandlePatterns(args),
 };

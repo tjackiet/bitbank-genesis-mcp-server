@@ -225,7 +225,7 @@ export default async function analyzeEmaSnapshot(
 
 export const toolDef: ToolDefinition = {
 	name: 'analyze_ema_snapshot',
-	description: 'EMA の数値スナップショット。指定periodsの最新値、近傍のクロス（golden/dead）、整列状態（bullish/bearish/mixed）、傾き。SMA より直近価格に敏感に反応。デフォルト期間: 12, 26, 50, 200。',
+	description: 'EMAの最新値・整列・クロス・傾きをスナップショットで返します（既定: 12/26/50/200）。',
 	inputSchema: AnalyzeEmaSnapshotInputSchema,
 	handler: async ({ pair, type, limit, periods }: any) => analyzeEmaSnapshot(pair, type, limit, periods),
 };

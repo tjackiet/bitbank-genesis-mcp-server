@@ -87,7 +87,7 @@ export default async function analyzeMtfSma(
 // ── MCP ツール定義（tool-registry から自動収集） ──
 export const toolDef: ToolDefinition = {
   name: 'analyze_mtf_sma',
-  description: '複数タイムフレームの SMA 配列を一括取得し、方向の合流（confluence）を判定。各TFの SMA値・乖離率・傾き・クロス状態・位置 (above_all等) をすべて含むため、analyze_sma_snapshot の個別呼び出しは不要。内部並列実行で高速。',
+  description: '複数タイムフレームのSMAを一括分析し、整列方向とコンフルエンスを判定します。',
   inputSchema: AnalyzeMtfSmaInputSchema,
   handler: async ({ pair, timeframes, periods }: any) => analyzeMtfSma(pair, timeframes, periods),
 };
