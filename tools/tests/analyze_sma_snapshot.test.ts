@@ -83,4 +83,26 @@ describe('analyze_sma_snapshot', () => {
     expect(res.ok).toBe(true);
     expect(res.data.tags).toContain('sma_bullish_alignment');
   });
+
+  it('periods が1つだけの場合 alignment は unknown（整列判定しない）であるべき', async () => {
+    mockedAnalyzeIndicators.mockResolvedValueOnce(buildIndicatorsOk() as any);
+
+    const res: any = await analyzeSmaSnapshot('btc_jpy', '1day', 220, [5]);
+
+    expect(res.ok).toBe(true);
+    expect(res.data.alignment).toBe('unknown');
+    expect(res.data.tags).not.toContain('sma_bullish_alignment');
+    expect(res.data.tags).not.toContain('sma_bearish_alignment');
+  });
+
+  it('重複 periods 指定時は自己クロス（SMA_5/SMA_5）や重複クロスを出さないべき', async () => {
+    mockedAnalyzeIndicators.mockResolvedValueOnce(buildIndicatorsOk() as any);
+
+    const res: any = await analyzeSmaSnapshot('btc_jpy', '1day', 220, [5, 5, 20]);
+
+    expect(res.ok).toBe(true);
+    const pairLabels = res.data.crosses.map((c: any) => `${c.a}/${c.b}`);
+    expect(pairLabels).not.toContain('SMA_5/SMA_5');
+    expect(new Set(pairLabels).size).toBe(pairLabels.length);
+  });
 });
