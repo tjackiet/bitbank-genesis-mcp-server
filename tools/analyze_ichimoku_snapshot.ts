@@ -45,7 +45,7 @@ export default async function analyzeIchimokuSnapshot(
       }
     }
 
-    const chikou = latest.ICHIMOKU_spanB != null && Array.isArray(indRes?.data?.indicators?.ichi_series?.chikou)
+    const chikou = Array.isArray(indRes?.data?.indicators?.ichi_series?.chikou)
       ? indRes.data.indicators.ichi_series.chikou.at(-1) ?? null
       : null;
 
@@ -88,7 +88,7 @@ export default async function analyzeIchimokuSnapshot(
     // Cloud metrics - 「今日の雲」の厚みを使用
     const thickness = (currentSpanA != null && currentSpanB != null) ? Math.abs((currentSpanA as number) - (currentSpanB as number)) : null;
     const thicknessPct = (thickness != null && close != null && close !== 0) ? Number(((thickness / close) * 100).toFixed(2)) : null;
-    const direction = cloudSlope === 'rising' ? 'rising' : cloudSlope === 'falling' ? 'falling' : 'flat';
+    const direction = cloudSlope === 'rising' ? 'rising' : cloudSlope === 'falling' ? 'falling' : cloudSlope === 'flat' ? 'flat' : null;
     const strength = thicknessPct == null ? null : (thicknessPct >= 2 ? 'strong' : (thicknessPct >= 0.8 ? 'moderate' : 'weak'));
 
     // Tenkan-Kijun detail
@@ -177,7 +177,7 @@ export default async function analyzeIchimokuSnapshot(
     // Phase 4: 時系列（雲位置の履歴とトレンド強度）
     const cloudHistory: Array<{ barsAgo: number; position: 'above' | 'in' | 'below' }> = [];
     if (Array.isArray(candles) && cloudTop != null && cloudBottom != null) {
-      for (let i = 0; i < Math.min(lookback, candles.length - 1); i++) {
+      for (let i = 0; i < Math.min(lookback, candles.length); i++) {
         const idx = candles.length - 1 - i;
         const c = candles[idx]?.close;
         if (c != null) {
