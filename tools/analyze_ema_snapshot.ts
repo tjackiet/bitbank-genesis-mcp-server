@@ -65,8 +65,9 @@ export default async function analyzeEmaSnapshot(
 
     const crosses: Array<{ a: string; b: string; type: 'golden' | 'dead'; delta: number }> = [];
     const crossPairs: Array<[number, number]> = [];
-    for (let i = 0; i < periods.length; i++) {
-      for (let j = i + 1; j < periods.length; j++) crossPairs.push([periods[i], periods[j]]);
+    const uniquePeriods = [...new Set(periods)];
+    for (let i = 0; i < uniquePeriods.length; i++) {
+      for (let j = i + 1; j < uniquePeriods.length; j++) crossPairs.push([uniquePeriods[i], uniquePeriods[j]]);
     }
     for (const [a, b] of crossPairs) {
       const va = map[`EMA_${a}`];
@@ -103,12 +104,14 @@ export default async function analyzeEmaSnapshot(
       }
     }
 
-    const sorted = [...periods].sort((a, b) => a - b);
+    const sorted = [...new Set(periods)].sort((a, b) => a - b);
     let alignment: 'bullish' | 'bearish' | 'mixed' | 'unknown' = 'unknown';
-    const vals = sorted.map(p => map[`EMA_${p}`]).filter((v): v is number => v != null);
-    if (vals.length >= 3) {
-      const allDesc = vals.every((v, i) => i === 0 || v <= vals[i - 1]);
-      const allAsc = vals.every((v, i) => i === 0 || v >= vals[i - 1]);
+    const vals = sorted.map(p => map[`EMA_${p}`]);
+    const allPresent = vals.every((v): v is number => v != null);
+    if (allPresent && vals.length >= 3) {
+      const numVals = vals as number[];
+      const allDesc = numVals.every((v, i) => i === 0 || v <= numVals[i - 1]);
+      const allAsc = numVals.every((v, i) => i === 0 || v >= numVals[i - 1]);
       if (allDesc) alignment = 'bullish';
       else if (allAsc) alignment = 'bearish';
       else alignment = 'mixed';
