@@ -28,11 +28,14 @@ export default async function analyzeSmaSnapshot(
     const candles: Array<{ isoTime?: string }> = Array.isArray(indRes?.data?.chart?.candles) ? indRes.data.chart.candles : (Array.isArray(indRes?.data?.normalized) ? indRes.data.normalized : []);
     const lastIdx = Math.max(0, candles.length - 1);
 
+    // Deduplicate periods for cross pair generation
+    const uniquePeriods = [...new Set(periods)];
+
     // Crosses status (current delta sign) and recent cross detection (last 30 bars)
     const crosses: Array<{ a: string; b: string; type: 'golden' | 'dead'; delta: number }> = [];
     const crossPairs: Array<[number, number]> = [];
-    for (let i = 0; i < periods.length; i++) {
-      for (let j = i + 1; j < periods.length; j++) crossPairs.push([periods[i], periods[j]]);
+    for (let i = 0; i < uniquePeriods.length; i++) {
+      for (let j = i + 1; j < uniquePeriods.length; j++) crossPairs.push([uniquePeriods[i], uniquePeriods[j]]);
     }
     for (const [a, b] of crossPairs) {
       const va = map[`SMA_${a}`];
@@ -70,9 +73,9 @@ export default async function analyzeSmaSnapshot(
     }
 
     let alignment: 'bullish' | 'bearish' | 'mixed' | 'unknown' = 'unknown';
-    const sortedPeriods = [...periods].sort((a, b) => a - b);
+    const sortedPeriods = [...new Set(periods)].sort((a, b) => a - b);
     const sortedVals = sortedPeriods.map(p => map[`SMA_${p}`]);
-    if (sortedVals.every(v => v != null)) {
+    if (sortedPeriods.length >= 2 && sortedVals.every(v => v != null)) {
       const allDesc = sortedVals.every((v, i) => i === 0 || (v as number) < (sortedVals[i - 1] as number));
       const allAsc = sortedVals.every((v, i) => i === 0 || (v as number) > (sortedVals[i - 1] as number));
       if (allDesc) alignment = 'bullish';
