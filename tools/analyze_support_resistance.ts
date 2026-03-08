@@ -404,43 +404,46 @@ export default async function analyzeSupportResistance(
       ) as any;
     }
 
-    const currentCandle = candles[candles.length - 1];
+    // lookbackDays 範囲のローソク足のみを分析対象にする（バッファは除外）
+    const analysisCandles = candles.length > lookbackDays ? candles.slice(-lookbackDays) : candles;
+
+    const currentCandle = analysisCandles[analysisCandles.length - 1];
     const currentPrice = currentCandle.close;
 
-    // 価格レベル検出
-    const { supports, resistances } = findPriceLevels(candles, tolerance);
+    // 価格レベル検出（lookbackDays 範囲のみ）
+    const { supports, resistances } = findPriceLevels(analysisCandles, tolerance);
 
     // 新サポート形成の検出
-    const newSupports = detectNewSupport(candles, 10);
-    
+    const newSupports = detectNewSupport(analysisCandles, 10);
+
     // 崩壊・突破を記録
     const brokenSupports = new Map<number, { date: string; price: number }>();
     const brokenResistances = new Map<number, { date: string; price: number }>();
-    
+
     for (const [level] of supports.entries()) {
-      const recentBreak = detectRecentBreak(level, 'support', candles, 30);
+      const recentBreak = detectRecentBreak(level, 'support', analysisCandles, 30);
       if (recentBreak) {
         brokenSupports.set(level, { date: recentBreak.date, price: recentBreak.price });
       }
     }
-    
+
     for (const [level] of resistances.entries()) {
-      const recentBreak = detectRecentBreak(level, 'resistance', candles, 30);
+      const recentBreak = detectRecentBreak(level, 'resistance', analysisCandles, 30);
       if (recentBreak) {
         brokenResistances.set(level, { date: recentBreak.date, price: recentBreak.price });
       }
     }
-    
+
     // ロールリバーサル検出
     const { newResistances, newSupports: roleReversalSupports } = detectRoleReversal(
       brokenSupports,
       brokenResistances,
-      candles,
+      analysisCandles,
       currentPrice
     );
 
     // 平均出来高計算
-    const avgVolume = candles.reduce((sum: number, c: any) => sum + (c.volume || 0), 0) / candles.length;
+    const avgVolume = analysisCandles.reduce((sum: number, c: any) => sum + (c.volume || 0), 0) / analysisCandles.length;
 
     // サポートレベルを評価
     const supportLevels: SupportResistanceLevel[] = [];
@@ -456,12 +459,12 @@ export default async function analyzeSupportResistance(
       const recencyScore = computeRecencyScore(touches, currentCandle.isoTime);
       const avgBounce = touches.reduce((sum, t) => sum + t.bounceStrength, 0) / (touches.length || 1);
 
-      const recentBreak = detectRecentBreak(level, 'support', candles, 7);
+      const recentBreak = detectRecentBreak(level, 'support', analysisCandles, 7);
       if (recentBreak) continue; // 直近7日で崩壊したものは除外
 
       const volumeBoost = touches.some(t => {
-        const candle = candles.find((c: any) => c.isoTime.split('T')[0] === t.date);
-        return candle && (candle.volume || 0) > avgVolume * 1.5;
+        const c = analysisCandles.find((c: any) => c.isoTime.split('T')[0] === t.date);
+        return c && (c.volume || 0) > avgVolume * 1.5;
       });
 
       const strength = calculateStrength({
@@ -481,7 +484,7 @@ export default async function analyzeSupportResistance(
         volumeBoost
       });
     }
-    
+
     // B. 新形成サポート
     for (const newSup of newSupports) {
       const pctFromCurrent = ((newSup.price - currentPrice) / currentPrice) * 100;
@@ -520,7 +523,7 @@ export default async function analyzeSupportResistance(
 
       const breakInfo = brokenResistances.get(level);
       const pullbackConfirmed = breakInfo ? hasPullbackConfirmation(
-        level, 'resistance_to_support', breakInfo.date, candles, tolerance
+        level, 'resistance_to_support', breakInfo.date, analysisCandles, tolerance
       ) : false;
 
       const strength = calculateStrength({
@@ -556,12 +559,12 @@ export default async function analyzeSupportResistance(
       const recencyScore = computeRecencyScore(touches, currentCandle.isoTime);
       const avgBounce = touches.reduce((sum, t) => sum + t.bounceStrength, 0) / (touches.length || 1);
 
-      const recentBreak = detectRecentBreak(level, 'resistance', candles, 7);
+      const recentBreak = detectRecentBreak(level, 'resistance', analysisCandles, 7);
       if (recentBreak) continue; // 直近7日で突破されたものは除外
 
       const volumeBoost = touches.some(t => {
-        const candle = candles.find((c: any) => c.isoTime.split('T')[0] === t.date);
-        return candle && (candle.volume || 0) > avgVolume * 1.5;
+        const c = analysisCandles.find((c: any) => c.isoTime.split('T')[0] === t.date);
+        return c && (c.volume || 0) > avgVolume * 1.5;
       });
 
       const strength = calculateStrength({
@@ -592,7 +595,7 @@ export default async function analyzeSupportResistance(
 
       const breakInfo = brokenSupports.get(level);
       const pullbackConfirmed = breakInfo ? hasPullbackConfirmation(
-        level, 'support_to_resistance', breakInfo.date, candles, tolerance
+        level, 'support_to_resistance', breakInfo.date, analysisCandles, tolerance
       ) : false;
 
       const strength = calculateStrength({
@@ -699,7 +702,8 @@ export default async function analyzeSupportResistance(
       return text;
     };
 
-    let contentText = `BTC/JPY サポート・レジスタンス分析（過去${lookbackDays}日）\n`;
+    const displayPair = chk.pair.replace('_', '/').toUpperCase();
+    let contentText = `${displayPair} サポート・レジスタンス分析（過去${lookbackDays}日）\n`;
     contentText += `現在価格: ${currentPrice.toLocaleString()}円\n`;
     contentText += `分析日時: ${currentCandle.isoTime.split('T')[0]}\n\n`;
     
