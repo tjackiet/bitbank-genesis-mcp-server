@@ -40,7 +40,19 @@ function mergeTxResults(results: unknown[]): Tx[] {
 	return merged;
 }
 
-async function fetchTransactions(pair: string, hours?: number, limit?: number): Promise<Tx[]> {
+type FetchResult = { ok: true; txs: Tx[] } | { ok: false; errorType: string; summary: string };
+
+function extractUpstreamError(results: unknown[]): { errorType: string; summary: string } | null {
+	for (const res of results) {
+		const r = res as { ok?: boolean; meta?: { errorType?: string }; summary?: string } | null;
+		if (r && r.ok === false && r.meta?.errorType) {
+			return { errorType: r.meta.errorType, summary: r.summary ?? 'upstream error' };
+		}
+	}
+	return null;
+}
+
+async function fetchTransactions(pair: string, hours?: number, limit?: number): Promise<FetchResult> {
 	if (hours != null && hours > 0) {
 		const nowMs = Date.now();
 		const sinceMs = nowMs - hours * 3600_000;
@@ -57,16 +69,28 @@ async function fetchTransactions(pair: string, hours?: number, limit?: number): 
 		const fetches: Promise<unknown>[] = dates.map(ds => getTransactions(pair, 1000, ds));
 		fetches.push(getTransactions(pair, 1000));
 		const results = await Promise.all(fetches);
-		return mergeTxResults(results)
-			.filter(t => t.timestampMs >= sinceMs && t.timestampMs <= nowMs)
-			.sort((a, b) => a.timestampMs - b.timestampMs);
+		const merged = mergeTxResults(results);
+		if (merged.length === 0) {
+			const upstreamErr = extractUpstreamError(results);
+			if (upstreamErr) return { ok: false, ...upstreamErr };
+		}
+		return {
+			ok: true,
+			txs: merged
+				.filter(t => t.timestampMs >= sinceMs && t.timestampMs <= nowMs)
+				.sort((a, b) => a.timestampMs - b.timestampMs),
+		};
 	}
 
 	// Count-based
 	const lim = limit ?? 500;
 	const latestRes = await getTransactions(pair, Math.min(lim, 1000));
 	const latestTxs = ((latestRes as any)?.ok ? (latestRes as any).data.normalized : []) as Tx[];
-	if (latestTxs.length >= lim) return latestTxs.slice(-lim);
+	if (latestTxs.length === 0) {
+		const upstreamErr = extractUpstreamError([latestRes]);
+		if (upstreamErr) return { ok: false, ...upstreamErr };
+	}
+	if (latestTxs.length >= lim) return { ok: true, txs: latestTxs.slice(-lim) };
 
 	// Supplement with previous days
 	const todayJst = dayjs().tz('Asia/Tokyo');
@@ -79,9 +103,17 @@ async function fetchTransactions(pair: string, hours?: number, limit?: number): 
 		);
 	}
 	const supplementResults = await Promise.all(supplementFetches);
-	return mergeTxResults([latestRes, ...supplementResults])
-		.sort((a, b) => a.timestampMs - b.timestampMs)
-		.slice(-lim);
+	const merged = mergeTxResults([latestRes, ...supplementResults]);
+	if (merged.length === 0) {
+		const upstreamErr = extractUpstreamError([latestRes, ...supplementResults]);
+		if (upstreamErr) return { ok: false, ...upstreamErr };
+	}
+	return {
+		ok: true,
+		txs: merged
+			.sort((a, b) => a.timestampMs - b.timestampMs)
+			.slice(-lim),
+	};
 }
 
 // ── VWAP Calculation ──
@@ -114,8 +146,49 @@ function calcVolumeProfile(txs: Tx[], bins: number, valueAreaPct: number) {
 	const range = priceHigh - priceLow;
 
 	// Guard against zero range (all trades at same price)
-	const step = range > 0 ? range / bins : 1;
-	const adjustedLow = range > 0 ? priceLow : priceLow - bins / 2;
+	if (range === 0) {
+		// All trades at same price — single-bin profile with exact price
+		const singleBin = { low: priceLow, high: priceLow, buyVolume: 0, sellVolume: 0, totalVolume: 0 };
+		for (const t of txs) {
+			if (t.side === 'buy') singleBin.buyVolume += t.amount;
+			else singleBin.sellVolume += t.amount;
+			singleBin.totalVolume += t.amount;
+		}
+		const totalVolume = singleBin.totalVolume;
+		const isJpy = true;
+		const fmtSingle = () => {
+			const p = isJpy ? Math.round(priceLow).toLocaleString() : priceLow.toFixed(2);
+			return `${p}〜${p}`;
+		};
+		const binResult = {
+			low: Number(priceLow.toFixed(2)),
+			high: Number(priceLow.toFixed(2)),
+			label: fmtSingle(),
+			buyVolume: Number(singleBin.buyVolume.toFixed(8)),
+			sellVolume: Number(singleBin.sellVolume.toFixed(8)),
+			totalVolume: Number(singleBin.totalVolume.toFixed(8)),
+			pct: 100,
+			dominant: singleBin.buyVolume > singleBin.sellVolume * 1.2 ? 'buy' as const
+				: singleBin.sellVolume > singleBin.buyVolume * 1.2 ? 'sell' as const
+				: 'balanced' as const,
+		};
+		return {
+			bins: [binResult],
+			poc: {
+				price: Number(priceLow.toFixed(2)),
+				volume: Number(totalVolume.toFixed(8)),
+				binIndex: 0,
+			},
+			valueArea: {
+				high: Number(priceLow.toFixed(2)),
+				low: Number(priceLow.toFixed(2)),
+				volume: Number(totalVolume.toFixed(8)),
+				pct: 100,
+			},
+		};
+	}
+	const step = range / bins;
+	const adjustedLow = priceLow;
 
 	const profileBins: Array<{
 		low: number; high: number; buyVolume: number; sellVolume: number; totalVolume: number;
@@ -130,7 +203,7 @@ function calcVolumeProfile(txs: Tx[], bins: number, valueAreaPct: number) {
 
 	// Distribute trades into bins
 	for (const t of txs) {
-		let idx = range > 0 ? Math.floor((t.price - adjustedLow) / step) : Math.floor(bins / 2);
+		let idx = Math.floor((t.price - adjustedLow) / step);
 		if (idx >= bins) idx = bins - 1;
 		if (idx < 0) idx = 0;
 		if (t.side === 'buy') profileBins[idx].buyVolume += t.amount;
@@ -265,7 +338,7 @@ function calcTradeSizeDistribution(txs: Tx[]) {
 
 export default async function analyzeVolumeProfile(
 	pair: string = 'btc_jpy',
-	hours: number = 4,
+	hours?: number,
 	limit: number = 500,
 	bins: number = 20,
 	valueAreaPct: number = 0.70,
@@ -275,7 +348,13 @@ export default async function analyzeVolumeProfile(
 	if (!chk.ok) return failFromValidation(chk, AnalyzeVolumeProfileOutputSchema) as any;
 
 	try {
-		const txs = await fetchTransactions(chk.pair, hours, limit);
+		const fetchResult = await fetchTransactions(chk.pair, hours, limit);
+		if (!fetchResult.ok) {
+			return AnalyzeVolumeProfileOutputSchema.parse(
+				fail(fetchResult.summary, fetchResult.errorType)
+			) as any;
+		}
+		const txs = fetchResult.txs;
 		if (txs.length < 10) {
 			return AnalyzeVolumeProfileOutputSchema.parse(
 				fail('約定データが不足しています（10件未満）', 'user')
@@ -401,6 +480,12 @@ hours で期間指定（デフォルト4h）、bins=20で価格帯分割。
 用途別推奨: スキャルピング hours=0.5〜1 / デイトレ hours=4〜8（デフォルト） / スイング hours=12〜24
 ※ 24h超は非対応（API上限1000件/日による精度低下のため）`,
 	inputSchema: AnalyzeVolumeProfileInputSchema,
-	handler: async ({ pair, hours, limit, bins, valueAreaPct, tz }: any) =>
-		analyzeVolumeProfile(pair, Number(hours), Number(limit), Number(bins), Number(valueAreaPct), tz),
+	handler: async (rawInput: any) => {
+		const parsed = AnalyzeVolumeProfileInputSchema.parse(rawInput);
+		return analyzeVolumeProfile(
+			parsed.pair,
+			'hours' in rawInput ? parsed.hours : undefined,
+			parsed.limit, parsed.bins, parsed.valueAreaPct, parsed.tz,
+		);
+	},
 };
