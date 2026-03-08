@@ -343,7 +343,7 @@ export function computeClassicStochastic(
   smoothD = 3
 ): { kSeries: (number | null)[]; dSeries: (number | null)[]; k: number | null; d: number | null; prevK: number | null; prevD: number | null } {
   const n = Math.min(highs.length, lows.length, closes.length);
-  if (n < kPeriod + smoothK + smoothD) {
+  if (n < kPeriod + smoothK + smoothD - 2) {
     const empty = new Array(n).fill(null);
     return { kSeries: empty, dSeries: empty, k: null, d: null, prevK: null, prevD: null };
   }

@@ -80,12 +80,13 @@ export default async function analyzeStochSnapshot(
 		if (stochK != null && stochD != null && prevK != null && prevD != null) {
 			const prevDiff = prevK - prevD;
 			const currDiff = stochK - stochD;
+			const zoneLabel = zone === 'overbought' ? '買われすぎ圏' : zone === 'oversold' ? '売られすぎ圏' : 'ニュートラル圏';
 			if (prevDiff <= 0 && currDiff > 0) {
 				crossType = 'bullish_cross';
-				crossDesc = `%K が %D を上抜け（${zone === 'oversold' ? '売られすぎ圏からの反転 → 強いシグナル' : 'ニュートラル圏'}）`;
+				crossDesc = `%K が %D を上抜け（${zone === 'oversold' ? '売られすぎ圏からの反転 → 強いシグナル' : zoneLabel}）`;
 			} else if (prevDiff >= 0 && currDiff < 0) {
 				crossType = 'bearish_cross';
-				crossDesc = `%K が %D を下抜け（${zone === 'overbought' ? '買われすぎ圏からの反転 → 強いシグナル' : 'ニュートラル圏'}）`;
+				crossDesc = `%K が %D を下抜け（${zone === 'overbought' ? '買われすぎ圏からの反転 → 強いシグナル' : zoneLabel}）`;
 			}
 		}
 
