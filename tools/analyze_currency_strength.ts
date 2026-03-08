@@ -73,8 +73,14 @@ export default async function analyzeCurrencyStrength(
 			);
 		}
 
-		// 2. Sort by volume (JPY) descending, pick top N
-		const withVolume = tickers.map(t => {
+		// 2. Deduplicate by pair (keep first occurrence), sort by volume descending, pick top N
+		const seenPairs = new Set<string>();
+		const uniqueTickers = tickers.filter(t => {
+			if (seenPairs.has(t.pair)) return false;
+			seenPairs.add(t.pair);
+			return true;
+		});
+		const withVolume = uniqueTickers.map(t => {
 			const lastN = Number(t.last);
 			const volN = Number(t.vol);
 			const volumeJPY = (Number.isFinite(lastN) && Number.isFinite(volN)) ? lastN * volN : 0;
@@ -93,6 +99,16 @@ export default async function analyzeCurrencyStrength(
 		const indicatorResults = await Promise.allSettled(
 			targets.map(t => analyzeIndicators(t.pair, type, 60))
 		);
+
+		// 3b. Check if ALL indicators failed
+		const allIndicatorsFailed = indicatorResults.every(r =>
+			r.status === 'rejected' || !(r.value as any)?.ok
+		);
+		if (allIndicatorsFailed) {
+			return AnalyzeCurrencyStrengthOutputSchema.parse(
+				fail('全銘柄のテクニカル指標取得に失敗しました', 'upstream')
+			);
+		}
 
 		// 4. Compute composite score for each
 		const items: RankedItem[] = targets.map((t, i) => {
