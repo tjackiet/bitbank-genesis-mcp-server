@@ -13,10 +13,13 @@ export default async function analyzeMtfSma(
   if (!chk.ok) return failFromValidation(chk, AnalyzeMtfSmaOutputSchema) as any;
 
   try {
+    // Deduplicate timeframes to avoid redundant calls
+    const uniqueTimeframes = [...new Set(timeframes)];
+
     // Run all timeframes in parallel — each triggers analyzeIndicators
     // which has a 30s TTL cache, so same pair+type won't re-fetch.
     const results = await Promise.all(
-      timeframes.map(async (tf) => {
+      uniqueTimeframes.map(async (tf) => {
         const res = await analyzeSmaSnapshot(chk.pair, tf, 220, periods);
         return { timeframe: tf, result: res as any };
       })
@@ -46,18 +49,17 @@ export default async function analyzeMtfSma(
       }
     }
 
-    // Confluence judgment
-    const valid = alignments.filter((a) => a !== 'unknown');
+    // Confluence judgment — any unknown in requested timeframes → aligned=false, direction=unknown
     let direction: 'bullish' | 'bearish' | 'mixed' | 'unknown';
     let aligned: boolean;
 
-    if (valid.length === 0) {
+    if (alignments.some((a) => a === 'unknown')) {
       direction = 'unknown';
       aligned = false;
-    } else if (valid.every((a) => a === 'bullish')) {
+    } else if (alignments.every((a) => a === 'bullish')) {
       direction = 'bullish';
       aligned = true;
-    } else if (valid.every((a) => a === 'bearish')) {
+    } else if (alignments.every((a) => a === 'bearish')) {
       direction = 'bearish';
       aligned = true;
     } else {
