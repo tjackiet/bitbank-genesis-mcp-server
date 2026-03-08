@@ -104,7 +104,7 @@ function detectTrendBefore(
   endIndex: number,
   lookbackCount: number = 3
 ): 'up' | 'down' | 'neutral' {
-  if (endIndex < lookbackCount) return 'neutral';
+  if (endIndex < lookbackCount - 1) return 'neutral';
 
   let upCount = 0;
   let downCount = 0;
@@ -1016,7 +1016,7 @@ export default async function analyzeCandlePatterns(
           }
 
           const historyStats = calculateHistoryStats(
-            allCandlesForStats,
+            allCandles,
             patternType,
             historyHorizons,
             historyLookbackDays
