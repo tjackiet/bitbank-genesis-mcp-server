@@ -1183,7 +1183,7 @@ export const AnalyzeStochSnapshotOutputSchema = toolResultSchema(AnalyzeStochSna
 
 // === MTF SMA (Multi-Timeframe SMA Snapshot) ===
 export const AnalyzeMtfSmaInputSchema = BasePairInputSchema.extend({
-  timeframes: z.array(CandleTypeEnum).optional().default(['1hour', '4hour', '1day']),
+  timeframes: z.array(CandleTypeEnum).min(1).optional().default(['1hour', '4hour', '1day']),
   periods: z.array(z.number().int()).optional().default([25, 75, 200]),
 });
 
