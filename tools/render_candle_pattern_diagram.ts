@@ -132,17 +132,18 @@ export default async function renderCandlePatternDiagram(
     const minPrice = Math.min(...allPrices);
     const priceRange = maxPrice - minPrice;
 
-    // 上下に10%の余白
-    const padding = priceRange * 0.1;
+    // 上下に10%の余白（priceRange が 0 の場合は固定余白を使用）
+    const padding = priceRange === 0 ? Math.max(Math.abs(maxPrice) * 0.1, 1) : priceRange * 0.1;
     const yMax = maxPrice + padding;
     const yMin = minPrice - padding;
 
     const { plotTop, plotBottom } = LAYOUT;
     const plotHeight = plotBottom - plotTop;
+    const ySpan = yMax - yMin; // padding により必ず > 0
 
     // 価格 → Y座標の変換
     const priceToY = (price: number): number => {
-      return plotTop + ((yMax - price) / (yMax - yMin)) * plotHeight;
+      return plotTop + ((yMax - price) / ySpan) * plotHeight;
     };
 
     // === SVG生成開始 ===

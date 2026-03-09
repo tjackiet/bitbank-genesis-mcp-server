@@ -1525,7 +1525,7 @@ const DiagramPatternSchema = z.object({
   name: z.string().describe('Pattern name in Japanese e.g. "陽線包み線"'),
   nameEn: z.string().optional().describe('Pattern name in English e.g. "bullish_engulfing"'),
   confirmedDate: z.string().describe('Confirmed date e.g. "11/9(日)"'),
-  involvedIndices: z.tuple([z.number().int(), z.number().int()]).describe('[prevIndex, confirmedIndex]'),
+  involvedIndices: z.tuple([z.number().int().min(0), z.number().int().min(0)]).describe('[prevIndex, confirmedIndex]'),
   direction: z.enum(['bullish', 'bearish']).optional(),
 });
 
