@@ -1,0 +1,131 @@
+import { afterEach, describe, expect, it, vi } from 'vitest';
+
+vi.mock('../get_flow_metrics.js', () => ({
+  default: vi.fn(),
+}));
+
+vi.mock('../get_volatility_metrics.js', () => ({
+  default: vi.fn(),
+}));
+
+vi.mock('../analyze_indicators.js', () => ({
+  default: vi.fn(),
+}));
+
+import getFlowMetrics from '../get_flow_metrics.js';
+import getVolatilityMetrics from '../get_volatility_metrics.js';
+import analyzeIndicators from '../analyze_indicators.js';
+import analyzeMarketSignal from '../analyze_market_signal.js';
+import { toolDef } from '../../src/handlers/analyzeMarketSignalHandler.js';
+
+function flowOk(aggressorRatio: number, cvdValues: number[]) {
+  return {
+    ok: true,
+    summary: 'ok',
+    data: {
+      aggregates: { aggressorRatio },
+      series: {
+        buckets: cvdValues.map((cvd) => ({ cvd })),
+      },
+    },
+    meta: {},
+  };
+}
+
+function volOk(rvStdAnn: number) {
+  return {
+    ok: true,
+    summary: 'ok',
+    data: {
+      aggregates: { rv_std_ann: rvStdAnn },
+    },
+    meta: {},
+  };
+}
+
+function makeCloses(count: number, close: number) {
+  return Array.from({ length: count }, (_, idx) => ({
+    close,
+    isoTime: `2024-01-${String((idx % 28) + 1).padStart(2, '0')}T00:00:00.000Z`,
+  }));
+}
+
+function indicatorsOk(params: {
+  close: number;
+  rsi: number;
+  sma25: number;
+  sma75: number;
+  sma200: number;
+  normalizedCount?: number;
+  trend?: 'strong_uptrend' | 'uptrend' | 'strong_downtrend' | 'downtrend' | 'overbought' | 'oversold' | 'sideways' | 'insufficient_data';
+}) {
+  const { close, rsi, sma25, sma75, sma200, normalizedCount = 220, trend = 'sideways' } = params;
+  return {
+    ok: true,
+    summary: 'ok',
+    data: {
+      indicators: {
+        RSI_14: rsi,
+        SMA_25: sma25,
+        SMA_75: sma75,
+        SMA_200: sma200,
+      },
+      normalized: makeCloses(normalizedCount, close),
+      trend,
+    },
+    meta: {},
+  };
+}
+
+describe('analyze_market_signal', () => {
+  const mockedGetFlowMetrics = vi.mocked(getFlowMetrics);
+  const mockedGetVolatilityMetrics = vi.mocked(getVolatilityMetrics);
+  const mockedAnalyzeIndicators = vi.mocked(analyzeIndicators);
+
+  afterEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('inputSchema: flowLimit は整数のみ許可する', () => {
+    const parse = () => (toolDef.inputSchema as any).parse({ pair: 'btc_jpy', flowLimit: 10.5 });
+    expect(parse).toThrow();
+  });
+
+  it('中立シグナル時の nextActions は存在しない detect_forming_chart_patterns ではなく detect_patterns を案内すべき', async () => {
+    mockedGetFlowMetrics.mockResolvedValueOnce(flowOk(0.5, [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]) as any);
+    mockedGetVolatilityMetrics.mockResolvedValueOnce(volOk(0.5) as any);
+    mockedAnalyzeIndicators.mockResolvedValueOnce(
+      indicatorsOk({ close: 100, rsi: 50, sma25: 100, sma75: 100, sma200: 100 }) as any
+    );
+
+    const res: any = await analyzeMarketSignal('btc_jpy');
+    expect(res.ok).toBe(true);
+    expect(res.data.nextActions.map((action: any) => action.tool)).toContain('detect_patterns');
+  });
+
+  it('主要要素が矛盾する低信頼ケースで nextActions に未登録の multiple_analysis を含めるべきではない', async () => {
+    mockedGetFlowMetrics.mockResolvedValueOnce(flowOk(0.5, [0, 5, 10, 20, 30, 40, 50, 60, 80, 100]) as any);
+    mockedGetVolatilityMetrics.mockResolvedValueOnce(volOk(0) as any);
+    mockedAnalyzeIndicators.mockResolvedValueOnce(
+      indicatorsOk({ close: 120, rsi: 0, sma25: 110, sma75: 100, sma200: 100 }) as any
+    );
+
+    const res: any = await analyzeMarketSignal('btc_jpy');
+    expect(res.ok).toBe(true);
+    expect(res.data.confidence).toBe('low');
+    expect(res.data.nextActions.map((action: any) => action.tool)).not.toContain('multiple_analysis');
+  });
+
+  it('aggressorRatio が最大で板圧力が極端なときは get_orderbook を深掘り候補に含めるべき', async () => {
+    mockedGetFlowMetrics.mockResolvedValueOnce(flowOk(1, [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]) as any);
+    mockedGetVolatilityMetrics.mockResolvedValueOnce(volOk(0.5) as any);
+    mockedAnalyzeIndicators.mockResolvedValueOnce(
+      indicatorsOk({ close: 100, rsi: 50, sma25: 100, sma75: 100, sma200: 100 }) as any
+    );
+
+    const res: any = await analyzeMarketSignal('btc_jpy');
+    expect(res.ok).toBe(true);
+    expect(res.data.metrics.buyPressure).toBe(1);
+    expect(res.data.nextActions.map((action: any) => action.tool)).toContain('get_orderbook');
+  });
+});
