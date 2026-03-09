@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { allToolDefs } from '../../src/tool-registry.js';
 
@@ -33,11 +34,24 @@ const expectedToolNames = [
 ];
 
 describe('tool-registry', () => {
-  it('docs/tools.md の 28 ツールがすべて登録されている', () => {
+  it('期待する 28 ツール名セットと一致する', () => {
     const actualNames = allToolDefs.map((toolDef) => toolDef.name);
 
     expect(actualNames).toHaveLength(28);
     expect([...actualNames].sort()).toEqual([...expectedToolNames].sort());
+  });
+
+  it('docs/tools.md のツール一覧表と registry が実ファイル同士で一致する', () => {
+    const docs = readFileSync(new URL('../../docs/tools.md', import.meta.url), 'utf8');
+    const actualNames = allToolDefs.map((toolDef) => toolDef.name);
+    const docsToolNames = Array.from(
+      docs.matchAll(/^\|\s*`([^`]+)`\s*\|/gm),
+      (match) => match[1]
+    ).filter((name) => actualNames.includes(name));
+
+    expect(docsToolNames).toHaveLength(28);
+    expect(new Set(docsToolNames).size).toBe(docsToolNames.length);
+    expect([...docsToolNames].sort()).toEqual([...actualNames].sort());
   });
 
   it('ツール名の重複がない', () => {

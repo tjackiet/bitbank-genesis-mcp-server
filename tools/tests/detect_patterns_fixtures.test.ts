@@ -62,6 +62,64 @@ function buildFormingDoubleBottomCandles(year = 2026): Candle[] {
   return closes.map((close, index) => makeCandle(index, close, year));
 }
 
+function buildDescendingTriangleInvalidBreakoutCandles(year = 2026): Candle[] {
+  const closes = [
+    120, 130, 124, 116, 100, 112, 125, 118, 101, 110, 120, 114,
+    100, 108, 115, 110, 101, 107, 128, 132, 130, 128, 126, 124,
+  ];
+
+  return closes.map((close, index) => makeCandle(index, close, year));
+}
+
+function buildRectangleRangeCandles(year = 2026): Candle[] {
+  const closes = [
+    105, 110, 104, 109, 101, 108, 102, 110, 101, 109, 100, 108,
+    102, 109, 101, 110, 100, 109, 101, 108, 102, 109, 101, 110,
+  ];
+
+  return closes.map((close, index) => makeCandle(index, close, year));
+}
+
+function buildRisingChannelCandles(year = 2026): Candle[] {
+  const closes = [
+    100, 108, 104, 112, 108, 116, 112, 120, 116, 124, 120, 128,
+    124, 132, 128, 136, 132, 140, 136, 144, 140, 148, 144, 152,
+    148, 156, 152, 160, 156, 164,
+  ];
+
+  return closes.map((close, index) => makeCandle(index, close, year));
+}
+
+function buildBullFlagFailureCandles(year = 2026): Candle[] {
+  const closes = [
+    100, 108, 116, 124, 132, 140,
+    136, 138, 134, 136, 132, 134, 130, 132, 128, 130,
+    120, 118, 116, 114,
+  ];
+
+  return closes.map((close, index) => makeCandle(index, close, year));
+}
+
+function buildBullPennantSuccessCandles(year = 2026): Candle[] {
+  const closes = [
+    100, 110, 122, 136, 150, 165,
+    158, 162, 154, 160, 155, 159, 156, 158, 157, 157.8,
+    157.2, 158.1, 157.4, 170, 172, 174,
+  ];
+
+  return closes.map((close, index) => makeCandle(index, close, year));
+}
+
+function buildBullPennantFailureCandles(year = 2026): Candle[] {
+  const closes = [
+    100, 110, 122, 136, 150, 165,
+    158, 162, 154, 160, 155, 159, 156, 158, 157, 157.8,
+    157.2, 158.1, 157.4, 148, 146, 144,
+  ];
+
+  return closes.map((close, index) => makeCandle(index, close, year));
+}
+
 describe('detect_patterns fixtures', () => {
   const mockedAnalyzeIndicators = vi.mocked(analyzeIndicators);
 
@@ -151,5 +209,163 @@ describe('detect_patterns fixtures', () => {
     expect(res.data.patterns).toEqual([]);
     expect(res.data.overlays.ranges).toEqual([]);
     expect(res.meta.count).toBe(0);
+  });
+
+  it('descending triangle の逆方向ブレイクは invalid / failure として保持できる', async () => {
+    mockedAnalyzeIndicators.mockResolvedValueOnce(
+      indicatorsOk(buildDescendingTriangleInvalidBreakoutCandles()) as any
+    );
+
+    const res: any = await detectPatterns('btc_jpy', '1day', 24, {
+      patterns: ['triangle_descending'],
+      includeCompleted: true,
+      includeInvalid: true,
+    });
+
+    expect(res.ok).toBe(true);
+    expect(res.data.patterns.length).toBeGreaterThan(0);
+    expect(res.data.patterns).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: 'triangle_descending',
+          status: 'invalid',
+          breakoutDirection: 'up',
+          outcome: 'failure',
+          timeframe: '1day',
+          timeframeLabel: '日足',
+        }),
+      ])
+    );
+  });
+
+  it('includeInvalid=false のとき invalid な triangle は結果から除外される', async () => {
+    mockedAnalyzeIndicators.mockResolvedValueOnce(
+      indicatorsOk(buildDescendingTriangleInvalidBreakoutCandles()) as any
+    );
+
+    const res: any = await detectPatterns('btc_jpy', '1day', 24, {
+      patterns: ['triangle_descending'],
+      includeCompleted: true,
+      includeInvalid: false,
+    });
+
+    expect(res.ok).toBe(true);
+    expect(res.data.patterns).toEqual([]);
+  });
+
+  it('矩形レンジの fixture を triangle として誤検出しない', async () => {
+    mockedAnalyzeIndicators.mockResolvedValueOnce(
+      indicatorsOk(buildRectangleRangeCandles()) as any
+    );
+
+    const res: any = await detectPatterns('btc_jpy', '1day', 24, {
+      patterns: ['triangle'],
+      includeForming: true,
+      includeCompleted: true,
+      includeInvalid: true,
+    });
+
+    expect(res.ok).toBe(true);
+    expect(res.data.patterns).toEqual([]);
+  });
+
+  it('平行な上昇チャネルの fixture を wedge として誤検出しない', async () => {
+    mockedAnalyzeIndicators.mockResolvedValueOnce(
+      indicatorsOk(buildRisingChannelCandles()) as any
+    );
+
+    const res: any = await detectPatterns('btc_jpy', '1day', 30, {
+      patterns: ['rising_wedge', 'falling_wedge'],
+      includeForming: true,
+      includeCompleted: true,
+      includeInvalid: true,
+    });
+
+    expect(res.ok).toBe(true);
+    expect(res.data.patterns).toEqual([]);
+  });
+
+  it('bull flag の逆方向ブレイクは invalid / failure として保持できる', async () => {
+    mockedAnalyzeIndicators.mockResolvedValueOnce(
+      indicatorsOk(buildBullFlagFailureCandles()) as any
+    );
+
+    const res: any = await detectPatterns('btc_jpy', '1day', 20, {
+      patterns: ['flag'],
+      includeCompleted: true,
+      includeInvalid: true,
+    });
+
+    expect(res.ok).toBe(true);
+    expect(res.data.patterns).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: 'flag',
+          status: 'invalid',
+          breakoutDirection: 'down',
+          outcome: 'failure',
+          timeframe: '1day',
+          timeframeLabel: '日足',
+          targetMethod: 'flagpole_projection',
+        }),
+      ])
+    );
+  });
+
+  it('bull pennant の順方向ブレイクは success として保持できる', async () => {
+    mockedAnalyzeIndicators.mockResolvedValueOnce(
+      indicatorsOk(buildBullPennantSuccessCandles()) as any
+    );
+
+    const res: any = await detectPatterns('btc_jpy', '1day', 22, {
+      patterns: ['pennant'],
+      includeCompleted: true,
+      includeInvalid: true,
+    });
+
+    expect(res.ok).toBe(true);
+    expect(res.data.patterns).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: 'pennant',
+          status: 'completed',
+          poleDirection: 'up',
+          breakoutDirection: 'up',
+          outcome: 'success',
+          isTrendContinuation: true,
+          timeframe: '1day',
+          timeframeLabel: '日足',
+          targetMethod: 'flagpole_projection',
+        }),
+      ])
+    );
+  });
+
+  it('bull pennant の逆方向ブレイクは failure として保持できる', async () => {
+    mockedAnalyzeIndicators.mockResolvedValueOnce(
+      indicatorsOk(buildBullPennantFailureCandles()) as any
+    );
+
+    const res: any = await detectPatterns('btc_jpy', '1day', 22, {
+      patterns: ['pennant'],
+      includeCompleted: true,
+      includeInvalid: true,
+    });
+
+    expect(res.ok).toBe(true);
+    expect(res.data.patterns).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: 'pennant',
+          poleDirection: 'up',
+          breakoutDirection: 'down',
+          outcome: 'failure',
+          isTrendContinuation: false,
+          timeframe: '1day',
+          timeframeLabel: '日足',
+          targetMethod: 'flagpole_projection',
+        }),
+      ])
+    );
   });
 });
