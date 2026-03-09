@@ -2,7 +2,12 @@ import analyzeFibonacci from './analyze_fibonacci.js';
 import { ok, failFromError, failFromValidation } from '../lib/result.js';
 import { createMeta, ensurePair } from '../lib/validate.js';
 import { formatPrice, formatPair, formatPercent } from '../lib/formatter.js';
-import { AnalyzeMtfFibonacciInputSchema, AnalyzeMtfFibonacciOutputSchema } from '../src/schemas.js';
+import { z } from 'zod';
+import { AnalyzeMtfFibonacciInputSchema as _BaseInputSchema, AnalyzeMtfFibonacciOutputSchema } from '../src/schemas.js';
+
+const AnalyzeMtfFibonacciInputSchema = _BaseInputSchema.extend({
+	lookbackDays: z.array(z.number().int().min(14).max(365)).nonempty().optional().default([30, 90, 180]),
+});
 import type { ToolDefinition } from '../src/tool-definition.js';
 import type { Pair } from '../src/types/domain.d.ts';
 
@@ -174,9 +179,12 @@ export default async function analyzeMtfFibonacci(
 	if (!chk.ok) return failFromValidation(chk, AnalyzeMtfFibonacciOutputSchema) as any;
 
 	try {
+		// Deduplicate lookback periods
+		const uniqueDays = [...new Set(lookbackDays)];
+
 		// Run all lookback periods in parallel
 		const results = await Promise.all(
-			lookbackDays.map(async (days) => {
+			uniqueDays.map(async (days) => {
 				const res = await analyzeFibonacci({
 					pair: chk.pair,
 					type: '1day',
@@ -239,7 +247,7 @@ export default async function analyzeMtfFibonacci(
 			confluence,
 		};
 
-		const meta = createMeta(chk.pair as Pair, { lookbackDays });
+		const meta = createMeta(chk.pair as Pair, { lookbackDays: uniqueDays });
 
 		return AnalyzeMtfFibonacciOutputSchema.parse({
 			ok: true,
