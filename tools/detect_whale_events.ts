@@ -44,8 +44,9 @@ export default async function detectWhaleEvents(
   try {
     const dep = await getDepth(chk.pair, { maxLevels: 200 });
     if (!dep?.ok) return fail(dep?.summary || 'depth failed', (dep?.meta as { errorType?: string })?.errorType || 'internal');
-    const asks: Array<[number, number]> = dep?.data?.asks || [];
-    const bids: Array<[number, number]> = dep?.data?.bids || [];
+    const asks: Array<[number, number]> | undefined = dep?.data?.asks;
+    const bids: Array<[number, number]> | undefined = dep?.data?.bids;
+    if (!asks || !bids) return fail('depth response missing asks/bids', 'upstream');
     const bestBid = bids.length ? Math.max(...bids.map(([p]) => Number(p))) : null;
     const bestAsk = asks.length ? Math.min(...asks.map(([p]) => Number(p))) : null;
     const mid = (bestBid != null && bestAsk != null) ? (bestBid + bestAsk) / 2 : null;
@@ -59,7 +60,8 @@ export default async function detectWhaleEvents(
     const candlesRes = await getCandles(chk.pair, lb.type, undefined, lb.limit);
     if (!candlesRes?.ok) return fail(candlesRes?.summary || 'candles failed', (candlesRes?.meta as { errorType?: string })?.errorType || 'internal');
     const candles: Array<{ close: number }> = candlesRes?.data?.normalized || [];
-    const priceChange = candles.length >= 2 ? (candles[candles.length - 1].close - candles[0].close) / candles[0].close : 0;
+    const validCloses = candles.map(c => c.close).filter((v): v is number => typeof v === 'number' && isFinite(v));
+    const priceChange = validCloses.length >= 2 ? (validCloses[validCloses.length - 1] - validCloses[0]) / validCloses[0] : 0;
 
     const largeBids = extractLargeOrders(bids, minSize);
     const largeAsks = extractLargeOrders(asks, minSize);
