@@ -53,7 +53,7 @@ export default async function renderChartSvg(args: RenderChartSvgOptions = {}): 
   const style = ((args as any).style === 'line' ? 'line' : 'candles') as 'candles' | 'line';
   // depth は特別扱い（ローソクを描かない）
   const isDepth = (args as any).style === 'depth';
-  const withIchimoku = args.withIchimoku ?? false;
+  let withIchimoku = args.withIchimoku ?? false;
   const ichimokuOpt = args.ichimoku || {};
   // モード正規化: light→default, full→extended（後方互換）
   const normalizeIchimokuMode = (m: unknown): 'default' | 'extended' => {
@@ -219,6 +219,7 @@ export default async function renderChartSvg(args: RenderChartSvgOptions = {}): 
         // keep user intent for ichimoku unless very heavy
         if (limit * (1 + (bbMode === 'extended' ? 3 : 1)) > 800) {
           // fallback to candles only if still heavy
+          withIchimoku = false;
           (args as any).withIchimoku = false;
         }
       }
@@ -735,36 +736,53 @@ export default async function renderChartSvg(args: RenderChartSvgOptions = {}): 
     `;
   }
 
+  // --- インジケータメタデータの構築（withLegend に依存しない） ---
+  if (withSMA?.length > 0) {
+    withSMA.forEach((p) => {
+      legendMeta[`SMA_${p}`] = `SMA ${p} (${smaColors[p]})`;
+    });
+  }
+  if (withEMA?.length > 0) {
+    withEMA.forEach((p: number) => {
+      legendMeta[`EMA_${p}`] = `EMA ${p} (${emaColors[p] || '#ff9f1c'})`;
+    });
+  }
+  if (withBB) {
+    if (bbMode === 'extended') {
+      legendMeta.BB1 = 'BB ±1σ';
+      legendMeta.BB2 = 'BB ±2σ';
+      legendMeta.BB3 = 'BB ±3σ';
+    } else {
+      legendMeta.BB = 'Bollinger Bands (±2σ)';
+    }
+  }
+  if (withIchimoku) {
+    legendMeta.Ichimoku = '一目均衡表';
+  }
+
   // --- 凡例の動的構築 ---
   if (withLegend) {
     const legendItems: Array<{ text: string; color: string }> = [];
     if (withSMA?.length > 0) {
       withSMA.forEach((p) => {
-        legendMeta[`SMA_${p}`] = `SMA ${p} (${smaColors[p]})`;
         legendItems.push({ text: `SMA ${p}`, color: smaColors[p] || '#e5e7eb' });
       });
     }
     if (withEMA?.length > 0) {
       withEMA.forEach((p: number) => {
-        legendMeta[`EMA_${p}`] = `EMA ${p} (${emaColors[p] || '#ff9f1c'})`;
         legendItems.push({ text: `EMA ${p}`, color: emaColors[p] || '#ff9f1c' });
       });
     }
     if (withBB) {
       if (bbMode === 'extended') {
-        legendMeta.BB1 = 'BB ±1σ';
-        legendMeta.BB2 = 'BB ±2σ';
-        legendMeta.BB3 = 'BB ±3σ';
         legendItems.push({ text: 'BB ±1σ', color: bbColors.line1 });
         legendItems.push({ text: 'BB ±2σ', color: bbColors.line2 });
         legendItems.push({ text: 'BB ±3σ', color: bbColors.line3 });
       } else {
-        legendMeta.BB = 'Bollinger Bands (±2σ)';
         legendItems.push({ text: 'BB ±2σ', color: bbColors.line2 });
       }
     }
     if (withIchimoku) {
-      legendMeta.Ichimoku = '一目均衡表';
       legendItems.push({ text: '転換線', color: '#00a3ff' });
       legendItems.push({ text: '基準線', color: '#ff4d4d' });
     }
