@@ -110,17 +110,18 @@ matplotlib/D3.js 等で独自にチャートを描画する必要はありませ
 - 過去データに基づくバックテストであり、将来の成果を保証するものではありません`,
 	inputSchema: RunBacktestInputSchema as any,
 	handler: async (args: any) => {
+		const parsed = RunBacktestInputSchema.parse(args);
 		const res = await runBacktest({
-			pair: args.pair,
-			timeframe: args.timeframe,
-			period: args.period,
-			strategy: args.strategy,
-			fee_bp: args.fee_bp,
-			execution: args.execution,
-			outputDir: args.outputDir,
-			savePng: args.savePng ?? false,  // デフォルト: false（ファイルシステム非共有のため）
-			includeSvg: args.includeSvg ?? true,  // デフォルト: true（SVGを返す）
-			chartDetail: args.chartDetail ?? 'default',  // デフォルト: 軽量チャート
+			pair: parsed.pair,
+			timeframe: parsed.timeframe,
+			period: parsed.period,
+			strategy: parsed.strategy,
+			fee_bp: parsed.fee_bp,
+			execution: parsed.execution,
+			outputDir: parsed.outputDir,
+			savePng: parsed.savePng,
+			includeSvg: parsed.includeSvg,
+			chartDetail: parsed.chartDetail,
 		});
 
 		if (!res.ok) {
