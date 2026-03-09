@@ -25,9 +25,8 @@ function ensureOutputDir(dir: string): void {
     if (!existsSync(dir)) {
       mkdirSync(dir, { recursive: true });
     }
-  } catch (e) {
-    const errMsg = e instanceof Error ? e.message : String(e);
-    throw new Error(`Cannot create output directory: ${dir} - ${errMsg}`);
+  } catch {
+    // best-effort: directory creation failure will surface via svgToPng
   }
 }
 
