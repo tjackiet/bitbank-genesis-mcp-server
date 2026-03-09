@@ -226,15 +226,15 @@ export default async function analyzeMarketSignal(
       if (momContribAbs > 0.1) {
         actions.push({ priority: momContribAbs > 0.15 ? 'high' : 'medium', tool: 'get_indicators', reason: `モメンタム寄与が${momContribAbs > 0.15 ? '大' : '中程度'}(${breakdown.momentum.contribution.toFixed(2)})。指標詳細確認推奨`, suggestedParams: { limit: 200 } });
       }
-      const buyContribAbs = Math.abs(breakdown.buyPressure.contribution);
-      if (buyContribAbs > 0.25) {
-        actions.push({ priority: 'medium', tool: 'get_orderbook', reason: `板圧力寄与が大(${breakdown.buyPressure.contribution.toFixed(2)})。帯域別分析推奨`, suggestedParams: { mode: 'pressure', bandsPct: [0.001, 0.005, 0.01] } });
+      const buyPressureAbs = Math.abs(breakdown.buyPressure.rawValue);
+      if (buyPressureAbs > 0.5) {
+        actions.push({ priority: 'medium', tool: 'get_orderbook', reason: `板圧力が極端(${breakdown.buyPressure.rawValue.toFixed(2)})。帯域別分析推奨`, suggestedParams: { mode: 'pressure', bandsPct: [0.001, 0.005, 0.01] } });
       }
       if (Math.abs(scoreVal) < 0.3) {
-        actions.push({ priority: 'medium', tool: 'detect_forming_chart_patterns', reason: `スコア中立圏(${scoreVal.toFixed(3)})。レンジ・パターン形成可能性`, suggestedParams: { view: 'detailed' } });
+        actions.push({ priority: 'medium', tool: 'detect_patterns', reason: `スコア中立圏(${scoreVal.toFixed(3)})。レンジ・パターン形成可能性`, suggestedParams: { view: 'detailed' } });
       }
       if (conf.level === 'low') {
-        actions.push({ priority: 'high', tool: 'multiple_analysis', reason: '要素間で矛盾。複数角度からの検証必須' });
+        actions.push({ priority: 'high', tool: 'analyze_indicators', reason: '要素間で矛盾。複数角度からの検証必須', suggestedParams: { limit: 200 } });
       }
       const priorityOrder: Record<'high' | 'medium' | 'low', number> = { high: 0, medium: 1, low: 2 };
       return actions.sort((a, b) => priorityOrder[a.priority] - priorityOrder[b.priority]);
