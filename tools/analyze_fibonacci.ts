@@ -123,8 +123,10 @@ function calculateExtensions(
 
 	return ratios.map((ratio) => {
 		// Extensions project beyond the swing points
+		// Uptrend: project above swingHigh  → swingLow + range * ratio
+		// Downtrend: project below swingLow → swingHigh - range * ratio
 		const price =
-			trend === 'down'
+			trend === 'up'
 				? swingLow.price + range * ratio
 				: swingHigh.price - range * ratio;
 
