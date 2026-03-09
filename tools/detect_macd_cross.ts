@@ -48,7 +48,7 @@ function detectCrossInRange(
 	candles: Array<{ isoTime?: string | null; close?: number | null }>,
 	start: number, end: number, n: number, pairName: string,
 ): CrossDetailed | null {
-	for (let i = start; i <= end; i++) {
+	for (let i = end; i >= start; i--) {
 		const prevDiff = diffAt(line, signal, i - 1);
 		const currDiff = diffAt(line, signal, i);
 		if (prevDiff == null || currDiff == null) continue;
@@ -145,7 +145,10 @@ async function screenMode(
 		if (sortBy === 'histogram') return (Math.abs(safeNum(b.histogramDelta)) - Math.abs(safeNum(a.histogramDelta))) * (order === -1 ? 1 : -1);
 		if (sortBy === 'return') return (projReturn(b.returnSinceCrossPct) - projReturn(a.returnSinceCrossPct)) * (order === -1 ? 1 : -1);
 		if (sortBy === 'barsAgo') return (safeNum(a.barsAgo) - safeNum(b.barsAgo)) * (order === -1 ? 1 : -1);
-		return (safeNum(a.barsAgo) - safeNum(b.barsAgo)) * (order === -1 ? 1 : -1);
+		// sortBy === 'date': compare crossDate strings directly
+		const dateA = a.crossDate || '';
+		const dateB = b.crossDate || '';
+		return dateA < dateB ? -1 * order : dateA > dateB ? 1 * order : 0;
 	});
 	if (opts.limit != null && opts.limit > 0) filtered = filtered.slice(0, opts.limit);
 
@@ -231,7 +234,7 @@ async function singlePairMode(
 
 		let lastCrossIdx: number | null = null;
 		let lastCrossType: 'golden' | 'dead' | null = null;
-		for (let i = Math.max(1, nowIdx - 3); i <= nowIdx; i++) {
+		for (let i = nowIdx; i >= Math.max(1, nowIdx - 3); i--) {
 			const hp = hist[i - 1];
 			const hc = hist[i];
 			if (hp != null && hc != null) {
