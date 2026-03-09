@@ -101,7 +101,7 @@ export default async function runBacktest(input: RunBacktestInput): Promise<RunB
 
     // 必要なバー数を計算
     const periodBars = getPeriodBars(timeframe, period);
-    const requiredBars = Math.max(strategy.requiredBars, ...Object.values(params).filter(v => typeof v === 'number'));
+    const requiredBars = strategy.requiredBars;
 
     // ローソク足を取得
     const candles = await fetchCandlesForBacktest(pair, timeframe, period, requiredBars);
@@ -127,28 +127,42 @@ export default async function runBacktest(input: RunBacktestInput): Promise<RunB
     const result = runBacktestEngine(candles, strategy, engineInput);
 
     // チャート描画用データ
-    const chartData: GenericBacktestChartData = {
-      candles,
-      overlays: result.overlays,
-      trades: result.trades,
-      equity_curve: result.equity_curve,
-      drawdown_curve: result.drawdown_curve,
-      input: {
-        pair,
-        timeframe,
-        period,
-        strategyName: strategy.name,
-        strategyParams: params,
-        fee_bp,
-      },
-      summary: result.summary,
+    const chartInput = {
+      pair,
+      timeframe,
+      period,
+      strategyName: strategy.name,
+      strategyParams: params,
+      fee_bp,
     };
 
-    // チャート描画
-    const svg = renderBacktestChartGeneric(chartData, chartDetail);
+    // チャート描画（savePng または includeSvg が有効な場合のみ）
+    let svg: string | undefined;
+    if (savePng || includeSvg) {
+      const chartData: GenericBacktestChartData = {
+        candles,
+        overlays: result.overlays,
+        trades: result.trades,
+        equity_curve: result.equity_curve,
+        drawdown_curve: result.drawdown_curve,
+        input: chartInput,
+        summary: result.summary,
+      };
+      svg = renderBacktestChartGeneric(chartData, chartDetail);
+    }
 
     // サマリーテキスト生成
-    const summaryText = generateSummaryText(chartData);
+    const summaryText = result
+      ? generateSummaryText({
+          candles,
+          overlays: result.overlays,
+          trades: result.trades,
+          equity_curve: result.equity_curve,
+          drawdown_curve: result.drawdown_curve,
+          input: chartInput,
+          summary: result.summary,
+        })
+      : '';
 
     // 結果を構築
     const output: RunBacktestOutput = {
@@ -158,7 +172,7 @@ export default async function runBacktest(input: RunBacktestInput): Promise<RunB
     };
 
     // PNG ファイル保存（savePng: true の場合のみ）
-    if (savePng) {
+    if (savePng && svg) {
       try {
         ensureOutputDir(outputDir);
         const filename = generateBacktestChartFilename(pair, timeframe, strategyConfig.type, 'png');
@@ -167,13 +181,15 @@ export default async function runBacktest(input: RunBacktestInput): Promise<RunB
         output.chartPath = pngPath;
       } catch (pngError) {
         const errorMsg = pngError instanceof Error ? pngError.message : String(pngError);
-        output.svg = svg;
+        if (includeSvg) {
+          output.svg = svg;
+        }
         output.pngError = `PNG generation failed: ${errorMsg}`;
       }
     }
 
     // SVG 文字列を含める場合
-    if (includeSvg) {
+    if (includeSvg && svg) {
       output.svg = svg;
     }
 
