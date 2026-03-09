@@ -34,6 +34,11 @@ export default async function renderDepthSvg(args: {
     const asks: Array<[string, string]> = depth.data.asks || [];
     const bids: Array<[string, string]> = depth.data.bids || [];
 
+    // 両側の板が揃っていなければ深度チャートとして描画不可
+    if (!asks.length || !bids.length) {
+      return fail('板データが不足しています（asks/bids の両方が必要です）', 'upstream');
+    }
+
     // 価格レンジ
     const minBid = Number(bids[bids.length - 1]?.[0] ?? bids[0]?.[0] ?? 0);
     const maxAsk = Number(asks[asks.length - 1]?.[0] ?? asks[0]?.[0] ?? 0);
