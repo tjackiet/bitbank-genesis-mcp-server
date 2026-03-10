@@ -6,7 +6,7 @@
  */
 
 import { ok, fail } from '../../lib/result.js';
-import { nowIso, toIsoMs, dayjs } from '../../lib/datetime.js';
+import { nowIso, toIsoMs, parseIso8601 } from '../../lib/datetime.js';
 import { formatPair, formatPrice } from '../../lib/formatter.js';
 import { getDefaultClient, PrivateApiError } from '../../src/private/client.js';
 import {
@@ -51,10 +51,10 @@ export default async function getMyOrders(args: {
 		if (pair) params.pair = pair;
 		if (count !== 100) params.count = String(count);
 
-		// ISO8601 → unix ms 変換（不正な日時はエラーにする）
+		// ISO8601 → unix ms 変換（strict parse で不正日時を弾く）
 		if (since) {
-			const parsed = dayjs(since);
-			if (!parsed.isValid()) {
+			const parsed = parseIso8601(since);
+			if (!parsed) {
 				return GetMyOrdersOutputSchema.parse(
 					fail(`since の日時形式が不正です: ${since}`, 'validation_error'),
 				);
@@ -62,8 +62,8 @@ export default async function getMyOrders(args: {
 			params.since = String(parsed.valueOf());
 		}
 		if (end) {
-			const parsed = dayjs(end);
-			if (!parsed.isValid()) {
+			const parsed = parseIso8601(end);
+			if (!parsed) {
 				return GetMyOrdersOutputSchema.parse(
 					fail(`end の日時形式が不正です: ${end}`, 'validation_error'),
 				);
