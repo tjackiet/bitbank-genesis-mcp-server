@@ -74,7 +74,7 @@ interface PnlResult {
 
 /**
  * 約定履歴から通貨ごとの平均取得単価と実現損益を算出する。
- * 移動平均法（総平均法）を採用。
+ * 移動平均法（総平均法）を採用。手数料（fee_amount_quote）を考慮。
  */
 function calcPnl(trades: RawTrade[], asset: string): PnlResult {
 	// この通貨に関する約定を古い順にソート
@@ -88,7 +88,7 @@ function calcPnl(trades: RawTrade[], asset: string): PnlResult {
 	}
 
 	let holdingQty = 0;
-	let holdingCost = 0; // 保有分の取得原価合計
+	let holdingCost = 0; // 保有分の取得原価合計（手数料込み）
 	let realizedPnl = 0;
 
 	for (const t of relevant) {
@@ -96,15 +96,19 @@ function calcPnl(trades: RawTrade[], asset: string): PnlResult {
 		const price = Number(t.price);
 		if (!Number.isFinite(qty) || !Number.isFinite(price)) continue;
 
+		// 決済通貨（JPY）建ての手数料
+		const feeQuote = Number(t.fee_amount_quote) || 0;
+
 		if (t.side === 'buy') {
-			holdingCost += qty * price;
+			// 買い: 約定金額 + 手数料 = 取得原価
+			holdingCost += qty * price + feeQuote;
 			holdingQty += qty;
 		} else {
 			// sell: 移動平均法で原価を按分
 			if (holdingQty > 0) {
 				const avgCost = holdingCost / holdingQty;
 				const sellCost = qty * avgCost;
-				const sellRevenue = qty * price;
+				const sellRevenue = qty * price - feeQuote; // 売却収入から手数料を差し引く
 				realizedPnl += sellRevenue - sellCost;
 				holdingCost -= sellCost;
 				holdingQty -= qty;
@@ -115,7 +119,7 @@ function calcPnl(trades: RawTrade[], asset: string): PnlResult {
 				}
 			} else {
 				// 保有ゼロ状態での売り（空売り等）: 実現損益のみ計上
-				realizedPnl += qty * price;
+				realizedPnl += qty * price - feeQuote;
 			}
 		}
 	}
@@ -207,10 +211,10 @@ export default async function analyzeMyPortfolioHandler(args: {
 			fetchTickerPrices(),
 		]);
 
-		// ゼロでない資産のみ（JPY 除外）
+		// ゼロでない資産（JPY 含む）
 		const nonZeroAssets = rawAssets.assets.filter((a) => {
 			const amount = Number(a.onhand_amount);
-			return Number.isFinite(amount) && amount > 0 && a.asset !== 'jpy';
+			return Number.isFinite(amount) && amount > 0;
 		});
 
 		// 2. 約定履歴取得（PnL 計算用、最大1000件）
@@ -237,11 +241,33 @@ export default async function analyzeMyPortfolioHandler(args: {
 
 		const holdings = nonZeroAssets.map((a) => {
 			const amount = a.onhand_amount;
-			const currentPrice = prices.get(a.asset);
-			const jpyValue = currentPrice ? Number(amount) * currentPrice : undefined;
+			const isJpy = a.asset === 'jpy';
+
+			// JPY はそのまま評価額 = 保有量
+			const currentPrice = isJpy ? 1 : prices.get(a.asset);
+			const jpyValue = isJpy
+				? Number(amount)
+				: (currentPrice ? Number(amount) * currentPrice : undefined);
 
 			if (jpyValue != null && Number.isFinite(jpyValue)) {
 				totalJpyValue += jpyValue;
+			}
+
+			// JPY は損益計算不要
+			if (isJpy) {
+				return {
+					asset: a.asset,
+					pair: 'jpy',
+					amount,
+					avg_buy_price: undefined,
+					current_price: undefined,
+					jpy_value: jpyValue != null ? Math.round(jpyValue) : undefined,
+					cost_basis: undefined,
+					unrealized_pnl: undefined,
+					unrealized_pnl_pct: undefined,
+					realized_pnl: undefined,
+					trade_count: undefined,
+				};
 			}
 
 			const pair = `${a.asset}_jpy`;
@@ -277,11 +303,29 @@ export default async function analyzeMyPortfolioHandler(args: {
 			};
 		});
 
+		// 売り切り銘柄の実現損益を集計（現在保有ゼロだが約定履歴がある通貨）
+		if (include_pnl && allTrades.length > 0) {
+			const heldAssets = new Set(nonZeroAssets.map((a) => a.asset));
+			const tradedAssets = new Set(
+				allTrades
+					.map((t) => t.pair.replace('_jpy', ''))
+					.filter((a) => a !== 'jpy'),
+			);
+			for (const asset of tradedAssets) {
+				if (!heldAssets.has(asset)) {
+					const pnl = calcPnl(allTrades, asset);
+					if (pnl.realized_pnl !== 0) {
+						totalRealizedPnl += pnl.realized_pnl;
+					}
+				}
+			}
+		}
+
 		// JPY 評価額降順ソート
 		holdings.sort((a, b) => (b.jpy_value ?? 0) - (a.jpy_value ?? 0));
 
-		// 合計評価損益
-		const totalUnrealizedPnl = hasCostData ? Math.round(totalJpyValue - totalCostBasis) : undefined;
+		// 合計評価損益（暗号資産部分のみ。JPY 残高は cost_basis に含めない）
+		const totalUnrealizedPnl = hasCostData ? Math.round(totalJpyValue - totalCostBasis - (holdings.find((h) => h.asset === 'jpy')?.jpy_value ?? 0)) : undefined;
 		const totalUnrealizedPnlPct = (totalUnrealizedPnl != null && totalCostBasis > 0)
 			? Math.round((totalUnrealizedPnl / totalCostBasis) * 10000) / 100
 			: undefined;
@@ -296,10 +340,12 @@ export default async function analyzeMyPortfolioHandler(args: {
 		}
 
 		// 5. サマリー文字列の生成
+		const cryptoHoldings = holdings.filter((h) => h.asset !== 'jpy');
+		const jpyHolding = holdings.find((h) => h.asset === 'jpy');
 		const lines: string[] = [];
-		lines.push(`ポートフォリオ分析: ${holdings.length}銘柄`);
+		lines.push(`ポートフォリオ分析: 暗号資産 ${cryptoHoldings.length}銘柄${jpyHolding ? ' + JPY' : ''}`);
 		if (totalJpyValue > 0) {
-			lines.push(`合計評価額: ${formatPrice(Math.round(totalJpyValue))}`);
+			lines.push(`口座合計: ${formatPrice(Math.round(totalJpyValue))}${jpyHolding ? ` (うち JPY: ${formatPriceJPY(jpyHolding.jpy_value ?? 0)})` : ''}`);
 		}
 		if (totalUnrealizedPnl != null) {
 			const sign = totalUnrealizedPnl >= 0 ? '+' : '';
@@ -311,8 +357,8 @@ export default async function analyzeMyPortfolioHandler(args: {
 		}
 		lines.push('');
 
-		// 銘柄別サマリー
-		for (const h of holdings) {
+		// 銘柄別サマリー（暗号資産のみ。JPY は口座合計に含む）
+		for (const h of cryptoHoldings) {
 			const assetUpper = h.asset.toUpperCase();
 			let line = `${assetUpper}: ${h.amount}`;
 			if (h.jpy_value != null) {
