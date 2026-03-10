@@ -164,8 +164,8 @@ async function fetchTechnical(pairs: string[]): Promise<TechnicalSummary[]> {
 				smaDeviation = Math.round(((lastClose - sma25) / sma25) * 10000) / 100;
 			}
 
-			// trend は analyzeIndicators の meta に含まれる
-			const trend = (res.meta as any)?.trend;
+			// trend は analyzeIndicators の data に含まれる
+			const trend = data?.trend;
 
 			// シグナル判定
 			// analyzeIndicators の trend は uptrend/strong_uptrend/downtrend/strong_downtrend/sideways
