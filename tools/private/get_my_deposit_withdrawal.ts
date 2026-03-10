@@ -286,8 +286,14 @@ export default async function getMyDepositWithdrawal(args: {
 		const lines: string[] = [];
 		const assetLabel = asset ? asset.toUpperCase() : '全通貨';
 		lines.push(`入出金履歴: ${assetLabel}`);
+		lines.push(`取得時刻: ${timestamp}`);
+		lines.push(`取得状態: ${isComplete ? 'complete' : 'partial'}`);
+		lines.push(`警告有無: ${warnings.length > 0 ? 'yes' : 'no'}`);
+		if (warnings.length > 0) {
+			lines.push('※ 一部API取得失敗あり（詳細は末尾の警告を参照）');
+		}
 		if (!isComplete) {
-			lines.push('（一部データのみ取得。全件ではありません）');
+			lines.push('※ 全件ではなく一部のみ取得されています。API件数上限に達した可能性があります');
 		}
 		lines.push('');
 
@@ -301,7 +307,7 @@ export default async function getMyDepositWithdrawal(args: {
 				lines.push(`  JPY 入金: ${jpyDeposits.length}件 合計 ${formatPrice(Math.round(totalJpy))}`);
 			}
 			if (cryptoDeposits.length > 0) {
-				lines.push(`  暗号資産入庫: ${cryptoDeposits.length}件`);
+				lines.push(`  暗号資産入庫: ${cryptoDeposits.length}件（明細表示は先頭5件のみ）`);
 				for (const d of cryptoDeposits.slice(0, 5)) {
 					lines.push(`    ${d.asset.toUpperCase()} ${d.amount} (${d.status})${d.found_at ? ` ${d.found_at}` : ''}`);
 				}
@@ -323,7 +329,7 @@ export default async function getMyDepositWithdrawal(args: {
 				lines.push(`  JPY 出金: ${jpyWithdrawals.length}件 合計 ${formatPrice(Math.round(totalJpy))}`);
 			}
 			if (cryptoWithdrawals.length > 0) {
-				lines.push(`  暗号資産出庫: ${cryptoWithdrawals.length}件`);
+				lines.push(`  暗号資産出庫: ${cryptoWithdrawals.length}件（明細表示は先頭5件のみ）`);
 				for (const w of cryptoWithdrawals.slice(0, 5)) {
 					lines.push(`    ${w.asset.toUpperCase()} ${w.amount} (${w.status})${w.requested_at ? ` ${w.requested_at}` : ''}`);
 				}

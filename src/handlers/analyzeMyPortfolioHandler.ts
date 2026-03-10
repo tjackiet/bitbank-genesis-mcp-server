@@ -620,11 +620,57 @@ export default async function analyzeMyPortfolioHandler(args: {
 			technical = await fetchTechnical(jpyPairs);
 		}
 
+		// 5.5. depositWithdrawalStatus の判定（summary 生成より先に確定する）:
+		// - not_requested: include_deposit_withdrawal=false
+		// - available: 入出金データ取得成功＋分析実行
+		// - no_history: API取得成功・警告なし・本当に履歴0件
+		// - fallback: API取得失敗・partial failure 等で約定ベースにフォールバック
+		let depositWithdrawalStatus: 'available' | 'fallback' | 'no_history' | 'not_requested';
+		if (!include_deposit_withdrawal) {
+			depositWithdrawalStatus = 'not_requested';
+		} else if (dwSummary != null) {
+			depositWithdrawalStatus = 'available';
+		} else if (
+			dwData
+			&& !dwData.allFailed
+			&& dwData.warnings.length === 0
+			&& dwData.deposits.length === 0
+			&& dwData.withdrawals.length === 0
+		) {
+			depositWithdrawalStatus = 'no_history';
+		} else {
+			depositWithdrawalStatus = 'fallback';
+		}
+
 		// 6. サマリー文字列の生成
 		const lines: string[] = [];
 		lines.push(`ポートフォリオ分析: 暗号資産 ${cryptoHoldings.length}銘柄${jpyHolding ? ' + JPY' : ''}`);
+		lines.push(`取得時刻: ${timestamp}`);
 		if (totalJpyValue > 0) {
 			lines.push(`口座合計: ${formatPrice(Math.round(totalJpyValue))}${jpyHolding ? ` (うち JPY: ${formatPriceJPY(jpyHolding.jpy_value ?? 0)})` : ''}`);
+		}
+
+		// 入出金分析状態と分析基準をsummaryに明示（structuredContentを見ないLLM向け）
+		if (depositWithdrawalStatus === 'available') {
+			lines.push(`入出金分析状態: available`);
+			lines.push(`分析基準: deposit_withdrawal`);
+		} else if (depositWithdrawalStatus === 'fallback') {
+			lines.push(`入出金分析状態: fallback`);
+			lines.push(`分析基準: trade_only`);
+			if (dwData?.allFailed) {
+				lines.push('※ 入出金APIの取得に全て失敗したため、約定ベースの分析のみです');
+			} else {
+				lines.push('※ API取得失敗またはpartial failureのため、約定ベースの分析にフォールバックしています');
+			}
+		} else if (depositWithdrawalStatus === 'no_history') {
+			lines.push(`入出金分析状態: no_history`);
+			lines.push(`分析基準: trade_only`);
+			lines.push('※ 入出金履歴が0件のため、入出金ベース分析なし。約定ベースの分析のみです');
+		} else {
+			// not_requested
+			lines.push(`入出金分析状態: not_requested`);
+			lines.push(`分析基準: trade_only`);
+			lines.push('※ 入出金分析は未リクエスト。約定ベースの分析のみです');
 		}
 
 		// 入出金ベースの口座全体リターン（Phase 4）
@@ -712,30 +758,6 @@ export default async function analyzeMyPortfolioHandler(args: {
 		}
 
 		const summary = lines.join('\n');
-
-		// depositWithdrawalStatus の判定（data 組み立てより先に確定する）:
-		// - not_requested: include_deposit_withdrawal=false
-		// - available: 入出金データ取得成功＋分析実行
-		// - no_history: API取得成功・警告なし・本当に履歴0件
-		// - fallback: API取得失敗・partial failure 等で約定ベースにフォールバック
-		let depositWithdrawalStatus: 'available' | 'fallback' | 'no_history' | 'not_requested';
-		if (!include_deposit_withdrawal) {
-			depositWithdrawalStatus = 'not_requested';
-		} else if (dwSummary != null) {
-			depositWithdrawalStatus = 'available';
-		} else if (
-			dwData
-			&& !dwData.allFailed
-			&& dwData.warnings.length === 0
-			&& dwData.deposits.length === 0
-			&& dwData.withdrawals.length === 0
-		) {
-			// API 取得成功・警告なし・本当に履歴 0 件
-			depositWithdrawalStatus = 'no_history';
-		} else {
-			// dwData が null / allFailed / partial failure で 0 件 → fallback
-			depositWithdrawalStatus = 'fallback';
-		}
 
 		// deposit_withdrawal_summary の出し分け（status に基づく一貫した契約）:
 		// - available: dwSummary（実データ、analysis_basis='deposit_withdrawal'）
