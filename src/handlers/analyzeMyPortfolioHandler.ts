@@ -4,10 +4,10 @@
  * 1. get_my_assets で現在保有を取得
  * 2. get_my_trade_history で約定履歴を取得し、通貨ごとの平均取得単価・実現損益を算出
  * 3. ticker で現在価格を取得し、評価損益を算出
- * 4. （Phase 4）入出金履歴を取得し、口座全体の真のリターンを算出
+ * 4. （Phase 4）入出金履歴を取得し、口座全体のリターンを概算
  * 5. （オプション）テクニカル分析を統合
  *
- * 入出金データがある場合は「総入金額 vs 現在評価額」で口座全体のリターンを算出。
+ * 入出金データがある場合は「総入金額 vs 現在評価額」で口座全体のリターンを概算。
  * 入出金 API が失敗/データなしの場合は従来の約定ベース分析にフォールバック。
  */
 
@@ -68,37 +68,135 @@ interface RawWithdrawal {
 interface DepositWithdrawalData {
 	deposits: RawDeposit[];
 	withdrawals: RawWithdrawal[];
+	/** 一部の API リクエストが失敗した場合の警告メッセージ */
+	warnings: string[];
+	/** 全リクエストが失敗した場合 true */
+	allFailed: boolean;
+	/** 全履歴を取得できたか（false = API 件数上限に達した） */
+	isComplete: boolean;
+}
+
+/** 個別 API リクエストの結果をラップ */
+type FetchResult<T> = { ok: true; data: T } | { ok: false; error: string };
+
+async function tryGet<T>(client: BitbankPrivateClient, path: string, params?: Record<string, string>): Promise<FetchResult<T>> {
+	try {
+		const data = await client.get<T>(path, params);
+		return { ok: true, data };
+	} catch (err) {
+		const msg = err instanceof Error ? err.message : String(err);
+		return { ok: false, error: msg };
+	}
+}
+
+/** ページネーション付きで入金履歴を全件取得（最大 MAX_PAGES ページ） */
+const MAX_PAGES = 10;
+
+async function paginateDeposits(
+	client: BitbankPrivateClient,
+	baseParams: Record<string, string>,
+): Promise<{ deposits: RawDeposit[]; complete: boolean; error?: string }> {
+	const all: RawDeposit[] = [];
+	let since: string | undefined;
+	for (let page = 0; page < MAX_PAGES; page++) {
+		const params = { ...baseParams, count: '100', ...(since ? { since } : {}) };
+		const result = await tryGet<{ deposits: RawDeposit[] }>(client, '/v1/user/deposit_history', params);
+		if (!result.ok) {
+			return { deposits: all, complete: all.length === 0 ? false : true, error: result.error };
+		}
+		const batch = result.data.deposits || [];
+		all.push(...batch);
+		if (batch.length < 100) {
+			return { deposits: all, complete: true };
+		}
+		// 次ページ: 最後のレコードの confirmed_at + 1ms を since に
+		const lastTs = batch[batch.length - 1]?.confirmed_at;
+		if (!lastTs) break;
+		since = String(lastTs + 1);
+	}
+	return { deposits: all, complete: false };
+}
+
+async function paginateWithdrawals(
+	client: BitbankPrivateClient,
+	baseParams: Record<string, string>,
+): Promise<{ withdrawals: RawWithdrawal[]; complete: boolean; error?: string }> {
+	const all: RawWithdrawal[] = [];
+	let since: string | undefined;
+	for (let page = 0; page < MAX_PAGES; page++) {
+		const params = { ...baseParams, count: '100', ...(since ? { since } : {}) };
+		const result = await tryGet<{ withdrawals: RawWithdrawal[] }>(client, '/v1/user/withdrawal_history', params);
+		if (!result.ok) {
+			return { withdrawals: all, complete: all.length === 0 ? false : true, error: result.error };
+		}
+		const batch = result.data.withdrawals || [];
+		all.push(...batch);
+		if (batch.length < 100) {
+			return { withdrawals: all, complete: true };
+		}
+		const lastTs = batch[batch.length - 1]?.requested_at;
+		if (!lastTs) break;
+		since = String(lastTs + 1);
+	}
+	return { withdrawals: all, complete: false };
 }
 
 /**
- * 入出金履歴を取得する（JPY + 暗号資産の両方）。
- * 失敗時は null を返し、呼び出し元でフォールバックする。
+ * 入出金履歴を取得する（JPY + 暗号資産の両方、ページネーション対応）。
+ * 全リクエスト失敗時は null を返す。一部失敗時は warnings 付きで返す。
  */
 async function fetchDepositWithdrawal(client: BitbankPrivateClient): Promise<DepositWithdrawalData | null> {
 	try {
-		const [cryptoDeposits, jpyDeposits, cryptoWithdrawals, jpyWithdrawals] = await Promise.all([
-			client.get<{ deposits: RawDeposit[] }>('/v1/user/deposit_history', { count: '100' }).catch(() => ({ deposits: [] as RawDeposit[] })),
-			client.get<{ deposits: RawDeposit[] }>('/v1/user/deposit_history', { asset: 'jpy', count: '100' }).catch(() => ({ deposits: [] as RawDeposit[] })),
-			client.get<{ withdrawals: RawWithdrawal[] }>('/v1/user/withdrawal_history', { count: '100' }).catch(() => ({ withdrawals: [] as RawWithdrawal[] })),
-			client.get<{ withdrawals: RawWithdrawal[] }>('/v1/user/withdrawal_history', { asset: 'jpy', count: '100' }).catch(() => ({ withdrawals: [] as RawWithdrawal[] })),
+		const [cryptoDepResult, jpyDepResult, cryptoWdResult, jpyWdResult] = await Promise.all([
+			paginateDeposits(client, {}),
+			paginateDeposits(client, { asset: 'jpy' }),
+			paginateWithdrawals(client, {}),
+			paginateWithdrawals(client, { asset: 'jpy' }),
 		]);
+
+		const warnings: string[] = [];
+		const apiResults = [
+			{ error: cryptoDepResult.error, label: '暗号資産入庫履歴' },
+			{ error: jpyDepResult.error, label: 'JPY入金履歴' },
+			{ error: cryptoWdResult.error, label: '暗号資産出庫履歴' },
+			{ error: jpyWdResult.error, label: 'JPY出金履歴' },
+		];
+		for (const { error, label } of apiResults) {
+			if (error) {
+				warnings.push(`${label}の取得に失敗: ${error}`);
+			}
+		}
+
+		// 全チャネルでデータゼロかつエラーあり = 全失敗
+		const totalItems = cryptoDepResult.deposits.length + jpyDepResult.deposits.length
+			+ cryptoWdResult.withdrawals.length + jpyWdResult.withdrawals.length;
+		if (totalItems === 0 && warnings.length === 4) {
+			return { deposits: [], withdrawals: [], warnings, allFailed: true, isComplete: false };
+		}
+
+		// 成功分からデータを収集
+		const rawDeposits = [...cryptoDepResult.deposits, ...jpyDepResult.deposits];
+		const rawWithdrawals = [...cryptoWdResult.withdrawals, ...jpyWdResult.withdrawals];
 
 		// UUID で重複排除
 		const seenDeposit = new Set<string>();
-		const allDeposits = [...(cryptoDeposits.deposits || []), ...(jpyDeposits.deposits || [])].filter((d) => {
+		const allDeposits = rawDeposits.filter((d) => {
 			if (seenDeposit.has(d.uuid)) return false;
 			seenDeposit.add(d.uuid);
 			return true;
 		});
 
 		const seenWithdrawal = new Set<string>();
-		const allWithdrawals = [...(cryptoWithdrawals.withdrawals || []), ...(jpyWithdrawals.withdrawals || [])].filter((w) => {
+		const allWithdrawals = rawWithdrawals.filter((w) => {
 			if (seenWithdrawal.has(w.uuid)) return false;
 			seenWithdrawal.add(w.uuid);
 			return true;
 		});
 
-		return { deposits: allDeposits, withdrawals: allWithdrawals };
+		const isComplete = cryptoDepResult.complete && jpyDepResult.complete
+			&& cryptoWdResult.complete && jpyWdResult.complete;
+
+		return { deposits: allDeposits, withdrawals: allWithdrawals, warnings, allFailed: false, isComplete };
 	} catch {
 		return null;
 	}
@@ -109,7 +207,7 @@ async function fetchDepositWithdrawal(client: BitbankPrivateClient): Promise<Dep
  *
  * - JPY 入金: 投資元本（入金）
  * - JPY 出金: 投資元本の回収（出金）
- * - 暗号資産入庫: 入庫時の市場価格で仮評価し、投入額に加算
+ * - 暗号資産入庫: 現在の市場価格で仮評価し、投入額に加算（入庫時点の価格は取得不可）
  * - 暗号資産出庫: 損益計算からは除外（他所への送金であり売却ではない）
  * - 純投入額 = JPY入金合計 - JPY出金合計 + 暗号資産入庫の推定JPY評価額
  * - 口座全体リターン = (現在評価額 - 純投入額) / 純投入額
@@ -123,6 +221,7 @@ interface DepositWithdrawalSummary {
 	crypto_withdrawal_count: number;
 	account_return_pct: number | undefined;
 	account_return_jpy: number | undefined;
+	is_complete: boolean;
 	analysis_basis: 'deposit_withdrawal' | 'trade_only';
 }
 
@@ -177,6 +276,7 @@ function calcDepositWithdrawalSummary(
 		crypto_withdrawal_count: cryptoWithdrawals.length,
 		account_return_pct: accountReturnPct,
 		account_return_jpy: accountReturnJpy,
+		is_complete: dw.isComplete,
 		analysis_basis: 'deposit_withdrawal',
 	};
 }
@@ -496,8 +596,19 @@ export default async function analyzeMyPortfolioHandler(args: {
 
 		// 4. 入出金ベースのリターン計算（Phase 4）
 		let dwSummary: DepositWithdrawalSummary | undefined;
-		if (dwData && (dwData.deposits.length > 0 || dwData.withdrawals.length > 0)) {
-			dwSummary = calcDepositWithdrawalSummary(dwData, totalJpyValue, prices);
+		const dwWarnings: string[] = [];
+		if (dwData) {
+			if (dwData.allFailed) {
+				// 全リクエスト失敗: trade_only フォールバック + 警告
+				dwWarnings.push('入出金履歴の取得に全て失敗したため、約定ベースの分析のみです');
+			} else {
+				if (dwData.warnings.length > 0) {
+					dwWarnings.push(...dwData.warnings.map((w) => `注意: ${w}（部分的なデータで概算）`));
+				}
+				if (dwData.deposits.length > 0 || dwData.withdrawals.length > 0) {
+					dwSummary = calcDepositWithdrawalSummary(dwData, totalJpyValue, prices);
+				}
+			}
 		}
 
 		// 5. テクニカル分析（オプション、暗号資産のみ）
@@ -519,17 +630,28 @@ export default async function analyzeMyPortfolioHandler(args: {
 		// 入出金ベースの口座全体リターン（Phase 4）
 		if (dwSummary && dwSummary.account_return_jpy != null) {
 			const sign = dwSummary.account_return_jpy >= 0 ? '+' : '';
-			lines.push(`口座全体リターン: ${sign}${formatPriceJPY(dwSummary.account_return_jpy)} (${formatPercent(dwSummary.account_return_pct, { sign: true })})`);
+			const approxLabel = dwSummary.is_complete ? '' : '（概算）';
+			lines.push(`口座全体リターン${approxLabel}: ${sign}${formatPriceJPY(dwSummary.account_return_jpy)} (${formatPercent(dwSummary.account_return_pct, { sign: true })})`);
 			lines.push(`  総入金額: ${formatPriceJPY(dwSummary.total_jpy_deposited)}${dwSummary.crypto_deposit_estimated_jpy ? ` + 暗号資産入庫評価 ${formatPriceJPY(dwSummary.crypto_deposit_estimated_jpy)}` : ''}`);
 			if (dwSummary.total_jpy_withdrawn > 0) {
 				lines.push(`  総出金額: ${formatPriceJPY(dwSummary.total_jpy_withdrawn)}`);
 			}
 			lines.push(`  純投入額: ${formatPriceJPY(dwSummary.net_jpy_invested)}`);
+			if (!dwSummary.is_complete) {
+				lines.push('  ※ 入出金履歴が多く全件取得できなかったため、概算値です');
+			}
 			if (dwSummary.crypto_deposit_count > 0) {
 				lines.push(`  ※ 暗号資産入庫 ${dwSummary.crypto_deposit_count}件は現在価格で仮評価しています`);
 			}
 			if (dwSummary.crypto_withdrawal_count > 0) {
 				lines.push(`  ※ 暗号資産出庫 ${dwSummary.crypto_withdrawal_count}件は送金として損益計算から除外しています`);
+			}
+		}
+
+		// 入出金取得の警告
+		if (dwWarnings.length > 0) {
+			for (const w of dwWarnings) {
+				lines.push(`  ${w}`);
 			}
 		}
 
@@ -601,6 +723,7 @@ export default async function analyzeMyPortfolioHandler(args: {
 				crypto_withdrawal_count: 0,
 				account_return_pct: undefined,
 				account_return_jpy: undefined,
+				is_complete: false,
 				analysis_basis: 'trade_only' as const,
 			} : undefined),
 			technical: technical && technical.length > 0 ? technical : undefined,
