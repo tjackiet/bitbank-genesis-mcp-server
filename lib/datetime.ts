@@ -7,10 +7,12 @@
 import dayjs from 'dayjs';
 import utc from 'dayjs/plugin/utc.js';
 import timezone from 'dayjs/plugin/timezone.js';
+import customParseFormat from 'dayjs/plugin/customParseFormat.js';
 
 // プラグイン有効化
 dayjs.extend(utc);
 dayjs.extend(timezone);
+dayjs.extend(customParseFormat);
 
 /**
  * タイムスタンプをISO8601形式に変換
@@ -99,6 +101,45 @@ export function daysAgo(daysAgo: number, format: string = 'YYYYMMDD'): string {
  */
 export function today(format: string = 'YYYYMMDD'): string {
 	return dayjs().format(format);
+}
+
+/**
+ * ISO8601 文字列を strict parse する。
+ * `2025-99-99` のような不正値を確実に弾く。
+ * @returns dayjs インスタンス（isValid() === true）、不正時は null
+ */
+export function parseIso8601(value: string): dayjs.Dayjs | null {
+	if (!value) return null;
+
+	// タイムゾーン部分を分離して日時部分だけ strict parse する
+	// ISO8601: YYYY-MM-DD or YYYY-MM-DDTHH:mm:ss[.SSS][Z|±HH:mm|±HHmm]
+	const tzPattern = /([Zz]|[+-]\d{2}:\d{2}|[+-]\d{4})$/;
+	const tzMatch = value.match(tzPattern);
+
+	let dateTimePart = value;
+	if (tzMatch) {
+		dateTimePart = value.slice(0, -tzMatch[0].length);
+	}
+
+	// 日時部分のフォーマット候補
+	const formats = [
+		'YYYY-MM-DDTHH:mm:ss.SSS',
+		'YYYY-MM-DDTHH:mm:ss',
+		'YYYY-MM-DD',
+	];
+
+	for (const fmt of formats) {
+		const d = dayjs(dateTimePart, fmt, true); // strict = true
+		if (d.isValid()) {
+			// TZ 付きの場合は元の文字列から utc parse して正確な時刻を返す
+			if (tzMatch) {
+				const full = dayjs.utc(value);
+				return full.isValid() ? full : d;
+			}
+			return d;
+		}
+	}
+	return null;
 }
 
 // dayjs インスタンスを直接使いたい場合のエクスポート
