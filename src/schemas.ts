@@ -1760,3 +1760,6 @@ export const AnalyzeCurrencyStrengthMetaSchemaOut = z.object({
 });
 
 export const AnalyzeCurrencyStrengthOutputSchema = toolResultSchema(AnalyzeCurrencyStrengthDataSchemaOut, AnalyzeCurrencyStrengthMetaSchemaOut);
+
+// ── Private API schemas（src/private/schemas.ts から re-export） ──
+export * from './private/schemas.js';

@@ -12,6 +12,8 @@
  */
 
 import type { ToolDefinition } from './tool-definition.js';
+import { isPrivateApiEnabled } from './private/config.js';
+import { log } from '../lib/logger.js';
 
 // ── Simple tools（toolDef はツールファイル内） ──
 import { toolDef as getTicker } from '../tools/get_ticker.js';
@@ -90,3 +92,16 @@ export const allToolDefs: ToolDefinition[] = [
 	// Trading
 	runBacktest,
 ];
+
+// ── Private API tools（APIキー設定時のみ有効化） ──
+if (isPrivateApiEnabled()) {
+	// 動的 import で private ツールを追加
+	// tool-registry.ts は起動時に1回だけ評価されるため、top-level await 相当の
+	// 即時実行関数で動的 import を行い、allToolDefs に追加する。
+	// ※ ESM の top-level await が使えない環境でも動作するよう IIFE で対応。
+	const { toolDef: getMyAssets } = await import('../tools/private/get_my_assets.js');
+	allToolDefs.push(getMyAssets);
+	log('info', { type: 'private_api', message: 'Private API tools enabled', tools: ['get_my_assets'] });
+} else {
+	log('info', { type: 'private_api', message: 'Private API tools disabled (no API key configured)' });
+}
