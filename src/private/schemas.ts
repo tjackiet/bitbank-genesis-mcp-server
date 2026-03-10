@@ -158,7 +158,7 @@ export const AnalyzeMyPortfolioInputSchema = z.object({
 	include_pnl: z.boolean().default(true)
 		.describe('損益分析を含めるか（約定履歴から平均取得単価・損益を算出）'),
 	include_deposit_withdrawal: z.boolean().default(true)
-		.describe('入出金データを含めるか（true の場合、総入金額 vs 現在評価額で口座全体の真のリターンを算出）'),
+		.describe('入出金データを含めるか（true の場合、総入金額 vs 現在評価額で口座全体のリターンを概算。直近100件ベースのため長期口座では概算値）'),
 });
 
 const HoldingPnlSchema = z.object({
@@ -188,10 +188,11 @@ const DepositWithdrawalSummarySchema = z.object({
 	total_jpy_withdrawn: z.number().describe('JPY 出金合計'),
 	net_jpy_invested: z.number().describe('純 JPY 投入額（入金 - 出金）'),
 	crypto_deposit_count: z.number().describe('暗号資産入庫件数'),
-	crypto_deposit_estimated_jpy: z.number().optional().describe('暗号資産入庫の推定 JPY 評価額（入庫時市場価格ベース）'),
+	crypto_deposit_estimated_jpy: z.number().optional().describe('暗号資産入庫の推定 JPY 評価額（現在の市場価格で仮評価。入庫時点の価格ではない）'),
 	crypto_withdrawal_count: z.number().describe('暗号資産出庫件数'),
 	account_return_pct: z.number().optional().describe('口座全体リターン率（%）: (現在評価額 - 純投入額) / 純投入額'),
 	account_return_jpy: z.number().optional().describe('口座全体リターン額（JPY）'),
+	is_complete: z.boolean().describe('全履歴を取得できたか（false の場合は API 件数上限により一部のみ取得。リターンは概算値）'),
 	analysis_basis: z.enum(['deposit_withdrawal', 'trade_only']).describe('分析基準（deposit_withdrawal: 入出金込み, trade_only: 約定ベース）'),
 }).optional().describe('入出金ベースのリターン分析（入出金データがある場合のみ）');
 
