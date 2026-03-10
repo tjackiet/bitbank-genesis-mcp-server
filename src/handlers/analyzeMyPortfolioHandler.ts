@@ -632,16 +632,22 @@ export default async function analyzeMyPortfolioHandler(args: {
 			const sign = dwSummary.account_return_jpy >= 0 ? '+' : '';
 			const approxLabel = dwSummary.is_complete ? '' : '（概算）';
 			lines.push(`口座全体リターン${approxLabel}: ${sign}${formatPriceJPY(dwSummary.account_return_jpy)} (${formatPercent(dwSummary.account_return_pct, { sign: true })})`);
-			lines.push(`  総入金額: ${formatPriceJPY(dwSummary.total_jpy_deposited)}${dwSummary.crypto_deposit_estimated_jpy ? ` + 暗号資産入庫評価 ${formatPriceJPY(dwSummary.crypto_deposit_estimated_jpy)}` : ''}`);
+			// 内訳を式追跡しやすい形で表示
+			lines.push(`  JPY入金合計: ${formatPriceJPY(dwSummary.total_jpy_deposited)}`);
 			if (dwSummary.total_jpy_withdrawn > 0) {
-				lines.push(`  総出金額: ${formatPriceJPY(dwSummary.total_jpy_withdrawn)}`);
+				lines.push(`  JPY出金合計: ${formatPriceJPY(dwSummary.total_jpy_withdrawn)}`);
 			}
-			lines.push(`  純投入額: ${formatPriceJPY(dwSummary.net_jpy_invested)}`);
+			const netJpyDeposit = dwSummary.total_jpy_deposited - dwSummary.total_jpy_withdrawn;
+			lines.push(`  JPY純入金: ${formatPriceJPY(Math.round(netJpyDeposit))}`);
+			if (dwSummary.crypto_deposit_estimated_jpy) {
+				lines.push(`  暗号資産入庫の仮評価: ${formatPriceJPY(dwSummary.crypto_deposit_estimated_jpy)}（${dwSummary.crypto_deposit_count}件、現在価格ベース）`);
+			}
+			lines.push(`  純投入額: ${formatPriceJPY(dwSummary.net_jpy_invested)}${dwSummary.crypto_deposit_estimated_jpy ? '（JPY純入金 + 暗号資産入庫の仮評価）' : ''}`);
 			if (!dwSummary.is_complete) {
 				lines.push('  ※ 入出金履歴が多く全件取得できなかったため、概算値です');
 			}
-			if (dwSummary.crypto_deposit_count > 0) {
-				lines.push(`  ※ 暗号資産入庫 ${dwSummary.crypto_deposit_count}件は現在価格で仮評価しています`);
+			if (dwSummary.crypto_deposit_count > 0 && !dwSummary.crypto_deposit_estimated_jpy) {
+				lines.push(`  ※ 暗号資産入庫 ${dwSummary.crypto_deposit_count}件の価格が取得できず仮評価に含まれていません`);
 			}
 			if (dwSummary.crypto_withdrawal_count > 0) {
 				lines.push(`  ※ 暗号資産出庫 ${dwSummary.crypto_withdrawal_count}件は送金として損益計算から除外しています`);
@@ -732,13 +738,21 @@ export default async function analyzeMyPortfolioHandler(args: {
 
 		// depositWithdrawalStatus の判定:
 		// - not_requested: include_deposit_withdrawal=false
-		// - available: dwSummary が取得できた（入出金データあり）
-		// - fallback: リクエストしたが失敗/データなし → trade_only にフォールバック
-		const depositWithdrawalStatus = !include_deposit_withdrawal
-			? 'not_requested' as const
-			: dwSummary != null
-				? 'available' as const
-				: 'fallback' as const;
+		// - available: 入出金データ取得成功＋分析実行
+		// - no_history: API取得成功だが履歴0件（入出金ベース分析を作れなかった）
+		// - fallback: API取得失敗で約定ベースにフォールバック
+		let depositWithdrawalStatus: 'available' | 'fallback' | 'no_history' | 'not_requested';
+		if (!include_deposit_withdrawal) {
+			depositWithdrawalStatus = 'not_requested';
+		} else if (dwSummary != null) {
+			depositWithdrawalStatus = 'available';
+		} else if (dwData && !dwData.allFailed && dwData.deposits.length === 0 && dwData.withdrawals.length === 0) {
+			// API 取得成功だが本当に履歴 0 件
+			depositWithdrawalStatus = 'no_history';
+		} else {
+			// dwData が null (catch で null 返却) or allFailed
+			depositWithdrawalStatus = 'fallback';
+		}
 
 		const meta = {
 			fetchedAt: timestamp,

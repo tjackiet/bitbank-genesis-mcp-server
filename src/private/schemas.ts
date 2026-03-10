@@ -186,7 +186,7 @@ const TechnicalSummarySchema = z.object({
 const DepositWithdrawalSummarySchema = z.object({
 	total_jpy_deposited: z.number().describe('JPY 入金合計'),
 	total_jpy_withdrawn: z.number().describe('JPY 出金合計'),
-	net_jpy_invested: z.number().describe('純 JPY 投入額（入金 - 出金）'),
+	net_jpy_invested: z.number().describe('純投入額（JPY入金 - JPY出金 + 暗号資産入庫の現在価格での仮評価）。暗号資産入庫がある場合は JPY 純入金だけでなく仮評価分も含む'),
 	crypto_deposit_count: z.number().describe('暗号資産入庫件数'),
 	crypto_deposit_estimated_jpy: z.number().optional().describe('暗号資産入庫の推定 JPY 評価額（現在の市場価格で仮評価。入庫時点の価格ではない）'),
 	crypto_withdrawal_count: z.number().describe('暗号資産出庫件数'),
@@ -213,8 +213,8 @@ export const AnalyzeMyPortfolioMetaSchema = z.object({
 	holdingCount: z.number().int(),
 	hasPnl: z.boolean(),
 	hasTechnical: z.boolean(),
-	depositWithdrawalStatus: z.enum(['available', 'fallback', 'not_requested'])
-		.describe('入出金分析の状態: available=入出金データ取得成功, fallback=取得失敗で約定ベースにフォールバック, not_requested=未リクエスト'),
+	depositWithdrawalStatus: z.enum(['available', 'fallback', 'no_history', 'not_requested'])
+		.describe('入出金分析の状態: available=入出金データ取得成功で分析実行, fallback=API取得失敗で約定ベースにフォールバック, no_history=API取得成功だが履歴0件, not_requested=未リクエスト'),
 });
 
 export const AnalyzeMyPortfolioOutputSchema = z.union([
@@ -280,6 +280,7 @@ export const GetMyDepositWithdrawalMetaSchema = z.object({
 	asset: z.string().optional(),
 	isComplete: z.boolean().describe('全履歴を取得できたか（false の場合は API 件数上限に達し一部のみ取得）'),
 	hasWarnings: z.boolean().describe('一部の API リクエストが失敗した警告があるか'),
+	warnings: z.array(z.string()).describe('警告メッセージ一覧（partial failure 時の詳細。空配列 = 警告なし）'),
 });
 
 export const GetMyDepositWithdrawalOutputSchema = z.union([

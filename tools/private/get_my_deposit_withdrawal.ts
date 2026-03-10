@@ -356,6 +356,7 @@ export default async function getMyDepositWithdrawal(args: {
 			asset: asset || undefined,
 			isComplete,
 			hasWarnings: warnings.length > 0,
+			warnings,
 		};
 
 		return GetMyDepositWithdrawalOutputSchema.parse(ok(summary, data, meta));
