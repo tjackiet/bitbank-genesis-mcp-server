@@ -103,8 +103,9 @@ if (isPrivateApiEnabled()) {
 	const { toolDef: getMyTradeHistory } = await import('../tools/private/get_my_trade_history.js');
 	const { toolDef: getMyOrders } = await import('../tools/private/get_my_orders.js');
 	const { toolDef: analyzeMyPortfolio } = await import('../tools/private/analyze_my_portfolio.js');
-	allToolDefs.push(getMyAssets, getMyTradeHistory, getMyOrders, analyzeMyPortfolio);
-	log('info', { type: 'private_api', message: 'Private API tools enabled', tools: ['get_my_assets', 'get_my_trade_history', 'get_my_orders', 'analyze_my_portfolio'] });
+	const { toolDef: getMyDepositWithdrawal } = await import('../tools/private/get_my_deposit_withdrawal.js');
+	allToolDefs.push(getMyAssets, getMyTradeHistory, getMyOrders, analyzeMyPortfolio, getMyDepositWithdrawal);
+	log('info', { type: 'private_api', message: 'Private API tools enabled', tools: ['get_my_assets', 'get_my_trade_history', 'get_my_orders', 'analyze_my_portfolio', 'get_my_deposit_withdrawal'] });
 } else {
 	log('info', { type: 'private_api', message: 'Private API tools disabled (no API key configured)' });
 }
