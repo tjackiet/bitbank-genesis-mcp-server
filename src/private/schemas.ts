@@ -157,6 +157,8 @@ export const AnalyzeMyPortfolioInputSchema = z.object({
 		.describe('保有銘柄のテクニカル分析を含めるか'),
 	include_pnl: z.boolean().default(true)
 		.describe('損益分析を含めるか（約定履歴から平均取得単価・損益を算出）'),
+	include_deposit_withdrawal: z.boolean().default(true)
+		.describe('入出金データを含めるか（true の場合、総入金額 vs 現在評価額で口座全体の真のリターンを算出）'),
 });
 
 const HoldingPnlSchema = z.object({
@@ -181,6 +183,18 @@ const TechnicalSummarySchema = z.object({
 	signal: z.string().optional().describe('総合シグナル'),
 });
 
+const DepositWithdrawalSummarySchema = z.object({
+	total_jpy_deposited: z.number().describe('JPY 入金合計'),
+	total_jpy_withdrawn: z.number().describe('JPY 出金合計'),
+	net_jpy_invested: z.number().describe('純 JPY 投入額（入金 - 出金）'),
+	crypto_deposit_count: z.number().describe('暗号資産入庫件数'),
+	crypto_deposit_estimated_jpy: z.number().optional().describe('暗号資産入庫の推定 JPY 評価額（入庫時市場価格ベース）'),
+	crypto_withdrawal_count: z.number().describe('暗号資産出庫件数'),
+	account_return_pct: z.number().optional().describe('口座全体リターン率（%）: (現在評価額 - 純投入額) / 純投入額'),
+	account_return_jpy: z.number().optional().describe('口座全体リターン額（JPY）'),
+	analysis_basis: z.enum(['deposit_withdrawal', 'trade_only']).describe('分析基準（deposit_withdrawal: 入出金込み, trade_only: 約定ベース）'),
+}).optional().describe('入出金ベースのリターン分析（入出金データがある場合のみ）');
+
 export const AnalyzeMyPortfolioDataSchema = z.object({
 	holdings: z.array(HoldingPnlSchema).describe('保有銘柄一覧（JPY評価額降順）'),
 	total_jpy_value: z.number().optional().describe('ポートフォリオ合計評価額'),
@@ -188,6 +202,7 @@ export const AnalyzeMyPortfolioDataSchema = z.object({
 	total_unrealized_pnl: z.number().optional().describe('合計評価損益'),
 	total_unrealized_pnl_pct: z.number().optional().describe('合計評価損益率（%）'),
 	total_realized_pnl: z.number().optional().describe('合計実現損益'),
+	deposit_withdrawal_summary: DepositWithdrawalSummarySchema,
 	technical: z.array(TechnicalSummarySchema).optional().describe('テクニカル分析サマリー'),
 	timestamp: z.string(),
 });
@@ -197,6 +212,7 @@ export const AnalyzeMyPortfolioMetaSchema = z.object({
 	holdingCount: z.number().int(),
 	hasPnl: z.boolean(),
 	hasTechnical: z.boolean(),
+	hasDepositWithdrawal: z.boolean(),
 });
 
 export const AnalyzeMyPortfolioOutputSchema = z.union([
@@ -205,6 +221,69 @@ export const AnalyzeMyPortfolioOutputSchema = z.union([
 		summary: z.string(),
 		data: AnalyzeMyPortfolioDataSchema,
 		meta: AnalyzeMyPortfolioMetaSchema,
+	}),
+	PrivateFailResultSchema,
+]);
+
+// ── get_my_deposit_withdrawal（Phase 4） ──
+
+export const GetMyDepositWithdrawalInputSchema = z.object({
+	asset: z.string().optional()
+		.describe('通貨コード（例: btc, jpy）。省略で全通貨。JPY入出金を取得するには "jpy" を指定'),
+	type: z.enum(['deposit', 'withdrawal', 'all']).default('all')
+		.describe('取得タイプ（deposit: 入金/入庫のみ, withdrawal: 出金/出庫のみ, all: 両方）'),
+	count: z.number().max(100).default(25)
+		.describe('各履歴の取得件数（最大100）'),
+	since: z.string().optional()
+		.describe('開始日時（ISO8601、例: 2025-01-01T00:00:00+09:00）'),
+	end: z.string().optional()
+		.describe('終了日時（ISO8601、例: 2025-12-31T23:59:59+09:00）'),
+});
+
+const DepositItemSchema = z.object({
+	uuid: z.string().describe('入金/入庫ID'),
+	asset: z.string().describe('通貨コード'),
+	amount: z.string().describe('金額/数量'),
+	network: z.string().optional().describe('ネットワーク（暗号資産のみ）'),
+	txid: z.string().optional().describe('トランザクションID（暗号資産のみ）'),
+	status: z.string().describe('ステータス（FOUND / CONFIRMED / DONE）'),
+	found_at: z.string().optional().describe('検出日時（ISO8601）'),
+	confirmed_at: z.string().optional().describe('確認日時（ISO8601）'),
+});
+
+const WithdrawalItemSchema = z.object({
+	uuid: z.string().describe('出金/出庫ID'),
+	asset: z.string().describe('通貨コード'),
+	amount: z.string().describe('金額/数量'),
+	fee: z.string().optional().describe('手数料'),
+	network: z.string().optional().describe('ネットワーク（暗号資産のみ）'),
+	txid: z.string().optional().describe('トランザクションID（暗号資産のみ）'),
+	label: z.string().optional().describe('ラベル'),
+	address: z.string().optional().describe('送金先アドレス（暗号資産のみ）'),
+	bank_name: z.string().optional().describe('銀行名（JPY出金のみ）'),
+	status: z.string().describe('ステータス（CONFIRMING / EXAMINING / SENDING / DONE / REJECTED / CANCELED）'),
+	requested_at: z.string().optional().describe('リクエスト日時（ISO8601）'),
+});
+
+export const GetMyDepositWithdrawalDataSchema = z.object({
+	deposits: z.array(DepositItemSchema),
+	withdrawals: z.array(WithdrawalItemSchema),
+	timestamp: z.string(),
+});
+
+export const GetMyDepositWithdrawalMetaSchema = z.object({
+	fetchedAt: z.string(),
+	depositCount: z.number().int(),
+	withdrawalCount: z.number().int(),
+	asset: z.string().optional(),
+});
+
+export const GetMyDepositWithdrawalOutputSchema = z.union([
+	z.object({
+		ok: z.literal(true),
+		summary: z.string(),
+		data: GetMyDepositWithdrawalDataSchema,
+		meta: GetMyDepositWithdrawalMetaSchema,
 	}),
 	PrivateFailResultSchema,
 ]);

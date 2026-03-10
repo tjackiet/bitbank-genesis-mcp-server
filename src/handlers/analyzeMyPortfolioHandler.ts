@@ -1,16 +1,20 @@
 /**
- * analyzeMyPortfolioHandler — ポートフォリオ分析のハンドラ（Phase 3）。
+ * analyzeMyPortfolioHandler — ポートフォリオ分析のハンドラ（Phase 3 + Phase 4 拡張）。
  *
  * 1. get_my_assets で現在保有を取得
  * 2. get_my_trade_history で約定履歴を取得し、通貨ごとの平均取得単価・実現損益を算出
  * 3. ticker で現在価格を取得し、評価損益を算出
- * 4. （オプション）テクニカル分析を統合
+ * 4. （Phase 4）入出金履歴を取得し、口座全体の真のリターンを算出
+ * 5. （オプション）テクニカル分析を統合
+ *
+ * 入出金データがある場合は「総入金額 vs 現在評価額」で口座全体のリターンを算出。
+ * 入出金 API が失敗/データなしの場合は従来の約定ベース分析にフォールバック。
  */
 
 import { ok, fail } from '../../lib/result.js';
 import { nowIso } from '../../lib/datetime.js';
 import { formatPrice, formatPair, formatPercent, formatPriceJPY } from '../../lib/formatter.js';
-import { getDefaultClient, PrivateApiError } from '../private/client.js';
+import { getDefaultClient, PrivateApiError, BitbankPrivateClient } from '../private/client.js';
 import {
 	AnalyzeMyPortfolioOutputSchema,
 } from '../private/schemas.js';
@@ -41,6 +45,140 @@ interface RawTrade {
 	fee_amount_base: string;
 	fee_amount_quote: string;
 	executed_at: number;
+}
+
+interface RawDeposit {
+	uuid: string;
+	asset: string;
+	amount: string;
+	status: string;
+	found_at: number;
+	confirmed_at: number;
+}
+
+interface RawWithdrawal {
+	uuid: string;
+	asset: string;
+	amount: string;
+	fee?: string;
+	status: string;
+	requested_at: number;
+}
+
+interface DepositWithdrawalData {
+	deposits: RawDeposit[];
+	withdrawals: RawWithdrawal[];
+}
+
+/**
+ * 入出金履歴を取得する（JPY + 暗号資産の両方）。
+ * 失敗時は null を返し、呼び出し元でフォールバックする。
+ */
+async function fetchDepositWithdrawal(client: BitbankPrivateClient): Promise<DepositWithdrawalData | null> {
+	try {
+		const [cryptoDeposits, jpyDeposits, cryptoWithdrawals, jpyWithdrawals] = await Promise.all([
+			client.get<{ deposits: RawDeposit[] }>('/v1/user/deposit_history', { count: '100' }).catch(() => ({ deposits: [] as RawDeposit[] })),
+			client.get<{ deposits: RawDeposit[] }>('/v1/user/deposit_history', { asset: 'jpy', count: '100' }).catch(() => ({ deposits: [] as RawDeposit[] })),
+			client.get<{ withdrawals: RawWithdrawal[] }>('/v1/user/withdrawal_history', { count: '100' }).catch(() => ({ withdrawals: [] as RawWithdrawal[] })),
+			client.get<{ withdrawals: RawWithdrawal[] }>('/v1/user/withdrawal_history', { asset: 'jpy', count: '100' }).catch(() => ({ withdrawals: [] as RawWithdrawal[] })),
+		]);
+
+		// UUID で重複排除
+		const seenDeposit = new Set<string>();
+		const allDeposits = [...(cryptoDeposits.deposits || []), ...(jpyDeposits.deposits || [])].filter((d) => {
+			if (seenDeposit.has(d.uuid)) return false;
+			seenDeposit.add(d.uuid);
+			return true;
+		});
+
+		const seenWithdrawal = new Set<string>();
+		const allWithdrawals = [...(cryptoWithdrawals.withdrawals || []), ...(jpyWithdrawals.withdrawals || [])].filter((w) => {
+			if (seenWithdrawal.has(w.uuid)) return false;
+			seenWithdrawal.add(w.uuid);
+			return true;
+		});
+
+		return { deposits: allDeposits, withdrawals: allWithdrawals };
+	} catch {
+		return null;
+	}
+}
+
+/**
+ * 入出金データから口座全体のリターンを算出する。
+ *
+ * - JPY 入金: 投資元本（入金）
+ * - JPY 出金: 投資元本の回収（出金）
+ * - 暗号資産入庫: 入庫時の市場価格で仮評価し、投入額に加算
+ * - 暗号資産出庫: 損益計算からは除外（他所への送金であり売却ではない）
+ * - 純投入額 = JPY入金合計 - JPY出金合計 + 暗号資産入庫の推定JPY評価額
+ * - 口座全体リターン = (現在評価額 - 純投入額) / 純投入額
+ */
+interface DepositWithdrawalSummary {
+	total_jpy_deposited: number;
+	total_jpy_withdrawn: number;
+	net_jpy_invested: number;
+	crypto_deposit_count: number;
+	crypto_deposit_estimated_jpy: number | undefined;
+	crypto_withdrawal_count: number;
+	account_return_pct: number | undefined;
+	account_return_jpy: number | undefined;
+	analysis_basis: 'deposit_withdrawal' | 'trade_only';
+}
+
+function calcDepositWithdrawalSummary(
+	dw: DepositWithdrawalData,
+	totalJpyValue: number,
+	prices: Map<string, number>,
+): DepositWithdrawalSummary {
+	// DONE ステータスの入金のみ集計（FOUND / CONFIRMED は未完了）
+	const completedDeposits = dw.deposits.filter((d) => d.status === 'DONE');
+	const completedWithdrawals = dw.withdrawals.filter((w) => w.status === 'DONE');
+
+	// JPY 入出金
+	const jpyDeposits = completedDeposits.filter((d) => d.asset === 'jpy');
+	const jpyWithdrawals = completedWithdrawals.filter((w) => w.asset === 'jpy');
+	const totalJpyDeposited = jpyDeposits.reduce((sum, d) => sum + Number(d.amount), 0);
+	const totalJpyWithdrawn = jpyWithdrawals.reduce((sum, w) => sum + Number(w.amount), 0);
+
+	// 暗号資産入出庫
+	const cryptoDeposits = completedDeposits.filter((d) => d.asset !== 'jpy');
+	const cryptoWithdrawals = completedWithdrawals.filter((w) => w.asset !== 'jpy');
+
+	// 暗号資産入庫の推定 JPY 評価（現在の市場価格で仮評価）
+	// 注意: 入庫「時点」の価格は取得不可のため、現在価格での仮評価
+	let cryptoDepositEstimatedJpy = 0;
+	let hasEstimate = false;
+	for (const d of cryptoDeposits) {
+		const price = prices.get(d.asset);
+		const amount = Number(d.amount);
+		if (price && Number.isFinite(amount) && amount > 0) {
+			cryptoDepositEstimatedJpy += amount * price;
+			hasEstimate = true;
+		}
+	}
+
+	const netJpyInvested = totalJpyDeposited - totalJpyWithdrawn + (hasEstimate ? cryptoDepositEstimatedJpy : 0);
+
+	// 口座全体リターン
+	let accountReturnPct: number | undefined;
+	let accountReturnJpy: number | undefined;
+	if (netJpyInvested > 0 && totalJpyValue > 0) {
+		accountReturnJpy = Math.round(totalJpyValue - netJpyInvested);
+		accountReturnPct = Math.round(((totalJpyValue - netJpyInvested) / netJpyInvested) * 10000) / 100;
+	}
+
+	return {
+		total_jpy_deposited: Math.round(totalJpyDeposited),
+		total_jpy_withdrawn: Math.round(totalJpyWithdrawn),
+		net_jpy_invested: Math.round(netJpyInvested),
+		crypto_deposit_count: cryptoDeposits.length,
+		crypto_deposit_estimated_jpy: hasEstimate ? Math.round(cryptoDepositEstimatedJpy) : undefined,
+		crypto_withdrawal_count: cryptoWithdrawals.length,
+		account_return_pct: accountReturnPct,
+		account_return_jpy: accountReturnJpy,
+		analysis_basis: 'deposit_withdrawal',
+	};
 }
 
 // ── Ticker 取得 ──
@@ -203,8 +341,9 @@ async function fetchTechnical(pairs: string[]): Promise<TechnicalSummary[]> {
 export default async function analyzeMyPortfolioHandler(args: {
 	include_technical?: boolean;
 	include_pnl?: boolean;
+	include_deposit_withdrawal?: boolean;
 }) {
-	const { include_technical = true, include_pnl = true } = args;
+	const { include_technical = true, include_pnl = true, include_deposit_withdrawal = true } = args;
 	const client = getDefaultClient();
 
 	try {
@@ -220,19 +359,20 @@ export default async function analyzeMyPortfolioHandler(args: {
 			return Number.isFinite(amount) && amount > 0;
 		});
 
-		// 2. 約定履歴取得（PnL 計算用、最大1000件）
-		let allTrades: RawTrade[] = [];
-		if (include_pnl) {
-			try {
-				const tradeData = await client.get<{ trades: RawTrade[] }>(
-					'/v1/user/spot/trade_history',
-					{ count: '1000', order: 'asc' },
-				);
-				allTrades = tradeData.trades || [];
-			} catch {
-				// 約定履歴取得失敗は非致命的（PnL なしで続行）
-			}
-		}
+		// 2. 約定履歴 + 入出金履歴を並列取得
+		const tradePromise = include_pnl
+			? client.get<{ trades: RawTrade[] }>(
+				'/v1/user/spot/trade_history',
+				{ count: '1000', order: 'asc' },
+			).catch(() => ({ trades: [] as RawTrade[] }))
+			: Promise.resolve({ trades: [] as RawTrade[] });
+
+		const dwPromise = include_deposit_withdrawal
+			? fetchDepositWithdrawal(client)
+			: Promise.resolve(null);
+
+		const [tradeData, dwData] = await Promise.all([tradePromise, dwPromise]);
+		const allTrades = tradeData.trades || [];
 
 		const timestamp = nowIso();
 
@@ -354,7 +494,13 @@ export default async function analyzeMyPortfolioHandler(args: {
 			.map((h) => h.asset.toUpperCase());
 		const hasMissingPrices = missingPriceAssets.length > 0;
 
-		// 4. テクニカル分析（オプション、暗号資産のみ）
+		// 4. 入出金ベースのリターン計算（Phase 4）
+		let dwSummary: DepositWithdrawalSummary | undefined;
+		if (dwData && (dwData.deposits.length > 0 || dwData.withdrawals.length > 0)) {
+			dwSummary = calcDepositWithdrawalSummary(dwData, totalJpyValue, prices);
+		}
+
+		// 5. テクニカル分析（オプション、暗号資産のみ）
 		let technical: TechnicalSummary[] | undefined;
 		if (include_technical && cryptoHoldings.length > 0) {
 			const jpyPairs = cryptoHoldings
@@ -363,15 +509,33 @@ export default async function analyzeMyPortfolioHandler(args: {
 			technical = await fetchTechnical(jpyPairs);
 		}
 
-		// 5. サマリー文字列の生成
+		// 6. サマリー文字列の生成
 		const lines: string[] = [];
 		lines.push(`ポートフォリオ分析: 暗号資産 ${cryptoHoldings.length}銘柄${jpyHolding ? ' + JPY' : ''}`);
 		if (totalJpyValue > 0) {
 			lines.push(`口座合計: ${formatPrice(Math.round(totalJpyValue))}${jpyHolding ? ` (うち JPY: ${formatPriceJPY(jpyHolding.jpy_value ?? 0)})` : ''}`);
 		}
+
+		// 入出金ベースの口座全体リターン（Phase 4）
+		if (dwSummary && dwSummary.account_return_jpy != null) {
+			const sign = dwSummary.account_return_jpy >= 0 ? '+' : '';
+			lines.push(`口座全体リターン: ${sign}${formatPriceJPY(dwSummary.account_return_jpy)} (${formatPercent(dwSummary.account_return_pct, { sign: true })})`);
+			lines.push(`  総入金額: ${formatPriceJPY(dwSummary.total_jpy_deposited)}${dwSummary.crypto_deposit_estimated_jpy ? ` + 暗号資産入庫評価 ${formatPriceJPY(dwSummary.crypto_deposit_estimated_jpy)}` : ''}`);
+			if (dwSummary.total_jpy_withdrawn > 0) {
+				lines.push(`  総出金額: ${formatPriceJPY(dwSummary.total_jpy_withdrawn)}`);
+			}
+			lines.push(`  純投入額: ${formatPriceJPY(dwSummary.net_jpy_invested)}`);
+			if (dwSummary.crypto_deposit_count > 0) {
+				lines.push(`  ※ 暗号資産入庫 ${dwSummary.crypto_deposit_count}件は現在価格で仮評価しています`);
+			}
+			if (dwSummary.crypto_withdrawal_count > 0) {
+				lines.push(`  ※ 暗号資産出庫 ${dwSummary.crypto_withdrawal_count}件は送金として損益計算から除外しています`);
+			}
+		}
+
 		if (totalUnrealizedPnl != null) {
 			const sign = totalUnrealizedPnl >= 0 ? '+' : '';
-			lines.push(`合計評価損益: ${sign}${formatPriceJPY(totalUnrealizedPnl)} (${formatPercent(totalUnrealizedPnlPct, { sign: true })})`);
+			lines.push(`合計評価損益（約定ベース）: ${sign}${formatPriceJPY(totalUnrealizedPnl)} (${formatPercent(totalUnrealizedPnlPct, { sign: true })})`);
 		}
 		if (totalRealizedPnl !== 0) {
 			const sign = totalRealizedPnl >= 0 ? '+' : '';
@@ -428,6 +592,17 @@ export default async function analyzeMyPortfolioHandler(args: {
 			total_unrealized_pnl: totalUnrealizedPnl,
 			total_unrealized_pnl_pct: totalUnrealizedPnlPct,
 			total_realized_pnl: totalRealizedPnl !== 0 ? totalRealizedPnl : undefined,
+			deposit_withdrawal_summary: dwSummary ?? (include_deposit_withdrawal ? {
+				total_jpy_deposited: 0,
+				total_jpy_withdrawn: 0,
+				net_jpy_invested: 0,
+				crypto_deposit_count: 0,
+				crypto_deposit_estimated_jpy: undefined,
+				crypto_withdrawal_count: 0,
+				account_return_pct: undefined,
+				account_return_jpy: undefined,
+				analysis_basis: 'trade_only' as const,
+			} : undefined),
 			technical: technical && technical.length > 0 ? technical : undefined,
 			timestamp,
 		};
@@ -437,6 +612,7 @@ export default async function analyzeMyPortfolioHandler(args: {
 			holdingCount: holdings.length,
 			hasPnl: include_pnl && allTrades.length > 0,
 			hasTechnical: include_technical && (technical?.length ?? 0) > 0,
+			hasDepositWithdrawal: dwSummary != null,
 		};
 
 		return AnalyzeMyPortfolioOutputSchema.parse(ok(summary, data, meta));
