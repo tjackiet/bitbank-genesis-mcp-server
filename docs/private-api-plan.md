@@ -107,11 +107,11 @@ tools/
 Phase 1 完了基準:
 
 - [x] `auth.ts` の署名生成が公式ドキュメントのテストベクタで一致する（GET/POST 両方）
-- [ ] API キーなしでも `gen:types` / `typecheck` が通る
-- [ ] API キー不正時に `fail()` で原因が分かるメッセージが返る
-- [ ] 429 / 5xx 時に想定したエラー種別で返る
-- [ ] `get_my_assets` の手動確認で、数量・円換算・合計が矛盾しない
-- [ ] API キーがコード・ログ・git に露出しない
+- [x] API キーなしでも `gen:types` / `typecheck` が通る
+- [x] API キー不正時に `fail()` で原因が分かるメッセージが返る
+- [x] 429 / 5xx 時に想定したエラー種別で返る
+- [x] `get_my_assets` の手動確認で、数量・円換算・合計が矛盾しない
+- [x] API キーがコード・ログ・git に露出しない
 
 ### Phase 2: 取引履歴 + 注文情報
 
@@ -220,7 +220,6 @@ Phase 1 で扱う異常系:
 
 ## 次のアクション
 
-1. bitbank 管理画面で参照専用の API キーを発行する
-2. `.env.example` に private API 用の設定項目を追加する
-3. `src/private/auth.ts` の署名モジュールを実装する
-4. `get_my_assets` の最小実装を行い、手動確認する
+1. `get_my_trade_history` の入出力スキーマと返却フォーマットを設計する
+2. `get_my_orders` のスコープとエラー分類を公式仕様ベースで整理する
+3. Phase 2 でも実装前に `rest-api.md` / `errors.md` を必ず確認する
