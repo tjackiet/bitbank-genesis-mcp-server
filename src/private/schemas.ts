@@ -150,11 +150,61 @@ export const GetMyOrdersOutputSchema = z.union([
 	PrivateFailResultSchema,
 ]);
 
-// ── analyze_my_portfolio（Phase 3 で実装、スキーマは先行定義） ──
+// ── analyze_my_portfolio（Phase 3） ──
 
 export const AnalyzeMyPortfolioInputSchema = z.object({
 	include_technical: z.boolean().default(true)
 		.describe('保有銘柄のテクニカル分析を含めるか'),
 	include_pnl: z.boolean().default(true)
-		.describe('損益分析を含めるか'),
+		.describe('損益分析を含めるか（約定履歴から平均取得単価・損益を算出）'),
 });
+
+const HoldingPnlSchema = z.object({
+	asset: z.string().describe('通貨コード'),
+	pair: z.string().describe('通貨ペア（例: btc_jpy）'),
+	amount: z.string().describe('保有数量'),
+	avg_buy_price: z.number().optional().describe('平均取得単価（JPY）'),
+	current_price: z.number().optional().describe('現在価格（JPY）'),
+	jpy_value: z.number().optional().describe('現在の評価額（JPY）'),
+	cost_basis: z.number().optional().describe('取得原価合計（JPY）'),
+	unrealized_pnl: z.number().optional().describe('評価損益（JPY）'),
+	unrealized_pnl_pct: z.number().optional().describe('評価損益率（%）'),
+	realized_pnl: z.number().optional().describe('実現損益（JPY）'),
+	trade_count: z.number().optional().describe('約定件数'),
+});
+
+const TechnicalSummarySchema = z.object({
+	pair: z.string().describe('通貨ペア'),
+	trend: z.string().optional().describe('トレンド判定'),
+	rsi_14: z.number().optional().describe('RSI(14)'),
+	sma_deviation_pct: z.number().optional().describe('SMA(25)乖離率（%）'),
+	signal: z.string().optional().describe('総合シグナル'),
+});
+
+export const AnalyzeMyPortfolioDataSchema = z.object({
+	holdings: z.array(HoldingPnlSchema).describe('保有銘柄一覧（JPY評価額降順）'),
+	total_jpy_value: z.number().optional().describe('ポートフォリオ合計評価額'),
+	total_cost_basis: z.number().optional().describe('ポートフォリオ合計取得原価'),
+	total_unrealized_pnl: z.number().optional().describe('合計評価損益'),
+	total_unrealized_pnl_pct: z.number().optional().describe('合計評価損益率（%）'),
+	total_realized_pnl: z.number().optional().describe('合計実現損益'),
+	technical: z.array(TechnicalSummarySchema).optional().describe('テクニカル分析サマリー'),
+	timestamp: z.string(),
+});
+
+export const AnalyzeMyPortfolioMetaSchema = z.object({
+	fetchedAt: z.string(),
+	holdingCount: z.number().int(),
+	hasPnl: z.boolean(),
+	hasTechnical: z.boolean(),
+});
+
+export const AnalyzeMyPortfolioOutputSchema = z.union([
+	z.object({
+		ok: z.literal(true),
+		summary: z.string(),
+		data: AnalyzeMyPortfolioDataSchema,
+		meta: AnalyzeMyPortfolioMetaSchema,
+	}),
+	PrivateFailResultSchema,
+]);
