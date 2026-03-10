@@ -51,14 +51,24 @@ export default async function getMyOrders(args: {
 		if (pair) params.pair = pair;
 		if (count !== 100) params.count = String(count);
 
-		// ISO8601 → unix ms 変換
+		// ISO8601 → unix ms 変換（不正な日時はエラーにする）
 		if (since) {
-			const sinceMs = dayjs(since).valueOf();
-			if (Number.isFinite(sinceMs)) params.since = String(sinceMs);
+			const parsed = dayjs(since);
+			if (!parsed.isValid()) {
+				return GetMyOrdersOutputSchema.parse(
+					fail(`since の日時形式が不正です: ${since}`, 'validation_error'),
+				);
+			}
+			params.since = String(parsed.valueOf());
 		}
 		if (end) {
-			const endMs = dayjs(end).valueOf();
-			if (Number.isFinite(endMs)) params.end = String(endMs);
+			const parsed = dayjs(end);
+			if (!parsed.isValid()) {
+				return GetMyOrdersOutputSchema.parse(
+					fail(`end の日時形式が不正です: ${end}`, 'validation_error'),
+				);
+			}
+			params.end = String(parsed.valueOf());
 		}
 
 		const rawData = await client.get<{ orders: RawOrder[] }>(
@@ -145,7 +155,7 @@ export default async function getMyOrders(args: {
 // ── MCP ツール定義（tool-registry から自動収集） ──
 export const toolDef: ToolDefinition = {
 	name: 'get_my_orders',
-	description: '自分のアクティブな注文一覧を取得。通貨ペア・期間でフィルタ可能。Private API（要APIキー設定）。',
+	description: '自分のアクティブな注文一覧を取得。通貨ペア・期間でフィルタ可能。Private API（要APIキー設定）。※ from_id/end_id によるページネーションは未対応。',
 	inputSchema: GetMyOrdersInputSchema,
 	handler: async (args: any) => getMyOrders(args ?? {}),
 };
