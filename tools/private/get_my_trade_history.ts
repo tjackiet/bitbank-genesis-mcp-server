@@ -158,7 +158,7 @@ export default async function getMyTradeHistory(args: {
 // ── MCP ツール定義（tool-registry から自動収集） ──
 export const toolDef: ToolDefinition = {
 	name: 'get_my_trade_history',
-	description: '自分の約定履歴を取得。通貨ペア・期間・件数でフィルタ可能。Private API（要APIキー設定）。',
+	description: '自分の約定履歴・売買履歴を取得（trades / fills / history）。取引履歴を通貨ペア・期間・件数でフィルタ可能。Private API（要APIキー設定）。',
 	inputSchema: GetMyTradeHistoryInputSchema,
 	handler: async (args: any) => getMyTradeHistory(args ?? {}),
 };
