@@ -106,7 +106,7 @@ tools/
 
 Phase 1 完了基準:
 
-- [ ] `auth.ts` の署名生成がテストベクタで一致する
+- [x] `auth.ts` の署名生成が公式ドキュメントのテストベクタで一致する（GET/POST 両方）
 - [ ] API キーなしでも `gen:types` / `typecheck` が通る
 - [ ] API キー不正時に `fail()` で原因が分かるメッセージが返る
 - [ ] 429 / 5xx 時に想定したエラー種別で返る
@@ -178,12 +178,38 @@ Phase 1 で扱う異常系:
 - Phase 1 から 3 は参照権限のみのキーで検証する
 - テストコードやテストベクタに実キーを使わない
 
+## 公式 API リファレンス
+
+実装・修正を始める前に、必ず以下の公式ドキュメントを確認すること。
+独自の推測で実装すると署名不一致やエラーハンドリング漏れが発生する（実際に ACCESS-TIME-WINDOW 方式の署名対象文字列を間違えた前例あり）。
+
+| ドキュメント | URL | 主な確認事項 |
+|---|---|---|
+| REST API 認証仕様 | https://github.com/bitbankinc/bitbank-api-docs/blob/master/rest-api.md | 署名対象文字列の組み立て、ヘッダー名、認証方式 |
+| エラーコード一覧 | https://github.com/bitbankinc/bitbank-api-docs/blob/master/errors.md | エラーコード番号と分類（認証系: 20001-20005、レート制限: 10009） |
+| Public API 仕様 | https://github.com/bitbankinc/bitbank-api-docs/blob/master/public-api.md | ペア名・ティッカー等の公開エンドポイント |
+| Private Stream | https://github.com/bitbankinc/bitbank-api-docs/blob/master/private-stream.md | WebSocket（現時点ではスコープ外） |
+
+### 認証方式メモ（ACCESS-TIME-WINDOW 方式を採用）
+
+```
+ヘッダー:
+  ACCESS-KEY:          API キー
+  ACCESS-REQUEST-TIME: ミリ秒 UNIX タイムスタンプ
+  ACCESS-TIME-WINDOW:  有効期間（ミリ秒、デフォルト 5000、最大 60000）
+  ACCESS-SIGNATURE:    HMAC-SHA256 署名
+
+署名対象文字列:
+  GET:  requestTime + timeWindow + path（クエリパラメータ含む）
+  POST: requestTime + timeWindow + JSONボディ
+```
+
 ## 実装時のメモ
 
 - private API のベース URL は `https://api.bitbank.cc`
 - public API の `https://public.bitbank.cc` とは別物として扱う
 - `count` などの入力上限は bitbank API の公式仕様に合わせる
-- `ACCESS-NONCE` はミリ秒時刻を使う想定だが、並列リクエスト時の扱いは実装時に確認する
+- 認証は ACCESS-TIME-WINDOW 方式を採用（ACCESS-NONCE 方式は使わない）
 - `server.ts` は編集しない
 
 ## 更新ルール
