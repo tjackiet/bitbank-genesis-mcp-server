@@ -713,38 +713,11 @@ export default async function analyzeMyPortfolioHandler(args: {
 
 		const summary = lines.join('\n');
 
-		const data = {
-			holdings,
-			total_jpy_value: totalJpyValue > 0 ? Math.round(totalJpyValue) : undefined,
-			total_cost_basis: hasValidCostData ? Math.round(validCostBasis) : undefined,
-			total_unrealized_pnl: totalUnrealizedPnl,
-			total_unrealized_pnl_pct: totalUnrealizedPnlPct,
-			total_realized_pnl: totalRealizedPnl !== 0 ? totalRealizedPnl : undefined,
-			// deposit_withdrawal_summary の出し分け:
-			// - available (dwSummary != null): 実データ
-			// - fallback: 約定ベースフォールバックの placeholder
-			// - no_history / not_requested: undefined
-			deposit_withdrawal_summary: dwSummary ?? (include_deposit_withdrawal && dwData && (dwData.allFailed || dwData.warnings.length > 0) ? {
-				total_jpy_deposited: 0,
-				total_jpy_withdrawn: 0,
-				net_jpy_invested: 0,
-				crypto_deposit_count: 0,
-				crypto_deposit_estimated_jpy: undefined,
-				crypto_withdrawal_count: 0,
-				account_return_pct: undefined,
-				account_return_jpy: undefined,
-				is_complete: false,
-				analysis_basis: 'trade_only' as const,
-			} : undefined),
-			technical: technical && technical.length > 0 ? technical : undefined,
-			timestamp,
-		};
-
-		// depositWithdrawalStatus の判定:
+		// depositWithdrawalStatus の判定（data 組み立てより先に確定する）:
 		// - not_requested: include_deposit_withdrawal=false
 		// - available: 入出金データ取得成功＋分析実行
 		// - no_history: API取得成功・警告なし・本当に履歴0件
-		// - fallback: API取得失敗 or partial failure で約定ベースにフォールバック
+		// - fallback: API取得失敗・partial failure 等で約定ベースにフォールバック
 		let depositWithdrawalStatus: 'available' | 'fallback' | 'no_history' | 'not_requested';
 		if (!include_deposit_withdrawal) {
 			depositWithdrawalStatus = 'not_requested';
@@ -763,6 +736,42 @@ export default async function analyzeMyPortfolioHandler(args: {
 			// dwData が null / allFailed / partial failure で 0 件 → fallback
 			depositWithdrawalStatus = 'fallback';
 		}
+
+		// deposit_withdrawal_summary の出し分け（status に基づく一貫した契約）:
+		// - available: dwSummary（実データ、analysis_basis='deposit_withdrawal'）
+		// - fallback: placeholder（analysis_basis='trade_only'）— 常に返す
+		// - no_history: undefined（API成功だが履歴なし）
+		// - not_requested: undefined（未リクエスト）
+		const fallbackPlaceholder = {
+			total_jpy_deposited: 0,
+			total_jpy_withdrawn: 0,
+			net_jpy_invested: 0,
+			crypto_deposit_count: 0,
+			crypto_deposit_estimated_jpy: undefined,
+			crypto_withdrawal_count: 0,
+			account_return_pct: undefined,
+			account_return_jpy: undefined,
+			is_complete: false,
+			analysis_basis: 'trade_only' as const,
+		};
+
+		const depositWithdrawalSummary = depositWithdrawalStatus === 'available'
+			? dwSummary
+			: depositWithdrawalStatus === 'fallback'
+				? fallbackPlaceholder
+				: undefined;
+
+		const data = {
+			holdings,
+			total_jpy_value: totalJpyValue > 0 ? Math.round(totalJpyValue) : undefined,
+			total_cost_basis: hasValidCostData ? Math.round(validCostBasis) : undefined,
+			total_unrealized_pnl: totalUnrealizedPnl,
+			total_unrealized_pnl_pct: totalUnrealizedPnlPct,
+			total_realized_pnl: totalRealizedPnl !== 0 ? totalRealizedPnl : undefined,
+			deposit_withdrawal_summary: depositWithdrawalSummary,
+			technical: technical && technical.length > 0 ? technical : undefined,
+			timestamp,
+		};
 
 		const meta = {
 			fetchedAt: timestamp,
