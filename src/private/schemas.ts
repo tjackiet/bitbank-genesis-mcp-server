@@ -194,7 +194,7 @@ const DepositWithdrawalSummarySchema = z.object({
 	account_return_jpy: z.number().optional().describe('口座全体リターン額（JPY）'),
 	is_complete: z.boolean().describe('全履歴を取得できたか（false の場合は API 件数上限により一部のみ取得。リターンは概算値）'),
 	analysis_basis: z.enum(['deposit_withdrawal', 'trade_only']).describe('分析基準（deposit_withdrawal: 入出金込み, trade_only: 約定ベース）'),
-}).optional().describe('入出金ベースのリターン分析（入出金データがある場合のみ）');
+}).optional().describe('入出金ベースのリターン分析。available 時は実データ、fallback 時は trade_only placeholder、no_history/not_requested 時は undefined');
 
 export const AnalyzeMyPortfolioDataSchema = z.object({
 	holdings: z.array(HoldingPnlSchema).describe('保有銘柄一覧（JPY評価額降順）'),
