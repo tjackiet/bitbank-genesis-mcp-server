@@ -168,13 +168,16 @@ async function fetchTechnical(pairs: string[]): Promise<TechnicalSummary[]> {
 			const trend = (res.meta as any)?.trend;
 
 			// シグナル判定
+			// analyzeIndicators の trend は uptrend/strong_uptrend/downtrend/strong_downtrend/sideways
 			let signal = 'neutral';
 			if (rsi14 != null) {
 				if (rsi14 >= 70) signal = 'overbought';
 				else if (rsi14 <= 30) signal = 'oversold';
 			}
-			if (trend === 'bullish' && signal === 'neutral') signal = 'bullish';
-			if (trend === 'bearish' && signal === 'neutral') signal = 'bearish';
+			const isBullish = trend === 'uptrend' || trend === 'strong_uptrend';
+			const isBearish = trend === 'downtrend' || trend === 'strong_downtrend';
+			if (isBullish && signal === 'neutral') signal = 'bullish';
+			if (isBearish && signal === 'neutral') signal = 'bearish';
 
 			return {
 				pair,
@@ -324,24 +327,43 @@ export default async function analyzeMyPortfolioHandler(args: {
 		// JPY 評価額降順ソート
 		holdings.sort((a, b) => (b.jpy_value ?? 0) - (a.jpy_value ?? 0));
 
+		// 暗号資産 / JPY を分離（テクニカル分析・サマリー・評価損益で使い分ける）
+		const cryptoHoldings = holdings.filter((h) => h.asset !== 'jpy');
+		const jpyHolding = holdings.find((h) => h.asset === 'jpy');
+
 		// 合計評価損益（暗号資産部分のみ。JPY 残高は cost_basis に含めない）
-		const totalUnrealizedPnl = hasCostData ? Math.round(totalJpyValue - totalCostBasis - (holdings.find((h) => h.asset === 'jpy')?.jpy_value ?? 0)) : undefined;
-		const totalUnrealizedPnlPct = (totalUnrealizedPnl != null && totalCostBasis > 0)
-			? Math.round((totalUnrealizedPnl / totalCostBasis) * 10000) / 100
+		// ticker 未取得の銘柄がある場合は totalCostBasis に原価だけ積まれて過大なマイナスになるため、
+		// 現在値が取れた銘柄の原価だけを集計し直す
+		let validCostBasis = 0;
+		let validJpyValue = 0;
+		for (const h of cryptoHoldings) {
+			if (h.jpy_value != null && h.cost_basis != null) {
+				validCostBasis += h.cost_basis;
+				validJpyValue += h.jpy_value;
+			}
+		}
+		const hasValidCostData = validCostBasis > 0;
+		const totalUnrealizedPnl = hasValidCostData ? Math.round(validJpyValue - validCostBasis) : undefined;
+		const totalUnrealizedPnlPct = (totalUnrealizedPnl != null && validCostBasis > 0)
+			? Math.round((totalUnrealizedPnl / validCostBasis) * 10000) / 100
 			: undefined;
 
-		// 4. テクニカル分析（オプション）
+		// ticker 未取得の銘柄がある場合は警告
+		const missingPriceAssets = cryptoHoldings
+			.filter((h) => h.jpy_value == null && h.cost_basis != null)
+			.map((h) => h.asset.toUpperCase());
+		const hasMissingPrices = missingPriceAssets.length > 0;
+
+		// 4. テクニカル分析（オプション、暗号資産のみ）
 		let technical: TechnicalSummary[] | undefined;
-		if (include_technical && holdings.length > 0) {
-			const jpyPairs = holdings
+		if (include_technical && cryptoHoldings.length > 0) {
+			const jpyPairs = cryptoHoldings
 				.filter((h) => h.jpy_value != null)
 				.map((h) => h.pair);
 			technical = await fetchTechnical(jpyPairs);
 		}
 
 		// 5. サマリー文字列の生成
-		const cryptoHoldings = holdings.filter((h) => h.asset !== 'jpy');
-		const jpyHolding = holdings.find((h) => h.asset === 'jpy');
 		const lines: string[] = [];
 		lines.push(`ポートフォリオ分析: 暗号資産 ${cryptoHoldings.length}銘柄${jpyHolding ? ' + JPY' : ''}`);
 		if (totalJpyValue > 0) {
@@ -377,6 +399,12 @@ export default async function analyzeMyPortfolioHandler(args: {
 			lines.push(line);
 		}
 
+		// ticker 未取得警告
+		if (hasMissingPrices) {
+			lines.push('');
+			lines.push(`注意: ${missingPriceAssets.join(', ')} の現在価格が取得できなかったため、評価損益から除外しています`);
+		}
+
 		// テクニカルサマリー
 		if (technical && technical.length > 0) {
 			lines.push('');
@@ -396,7 +424,7 @@ export default async function analyzeMyPortfolioHandler(args: {
 		const data = {
 			holdings,
 			total_jpy_value: totalJpyValue > 0 ? Math.round(totalJpyValue) : undefined,
-			total_cost_basis: hasCostData ? Math.round(totalCostBasis) : undefined,
+			total_cost_basis: hasValidCostData ? Math.round(validCostBasis) : undefined,
 			total_unrealized_pnl: totalUnrealizedPnl,
 			total_unrealized_pnl_pct: totalUnrealizedPnlPct,
 			total_realized_pnl: totalRealizedPnl !== 0 ? totalRealizedPnl : undefined,
