@@ -100,8 +100,10 @@ if (isPrivateApiEnabled()) {
 	// 即時実行関数で動的 import を行い、allToolDefs に追加する。
 	// ※ ESM の top-level await が使えない環境でも動作するよう IIFE で対応。
 	const { toolDef: getMyAssets } = await import('../tools/private/get_my_assets.js');
-	allToolDefs.push(getMyAssets);
-	log('info', { type: 'private_api', message: 'Private API tools enabled', tools: ['get_my_assets'] });
+	const { toolDef: getMyTradeHistory } = await import('../tools/private/get_my_trade_history.js');
+	const { toolDef: getMyOrders } = await import('../tools/private/get_my_orders.js');
+	allToolDefs.push(getMyAssets, getMyTradeHistory, getMyOrders);
+	log('info', { type: 'private_api', message: 'Private API tools enabled', tools: ['get_my_assets', 'get_my_trade_history', 'get_my_orders'] });
 } else {
 	log('info', { type: 'private_api', message: 'Private API tools disabled (no API key configured)' });
 }
