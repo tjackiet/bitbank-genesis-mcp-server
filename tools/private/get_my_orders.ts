@@ -1,0 +1,151 @@
+/**
+ * get_my_orders — 自分のアクティブな注文一覧を取得する Private API ツール。
+ *
+ * bitbank Private API `/v1/user/spot/active_orders` を呼び出し、
+ * LLM が分析しやすい形に整形して返す。
+ */
+
+import { ok, fail } from '../../lib/result.js';
+import { nowIso, toIsoMs, dayjs } from '../../lib/datetime.js';
+import { formatPair, formatPrice } from '../../lib/formatter.js';
+import { getDefaultClient, PrivateApiError } from '../../src/private/client.js';
+import {
+	GetMyOrdersInputSchema,
+	GetMyOrdersOutputSchema,
+} from '../../src/private/schemas.js';
+import type { ToolDefinition } from '../../src/tool-definition.js';
+
+/** bitbank /v1/user/spot/active_orders のレスポンス型 */
+interface RawOrder {
+	order_id: number;
+	pair: string;
+	side: string;
+	position_side?: string;
+	type: string;
+	start_amount?: string;
+	remaining_amount?: string;
+	executed_amount?: string;
+	price?: string;
+	post_only?: boolean;
+	user_cancelable?: boolean;
+	average_price?: string;
+	ordered_at: number;
+	expire_at?: number;
+	triggered_at?: number;
+	trigger_price?: string;
+	status: string;
+}
+
+export default async function getMyOrders(args: {
+	pair?: string;
+	count?: number;
+	since?: string;
+	end?: string;
+}) {
+	const { pair, count = 100, since, end } = args;
+	const client = getDefaultClient();
+
+	try {
+		// クエリパラメータを組み立て
+		const params: Record<string, string> = {};
+		if (pair) params.pair = pair;
+		if (count !== 100) params.count = String(count);
+
+		// ISO8601 → unix ms 変換
+		if (since) {
+			const sinceMs = dayjs(since).valueOf();
+			if (Number.isFinite(sinceMs)) params.since = String(sinceMs);
+		}
+		if (end) {
+			const endMs = dayjs(end).valueOf();
+			if (Number.isFinite(endMs)) params.end = String(endMs);
+		}
+
+		const rawData = await client.get<{ orders: RawOrder[] }>(
+			'/v1/user/spot/active_orders',
+			Object.keys(params).length > 0 ? params : undefined,
+		);
+
+		const timestamp = nowIso();
+
+		// 注文データの整形
+		const orders = rawData.orders.map((o) => ({
+			order_id: o.order_id,
+			pair: o.pair,
+			side: o.side,
+			type: o.type,
+			start_amount: o.start_amount,
+			remaining_amount: o.remaining_amount,
+			executed_amount: o.executed_amount,
+			price: o.price,
+			average_price: o.average_price,
+			status: o.status,
+			ordered_at: toIsoMs(o.ordered_at) ?? String(o.ordered_at),
+			expire_at: o.expire_at ? (toIsoMs(o.expire_at) ?? String(o.expire_at)) : undefined,
+		}));
+
+		// サマリー文字列の生成
+		const lines: string[] = [];
+		const pairLabel = pair ? formatPair(pair) : '全ペア';
+		lines.push(`アクティブ注文: ${pairLabel} ${orders.length}件`);
+
+		if (orders.length > 0) {
+			lines.push('');
+
+			for (const o of orders) {
+				const sideLabel = o.side === 'buy' ? '買' : '売';
+				const isJpy = o.pair.includes('jpy');
+				const price = o.price
+					? (isJpy ? formatPrice(Number(o.price)) : o.price)
+					: '成行';
+				const remaining = o.remaining_amount ?? '?';
+				lines.push(
+					`${formatPair(o.pair)} ${sideLabel}${o.type} ${remaining} @ ${price} [${o.status}] (${o.ordered_at})`,
+				);
+			}
+
+			// 集計
+			const buyCount = orders.filter((o) => o.side === 'buy').length;
+			const sellCount = orders.filter((o) => o.side === 'sell').length;
+			lines.push('');
+			lines.push(`集計: 買 ${buyCount}件 / 売 ${sellCount}件`);
+		} else {
+			lines.push('アクティブな注文はありません。');
+		}
+
+		const summary = lines.join('\n');
+
+		const data = {
+			orders,
+			timestamp,
+		};
+
+		const meta = {
+			fetchedAt: timestamp,
+			orderCount: orders.length,
+			pair: pair || undefined,
+		};
+
+		return GetMyOrdersOutputSchema.parse(ok(summary, data, meta));
+	} catch (err) {
+		if (err instanceof PrivateApiError) {
+			return GetMyOrdersOutputSchema.parse(
+				fail(err.message, err.errorType),
+			);
+		}
+		return GetMyOrdersOutputSchema.parse(
+			fail(
+				err instanceof Error ? err.message : '注文情報取得中に予期しないエラーが発生しました',
+				'upstream_error',
+			),
+		);
+	}
+}
+
+// ── MCP ツール定義（tool-registry から自動収集） ──
+export const toolDef: ToolDefinition = {
+	name: 'get_my_orders',
+	description: '自分のアクティブな注文一覧を取得。通貨ペア・期間でフィルタ可能。Private API（要APIキー設定）。',
+	inputSchema: GetMyOrdersInputSchema,
+	handler: async (args: any) => getMyOrders(args ?? {}),
+};
