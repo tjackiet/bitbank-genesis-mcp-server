@@ -194,7 +194,7 @@ const DepositWithdrawalSummarySchema = z.object({
 	account_return_jpy: z.number().optional().describe('口座全体リターン額（JPY）'),
 	is_complete: z.boolean().describe('全履歴を取得できたか（false の場合は API 件数上限により一部のみ取得。リターンは概算値）'),
 	analysis_basis: z.enum(['deposit_withdrawal', 'trade_only']).describe('分析基準（deposit_withdrawal: 入出金込み, trade_only: 約定ベース）'),
-}).optional().describe('入出金ベースのリターン分析。available 時は実データ、fallback 時は trade_only placeholder、no_history/not_requested 時は undefined');
+}).optional().describe('入出金ベースのリターン分析。available: 実データ（analysis_basis=deposit_withdrawal）、fallback: 常にplaceholder（analysis_basis=trade_only）、no_history/not_requested: undefined');
 
 export const AnalyzeMyPortfolioDataSchema = z.object({
 	holdings: z.array(HoldingPnlSchema).describe('保有銘柄一覧（JPY評価額降順）'),
@@ -214,7 +214,7 @@ export const AnalyzeMyPortfolioMetaSchema = z.object({
 	hasPnl: z.boolean(),
 	hasTechnical: z.boolean(),
 	depositWithdrawalStatus: z.enum(['available', 'fallback', 'no_history', 'not_requested'])
-		.describe('入出金分析の状態: available=入出金データ取得成功で分析実行, fallback=API取得失敗で約定ベースにフォールバック, no_history=API取得成功だが履歴0件, not_requested=未リクエスト'),
+		.describe('入出金分析の状態: available=入出金データ取得成功で分析実行（deposit_withdrawal_summaryあり）, fallback=API取得失敗またはpartial failureにより約定ベースにフォールバック（deposit_withdrawal_summaryはtrade_only placeholder）, no_history=API取得成功・警告なし・履歴0件（deposit_withdrawal_summaryはundefined）, not_requested=未リクエスト（deposit_withdrawal_summaryはundefined）'),
 });
 
 export const AnalyzeMyPortfolioOutputSchema = z.union([
