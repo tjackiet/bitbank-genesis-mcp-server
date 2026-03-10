@@ -1,9 +1,9 @@
 /**
  * bitbank Private API 認証モジュール。
  *
- * HMAC-SHA256 署名を生成し、認証ヘッダーを返す。
- * 認証ロジックはここに閉じ込め、将来の方式変更時にも
- * ツールやクライアントの変更を最小化する。
+ * ACCESS-TIME-WINDOW 方式を採用。
+ * 署名対象文字列: requestTime + timeWindow + path/body
+ * ヘッダー: ACCESS-KEY, ACCESS-REQUEST-TIME, ACCESS-TIME-WINDOW, ACCESS-SIGNATURE
  *
  * @see https://github.com/bitbankinc/bitbank-api-docs/blob/master/rest-api.md
  */
@@ -11,27 +11,30 @@
 import { createHmac } from 'node:crypto';
 import { getPrivateApiConfig } from './config.js';
 
+/** デフォルトの TIME-WINDOW（ミリ秒）。最大 60000 まで設定可能 */
+const DEFAULT_TIME_WINDOW = '5000';
+
 export interface AuthHeaders {
 	'ACCESS-KEY': string;
-	'ACCESS-NONCE': string;
+	'ACCESS-REQUEST-TIME': string;
+	'ACCESS-TIME-WINDOW': string;
 	'ACCESS-SIGNATURE': string;
-	'ACCESS-TIME-WINDOW'?: string;
 }
 
 /**
  * GET リクエスト用の署名対象文字列を組み立てる。
- * 形式: nonce + path（クエリパラメータ含む）
+ * 形式: requestTime + timeWindow + path（クエリパラメータ含む）
  */
-export function buildGetMessage(nonce: string, path: string): string {
-	return nonce + path;
+export function buildGetMessage(requestTime: string, timeWindow: string, path: string): string {
+	return requestTime + timeWindow + path;
 }
 
 /**
  * POST リクエスト用の署名対象文字列を組み立てる。
- * 形式: nonce + JSON body
+ * 形式: requestTime + timeWindow + JSON body
  */
-export function buildPostMessage(nonce: string, body: string): string {
-	return nonce + body;
+export function buildPostMessage(requestTime: string, timeWindow: string, body: string): string {
+	return requestTime + timeWindow + body;
 }
 
 /**
@@ -46,23 +49,28 @@ export function sign(secret: string, message: string): string {
  * GET リクエスト用の認証ヘッダーを生成する。
  *
  * @param path - リクエストパス（例: '/v1/user/assets'）、クエリパラメータ含む
- * @param nonce - テスト時に固定値を注入可能。省略時はミリ秒タイムスタンプ
+ * @param requestTime - テスト時に固定値を注入可能。省略時はミリ秒タイムスタンプ
+ * @param timeWindow - TIME-WINDOW 値（ミリ秒）。省略時は 5000
  */
-export function createGetAuthHeaders(path: string, nonce?: string): AuthHeaders {
+export function createGetAuthHeaders(
+	path: string,
+	requestTime?: string,
+	timeWindow: string = DEFAULT_TIME_WINDOW,
+): AuthHeaders {
 	const config = getPrivateApiConfig();
 	if (!config) {
 		throw new Error('BITBANK_API_KEY / BITBANK_API_SECRET が未設定です');
 	}
 
-	const n = nonce ?? Date.now().toString();
-	const message = buildGetMessage(n, path);
+	const rt = requestTime ?? Date.now().toString();
+	const message = buildGetMessage(rt, timeWindow, path);
 	const signature = sign(config.apiSecret, message);
 
 	return {
 		'ACCESS-KEY': config.apiKey,
-		'ACCESS-NONCE': n,
+		'ACCESS-REQUEST-TIME': rt,
+		'ACCESS-TIME-WINDOW': timeWindow,
 		'ACCESS-SIGNATURE': signature,
-		'ACCESS-TIME-WINDOW': '5000',
 	};
 }
 
@@ -70,22 +78,27 @@ export function createGetAuthHeaders(path: string, nonce?: string): AuthHeaders 
  * POST リクエスト用の認証ヘッダーを生成する。
  *
  * @param body - JSON.stringify 済みのリクエストボディ
- * @param nonce - テスト時に固定値を注入可能。省略時はミリ秒タイムスタンプ
+ * @param requestTime - テスト時に固定値を注入可能。省略時はミリ秒タイムスタンプ
+ * @param timeWindow - TIME-WINDOW 値（ミリ秒）。省略時は 5000
  */
-export function createPostAuthHeaders(body: string, nonce?: string): AuthHeaders {
+export function createPostAuthHeaders(
+	body: string,
+	requestTime?: string,
+	timeWindow: string = DEFAULT_TIME_WINDOW,
+): AuthHeaders {
 	const config = getPrivateApiConfig();
 	if (!config) {
 		throw new Error('BITBANK_API_KEY / BITBANK_API_SECRET が未設定です');
 	}
 
-	const n = nonce ?? Date.now().toString();
-	const message = buildPostMessage(n, body);
+	const rt = requestTime ?? Date.now().toString();
+	const message = buildPostMessage(rt, timeWindow, body);
 	const signature = sign(config.apiSecret, message);
 
 	return {
 		'ACCESS-KEY': config.apiKey,
-		'ACCESS-NONCE': n,
+		'ACCESS-REQUEST-TIME': rt,
+		'ACCESS-TIME-WINDOW': timeWindow,
 		'ACCESS-SIGNATURE': signature,
-		'ACCESS-TIME-WINDOW': '5000',
 	};
 }

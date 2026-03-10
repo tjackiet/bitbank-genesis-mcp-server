@@ -1,15 +1,20 @@
 /**
  * auth.ts の署名テストベクタ。
  *
- * 既知の入力（秘密鍵・nonce・パス・ボディ）から期待される署名を検証する。
- * 実 API キーは使わない。
+ * 既知の入力（秘密鍵・requestTime・timeWindow・パス・ボディ）から
+ * 期待される署名を検証する。実 API キーは使わない。
+ *
+ * ACCESS-TIME-WINDOW 方式:
+ *   署名対象 = requestTime + timeWindow + path/body
+ *
+ * @see https://github.com/bitbankinc/bitbank-api-docs/blob/master/rest-api.md
  */
 
 import { describe, it, expect } from 'vitest';
 import { sign, buildGetMessage, buildPostMessage } from '../../src/private/auth.js';
 
-// テストベクタ: 固定の秘密鍵・nonce・パスから手計算した署名
-// 検証方法: echo -n "<message>" | openssl dgst -sha256 -hmac "<secret>" で照合可能
+// テストベクタ: 固定の秘密鍵から手計算した署名
+// 検証方法: echo -n "<message>" | openssl dgst -sha256 -hmac "<secret>"
 const TEST_SECRET = 'test_secret_key_for_signing_12345';
 
 describe('auth.ts 署名テストベクタ', () => {
@@ -32,74 +37,76 @@ describe('auth.ts 署名テストベクタ', () => {
 	});
 
 	describe('buildGetMessage()', () => {
-		it('nonce + path を連結する', () => {
-			const message = buildGetMessage('1234567890', '/v1/user/assets');
-			expect(message).toBe('1234567890/v1/user/assets');
+		it('requestTime + timeWindow + path を連結する', () => {
+			const message = buildGetMessage('1721121776490', '5000', '/v1/user/assets');
+			expect(message).toBe('17211217764905000/v1/user/assets');
 		});
 
 		it('クエリパラメータ付きパスも正しく連結する', () => {
-			const message = buildGetMessage('1234567890', '/v1/user/spot/trade_history?pair=btc_jpy&count=10');
-			expect(message).toBe('1234567890/v1/user/spot/trade_history?pair=btc_jpy&count=10');
+			const message = buildGetMessage('1721121776490', '5000', '/v1/user/spot/trade_history?pair=btc_jpy&count=10');
+			expect(message).toBe('17211217764905000/v1/user/spot/trade_history?pair=btc_jpy&count=10');
 		});
 	});
 
 	describe('buildPostMessage()', () => {
-		it('nonce + JSON body を連結する', () => {
-			const body = JSON.stringify({ pair: 'btc_jpy', amount: '0.01', side: 'buy', type: 'market' });
-			const message = buildPostMessage('1234567890', body);
-			expect(message).toBe('1234567890' + body);
+		it('requestTime + timeWindow + JSON body を連結する', () => {
+			const body = '{"pair":"xrp_jpy","price":"20","amount":"1","side":"buy","type":"limit"}';
+			const message = buildPostMessage('1721121776490', '5000', body);
+			expect(message).toBe('17211217764905000' + body);
 		});
 	});
 
-	describe('GET リクエストの署名検証（エンドツーエンド）', () => {
-		it('nonce + path から正しい署名を生成する', () => {
-			const nonce = '1709000000000';
-			const path = '/v1/user/assets';
-			const message = buildGetMessage(nonce, path);
-			const signature = sign(TEST_SECRET, message);
-
-			// message = "1709000000000/v1/user/assets"
-			expect(message).toBe('1709000000000/v1/user/assets');
-			// 署名は決定的なので毎回同じ値が出る
-			expect(signature).toHaveLength(64); // SHA256 hex = 64文字
-			expect(signature).toMatch(/^[0-9a-f]{64}$/);
-
-			// 同じ入力なら同じ出力（冪等性）
-			const signature2 = sign(TEST_SECRET, message);
-			expect(signature).toBe(signature2);
+	describe('公式ドキュメントのテストベクタ検証', () => {
+		// 公式ドキュメント記載の例:
+		// SECRET = "hoge"
+		// ACCESS_REQUEST_TIME = 1721121776490
+		// ACCESS_TIME_WINDOW = 1000
+		// GET /v1/user/assets
+		// 署名対象 = "17211217764901000/v1/user/assets"
+		// 期待署名 = "9ec5745960d05573c8fb047cdd9191bd0c6ede26f07700bb40ecf1a3920abae8"
+		it('GET: 公式ドキュメントの署名例と一致する', () => {
+			const message = buildGetMessage('1721121776490', '1000', '/v1/user/assets');
+			expect(message).toBe('17211217764901000/v1/user/assets');
+			const signature = sign('hoge', message);
+			expect(signature).toBe('9ec5745960d05573c8fb047cdd9191bd0c6ede26f07700bb40ecf1a3920abae8');
 		});
-	});
 
-	describe('POST リクエストの署名検証（エンドツーエンド）', () => {
-		it('nonce + body から正しい署名を生成する', () => {
-			const nonce = '1709000000000';
-			const body = '{"pair":"btc_jpy","amount":"0.01","side":"buy","type":"market"}';
-			const message = buildPostMessage(nonce, body);
-			const signature = sign(TEST_SECRET, message);
-
-			expect(message).toBe(nonce + body);
-			expect(signature).toHaveLength(64);
-			expect(signature).toMatch(/^[0-9a-f]{64}$/);
+		// POST の公式例:
+		// SECRET = "hoge"
+		// ACCESS_REQUEST_TIME = 1721121776490
+		// ACCESS_TIME_WINDOW = 1000
+		// BODY = '{"pair": "xrp_jpy", "price": "20", "amount": "1","side": "buy", "type": "limit"}'
+		// 期待署名 = "7868665738ae3f8a796224e0413c1351ddd7ec2af121db12815c0a5b74b8764c"
+		it('POST: 公式ドキュメントの署名例と一致する', () => {
+			const body = '{"pair": "xrp_jpy", "price": "20", "amount": "1","side": "buy", "type": "limit"}';
+			const message = buildPostMessage('1721121776490', '1000', body);
+			expect(message).toBe('17211217764901000' + body);
+			const signature = sign('hoge', message);
+			expect(signature).toBe('7868665738ae3f8a796224e0413c1351ddd7ec2af121db12815c0a5b74b8764c');
 		});
 	});
 
 	describe('異なる入力で異なる署名が生成される', () => {
 		it('パスが異なれば署名が異なる', () => {
-			const nonce = '1709000000000';
-			const sig1 = sign(TEST_SECRET, buildGetMessage(nonce, '/v1/user/assets'));
-			const sig2 = sign(TEST_SECRET, buildGetMessage(nonce, '/v1/user/spot/trade_history'));
+			const sig1 = sign(TEST_SECRET, buildGetMessage('1709000000000', '5000', '/v1/user/assets'));
+			const sig2 = sign(TEST_SECRET, buildGetMessage('1709000000000', '5000', '/v1/user/spot/trade_history'));
 			expect(sig1).not.toBe(sig2);
 		});
 
-		it('nonce が異なれば署名が異なる', () => {
-			const path = '/v1/user/assets';
-			const sig1 = sign(TEST_SECRET, buildGetMessage('1709000000000', path));
-			const sig2 = sign(TEST_SECRET, buildGetMessage('1709000000001', path));
+		it('requestTime が異なれば署名が異なる', () => {
+			const sig1 = sign(TEST_SECRET, buildGetMessage('1709000000000', '5000', '/v1/user/assets'));
+			const sig2 = sign(TEST_SECRET, buildGetMessage('1709000000001', '5000', '/v1/user/assets'));
+			expect(sig1).not.toBe(sig2);
+		});
+
+		it('timeWindow が異なれば署名が異なる', () => {
+			const sig1 = sign(TEST_SECRET, buildGetMessage('1709000000000', '5000', '/v1/user/assets'));
+			const sig2 = sign(TEST_SECRET, buildGetMessage('1709000000000', '10000', '/v1/user/assets'));
 			expect(sig1).not.toBe(sig2);
 		});
 
 		it('秘密鍵が異なれば署名が異なる', () => {
-			const message = buildGetMessage('1709000000000', '/v1/user/assets');
+			const message = buildGetMessage('1709000000000', '5000', '/v1/user/assets');
 			const sig1 = sign('secret_a', message);
 			const sig2 = sign('secret_b', message);
 			expect(sig1).not.toBe(sig2);

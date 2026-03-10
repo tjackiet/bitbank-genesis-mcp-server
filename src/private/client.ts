@@ -3,8 +3,11 @@
  *
  * - 認証ヘッダーの付与を隠蔽し、ツールから直接認証を意識させない
  * - HTTP 層を注入可能にし、テスト時に mock に差し替えられる
- * - レート制限（429）は Retry-After に従いリトライ
+ * - レート制限（429 / エラーコード 10009）は Retry-After に従いリトライ
  * - Base URL: https://api.bitbank.cc（public.bitbank.cc とは別）
+ *
+ * @see https://github.com/bitbankinc/bitbank-api-docs/blob/master/rest-api.md
+ * @see https://github.com/bitbankinc/bitbank-api-docs/blob/master/errors.md
  */
 
 import { createGetAuthHeaders, createPostAuthHeaders } from './auth.js';
@@ -24,11 +27,23 @@ export class PrivateApiError extends Error {
 		message: string,
 		public readonly errorType: string,
 		public readonly statusCode?: number,
+		public readonly bitbankCode?: number,
 	) {
 		super(message);
 		this.name = 'PrivateApiError';
 	}
 }
+
+/**
+ * bitbank エラーコードの分類。
+ * @see https://github.com/bitbankinc/bitbank-api-docs/blob/master/errors.md
+ */
+// 認証系: 20001〜20005
+const AUTH_ERROR_CODES = new Set([20001, 20002, 20003, 20004, 20005]);
+// レート制限: 10009
+const RATE_LIMIT_CODES = new Set([10009]);
+// メンテナンス/過負荷: 10007, 10008
+const MAINTENANCE_CODES = new Set([10007, 10008]);
 
 export interface PrivateClientOptions {
 	fetcher?: HttpFetcher;
@@ -106,7 +121,7 @@ export class BitbankPrivateClient {
 				const res = await this.fetcher(url, { ...init, signal: ctrl.signal });
 				clearTimeout(timer);
 
-				// 429 Rate Limit
+				// 429 Rate Limit（HTTP レベル）
 				if (res.status === 429) {
 					const retryAfter = res.headers.get('Retry-After');
 					const waitMs = retryAfter ? parseInt(retryAfter, 10) * 1000 : 1000;
@@ -134,32 +149,38 @@ export class BitbankPrivateClient {
 					);
 				}
 
-				// Other HTTP errors
+				// レスポンスボディを取得
+				const body = await res.text().catch(() => '');
+
+				// HTTP エラー（4xx 等）
 				if (!res.ok) {
-					const body = await res.text().catch(() => '');
 					const errorCode = this.extractErrorCode(body);
-					if (res.status === 401 || res.status === 403 || errorCode === 10000 || errorCode === 10002) {
-						throw new PrivateApiError(
-							'API キーまたは署名が不正です。bitbank 管理画面でキーを確認してください',
-							'authentication_error',
-							res.status,
-						);
-					}
-					throw new PrivateApiError(
-						`bitbank API エラー (HTTP ${res.status}): ${body.slice(0, 200)}`,
-						'upstream_error',
-						res.status,
-					);
+					throw this.classifyBitbankError(res.status, errorCode, body);
 				}
 
-				// Success
-				const json = (await res.json()) as BitbankApiResponse<T>;
-				if (json.success !== 1) {
-					throw new PrivateApiError(
-						`bitbank API エラー: success=${json.success}`,
-						'upstream_error',
-					);
+				// Success レスポンスのパース
+				let json: BitbankApiResponse<T>;
+				try {
+					json = JSON.parse(body) as BitbankApiResponse<T>;
+				} catch {
+					throw new PrivateApiError('レスポンスの JSON パースに失敗しました', 'upstream_error');
 				}
+
+				// success: 0 の場合（HTTP 200 でもエラー）
+				if (json.success !== 1) {
+					const errorCode = (json.data as any)?.code as number | undefined;
+
+					// レート制限エラーはリトライ
+					if (errorCode != null && RATE_LIMIT_CODES.has(errorCode)) {
+						if (attempt < this.maxRetries) {
+							await new Promise((r) => setTimeout(r, 1000 * 2 ** attempt));
+							continue;
+						}
+					}
+
+					throw this.classifyBitbankError(200, errorCode ?? null, body);
+				}
+
 				return json.data;
 			} catch (err) {
 				clearTimeout(timer);
@@ -197,6 +218,77 @@ export class BitbankPrivateClient {
 		} catch {
 			return null;
 		}
+	}
+
+	/**
+	 * bitbank エラーコードを分類し、適切な PrivateApiError を生成する。
+	 *
+	 * エラーコード体系:
+	 * - 10000 番台: システムエラー（10009 はレート制限）
+	 * - 20000 番台: 認証エラー
+	 * - 30000 番台: 必須パラメータ不足
+	 * - 40000 番台: パラメータ不正
+	 * - 50000 番台: データエラー
+	 * - 60000 番台: 数値制限超過
+	 * - 70000 番台: 取引制限中
+	 */
+	private classifyBitbankError(httpStatus: number, errorCode: number | null, body: string): PrivateApiError {
+		// 認証エラー
+		if (errorCode != null && AUTH_ERROR_CODES.has(errorCode)) {
+			const details: Record<number, string> = {
+				20001: 'API 認証に失敗しました',
+				20002: 'API キーが無効です',
+				20003: 'API キーが見つかりません',
+				20004: 'ACCESS-NONCE / ACCESS-REQUEST-TIME が未指定です',
+				20005: '署名が無効です。API シークレットを確認してください',
+			};
+			return new PrivateApiError(
+				details[errorCode] ?? 'API 認証エラー',
+				'authentication_error',
+				httpStatus,
+				errorCode,
+			);
+		}
+
+		// レート制限
+		if (errorCode != null && RATE_LIMIT_CODES.has(errorCode)) {
+			return new PrivateApiError(
+				'リクエスト頻度が高すぎます。しばらく待ってから再試行してください',
+				'rate_limit_error',
+				httpStatus,
+				errorCode,
+			);
+		}
+
+		// メンテナンス / 過負荷
+		if (errorCode != null && MAINTENANCE_CODES.has(errorCode)) {
+			return new PrivateApiError(
+				errorCode === 10007
+					? 'bitbank はメンテナンス中です'
+					: 'bitbank サーバーが過負荷状態です。しばらく待ってから再試行してください',
+				'upstream_error',
+				httpStatus,
+				errorCode,
+			);
+		}
+
+		// HTTP 401/403（エラーコードなし）
+		if (httpStatus === 401 || httpStatus === 403) {
+			return new PrivateApiError(
+				'API キーまたは署名が不正です。bitbank 管理画面でキーを確認してください',
+				'authentication_error',
+				httpStatus,
+				errorCode ?? undefined,
+			);
+		}
+
+		// その他
+		return new PrivateApiError(
+			`bitbank API エラー (HTTP ${httpStatus}${errorCode ? `, code: ${errorCode}` : ''}): ${body.slice(0, 200)}`,
+			'upstream_error',
+			httpStatus,
+			errorCode ?? undefined,
+		);
 	}
 }
 
