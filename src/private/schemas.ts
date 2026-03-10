@@ -158,7 +158,7 @@ export const AnalyzeMyPortfolioInputSchema = z.object({
 	include_pnl: z.boolean().default(true)
 		.describe('損益分析を含めるか（約定履歴から平均取得単価・損益を算出）'),
 	include_deposit_withdrawal: z.boolean().default(true)
-		.describe('入出金データを含めるか（true の場合、総入金額 vs 現在評価額で口座全体のリターンを概算。直近100件ベースのため長期口座では概算値）'),
+		.describe('入出金データを含めるか（true の場合、総入金額 vs 現在評価額で口座全体のリターンを算出。ページネーション対応で最大1000件/チャネル取得）'),
 });
 
 const HoldingPnlSchema = z.object({
@@ -213,7 +213,8 @@ export const AnalyzeMyPortfolioMetaSchema = z.object({
 	holdingCount: z.number().int(),
 	hasPnl: z.boolean(),
 	hasTechnical: z.boolean(),
-	hasDepositWithdrawal: z.boolean(),
+	depositWithdrawalStatus: z.enum(['available', 'fallback', 'not_requested'])
+		.describe('入出金分析の状態: available=入出金データ取得成功, fallback=取得失敗で約定ベースにフォールバック, not_requested=未リクエスト'),
 });
 
 export const AnalyzeMyPortfolioOutputSchema = z.union([
@@ -277,6 +278,8 @@ export const GetMyDepositWithdrawalMetaSchema = z.object({
 	depositCount: z.number().int(),
 	withdrawalCount: z.number().int(),
 	asset: z.string().optional(),
+	isComplete: z.boolean().describe('全履歴を取得できたか（false の場合は API 件数上限に達し一部のみ取得）'),
+	hasWarnings: z.boolean().describe('一部の API リクエストが失敗した警告があるか'),
 });
 
 export const GetMyDepositWithdrawalOutputSchema = z.union([

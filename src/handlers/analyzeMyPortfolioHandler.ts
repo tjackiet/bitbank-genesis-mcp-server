@@ -730,12 +730,22 @@ export default async function analyzeMyPortfolioHandler(args: {
 			timestamp,
 		};
 
+		// depositWithdrawalStatus の判定:
+		// - not_requested: include_deposit_withdrawal=false
+		// - available: dwSummary が取得できた（入出金データあり）
+		// - fallback: リクエストしたが失敗/データなし → trade_only にフォールバック
+		const depositWithdrawalStatus = !include_deposit_withdrawal
+			? 'not_requested' as const
+			: dwSummary != null
+				? 'available' as const
+				: 'fallback' as const;
+
 		const meta = {
 			fetchedAt: timestamp,
 			holdingCount: holdings.length,
 			hasPnl: include_pnl && allTrades.length > 0,
 			hasTechnical: include_technical && (technical?.length ?? 0) > 0,
-			hasDepositWithdrawal: dwSummary != null,
+			depositWithdrawalStatus,
 		};
 
 		return AnalyzeMyPortfolioOutputSchema.parse(ok(summary, data, meta));
