@@ -720,7 +720,11 @@ export default async function analyzeMyPortfolioHandler(args: {
 			total_unrealized_pnl: totalUnrealizedPnl,
 			total_unrealized_pnl_pct: totalUnrealizedPnlPct,
 			total_realized_pnl: totalRealizedPnl !== 0 ? totalRealizedPnl : undefined,
-			deposit_withdrawal_summary: dwSummary ?? (include_deposit_withdrawal ? {
+			// deposit_withdrawal_summary の出し分け:
+			// - available (dwSummary != null): 実データ
+			// - fallback: 約定ベースフォールバックの placeholder
+			// - no_history / not_requested: undefined
+			deposit_withdrawal_summary: dwSummary ?? (include_deposit_withdrawal && dwData && (dwData.allFailed || dwData.warnings.length > 0) ? {
 				total_jpy_deposited: 0,
 				total_jpy_withdrawn: 0,
 				net_jpy_invested: 0,
@@ -739,18 +743,24 @@ export default async function analyzeMyPortfolioHandler(args: {
 		// depositWithdrawalStatus の判定:
 		// - not_requested: include_deposit_withdrawal=false
 		// - available: 入出金データ取得成功＋分析実行
-		// - no_history: API取得成功だが履歴0件（入出金ベース分析を作れなかった）
-		// - fallback: API取得失敗で約定ベースにフォールバック
+		// - no_history: API取得成功・警告なし・本当に履歴0件
+		// - fallback: API取得失敗 or partial failure で約定ベースにフォールバック
 		let depositWithdrawalStatus: 'available' | 'fallback' | 'no_history' | 'not_requested';
 		if (!include_deposit_withdrawal) {
 			depositWithdrawalStatus = 'not_requested';
 		} else if (dwSummary != null) {
 			depositWithdrawalStatus = 'available';
-		} else if (dwData && !dwData.allFailed && dwData.deposits.length === 0 && dwData.withdrawals.length === 0) {
-			// API 取得成功だが本当に履歴 0 件
+		} else if (
+			dwData
+			&& !dwData.allFailed
+			&& dwData.warnings.length === 0
+			&& dwData.deposits.length === 0
+			&& dwData.withdrawals.length === 0
+		) {
+			// API 取得成功・警告なし・本当に履歴 0 件
 			depositWithdrawalStatus = 'no_history';
 		} else {
-			// dwData が null (catch で null 返却) or allFailed
+			// dwData が null / allFailed / partial failure で 0 件 → fallback
 			depositWithdrawalStatus = 'fallback';
 		}
 
