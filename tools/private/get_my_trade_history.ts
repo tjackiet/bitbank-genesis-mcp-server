@@ -50,14 +50,24 @@ export default async function getMyTradeHistory(args: {
 		if (count !== 100) params.count = String(count);
 		if (order !== 'desc') params.order = order;
 
-		// ISO8601 → unix ms 変換
+		// ISO8601 → unix ms 変換（不正な日時はエラーにする）
 		if (since) {
-			const sinceMs = dayjs(since).valueOf();
-			if (Number.isFinite(sinceMs)) params.since = String(sinceMs);
+			const parsed = dayjs(since);
+			if (!parsed.isValid()) {
+				return GetMyTradeHistoryOutputSchema.parse(
+					fail(`since の日時形式が不正です: ${since}`, 'validation_error'),
+				);
+			}
+			params.since = String(parsed.valueOf());
 		}
 		if (end) {
-			const endMs = dayjs(end).valueOf();
-			if (Number.isFinite(endMs)) params.end = String(endMs);
+			const parsed = dayjs(end);
+			if (!parsed.isValid()) {
+				return GetMyTradeHistoryOutputSchema.parse(
+					fail(`end の日時形式が不正です: ${end}`, 'validation_error'),
+				);
+			}
+			params.end = String(parsed.valueOf());
 		}
 
 		const rawData = await client.get<{ trades: RawTrade[] }>(
@@ -90,8 +100,12 @@ export default async function getMyTradeHistory(args: {
 		if (trades.length > 0) {
 			lines.push('');
 
-			// 直近の約定をサマリーに表示（最大10件）
-			const displayTrades = trades.slice(0, 10);
+			// サマリーに表示する約定（最大10件）
+			// desc（デフォルト）: 先頭が直近なのでそのまま slice
+			// asc: 末尾が直近なので末尾10件を取得
+			const displayTrades = order === 'asc'
+				? trades.slice(-10)
+				: trades.slice(0, 10);
 			for (const t of displayTrades) {
 				const sideLabel = t.side === 'buy' ? '買' : '売';
 				const isJpy = t.pair.includes('jpy');
