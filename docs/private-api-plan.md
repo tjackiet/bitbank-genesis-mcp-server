@@ -117,24 +117,49 @@ Phase 1 完了基準:
 
 目的: 過去の取引データを取得、整形し、AI 分析に使える土台を作る。
 
-候補タスク:
+完了タスク:
 
-- `get_my_trade_history` を実装する
-- `get_my_orders` を実装する
-- LLM 向けに履歴データを要約しやすい形へ整形する
-- 必要に応じて `lib/http.ts` の共通化を進める
+- [x] `get_my_trade_history` を実装する
+- [x] `get_my_orders` を実装する
+- [x] LLM 向けに履歴データを要約しやすい形へ整形する
+- [x] since/end の strict ISO8601 バリデーション（`parseIso8601` ヘルパー追加）
+- [x] order=asc 時のサマリー表示修正（末尾10件を表示）
+- [x] from_id/end_id 未対応を description に明記
+
+Phase 2 完了基準:
+
+- [x] `get_my_trade_history` が実 API で正常動作する
+- [x] `get_my_orders` が実 API で正常動作する
+- [x] since/end に不正値を渡した場合 validation_error が返る
+- [x] order=asc/desc の両方でサマリーが正しく表示される
+- [x] `gen:types` / `typecheck` が通る
 
 ### Phase 3: 損益分析 + パフォーマンス評価
 
 目的: 損益計算とポートフォリオ評価を行い、private データと既存 public 分析を統合する。
 
-候補タスク:
+完了タスク:
 
-- 損益計算エンジンを実装する
-- `analyze_my_portfolio` を実装する
-- 構成偏りや時系列パフォーマンスを分析する
-- 既存の public 分析ツールと統合する
-- セットアップと利用方法のドキュメントを整備する
+- [x] 損益計算エンジンを実装する（移動平均法による平均取得単価・実現損益算出）
+- [x] `analyze_my_portfolio` を実装する（`src/handlers/analyzeMyPortfolioHandler.ts` にハンドラ分離）
+- [x] 構成比・評価損益・実現損益の算出
+- [x] 既存の public 分析ツール（`analyzeIndicators`）とのテクニカル分析統合
+- [ ] Inspector / 実 API での E2E 確認
+
+Phase 3 完了基準:
+
+- [ ] `analyze_my_portfolio` が実 API で正常動作する
+- [ ] PnL 算出結果（平均取得単価・評価損益・実現損益）が手動確認で矛盾しない
+- [ ] テクニカル分析統合（RSI, SMA乖離率, トレンド）が正常に返る
+- [ ] include_pnl=false / include_technical=false で該当データが省略される
+- [ ] `gen:types` / `typecheck` が通る
+
+実装メモ:
+
+- 損益計算は移動平均法（総平均法）を採用。買いで取得原価を積み上げ、売りで按分して実現損益を計上
+- 約定履歴は最大1000件を取得。それ以上の履歴がある場合、平均取得単価の精度が下がる可能性あり
+- テクニカル分析は保有上位5通貨に制限（API 負荷軽減）
+- ticker / 約定履歴 / テクニカル分析の各取得失敗は非致命的（取得できた範囲で結果を返す）
 
 ### Phase 4: 注文・売買機能
 
