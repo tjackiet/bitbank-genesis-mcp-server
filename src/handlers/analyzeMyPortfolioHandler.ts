@@ -1184,10 +1184,6 @@ export default async function analyzeMyPortfolioHandler(args: {
 			const sign = totalUnrealizedPnl >= 0 ? '+' : '';
 			lines.push(`合計評価損益（約定ベース）: ${sign}${formatPriceJPY(totalUnrealizedPnl)} (${formatPercent(totalUnrealizedPnlPct, { sign: true })})`);
 		}
-		if (totalRealizedPnl !== 0) {
-			const sign = totalRealizedPnl >= 0 ? '+' : '';
-			lines.push(`合計実現損益: ${sign}${formatPriceJPY(totalRealizedPnl)}`);
-		}
 		lines.push('');
 
 		// 銘柄別サマリー（暗号資産のみ。JPY は口座合計に含む）
