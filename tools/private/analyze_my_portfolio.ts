@@ -14,7 +14,7 @@ import type { ToolDefinition } from '../../src/tool-definition.js';
 export const toolDef: ToolDefinition = {
 	name: 'analyze_my_portfolio',
 	description:
-		'ポートフォリオ分析。口座全体（JPY含む）の評価額と暗号資産の評価損益・実現損益（手数料反映済み）を算出。入出金データがあれば総入金額 vs 現在評価額で口座全体のリターンも算出（ページネーション対応、暗号資産入庫は現在価格で仮評価）。売り切り銘柄の実現損益も含む。オプションでテクニカル分析を統合。Private API（要APIキー設定）。',
+		'[Portfolio Analysis / PnL] 自分のポートフォリオ分析（portfolio / pnl / balance / return）。保有資産の評価損益・実現損益・口座リターンを一括算出。テクニカル分析統合オプション付き。Private API（要APIキー設定）。',
 	inputSchema: AnalyzeMyPortfolioInputSchema,
 	handler: async (args: any) => analyzeMyPortfolioHandler(args ?? {}),
 };
