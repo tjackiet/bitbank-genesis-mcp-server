@@ -224,6 +224,7 @@ export const AnalyzeMyPortfolioDataSchema = z.object({
 	total_unrealized_pnl: z.number().optional().describe('合計評価損益'),
 	total_unrealized_pnl_pct: z.number().optional().describe('合計評価損益率（%）'),
 	total_realized_pnl: z.number().optional().describe('合計実現損益（全履歴ベース）'),
+	daily_performance: PeriodPerformanceSchema.describe('前日比パフォーマンス（当日0:00 JST〜現在の口座評価額増減）'),
 	yearly_performance: PeriodPerformanceSchema.describe('年初比パフォーマンス（当年1/1 00:00 JST〜現在の口座評価額増減）'),
 	monthly_performance: PeriodPerformanceSchema.describe('月初比パフォーマンス（当月1日 00:00 JST〜現在の口座評価額増減）'),
 	yearly_realized_pnl: PeriodRealizedPnlSchema.describe('年初来実現損益（補助指標）'),
