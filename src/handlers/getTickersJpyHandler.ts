@@ -5,7 +5,7 @@ import { formatPercent, formatPrice, formatVolumeJPY } from '../../lib/formatter
 
 export const toolDef: ToolDefinition = {
 	name: 'get_tickers_jpy',
-	description: '全JPYペアのティッカーを取得（/tickers_jpy）。view=ranked でランキング表示、view=items で全データ。キャッシュ10秒。',
+	description: 'Get all JPY pair tickers (prices, volume, 24h change) from bitbank. 全JPYペアのティッカーを取得（/tickers_jpy）。view=ranked でランキング表示、view=items で全データ。キャッシュ10秒。',
 	inputSchema: z.object({
 		view: z.enum(['items', 'ranked']).optional().default('ranked'),
 		sortBy: z.enum(['change24h', 'volume', 'name']).optional().default('change24h'),
