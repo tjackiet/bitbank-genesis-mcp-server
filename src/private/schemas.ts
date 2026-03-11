@@ -196,6 +196,18 @@ const DepositWithdrawalSummarySchema = z.object({
 	analysis_basis: z.enum(['deposit_withdrawal', 'trade_only']).describe('分析基準（deposit_withdrawal: 入出金込み, trade_only: 約定ベース）'),
 }).optional().describe('入出金ベースのリターン分析。available: 実データ（analysis_basis=deposit_withdrawal）、fallback: 常にplaceholder（analysis_basis=trade_only）、no_history/not_requested: undefined');
 
+const PeriodDWSummarySchema = z.object({
+	jpy_deposited: z.number().describe('期間中のJPY入金合計'),
+	jpy_withdrawn: z.number().describe('期間中のJPY出金合計'),
+	net_jpy: z.number().describe('純入出金（JPY入金 - JPY出金）'),
+	crypto_deposit_count: z.number().int().describe('期間中の暗号資産入庫件数'),
+	crypto_deposit_estimated_jpy: z.number().optional().describe('期間中の暗号資産入庫の推定JPY評価額（現在価格で仮評価）'),
+	crypto_withdrawal_count: z.number().int().describe('期間中の暗号資産出庫件数'),
+	crypto_withdrawal_estimated_jpy: z.number().optional().describe('期間中の暗号資産出庫の推定JPY評価額（現在価格で仮評価）'),
+	period_start: z.string().describe('期間の開始日時（ISO8601 JST）'),
+	period_end: z.string().describe('期間の終了日時（ISO8601 JST）'),
+}).optional().describe('期間内の入出金サマリー');
+
 const PeriodRealizedPnlSchema = z.object({
 	realized_pnl: z.number().describe('期間内の合計実現損益（JPY）'),
 	sell_count: z.number().int().describe('期間内の売却約定件数'),
@@ -237,6 +249,8 @@ export const AnalyzeMyPortfolioDataSchema = z.object({
 	yearly_realized_pnl: PeriodRealizedPnlSchema.describe('年初来実現損益（補助指標）'),
 	monthly_realized_pnl: PeriodRealizedPnlSchema.describe('月初来実現損益（補助指標）'),
 	deposit_withdrawal_summary: DepositWithdrawalSummarySchema,
+	yearly_dw_summary: PeriodDWSummarySchema.describe('年初来の入出金サマリー（当年1/1 00:00 JST〜現在）'),
+	monthly_dw_summary: PeriodDWSummarySchema.describe('月初来の入出金サマリー（当月1日 00:00 JST〜現在）'),
 	technical: z.array(TechnicalSummarySchema).optional().describe('テクニカル分析サマリー'),
 	timestamp: z.string(),
 });
