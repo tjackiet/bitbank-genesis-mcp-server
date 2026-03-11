@@ -203,6 +203,19 @@ const PeriodRealizedPnlSchema = z.object({
 	period_end: z.string().describe('期間の終了日時（ISO8601 JST）'),
 }).optional();
 
+const PeriodPerformanceSchema = z.object({
+	start_value_jpy: z.number().describe('期初の口座評価額（JPY）。現在の保有状態から約定・入出金を逆算して復元し、期初時点の始値で評価'),
+	current_value_jpy: z.number().describe('現在の口座評価額（JPY）'),
+	change_jpy: z.number().describe('単純増減額 = current_value_jpy - start_value_jpy'),
+	change_pct: z.number().optional().describe('単純増減率（%）。start_value_jpy が 0 の場合は undefined'),
+	net_flow_jpy: z.number().describe('期間中の純入出金額（JPY）。正=純入金、負=純出金。暗号資産の入出庫は現在価格で仮評価'),
+	adjusted_change_jpy: z.number().describe('調整後増減額 = change_jpy - net_flow_jpy（入出金の影響を除いた市場変動のみの成績）'),
+	adjusted_change_pct: z.number().optional().describe('調整後増減率（%）。start_value_jpy が 0 の場合は undefined'),
+	period_start: z.string().describe('期間の開始日時（ISO8601 JST）'),
+	period_end: z.string().describe('期間の終了日時（ISO8601 JST）'),
+	note: z.string().describe('計算方法・注意事項の説明'),
+}).optional();
+
 export const AnalyzeMyPortfolioDataSchema = z.object({
 	holdings: z.array(HoldingPnlSchema).describe('保有銘柄一覧（JPY評価額降順）'),
 	total_jpy_value: z.number().optional().describe('ポートフォリオ合計評価額'),
@@ -210,8 +223,10 @@ export const AnalyzeMyPortfolioDataSchema = z.object({
 	total_unrealized_pnl: z.number().optional().describe('合計評価損益'),
 	total_unrealized_pnl_pct: z.number().optional().describe('合計評価損益率（%）'),
 	total_realized_pnl: z.number().optional().describe('合計実現損益（全履歴ベース）'),
-	yearly_realized_pnl: PeriodRealizedPnlSchema.describe('年初来実現損益（当年1/1 00:00 JSTから現在まで）'),
-	monthly_realized_pnl: PeriodRealizedPnlSchema.describe('月初来実現損益（当月1日 00:00 JSTから現在まで）'),
+	yearly_performance: PeriodPerformanceSchema.describe('年初比パフォーマンス（当年1/1 00:00 JST〜現在の口座評価額増減）'),
+	monthly_performance: PeriodPerformanceSchema.describe('月初比パフォーマンス（当月1日 00:00 JST〜現在の口座評価額増減）'),
+	yearly_realized_pnl: PeriodRealizedPnlSchema.describe('年初来実現損益（補助指標）'),
+	monthly_realized_pnl: PeriodRealizedPnlSchema.describe('月初来実現損益（補助指標）'),
 	deposit_withdrawal_summary: DepositWithdrawalSummarySchema,
 	technical: z.array(TechnicalSummarySchema).optional().describe('テクニカル分析サマリー'),
 	timestamp: z.string(),

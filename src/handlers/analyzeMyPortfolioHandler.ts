@@ -474,6 +474,229 @@ function getJstPeriodBoundaries() {
 	};
 }
 
+// ── 期間別パフォーマンス（評価額比較） ──
+
+interface PeriodPerformance {
+	start_value_jpy: number;
+	current_value_jpy: number;
+	change_jpy: number;
+	change_pct: number | undefined;
+	net_flow_jpy: number;
+	adjusted_change_jpy: number;
+	adjusted_change_pct: number | undefined;
+	period_start: string;
+	period_end: string;
+	note: string;
+}
+
+/**
+ * 指定された通貨ペアの1dayキャンドルから、年初・月初の始値を取得する。
+ * 期初時点の「口座評価額」を復元するために使用。
+ */
+async function fetchPeriodStartPrices(
+	pairs: string[],
+	yearStartMs: number,
+	monthStartMs: number,
+): Promise<Map<string, { yearStart?: number; monthStart?: number }>> {
+	const result = new Map<string, { yearStart?: number; monthStart?: number }>();
+	const nowJst = dayjs().tz('Asia/Tokyo');
+	const year = nowJst.year();
+
+	const promises = pairs.map(async (pair) => {
+		try {
+			const url = `https://public.bitbank.cc/${pair}/candlestick/1day/${year}`;
+			const res = await fetch(url, { signal: AbortSignal.timeout(5000) });
+			if (!res.ok) return;
+			const json = (await res.json()) as {
+				success?: number;
+				data?: { candlestick?: Array<{ ohlcv?: Array<Array<string | number>> }> };
+			};
+			if (json.success !== 1) return;
+
+			const ohlcv = json.data?.candlestick?.[0]?.ohlcv;
+			if (!Array.isArray(ohlcv) || ohlcv.length === 0) return;
+
+			let yearStartPrice: number | undefined;
+			let monthStartPrice: number | undefined;
+
+			for (const candle of ohlcv) {
+				const ts = Number(candle[5]);
+				const open = Number(candle[0]);
+				if (!Number.isFinite(open) || open <= 0) continue;
+
+				if (yearStartPrice == null && ts >= yearStartMs) {
+					yearStartPrice = open;
+				}
+				if (monthStartPrice == null && ts >= monthStartMs) {
+					monthStartPrice = open;
+				}
+				if (yearStartPrice != null && monthStartPrice != null) break;
+			}
+
+			const asset = pair.replace('_jpy', '');
+			result.set(asset, { yearStart: yearStartPrice, monthStart: monthStartPrice });
+		} catch {
+			// Non-fatal: price unavailable for this pair
+		}
+	});
+
+	await Promise.all(promises);
+	return result;
+}
+
+/**
+ * 現在の保有情報から取引・入出金を逆順に辿り、指定日時の保有状態を復元する。
+ */
+function reconstructHoldingsAtDate(
+	currentHoldings: Array<{ asset: string; amount: string }>,
+	trades: RawTrade[],
+	sinceMs: number,
+	dw: DepositWithdrawalData | null,
+): Map<string, number> {
+	const holdings = new Map<string, number>();
+	for (const h of currentHoldings) {
+		const amount = Number(h.amount);
+		if (Number.isFinite(amount) && amount > 0) {
+			holdings.set(h.asset, amount);
+		}
+	}
+
+	// Reverse trades since sinceMs (newest first)
+	const recentTrades = trades
+		.filter((t) => t.executed_at >= sinceMs)
+		.sort((a, b) => b.executed_at - a.executed_at);
+
+	for (const t of recentTrades) {
+		const asset = t.pair.replace('_jpy', '');
+		const qty = Number(t.amount);
+		const price = Number(t.price);
+		const feeQuote = Number(t.fee_amount_quote) || 0;
+		if (!Number.isFinite(qty) || !Number.isFinite(price)) continue;
+
+		const current = holdings.get(asset) ?? 0;
+		const currentJpy = holdings.get('jpy') ?? 0;
+
+		if (t.side === 'buy') {
+			// Reverse buy: remove crypto, add back JPY spent
+			const newAmount = current - qty;
+			if (newAmount < 1e-12) {
+				holdings.delete(asset);
+			} else {
+				holdings.set(asset, newAmount);
+			}
+			holdings.set('jpy', currentJpy + qty * price + feeQuote);
+		} else {
+			// Reverse sell: add back crypto, remove JPY received
+			holdings.set(asset, current + qty);
+			holdings.set('jpy', currentJpy - qty * price + feeQuote);
+		}
+	}
+
+	// Reverse deposits/withdrawals since sinceMs
+	if (dw) {
+		const completedDeposits = dw.deposits.filter(
+			(d) => d.status === 'DONE' && d.confirmed_at >= sinceMs,
+		);
+		const completedWithdrawals = dw.withdrawals.filter(
+			(w) => w.status === 'DONE' && w.requested_at >= sinceMs,
+		);
+
+		for (const d of completedDeposits) {
+			const current = holdings.get(d.asset) ?? 0;
+			const newAmount = current - Number(d.amount);
+			if (newAmount < 1e-12) {
+				holdings.delete(d.asset);
+			} else {
+				holdings.set(d.asset, newAmount);
+			}
+		}
+
+		for (const w of completedWithdrawals) {
+			const current = holdings.get(w.asset) ?? 0;
+			const fee = Number(w.fee) || 0;
+			holdings.set(w.asset, current + Number(w.amount) + fee);
+		}
+	}
+
+	// Clean up negative/zero holdings
+	for (const [asset, amount] of holdings) {
+		if (amount < 1e-12) holdings.delete(asset);
+	}
+
+	return holdings;
+}
+
+/**
+ * 復元された保有情報と価格マップから口座評価額を算出する。
+ */
+function calcPortfolioValue(
+	holdings: Map<string, number>,
+	priceMap: Map<string, number>,
+): number {
+	let total = 0;
+	for (const [asset, amount] of holdings) {
+		if (asset === 'jpy') {
+			total += amount;
+		} else {
+			const price = priceMap.get(asset);
+			if (price) {
+				total += amount * price;
+			}
+		}
+	}
+	return total;
+}
+
+/**
+ * 期間中の純入出金額を算出する。
+ * 正値 = 純入金（口座に資金流入）、負値 = 純出金。
+ * 暗号資産の入出庫は現在価格で仮評価。
+ */
+function calcPeriodNetFlow(
+	dw: DepositWithdrawalData | null,
+	sinceMs: number,
+	prices: Map<string, number>,
+): number {
+	if (!dw) return 0;
+
+	const completedDeposits = dw.deposits.filter(
+		(d) => d.status === 'DONE' && d.confirmed_at >= sinceMs,
+	);
+	const completedWithdrawals = dw.withdrawals.filter(
+		(w) => w.status === 'DONE' && w.requested_at >= sinceMs,
+	);
+
+	let netFlow = 0;
+
+	// Deposits (inflow)
+	for (const d of completedDeposits) {
+		if (d.asset === 'jpy') {
+			netFlow += Number(d.amount);
+		} else {
+			const price = prices.get(d.asset);
+			const amount = Number(d.amount);
+			if (price && Number.isFinite(amount) && amount > 0) {
+				netFlow += amount * price;
+			}
+		}
+	}
+
+	// Withdrawals (outflow) — JPY + crypto
+	for (const w of completedWithdrawals) {
+		if (w.asset === 'jpy') {
+			netFlow -= Number(w.amount);
+		} else {
+			const price = prices.get(w.asset);
+			const amount = Number(w.amount);
+			if (price && Number.isFinite(amount) && amount > 0) {
+				netFlow -= amount * price;
+			}
+		}
+	}
+
+	return Math.round(netFlow);
+}
+
 // ── テクニカル分析 ──
 
 interface TechnicalSummary {
@@ -575,6 +798,23 @@ export default async function analyzeMyPortfolioHandler(args: {
 		const [tradeData, dwData] = await Promise.all([tradePromise, dwPromise]);
 		const allTrades = tradeData.trades || [];
 
+		// JST 基準の年初来・月初来の境界（period performance + realized PnL 両方で使用）
+		const boundaries = getJstPeriodBoundaries();
+
+		// 期間パフォーマンス用: 全関連ペアのキャンドルデータを早期フェッチ開始
+		const allRelevantPairs = new Set<string>();
+		for (const a of nonZeroAssets) {
+			if (a.asset !== 'jpy') allRelevantPairs.add(`${a.asset}_jpy`);
+		}
+		for (const t of allTrades) {
+			if (t.pair.endsWith('_jpy') && !t.pair.startsWith('jpy_')) {
+				allRelevantPairs.add(t.pair);
+			}
+		}
+		const periodPricePromise = include_pnl
+			? fetchPeriodStartPrices([...allRelevantPairs], boundaries.yearStartMs, boundaries.monthStartMs)
+			: Promise.resolve(new Map<string, { yearStart?: number; monthStart?: number }>());
+
 		const timestamp = nowIso();
 
 		// 3. 各保有通貨の損益算出
@@ -669,13 +909,73 @@ export default async function analyzeMyPortfolioHandler(args: {
 		let yearlyRealizedPnl: PeriodRealizedPnl | undefined;
 		let monthlyRealizedPnl: PeriodRealizedPnl | undefined;
 		if (include_pnl && allTrades.length > 0) {
-			const boundaries = getJstPeriodBoundaries();
 			yearlyRealizedPnl = calcPeriodRealizedPnl(
 				allTrades, boundaries.yearStartMs, boundaries.yearStartIso, boundaries.nowIso,
 			);
 			monthlyRealizedPnl = calcPeriodRealizedPnl(
 				allTrades, boundaries.monthStartMs, boundaries.monthStartIso, boundaries.nowIso,
 			);
+		}
+
+		// 6.6. 期間別パフォーマンス（評価額比較）— 主指標
+		let yearlyPerformance: PeriodPerformance | undefined;
+		let monthlyPerformance: PeriodPerformance | undefined;
+		if (include_pnl) {
+			const periodPrices = await periodPricePromise;
+			const currentJpyValueRounded = Math.round(totalJpyValue);
+			const performanceNote = '期初評価額は現在の保有状態から約定・入出金を逆算して復元し、期初時点の始値（1day candle open）で評価。暗号資産の入出庫は現在価格で仮評価。調整後増減 = 単純増減 - 純入出金（市場変動のみの成績）。';
+
+			// 年初比パフォーマンス
+			const yearStartHoldings = reconstructHoldingsAtDate(
+				nonZeroAssets.map((a) => ({ asset: a.asset, amount: a.onhand_amount })),
+				allTrades, boundaries.yearStartMs, dwData,
+			);
+			const yearStartPriceMap = new Map<string, number>();
+			for (const [asset, pp] of periodPrices) {
+				if (pp.yearStart != null) yearStartPriceMap.set(asset, pp.yearStart);
+			}
+			const yearStartValue = Math.round(calcPortfolioValue(yearStartHoldings, yearStartPriceMap));
+			const yearNetFlow = calcPeriodNetFlow(dwData, boundaries.yearStartMs, prices);
+			const yearChange = currentJpyValueRounded - yearStartValue;
+			const yearAdjusted = yearChange - yearNetFlow;
+			yearlyPerformance = {
+				start_value_jpy: yearStartValue,
+				current_value_jpy: currentJpyValueRounded,
+				change_jpy: yearChange,
+				change_pct: yearStartValue > 0 ? Math.round((yearChange / yearStartValue) * 10000) / 100 : undefined,
+				net_flow_jpy: yearNetFlow,
+				adjusted_change_jpy: yearAdjusted,
+				adjusted_change_pct: yearStartValue > 0 ? Math.round((yearAdjusted / yearStartValue) * 10000) / 100 : undefined,
+				period_start: boundaries.yearStartIso,
+				period_end: boundaries.nowIso,
+				note: performanceNote,
+			};
+
+			// 月初比パフォーマンス
+			const monthStartHoldings = reconstructHoldingsAtDate(
+				nonZeroAssets.map((a) => ({ asset: a.asset, amount: a.onhand_amount })),
+				allTrades, boundaries.monthStartMs, dwData,
+			);
+			const monthStartPriceMap = new Map<string, number>();
+			for (const [asset, pp] of periodPrices) {
+				if (pp.monthStart != null) monthStartPriceMap.set(asset, pp.monthStart);
+			}
+			const monthStartValue = Math.round(calcPortfolioValue(monthStartHoldings, monthStartPriceMap));
+			const monthNetFlow = calcPeriodNetFlow(dwData, boundaries.monthStartMs, prices);
+			const monthChange = currentJpyValueRounded - monthStartValue;
+			const monthAdjusted = monthChange - monthNetFlow;
+			monthlyPerformance = {
+				start_value_jpy: monthStartValue,
+				current_value_jpy: currentJpyValueRounded,
+				change_jpy: monthChange,
+				change_pct: monthStartValue > 0 ? Math.round((monthChange / monthStartValue) * 10000) / 100 : undefined,
+				net_flow_jpy: monthNetFlow,
+				adjusted_change_jpy: monthAdjusted,
+				adjusted_change_pct: monthStartValue > 0 ? Math.round((monthAdjusted / monthStartValue) * 10000) / 100 : undefined,
+				period_start: boundaries.monthStartIso,
+				period_end: boundaries.nowIso,
+				note: performanceNote,
+			};
 		}
 
 		// JPY 評価額降順ソート
@@ -764,17 +1064,32 @@ export default async function analyzeMyPortfolioHandler(args: {
 			lines.push(`口座合計: ${formatPrice(Math.round(totalJpyValue))}${jpyHolding ? ` (うち JPY: ${formatPriceJPY(jpyHolding.jpy_value ?? 0)})` : ''}`);
 		}
 
-		// 年初来・月初来実現損益（主指標として上部に表示）
-		if (yearlyRealizedPnl) {
-			const ySign = yearlyRealizedPnl.realized_pnl >= 0 ? '+' : '';
-			lines.push(`年初来実現損益: ${ySign}${formatPriceJPY(yearlyRealizedPnl.realized_pnl)}（${yearlyRealizedPnl.sell_count}件の売却）`);
+		// 主指標: 年初比・月初比の口座評価額増減
+		if (yearlyPerformance) {
+			const ySign = yearlyPerformance.adjusted_change_jpy >= 0 ? '+' : '';
+			lines.push(`年初比: ${formatPriceJPY(yearlyPerformance.start_value_jpy)} → ${formatPriceJPY(yearlyPerformance.current_value_jpy)}`);
+			if (yearlyPerformance.net_flow_jpy !== 0) {
+				lines.push(`  調整後増減（入出金影響除く）: ${ySign}${formatPriceJPY(yearlyPerformance.adjusted_change_jpy)}${yearlyPerformance.adjusted_change_pct != null ? ` (${formatPercent(yearlyPerformance.adjusted_change_pct, { sign: true })})` : ''}`);
+				const flowSign = yearlyPerformance.net_flow_jpy >= 0 ? '+' : '';
+				lines.push(`  純入出金: ${flowSign}${formatPriceJPY(yearlyPerformance.net_flow_jpy)}`);
+			} else {
+				lines.push(`  増減: ${ySign}${formatPriceJPY(yearlyPerformance.change_jpy)}${yearlyPerformance.change_pct != null ? ` (${formatPercent(yearlyPerformance.change_pct, { sign: true })})` : ''}`);
+			}
 		}
-		if (monthlyRealizedPnl) {
-			const mSign = monthlyRealizedPnl.realized_pnl >= 0 ? '+' : '';
-			lines.push(`月初来実現損益: ${mSign}${formatPriceJPY(monthlyRealizedPnl.realized_pnl)}（${monthlyRealizedPnl.sell_count}件の売却）`);
+		if (monthlyPerformance) {
+			const mSign = monthlyPerformance.adjusted_change_jpy >= 0 ? '+' : '';
+			lines.push(`月初比: ${formatPriceJPY(monthlyPerformance.start_value_jpy)} → ${formatPriceJPY(monthlyPerformance.current_value_jpy)}`);
+			if (monthlyPerformance.net_flow_jpy !== 0) {
+				lines.push(`  調整後増減（入出金影響除く）: ${mSign}${formatPriceJPY(monthlyPerformance.adjusted_change_jpy)}${monthlyPerformance.adjusted_change_pct != null ? ` (${formatPercent(monthlyPerformance.adjusted_change_pct, { sign: true })})` : ''}`);
+				const flowSign = monthlyPerformance.net_flow_jpy >= 0 ? '+' : '';
+				lines.push(`  純入出金: ${flowSign}${formatPriceJPY(monthlyPerformance.net_flow_jpy)}`);
+			} else {
+				lines.push(`  増減: ${mSign}${formatPriceJPY(monthlyPerformance.change_jpy)}${monthlyPerformance.change_pct != null ? ` (${formatPercent(monthlyPerformance.change_pct, { sign: true })})` : ''}`);
+			}
 		}
-		if (yearlyRealizedPnl || monthlyRealizedPnl) {
+		if (yearlyPerformance || monthlyPerformance) {
 			lines.push(`期間基準: JST`);
+			lines.push('※ 期初評価額は約定・入出金を逆算して復元、期初始値で評価。暗号資産入出庫は現在価格で仮評価');
 		}
 
 		// 入出金分析状態と分析基準をsummaryに明示（structuredContentを見ないLLM向け）
@@ -917,6 +1232,8 @@ export default async function analyzeMyPortfolioHandler(args: {
 			total_unrealized_pnl: totalUnrealizedPnl,
 			total_unrealized_pnl_pct: totalUnrealizedPnlPct,
 			total_realized_pnl: totalRealizedPnl !== 0 ? totalRealizedPnl : undefined,
+			yearly_performance: yearlyPerformance,
+			monthly_performance: monthlyPerformance,
 			yearly_realized_pnl: yearlyRealizedPnl ? {
 				realized_pnl: yearlyRealizedPnl.realized_pnl,
 				sell_count: yearlyRealizedPnl.sell_count,
