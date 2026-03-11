@@ -196,13 +196,22 @@ const DepositWithdrawalSummarySchema = z.object({
 	analysis_basis: z.enum(['deposit_withdrawal', 'trade_only']).describe('分析基準（deposit_withdrawal: 入出金込み, trade_only: 約定ベース）'),
 }).optional().describe('入出金ベースのリターン分析。available: 実データ（analysis_basis=deposit_withdrawal）、fallback: 常にplaceholder（analysis_basis=trade_only）、no_history/not_requested: undefined');
 
+const PeriodRealizedPnlSchema = z.object({
+	realized_pnl: z.number().describe('期間内の合計実現損益（JPY）'),
+	sell_count: z.number().int().describe('期間内の売却約定件数'),
+	period_start: z.string().describe('期間の開始日時（ISO8601 JST）'),
+	period_end: z.string().describe('期間の終了日時（ISO8601 JST）'),
+}).optional();
+
 export const AnalyzeMyPortfolioDataSchema = z.object({
 	holdings: z.array(HoldingPnlSchema).describe('保有銘柄一覧（JPY評価額降順）'),
 	total_jpy_value: z.number().optional().describe('ポートフォリオ合計評価額'),
 	total_cost_basis: z.number().optional().describe('ポートフォリオ合計取得原価'),
 	total_unrealized_pnl: z.number().optional().describe('合計評価損益'),
 	total_unrealized_pnl_pct: z.number().optional().describe('合計評価損益率（%）'),
-	total_realized_pnl: z.number().optional().describe('合計実現損益'),
+	total_realized_pnl: z.number().optional().describe('合計実現損益（全履歴ベース）'),
+	yearly_realized_pnl: PeriodRealizedPnlSchema.describe('年初来実現損益（当年1/1 00:00 JSTから現在まで）'),
+	monthly_realized_pnl: PeriodRealizedPnlSchema.describe('月初来実現損益（当月1日 00:00 JSTから現在まで）'),
 	deposit_withdrawal_summary: DepositWithdrawalSummarySchema,
 	technical: z.array(TechnicalSummarySchema).optional().describe('テクニカル分析サマリー'),
 	timestamp: z.string(),
@@ -215,6 +224,7 @@ export const AnalyzeMyPortfolioMetaSchema = z.object({
 	hasTechnical: z.boolean(),
 	depositWithdrawalStatus: z.enum(['available', 'fallback', 'no_history', 'not_requested'])
 		.describe('入出金分析の状態: available=入出金データ取得成功で分析実行（deposit_withdrawal_summaryあり）, fallback=API取得失敗またはpartial failureにより約定ベースにフォールバック（deposit_withdrawal_summaryはtrade_only placeholder）, no_history=API取得成功・警告なし・履歴0件（deposit_withdrawal_summaryはundefined）, not_requested=未リクエスト（deposit_withdrawal_summaryはundefined）'),
+	periodBasis: z.enum(['jst']).default('jst').describe('年次・月次の期間基準タイムゾーン（jst = Asia/Tokyo）'),
 });
 
 export const AnalyzeMyPortfolioOutputSchema = z.union([

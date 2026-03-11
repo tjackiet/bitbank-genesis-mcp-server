@@ -12,7 +12,7 @@
  */
 
 import { ok, fail } from '../../lib/result.js';
-import { nowIso } from '../../lib/datetime.js';
+import { nowIso, dayjs } from '../../lib/datetime.js';
 import { formatPrice, formatPair, formatPercent, formatPriceJPY } from '../../lib/formatter.js';
 import { getDefaultClient, PrivateApiError, BitbankPrivateClient } from '../private/client.js';
 import {
@@ -373,6 +373,107 @@ function calcPnl(trades: RawTrade[], asset: string): PnlResult {
 	};
 }
 
+// ── 期間別実現損益（年初来 / 月初来） ──
+
+interface PeriodRealizedPnl {
+	/** 期間内の合計実現損益（JPY） */
+	realized_pnl: number;
+	/** 期間内の売却約定件数 */
+	sell_count: number;
+	/** 期間の開始日時（ISO8601 JST） */
+	period_start: string;
+	/** 期間の終了日時（ISO8601 JST） = 取得時点 */
+	period_end: string;
+}
+
+/**
+ * 指定期間内の実現損益を算出する。
+ *
+ * 移動平均法の avg_cost は全履歴から計算し（期間開始前の買いも含む）、
+ * 期間内の売り約定のみ実現損益として集計する。
+ *
+ * @param trades 全約定履歴（古い順ソート済み）
+ * @param sinceMs 期間開始のミリ秒タイムスタンプ（JST 境界）
+ * @param periodStart ISO8601 形式の期間開始文字列
+ * @param periodEnd ISO8601 形式の期間終了文字列
+ */
+function calcPeriodRealizedPnl(
+	trades: RawTrade[],
+	sinceMs: number,
+	periodStart: string,
+	periodEnd: string,
+): PeriodRealizedPnl {
+	// 全通貨の約定を古い順にソート
+	const sorted = [...trades].sort((a, b) => a.executed_at - b.executed_at);
+
+	// 通貨ごとに移動平均法で avg_cost を追跡し、期間内の sell のみ realized に計上
+	const holdings = new Map<string, { qty: number; cost: number }>();
+	let periodRealized = 0;
+	let periodSellCount = 0;
+
+	for (const t of sorted) {
+		const asset = t.pair.replace('_jpy', '');
+		if (asset === 'jpy') continue;
+
+		const qty = Number(t.amount);
+		const price = Number(t.price);
+		if (!Number.isFinite(qty) || !Number.isFinite(price)) continue;
+
+		const feeQuote = Number(t.fee_amount_quote) || 0;
+		const h = holdings.get(asset) ?? { qty: 0, cost: 0 };
+
+		if (t.side === 'buy') {
+			h.cost += qty * price + feeQuote;
+			h.qty += qty;
+		} else {
+			// sell
+			let sellRealized = 0;
+			if (h.qty > 0) {
+				const avgCost = h.cost / h.qty;
+				const sellCost = qty * avgCost;
+				const sellRevenue = qty * price - feeQuote;
+				sellRealized = sellRevenue - sellCost;
+				h.cost -= sellCost;
+				h.qty -= qty;
+				if (h.qty < 1e-12) { h.qty = 0; h.cost = 0; }
+			} else {
+				sellRealized = qty * price - feeQuote;
+			}
+
+			// 期間内の売りのみ集計
+			if (t.executed_at >= sinceMs) {
+				periodRealized += sellRealized;
+				periodSellCount++;
+			}
+		}
+
+		holdings.set(asset, h);
+	}
+
+	return {
+		realized_pnl: Math.round(periodRealized),
+		sell_count: periodSellCount,
+		period_start: periodStart,
+		period_end: periodEnd,
+	};
+}
+
+/**
+ * JST 基準の年初来・月初来の境界タイムスタンプを返す。
+ */
+function getJstPeriodBoundaries() {
+	const nowJst = dayjs().tz('Asia/Tokyo');
+	const yearStart = nowJst.startOf('year');
+	const monthStart = nowJst.startOf('month');
+	return {
+		yearStartMs: yearStart.valueOf(),
+		yearStartIso: yearStart.format('YYYY-MM-DDTHH:mm:ssZ'),
+		monthStartMs: monthStart.valueOf(),
+		monthStartIso: monthStart.format('YYYY-MM-DDTHH:mm:ssZ'),
+		nowIso: nowJst.format('YYYY-MM-DDTHH:mm:ssZ'),
+	};
+}
+
 // ── テクニカル分析 ──
 
 interface TechnicalSummary {
@@ -564,6 +665,19 @@ export default async function analyzeMyPortfolioHandler(args: {
 			}
 		}
 
+		// 6.5. 年初来・月初来の実現損益を算出（JST 基準）
+		let yearlyRealizedPnl: PeriodRealizedPnl | undefined;
+		let monthlyRealizedPnl: PeriodRealizedPnl | undefined;
+		if (include_pnl && allTrades.length > 0) {
+			const boundaries = getJstPeriodBoundaries();
+			yearlyRealizedPnl = calcPeriodRealizedPnl(
+				allTrades, boundaries.yearStartMs, boundaries.yearStartIso, boundaries.nowIso,
+			);
+			monthlyRealizedPnl = calcPeriodRealizedPnl(
+				allTrades, boundaries.monthStartMs, boundaries.monthStartIso, boundaries.nowIso,
+			);
+		}
+
 		// JPY 評価額降順ソート
 		holdings.sort((a, b) => (b.jpy_value ?? 0) - (a.jpy_value ?? 0));
 
@@ -648,6 +762,19 @@ export default async function analyzeMyPortfolioHandler(args: {
 		lines.push(`取得時刻: ${timestamp}`);
 		if (totalJpyValue > 0) {
 			lines.push(`口座合計: ${formatPrice(Math.round(totalJpyValue))}${jpyHolding ? ` (うち JPY: ${formatPriceJPY(jpyHolding.jpy_value ?? 0)})` : ''}`);
+		}
+
+		// 年初来・月初来実現損益（主指標として上部に表示）
+		if (yearlyRealizedPnl) {
+			const ySign = yearlyRealizedPnl.realized_pnl >= 0 ? '+' : '';
+			lines.push(`年初来実現損益: ${ySign}${formatPriceJPY(yearlyRealizedPnl.realized_pnl)}（${yearlyRealizedPnl.sell_count}件の売却）`);
+		}
+		if (monthlyRealizedPnl) {
+			const mSign = monthlyRealizedPnl.realized_pnl >= 0 ? '+' : '';
+			lines.push(`月初来実現損益: ${mSign}${formatPriceJPY(monthlyRealizedPnl.realized_pnl)}（${monthlyRealizedPnl.sell_count}件の売却）`);
+		}
+		if (yearlyRealizedPnl || monthlyRealizedPnl) {
+			lines.push(`期間基準: JST`);
 		}
 
 		// 入出金分析状態と分析基準をsummaryに明示（structuredContentを見ないLLM向け）
@@ -790,6 +917,18 @@ export default async function analyzeMyPortfolioHandler(args: {
 			total_unrealized_pnl: totalUnrealizedPnl,
 			total_unrealized_pnl_pct: totalUnrealizedPnlPct,
 			total_realized_pnl: totalRealizedPnl !== 0 ? totalRealizedPnl : undefined,
+			yearly_realized_pnl: yearlyRealizedPnl ? {
+				realized_pnl: yearlyRealizedPnl.realized_pnl,
+				sell_count: yearlyRealizedPnl.sell_count,
+				period_start: yearlyRealizedPnl.period_start,
+				period_end: yearlyRealizedPnl.period_end,
+			} : undefined,
+			monthly_realized_pnl: monthlyRealizedPnl ? {
+				realized_pnl: monthlyRealizedPnl.realized_pnl,
+				sell_count: monthlyRealizedPnl.sell_count,
+				period_start: monthlyRealizedPnl.period_start,
+				period_end: monthlyRealizedPnl.period_end,
+			} : undefined,
 			deposit_withdrawal_summary: depositWithdrawalSummary,
 			technical: technical && technical.length > 0 ? technical : undefined,
 			timestamp,
@@ -801,6 +940,7 @@ export default async function analyzeMyPortfolioHandler(args: {
 			hasPnl: include_pnl && allTrades.length > 0,
 			hasTechnical: include_technical && (technical?.length ?? 0) > 0,
 			depositWithdrawalStatus,
+			periodBasis: 'jst' as const,
 		};
 
 		return AnalyzeMyPortfolioOutputSchema.parse(ok(summary, data, meta));
