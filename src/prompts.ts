@@ -2159,13 +2159,22 @@ include_technical=true で返ってくる technical 配列を使用する。
   - HTML 上では日本語ラベルに変換してよい（例: strong_uptrend → 「強い上昇トレンド」、sideways → 「横ばい」）
 - シグナル（signal）— bullish 🟢 / bearish 🔴 / neutral 🟡
 
-### 8. 入出金分析の詳細カード（available 時のみ）
-deposit_withdrawal_summary のデータを表示:
-- JPY入金合計（total_jpy_deposited）
-- JPY出金合計（total_jpy_withdrawn）
-- 純投入額（net_jpy_invested）
-- 暗号資産入庫の仮評価（crypto_deposit_estimated_jpy）— 件数も併記
-- 暗号資産出庫件数（crypto_withdrawal_count）
+### 8. 入出金サマリー（available 時のみ）
+**全期間の詳細履歴は不要。** 年次・月次の入出金サマリーをカードで表示する。
+
+データソース:
+- yearly_dw_summary — 年初来の入出金サマリー
+- monthly_dw_summary — 月初来の入出金サマリー
+
+年次・月次カードを **横並び（2カード）** で表示。各カードに:
+- **期間ラベル**: 「年初来」「月初来」
+- **JPY 入金合計**（jpy_deposited）
+- **JPY 出金合計**（jpy_withdrawn）
+- **純入出金**（net_jpy = 入金 - 出金）— 大きめ表示、プラス緑・マイナス赤
+- **暗号資産入庫**: 件数 + 概算 JPY（crypto_deposit_count / crypto_deposit_estimated_jpy）— 件数が 0 なら非表示
+- **暗号資産出庫**: 件数 + 概算 JPY（crypto_withdrawal_count / crypto_withdrawal_estimated_jpy）— 件数が 0 なら非表示
+
+全期間の deposit_withdrawal_summary（口座全体リターン等）は表示しない。
 
 ### 9. 注意書き / 免責セクション
 以下の内容を HTML 内に必ず表示する:
@@ -2430,10 +2439,44 @@ deposit_withdrawal_summary のデータを表示:
       </div>
     </section>
 
-    <!-- 8. 入出金分析詳細（available時のみ） -->
+    <!-- 8. 入出金サマリー（available時のみ、年次・月次カード） -->
     <section class="bg-card rounded-lg p-6">
-      <h2 class="font-bold mb-4">🏦 入出金分析</h2>
-      <!-- total_jpy_deposited, total_jpy_withdrawn, net_jpy_invested, etc. -->
+      <h2 class="font-bold mb-4">🏦 入出金サマリー</h2>
+      <div class="grid grid-cols-2 gap-4">
+        <!-- 年初来カード (yearly_dw_summary) -->
+        <div class="bg-accent rounded-lg p-4">
+          <p class="text-gray-400 text-xs mb-2">年初来</p>
+          <div class="space-y-1 text-sm">
+            <div class="flex justify-between">
+              <span class="text-gray-400">JPY 入金</span>
+              <span>{yearly_jpy_deposited}</span>
+            </div>
+            <div class="flex justify-between">
+              <span class="text-gray-400">JPY 出金</span>
+              <span>{yearly_jpy_withdrawn}</span>
+            </div>
+            <div class="flex justify-between font-bold pt-1 border-t border-gray-600">
+              <span class="text-gray-400">純入出金</span>
+              <span class="{yearly_net_color}">{yearly_net_jpy}</span>
+            </div>
+            <!-- crypto_deposit_count > 0 の場合のみ -->
+            <div class="flex justify-between text-xs text-gray-500">
+              <span>暗号資産入庫</span>
+              <span>{count}件（概算 {estimated_jpy}）</span>
+            </div>
+            <!-- crypto_withdrawal_count > 0 の場合のみ -->
+            <div class="flex justify-between text-xs text-gray-500">
+              <span>暗号資産出庫</span>
+              <span>{count}件（概算 {estimated_jpy}）</span>
+            </div>
+          </div>
+        </div>
+        <!-- 月初来カード (monthly_dw_summary) — 同じ構造 -->
+        <div class="bg-accent rounded-lg p-4">
+          <p class="text-gray-400 text-xs mb-2">月初来</p>
+          <!-- 同上 -->
+        </div>
+      </div>
     </section>
 
     <!-- 9. 注意書き -->

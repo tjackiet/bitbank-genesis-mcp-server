@@ -303,6 +303,82 @@ function calcDepositWithdrawalSummary(
 	};
 }
 
+// ── 期間別入出金サマリー ──
+
+interface PeriodDWSummary {
+	jpy_deposited: number;
+	jpy_withdrawn: number;
+	net_jpy: number;
+	crypto_deposit_count: number;
+	crypto_deposit_estimated_jpy: number | undefined;
+	crypto_withdrawal_count: number;
+	crypto_withdrawal_estimated_jpy: number | undefined;
+	period_start: string;
+	period_end: string;
+}
+
+/**
+ * 期間内の入出金を集計する。年次・月次サマリー用。
+ */
+function calcPeriodDWSummary(
+	dw: DepositWithdrawalData,
+	sinceMs: number,
+	periodStartIso: string,
+	periodEndIso: string,
+	prices: Map<string, number>,
+): PeriodDWSummary {
+	const completedDeposits = dw.deposits.filter(
+		(d) => d.status === 'DONE' && d.confirmed_at >= sinceMs,
+	);
+	const completedWithdrawals = dw.withdrawals.filter(
+		(w) => w.status === 'DONE' && w.requested_at >= sinceMs,
+	);
+
+	// JPY
+	const jpyDep = completedDeposits.filter((d) => d.asset === 'jpy');
+	const jpyWd = completedWithdrawals.filter((w) => w.asset === 'jpy');
+	const jpyDeposited = jpyDep.reduce((s, d) => s + Number(d.amount), 0);
+	const jpyWithdrawn = jpyWd.reduce((s, w) => s + Number(w.amount), 0);
+
+	// Crypto deposits
+	const cryptoDep = completedDeposits.filter((d) => d.asset !== 'jpy');
+	let cryptoDepJpy = 0;
+	let hasDepEstimate = false;
+	for (const d of cryptoDep) {
+		const price = prices.get(d.asset);
+		const amount = Number(d.amount);
+		if (price && Number.isFinite(amount) && amount > 0) {
+			cryptoDepJpy += amount * price;
+			hasDepEstimate = true;
+		}
+	}
+
+	// Crypto withdrawals
+	const cryptoWd = completedWithdrawals.filter((w) => w.asset !== 'jpy');
+	let cryptoWdJpy = 0;
+	let hasWdEstimate = false;
+	for (const w of cryptoWd) {
+		const price = prices.get(w.asset);
+		const amount = Number(w.amount);
+		if (price && Number.isFinite(amount) && amount > 0) {
+			cryptoWdJpy += amount * price;
+			hasWdEstimate = true;
+		}
+	}
+
+	return {
+		jpy_deposited: Math.round(jpyDeposited),
+		jpy_withdrawn: Math.round(jpyWithdrawn),
+		net_jpy: Math.round(jpyDeposited - jpyWithdrawn),
+		crypto_deposit_count: cryptoDep.length,
+		crypto_deposit_estimated_jpy: hasDepEstimate ? Math.round(cryptoDepJpy) : undefined,
+		crypto_withdrawal_count: cryptoWd.length,
+		crypto_withdrawal_estimated_jpy: hasWdEstimate ? Math.round(cryptoWdJpy) : undefined,
+		period_start: periodStartIso,
+		period_end: periodEndIso,
+	};
+}
+
 // ── Ticker 取得 ──
 
 async function fetchTickerPrices(): Promise<Map<string, number>> {
@@ -1224,6 +1300,8 @@ export default async function analyzeMyPortfolioHandler(args: {
 
 		// 4. 入出金ベースのリターン計算（Phase 4）
 		let dwSummary: DepositWithdrawalSummary | undefined;
+		let yearlyDWSummary: PeriodDWSummary | undefined;
+		let monthlyDWSummary: PeriodDWSummary | undefined;
 		const dwWarnings: string[] = [];
 		if (dwData) {
 			if (dwData.allFailed) {
@@ -1235,6 +1313,13 @@ export default async function analyzeMyPortfolioHandler(args: {
 				}
 				if (dwData.deposits.length > 0 || dwData.withdrawals.length > 0) {
 					dwSummary = calcDepositWithdrawalSummary(dwData, totalJpyValue, prices);
+					// 年次・月次の入出金サマリー
+					yearlyDWSummary = calcPeriodDWSummary(
+						dwData, boundaries.yearStartMs, boundaries.yearStartIso, boundaries.nowIso, prices,
+					);
+					monthlyDWSummary = calcPeriodDWSummary(
+						dwData, boundaries.monthStartMs, boundaries.monthStartIso, boundaries.nowIso, prices,
+					);
 				}
 			}
 		}
@@ -1331,6 +1416,22 @@ export default async function analyzeMyPortfolioHandler(args: {
 		}
 		if (yearlyEquitySeries && yearlyEquitySeries.length > 0) {
 			lines.push(`年次資産推移: ${yearlyEquitySeries.length}点（月次）`);
+		}
+
+		// 年次・月次の入出金サマリー
+		if (yearlyDWSummary) {
+			const y = yearlyDWSummary;
+			const parts = [`年初来入出金: JPY入金 ${formatPriceJPY(y.jpy_deposited)} / JPY出金 ${formatPriceJPY(y.jpy_withdrawn)} / 純入出金 ${formatPriceJPY(y.net_jpy)}`];
+			if (y.crypto_deposit_count > 0) parts.push(`暗号資産入庫 ${y.crypto_deposit_count}件${y.crypto_deposit_estimated_jpy ? `（概算 ${formatPriceJPY(y.crypto_deposit_estimated_jpy)}）` : ''}`);
+			if (y.crypto_withdrawal_count > 0) parts.push(`暗号資産出庫 ${y.crypto_withdrawal_count}件${y.crypto_withdrawal_estimated_jpy ? `（概算 ${formatPriceJPY(y.crypto_withdrawal_estimated_jpy)}）` : ''}`);
+			lines.push(parts.join(' / '));
+		}
+		if (monthlyDWSummary) {
+			const m = monthlyDWSummary;
+			const parts = [`月初来入出金: JPY入金 ${formatPriceJPY(m.jpy_deposited)} / JPY出金 ${formatPriceJPY(m.jpy_withdrawn)} / 純入出金 ${formatPriceJPY(m.net_jpy)}`];
+			if (m.crypto_deposit_count > 0) parts.push(`暗号資産入庫 ${m.crypto_deposit_count}件${m.crypto_deposit_estimated_jpy ? `（概算 ${formatPriceJPY(m.crypto_deposit_estimated_jpy)}）` : ''}`);
+			if (m.crypto_withdrawal_count > 0) parts.push(`暗号資産出庫 ${m.crypto_withdrawal_count}件${m.crypto_withdrawal_estimated_jpy ? `（概算 ${formatPriceJPY(m.crypto_withdrawal_estimated_jpy)}）` : ''}`);
+			lines.push(parts.join(' / '));
 		}
 
 		// 入出金分析状態と分析基準をsummaryに明示（structuredContentを見ないLLM向け）
@@ -1487,6 +1588,8 @@ export default async function analyzeMyPortfolioHandler(args: {
 				period_end: monthlyRealizedPnl.period_end,
 			} : undefined,
 			deposit_withdrawal_summary: depositWithdrawalSummary,
+			yearly_dw_summary: yearlyDWSummary,
+			monthly_dw_summary: monthlyDWSummary,
 			technical: technical && technical.length > 0 ? technical : undefined,
 			timestamp,
 		};
