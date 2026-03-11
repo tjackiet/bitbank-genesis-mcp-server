@@ -185,7 +185,7 @@ export default async function analyzeStochSnapshot(
 
 export const toolDef: ToolDefinition = {
 	name: 'analyze_stoch_snapshot',
-	description: 'Stochastic（%K/%D）の最新状態を算出し、ゾーン・クロス・ダイバージェンスを判定します。',
+	description: '[Stochastic / Overbought / Oversold] Stochastic（stochastic / %K / %D / overbought / oversold / divergence）の最新状態。ゾーン・クロス・ダイバージェンスを判定。',
 	inputSchema: AnalyzeStochSnapshotInputSchema,
 	handler: async ({ pair, type, limit, kPeriod, smoothK, smoothD }: any) => analyzeStochSnapshot(pair, type, limit, kPeriod, smoothK, smoothD),
 };

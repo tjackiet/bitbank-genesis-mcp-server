@@ -155,7 +155,7 @@ export default async function getMyOrders(args: {
 // ── MCP ツール定義（tool-registry から自動収集） ──
 export const toolDef: ToolDefinition = {
 	name: 'get_my_orders',
-	description: '自分の未約定・アクティブな注文一覧を取得（open orders / active orders）。注文状況を通貨ペア・期間でフィルタ可能。Private API（要APIキー設定）。',
+	description: '[My Orders / Open Orders / Active Orders] 自分の未約定注文一覧（my orders / open orders / active orders / pending）を取得。通貨ペア・期間でフィルタ可能。Private API。',
 	inputSchema: GetMyOrdersInputSchema,
 	handler: async (args: any) => getMyOrders(args ?? {}),
 };

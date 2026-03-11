@@ -382,19 +382,9 @@ async function singlePairMode(
 
 export const toolDef: ToolDefinition = {
 	name: 'detect_macd_cross',
-	description: `MACDクロス検出の統合ツール。2モードで動作:
+	description: `[MACD Cross / Crossover / Screening] MACDクロス検出（MACD cross / crossover / golden cross / dead cross / screening）。
 
-【スクリーニングモード】pair を省略（market / pairs で対象指定）
-- 複数銘柄から直近のMACDクロス済み銘柄を一括検出（1day）
-- view: summary|detailed / screen でフィルタ・ソート
-
-【単一ペアモード】pair を指定
-- includeForming: true → forming検出（完了度・推定クロス日）
-- includeStats: true → 過去クロス統計（勝率・リターン）
-- 両方 true で深掘り分析
-
-lookback（既定=3）: スクリーニング時の検索範囲
-historyDays（既定=90）: 単一ペア時の統計対象期間
+pair省略: 複数銘柄スクリーニング / pair指定: 単一ペア深掘り分析（forming検出・過去統計）。
 
 screen（スクリーニング用）:
 - crossType: golden|dead|both

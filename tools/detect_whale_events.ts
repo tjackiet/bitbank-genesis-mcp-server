@@ -151,7 +151,7 @@ export default async function detectWhaleEvents(
 // ── MCP ツール定義（tool-registry から自動収集） ──
 export const toolDef: ToolDefinition = {
 	name: 'detect_whale_events',
-	description: '大口投資家の動向を簡易に検出（板×ローソク足）。lookback=30min|1hour|2hour、minSize=0.5BTC既定。推測ベースで、実約定・寿命照合は未実装。',
+	description: '[Whale / Large Orders / Big Players] 大口投資家の動向検出（whale / large orders / big players / smart money）。板×ローソク足で大口注文を簡易検出。推測ベース。',
 	inputSchema: z.object({ pair: z.string().default('btc_jpy'), lookback: z.enum(['30min', '1hour', '2hour']).default('1hour'), minSize: z.number().min(0).default(0.5) }),
 	handler: async ({ pair, lookback, minSize }: any) => detectWhaleEvents(pair, lookback, minSize),
 };

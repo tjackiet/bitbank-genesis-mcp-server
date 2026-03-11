@@ -131,7 +131,7 @@ export default async function getTransactions(
 // ── MCP ツール定義（tool-registry から自動収集） ──
 export const toolDef: ToolDefinition = {
 	name: 'get_transactions',
-	description: '約定履歴を取得（/transactions）。直近60件 or 日付指定。view=summary|items。minAmount/minPrice等でフィルタ可。',
+	description: '[Transactions / Trades] 市場の約定履歴（transactions / recent trades）を取得。直近60件 or 日付指定。金額・価格でフィルタ可能。',
 	inputSchema: GetTransactionsInputSchema,
 	handler: async ({ pair, limit, date, minAmount, maxAmount, minPrice, maxPrice, view }: any) => {
 		const res: any = await getTransactions(pair, limit, date);

@@ -238,10 +238,8 @@ export default async function analyzeCurrencyStrength(
 export const toolDef: ToolDefinition = {
 	name: 'analyze_currency_strength',
 	description:
-		'全JPYペアの相対強弱（Relative Strength）を分析しランキング表示。' +
-		'24h変化率(40%)・RSI(30%)・SMA25乖離率(25%)・出来高順位(5%)の複合スコアで各通貨の強弱を判定。' +
-		'入力は topN（デフォルト10、出来高上位N銘柄を分析）と type（ローソク足種別、デフォルト1day）。' +
-		'用途: 注目銘柄の発見、市場全体のバイアス把握、個別分析前のスクリーニング。',
+		'[Currency Strength / Ranking / Screening] 通貨強弱ランキング（currency strength / relative strength / ranking / screening）。' +
+		'全JPYペアを複合スコア（変化率・RSI・SMA乖離・出来高）で判定。注目銘柄の発見・スクリーニングに。',
 	inputSchema: AnalyzeCurrencyStrengthInputSchema,
 	handler: async ({ topN, type }: any) =>
 		analyzeCurrencyStrength(Number(topN), type),

@@ -6,7 +6,7 @@ import { toDisplayTime, nowIso } from '../../lib/datetime.js';
 
 export const toolDef: ToolDefinition = {
 	name: 'analyze_indicators',
-	description: 'テクニカル指標を用いて値動きを分析（ローソク足 /candlestick を入力）。SMA/RSI/BB/一目/MACD/ストキャスティクスRSI。分析には十分な limit を指定（例: 日足200本）。\n\n【重要】バックテストを行う場合は、このツールではなく run_backtest を使用してください。run_backtest はデータ取得・計算・チャート描画をすべて行い、結果をワンコールで返します。',
+	description: '[Technical Indicators / RSI / MACD / SMA] テクニカル指標の総合分析（indicators / RSI / MACD / SMA / BB / Ichimoku / Stochastic RSI）。十分な limit を指定（例: 日足200本）。\n\n【重要】バックテストには run_backtest を使用。',
 	inputSchema: GetIndicatorsInputSchema,
 	handler: async ({ pair, type, limit }: any) => {
 		const res: any = await analyzeIndicators(pair, type, limit);

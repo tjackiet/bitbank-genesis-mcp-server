@@ -282,18 +282,7 @@ export default async function getFlowMetrics(
 // ── MCP ツール定義（tool-registry から自動収集） ──
 export const toolDef: ToolDefinition = {
 	name: 'get_flow_metrics',
-	description: `/transactions をベースにフロー分析。CVD・アグレッサー比・スパイク検出。
-
-【パラメータ（2つの取得モード）】
-A) 時間範囲モード（推奨）: hours を指定 → 直近N時間分の約定を自動取得
-   例: hours=8 → 直近8時間の全約定を取得（複数日にまたがっても自動対応）
-B) 件数モード: limit を指定 → 直近N件の「約定」を取得
-   ⚠️ limit は約定件数であり、返却バケット数ではありません（バケット数は時間幅に依存）
-   注意: 取引が閑散な時間帯では、300件でも数分間のデータにしかならない場合あり
-
-【共通パラメータ】
-- bucketMs: バケットの時間幅（ミリ秒、デフォルト60000=1分）
-- view: summary|buckets|full`,
+	description: `[Flow / CVD / Buy-Sell Pressure] 資金フロー分析（flow / CVD / aggressor ratio / buy-sell pressure）。約定データからCVD・アグレッサー比・スパイクを検出。hours（推奨）で時間範囲指定、または limit で件数指定。`,
 	inputSchema: GetFlowMetricsInputSchema,
 	handler: async ({ pair, limit, date, bucketMs, view, bucketsN, tz, hours }: any) => {
 		const res: any = await getFlowMetrics(pair, Number(limit), date, Number(bucketMs), tz, hours != null ? Number(hours) : undefined);

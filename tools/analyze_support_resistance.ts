@@ -775,7 +775,7 @@ export default async function analyzeSupportResistance(
 // ── MCP ツール定義（tool-registry から自動収集） ──
 export const toolDef: ToolDefinition = {
 	name: 'analyze_support_resistance',
-	description: 'サポート・レジスタンスを自動検出。過去のローソク足から反発/反落ポイントを抽出し、接触回数・強度・直近の崩壊実績を分析。LLMのハルシネーションを防ぐため、サーバー側で正確に計算してcontentに結果を出力。',
+	description: '[Support / Resistance / Key Levels] サポート・レジスタンス（support / resistance / key levels / price levels）を自動検出。反発/反落ポイントの接触回数・強度・崩壊実績を分析。',
 	inputSchema: AnalyzeSupportResistanceInputSchema,
 	handler: async ({ pair, lookbackDays, topN, tolerance }: any) =>
 		analyzeSupportResistance(pair, { lookbackDays, topN, tolerance }),

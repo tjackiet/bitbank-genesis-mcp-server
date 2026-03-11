@@ -422,7 +422,7 @@ function deduplicateByUuid<T extends { uuid: string }>(items: T[]): T[] {
 // ── MCP ツール定義（tool-registry から自動収集） ──
 export const toolDef: ToolDefinition = {
 	name: 'get_my_deposit_withdrawal',
-	description: '入出金・入出庫の履歴を取得。JPY入出金と暗号資産入出庫の両方に対応。ページネーション対応で全件取得可能。通貨・期間・タイプでフィルタ可能。Private API（要APIキー設定）。',
+	description: '[Deposit / Withdrawal / Transfer History] 入出金・入出庫の履歴（deposit / withdrawal / transfer / funding history）を取得。JPY入出金+暗号資産入出庫に対応。全件取得可能。Private API。',
 	inputSchema: GetMyDepositWithdrawalInputSchema,
 	handler: async (args: any) => getMyDepositWithdrawal(args ?? {}),
 };

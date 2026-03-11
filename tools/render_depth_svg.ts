@@ -199,27 +199,7 @@ export default async function renderDepthSvg(args: {
 // ── MCP ツール定義（tool-registry から自動収集） ──
 export const toolDef: ToolDefinition = {
 	name: 'render_depth_svg',
-	description: `板の深さ(Depth)チャートをSVGで生成します。軽量・専用実装で meta.pair/type を常に含みます。
-
-【返却形式】
-- data.svg: 完全なSVG文字列
-- data.filePath: ファイル保存時のパス
-- meta.pair/type: 銘柄と時間軸
-
-【チャート表示方法（重要）】
-Claude.aiでチャートを表示するには、HTMLファイルにSVGを埋め込んで提示してください。
-SVGファイルを直接 present_files で提示しても、ダウンロードリンクになるだけで画像として表示されません。
-
-手順:
-1. render_depth_svg を呼び出し、data.svg を取得
-2. create_file でHTMLファイル（SVG埋め込み）を /mnt/user-data/outputs/ に保存
-3. present_files でHTMLファイルを提示
-
-※ autoSave のデフォルト保存先（/assets）はClaude.ai環境では書き込み不可。HTMLファイル埋め込み方式を推奨。
-※ SVGファイル単体の present_files は非推奨（表示されない）
-
-使い方:
-render_depth_svg({ pair: "btc_jpy", type: "1day", depth: { levels: 200 } })`,
+	description: `[Depth Chart / Order Book Visualization] 板の深さチャートをSVG生成（depth chart / order book visualization / bid-ask depth）。data.svg をHTMLに埋め込んで表示。`,
 	inputSchema: z.object({
 		pair: z.string().default('btc_jpy'),
 		type: z.string().default('1day'),

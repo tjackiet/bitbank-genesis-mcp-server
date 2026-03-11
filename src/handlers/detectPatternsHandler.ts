@@ -6,7 +6,7 @@ import { toIsoTime } from '../../lib/datetime.js';
 
 export const toolDef: ToolDefinition = {
 	name: 'detect_patterns',
-	description: '古典的チャートパターン（ダブルトップ/ヘッドアンドショルダーズ/三角持ち合い/ウェッジ等）を統合検出します。\n\n🆕 統合版: 形成中（forming）と完成済み（completed）の両方を1回で取得可能。\n\n【オプション】\n- includeForming: true → 形成中パターンを含める（status=forming/near_completion）\n- includeCompleted: true → 完成済みパターンを含める（status=completed）\n- requireCurrentInPattern + currentRelevanceDays: 鮮度フィルタ（N日以内のみ）\n\n【パターン別推奨パラメータ】\n- pennant/flag: swingDepth≈5, minBarsBetweenSwings≈3（短期の旗型パターン向け）\n- triangle/wedge: swingDepth≈10, tolerancePct≈0.03（中期の収束パターン向け）\n- double_top/double_bottom: tolerancePct≈0.02（価格水準の一致精度重視）\n\n【出力】\n- content: 検出名・パターン整合度・期間・ステータス\n- 全パターン: status（forming/near_completion/completed）、breakoutDirection（up/down）、outcome（success/failure）を含む\n- 視覚確認: structuredContent.data.overlays を render_chart_svg.overlays に渡す\n\nview=summary|detailed|full（既定=detailed）。',
+	description: '[Chart Patterns / Double Top / Head and Shoulders / Triangle] チャートパターン検出（chart patterns / double top / double bottom / head and shoulders / triangle / wedge / flag）。形成中+完成済みを統合検出。\n\n視覚確認: 結果の overlays を render_chart_svg に渡して描画可能。',
 	inputSchema: DetectPatternsInputSchema,
 	handler: async ({ pair, type, limit, patterns, swingDepth, tolerancePct, minBarsBetweenSwings, view, requireCurrentInPattern, currentRelevanceDays, includeForming, includeCompleted, includeInvalid }: any) => {
 		const out = await detectPatterns(pair, type, limit, { patterns, swingDepth, tolerancePct, minBarsBetweenSwings, requireCurrentInPattern, currentRelevanceDays, includeForming, includeCompleted, includeInvalid });

@@ -117,7 +117,7 @@ export default async function getTicker(
 // ── MCP ツール定義（tool-registry から自動収集） ──
 export const toolDef: ToolDefinition = {
 	name: 'get_ticker',
-	description: '単一ペアのティッカーを取得（/ticker）。価格・出来高・24h高安。',
+	description: '[Ticker / Price] 単一ペアのティッカー（ticker / price / 24h change）を取得。現在価格・出来高・24h高安。',
 	inputSchema: GetTickerInputSchema,
 	handler: async ({ pair }: any) => getTicker(pair),
 };

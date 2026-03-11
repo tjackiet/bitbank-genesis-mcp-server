@@ -402,18 +402,9 @@ export default async function getCandles(
 // ── MCP ツール定義（tool-registry から自動収集） ──
 export const toolDef: ToolDefinition = {
 	name: 'get_candles',
-	description: `ローソク足（OHLCV）を取得。
+	description: `[Candles / OHLCV / Candlestick] ローソク足（candles / OHLCV / chart data）を取得。1min〜1monthの各時間足に対応。
 
-【パラメータ】
-- pair: 通貨ペア（例: btc_jpy）
-- type: 時間足（1min, 5min, 15min, 30min, 1hour, 4hour, 8hour, 12hour, 1day, 1week, 1month）
-- date: 日付指定。1min〜1hour→YYYYMMDD形式、4hour以上→YYYY形式
-- limit: 取得本数
-- tz: タイムゾーン（例: Asia/Tokyo）。指定時は各ローソク足に isoTimeLocal（ローカル時刻）を追加
-
-【重要】バックテストを行う場合は、このツールではなく run_backtest を使用してください。
-run_backtest はデータ取得・計算・チャート描画をすべて行い、結果をワンコールで返します。
-独自にバックテストロジックを実装する必要はありません。`,
+【重要】バックテストには run_backtest を使用（データ取得〜チャート描画を一括実行）。`,
 	inputSchema: GetCandlesInputSchema,
 	handler: async ({ pair, type, date, limit, view, tz }: any) => {
 		const result: any = await getCandles(pair, type, date, limit, tz);
