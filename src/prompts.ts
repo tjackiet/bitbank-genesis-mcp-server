@@ -1,5 +1,6 @@
 // MCP Prompts 定義（既存の server 側プロンプトを集約）
 import type { PromptMessage } from '@modelcontextprotocol/sdk/types.js';
+import { isPrivateApiEnabled } from './private/config.js';
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // 型定義
@@ -28,6 +29,8 @@ export interface PromptMetadata {
 export interface PromptDef {
   name: string;
   description: string;
+  /** true の場合、Private API キーが設定されている環境でのみ公開される */
+  requiresPrivateApi?: boolean;
   // server 側 register 用: 既存 messages をそのまま移行
   messages: Array<{
     role: 'system' | 'assistant' | 'user';
@@ -1992,6 +1995,7 @@ MACD（中央が0、左が弱気・右が強気）:
   {
     name: '💼 ポートフォリオ分析レポート',
     description: '口座の保有資産・損益・構成比・テクニカル分析を HTML ダッシュボードで視覚化。Claude Desktop 推奨。Private API 要。',
+    requiresPrivateApi: true,
     messages: [
       {
         role: 'user',
@@ -2357,6 +2361,8 @@ const orderIndex = (name: string) => {
   const i = desiredOrder.indexOf(name);
   return i >= 0 ? i : Number.MAX_SAFE_INTEGER;
 };
+const privateApiEnabled = isPrivateApiEnabled();
 export const prompts: PromptDef[] = promptsAll
   .filter(p => /[^\x00-\x7F]/.test(p.name))
+  .filter(p => !p.requiresPrivateApi || privateApiEnabled)
   .sort((a, b) => orderIndex(a.name) - orderIndex(b.name));
