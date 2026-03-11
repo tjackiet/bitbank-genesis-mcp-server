@@ -3,6 +3,7 @@ import { prompts } from '../../src/prompts.js';
 
 const expectedPromptNames = [
   '🌅 おはようレポート',
+  '💼 ポートフォリオ分析レポート',
   '🔰 BTCの価格を分析して',
   '🔰 ETHの価格を分析して',
   '🔰 今注目のコインは？',
@@ -14,8 +15,8 @@ const expectedPromptNames = [
 ];
 
 describe('prompts contract', () => {
-  it('MCP 公開対象は日本語名の 9 プロンプトに限定される', () => {
-    expect(prompts).toHaveLength(9);
+  it('MCP 公開対象は日本語名の 10 プロンプトに限定される', () => {
+    expect(prompts).toHaveLength(10);
     expect(prompts.map((prompt) => prompt.name)).toEqual(expectedPromptNames);
   });
 
