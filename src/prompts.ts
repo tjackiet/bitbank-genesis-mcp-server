@@ -1989,6 +1989,350 @@ MACD（中央が0、左が弱気・右が強気）:
 
 
 
+  {
+    name: '💼 ポートフォリオ分析レポート',
+    description: '口座の保有資産・損益・構成比・テクニカル分析を HTML ダッシュボードで視覚化。Claude Desktop 推奨。Private API 要。',
+    messages: [
+      {
+        role: 'user',
+        content: [{
+          type: 'text',
+          text: `私の bitbank 口座のポートフォリオ分析を **HTML ファイル** で視覚化してください。
+
+【使用ツール】
+1. analyze_my_portfolio(include_pnl=true, include_technical=true, include_deposit_withdrawal=true)
+   → 口座全体の保有資産・評価損益・実現損益・入出金ベースのリターン・テクニカル分析を一括取得
+
+※ 上記1ツールのみ使用すること。追加のツール呼び出しは行わない
+※ 将来的に get_candles や render_chart_svg を使った価格チャートの追加も可能だが、今回は不要
+
+【データの読み取り方】
+analyze_my_portfolio のレスポンスには summary（テキスト）と structuredContent（JSON）が含まれる。
+structuredContent を見ないクライアントもあるため、**summary のテキストも必ず参照**し、
+以下の情報を HTML の見える位置に出力すること:
+
+- 取得時刻（timestamp）
+- 入出金分析状態（depositWithdrawalStatus: available / fallback / no_history / not_requested）
+- 分析基準（analysis_basis: deposit_withdrawal / trade_only）
+- fallback 時の理由（summary 内に記載がある場合）
+
+【出力形式】
+取得したデータを使って、以下の構成の **HTML ファイル** を生成してください。
+
+## 必須コンポーネント
+
+### 1. ヘッダー部
+- タイトル: 「💼 ポートフォリオ分析レポート」
+- 取得時刻（YYYY-MM-DD HH:MM JST）
+- 入出金分析状態バッジ（available → 🟢 / fallback → 🟡 / no_history → ⚪ / not_requested → ⚪）
+- 分析基準（deposit_withdrawal / trade_only）を明記
+
+### 2. 口座サマリーカード
+- 口座合計評価額（total_jpy_value）を大きく表示
+- 口座全体リターン（account_return_jpy, account_return_pct）— available 時のみ表示
+  - 概算の場合はその旨を明記（is_complete=false 時）
+- 合計評価損益（total_unrealized_pnl）と変動率
+- 合計実現損益（total_realized_pnl）
+- プラスは緑、マイナスは赤で色分け
+
+### 3. 保有構成の可視化（横棒チャート）
+holdings 配列から、jpy_value 上位順に横棒の構成比チャートを生成する。
+円グラフは不要。CSSのみで描画する横棒グラフとする。
+
+表示内容:
+- 銘柄名（BTC, ETH 等の大文字表記）
+- 円換算額（jpy_value）
+- 構成比（%）= 各銘柄の jpy_value / total_jpy_value × 100
+- 上位順にソート
+
+横棒の実装:
+- 最大の銘柄を 100% 幅として、他は比率で幅を計算
+- style="width: XX%" で指定
+- 各バーに銘柄名・金額・構成比を併記
+- JPY 残高も含める
+
+### 4. 銘柄別損益一覧（テーブル）
+暗号資産のみ。以下のカラムを含むテーブルで表示:
+
+| 銘柄 | 保有量 | 円換算 | 評価損益 | 損益率 | 取得単価 |
+- 評価損益がプラスなら緑（text-green-400）、マイナスなら赤（text-red-400）
+- 取得単価（avg_buy_price）が null の銘柄は「—」を表示
+- 保有量が 0 の売り切り銘柄（実現損益のみ）は別セクションに分ける
+
+### 5. 損益の可視化（横棒グラフ）
+analyze_my_portfolio は時系列ではなく現在スナップショットのため、
+折れ線グラフではなく**横棒グラフ**で銘柄別の評価損益を可視化する。
+
+実装:
+- 各銘柄の unrealized_pnl を横棒で表示
+- プラスは右方向に緑（#4ade80）、マイナスは左方向に赤（#f87171）
+- 中央を 0 基準線とする
+- 金額と損益率を併記
+- 実現損益がある場合は別カードで同様の横棒グラフを表示
+
+### 6. テクニカル分析セクション
+include_technical=true で返ってくる technical 配列を使用する。
+保有銘柄（または上位銘柄）ごとにカードを表示。
+
+各カードに:
+- 銘柄ペア名
+- RSI（rsi_14）— 70以上は 🔴買われすぎ、30以下は 🟢売られすぎ、それ以外は 🟡中立
+- SMA乖離率（sma_deviation_pct）— プラスなら上方乖離、マイナスなら下方乖離
+- トレンド（trend）— bullish 🟢 / bearish 🔴 / neutral 🟡
+- シグナル（signal）
+
+### 7. 入出金分析の詳細カード（available 時のみ）
+deposit_withdrawal_summary のデータを表示:
+- JPY入金合計（total_jpy_deposited）
+- JPY出金合計（total_jpy_withdrawn）
+- 純投入額（net_jpy_invested）
+- 暗号資産入庫の仮評価（crypto_deposit_estimated_jpy）— 件数も併記
+- 暗号資産出庫件数（crypto_withdrawal_count）
+
+### 8. 注意書き / 免責セクション
+以下の内容を HTML 内に必ず表示する:
+
+**分析状態の説明:**
+- \`available\`: 入出金データを含む完全な分析
+- \`fallback\`: 入出金 API が失敗し、約定ベースのみの分析（trade_only）
+- \`no_history\`: 入出金履歴が0件（口座開設直後など）
+- \`not_requested\`: 入出金分析が未リクエスト
+
+**データに関する注意:**
+- \`trade_only\` の場合、入出金ベースの口座リターンは表示されません
+- 暗号資産入庫は現在価格で仮評価しているため、入庫時の価格とは異なります
+- 一部データのみ取得の場合は概算値です（is_complete=false 時）
+- 評価損益は約定ベースの平均取得単価から算出しています
+
+**免責事項:**
+⚠️ この分析は参考情報です。投資判断はご自身で行ってください。
+
+## デザイン要件
+
+\`\`\`
+- ダークテーマ
+  - 背景: #1a1a2e
+  - カード背景: #16213e
+  - テキスト: #eaeaea
+  - アクセント: #0f3460
+
+- 色の意味
+  - 緑系 (#4ade80): ポジティブ/利益/上昇
+  - 赤系 (#f87171): ネガティブ/損失/下落
+  - 黄系 (#fbbf24): 中立/注意
+  - 青系 (#60a5fa): 情報
+
+- CSS禁止パターン（pre-built Tailwind v2 で非対応/不安定）
+  - bg-opacity-* / text-opacity-* → style属性で rgba() を直接指定
+  - bg-[#xxx] 等の arbitrary value → <style>ブロックでクラス定義
+  - backdrop-* 系 → 使用禁止
+  - ring-* 系 → border で代替
+
+- レイアウト
+  - 最大幅: 800px
+  - カード: 角丸(8px)、影あり
+  - フォント: システムフォント
+
+- Tailwind CSS（jsdelivr の pre-built CSS）を使用
+  - カスタムカラーは \`<style>\` ブロックで定義（arbitrary value 構文 \`bg-[#xxx]\` は使わない）
+\`\`\`
+
+## 出力テンプレート
+
+\`\`\`html
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+  <style>
+    .bg-dark   { background-color: #1a1a2e; }
+    .bg-card   { background-color: #16213e; }
+    .bg-accent { background-color: #0f3460; }
+    .bar-green { background-color: #4ade80; }
+    .bar-red   { background-color: #f87171; }
+    .text-profit  { color: #4ade80; }
+    .text-loss    { color: #f87171; }
+    .text-neutral { color: #fbbf24; }
+  </style>
+  <title>ポートフォリオ分析レポート</title>
+</head>
+<body class="bg-dark text-gray-100 min-h-screen p-6">
+  <div class="max-w-3xl mx-auto space-y-6">
+
+    <!-- ヘッダー -->
+    <header class="text-center">
+      <h1 class="text-2xl font-bold">💼 ポートフォリオ分析レポート</h1>
+      <p class="text-gray-400 text-sm">取得時刻: {timestamp}</p>
+      <p class="text-sm mt-1">
+        入出金分析: <span class="...">{status_badge}</span>
+        ／分析基準: {analysis_basis}
+      </p>
+    </header>
+
+    <!-- 口座サマリー -->
+    <section class="bg-card rounded-lg p-6">
+      <h2 class="font-bold mb-4">📊 口座サマリー</h2>
+      <div class="text-center mb-4">
+        <p class="text-gray-400 text-sm">口座合計評価額</p>
+        <p class="text-3xl font-bold">{total_jpy_value}円</p>
+      </div>
+      <div class="grid grid-cols-3 gap-4 text-center">
+        <div>
+          <p class="text-gray-400 text-xs">口座全体リターン</p>
+          <p class="{return_color} text-lg font-bold">{account_return}</p>
+        </div>
+        <div>
+          <p class="text-gray-400 text-xs">合計評価損益</p>
+          <p class="{pnl_color} text-lg font-bold">{total_unrealized_pnl}</p>
+        </div>
+        <div>
+          <p class="text-gray-400 text-xs">合計実現損益</p>
+          <p class="{realized_color} text-lg font-bold">{total_realized_pnl}</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- 保有構成（横棒チャート） -->
+    <section class="bg-card rounded-lg p-6">
+      <h2 class="font-bold mb-4">📊 保有構成</h2>
+      <div class="space-y-3">
+        <!-- 銘柄ごとの横棒 -->
+        <div>
+          <div class="flex justify-between text-sm mb-1">
+            <span>{asset_name}</span>
+            <span>{jpy_value}円（{composition_pct}%）</span>
+          </div>
+          <div class="bg-accent rounded-full" style="height: 20px;">
+            <div class="bar-green rounded-full" style="width: {pct}%; height: 20px;"></div>
+          </div>
+        </div>
+        <!-- ... 他の銘柄 ... -->
+      </div>
+    </section>
+
+    <!-- 銘柄別損益 -->
+    <section class="bg-card rounded-lg p-6">
+      <h2 class="font-bold mb-4">💰 銘柄別損益</h2>
+      <div class="overflow-x-auto">
+        <table class="w-full text-sm">
+          <thead>
+            <tr class="text-gray-400 border-b border-gray-600">
+              <th class="text-left py-2">銘柄</th>
+              <th class="text-right py-2">保有量</th>
+              <th class="text-right py-2">円換算</th>
+              <th class="text-right py-2">評価損益</th>
+              <th class="text-right py-2">損益率</th>
+              <th class="text-right py-2">取得単価</th>
+            </tr>
+          </thead>
+          <tbody>
+            <!-- 銘柄行 -->
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- 損益の可視化（横棒グラフ） -->
+    <section class="bg-card rounded-lg p-6">
+      <h2 class="font-bold mb-4">📉 評価損益バー</h2>
+      <div class="space-y-2">
+        <!-- 各銘柄の損益バー（中央0基準、プラスは右に緑、マイナスは左に赤） -->
+      </div>
+    </section>
+
+    <!-- テクニカル分析 -->
+    <section class="bg-card rounded-lg p-6">
+      <h2 class="font-bold mb-4">📈 テクニカル分析</h2>
+      <div class="grid grid-cols-1 gap-4">
+        <!-- 銘柄ごとのテクニカルカード -->
+        <div class="bg-accent rounded-lg p-4">
+          <p class="font-bold mb-2">{pair_name}</p>
+          <div class="grid grid-cols-4 gap-2 text-sm">
+            <div>
+              <p class="text-gray-400 text-xs">RSI</p>
+              <p>{rsi_icon} {rsi_value}</p>
+            </div>
+            <div>
+              <p class="text-gray-400 text-xs">SMA乖離</p>
+              <p>{sma_deviation}</p>
+            </div>
+            <div>
+              <p class="text-gray-400 text-xs">トレンド</p>
+              <p>{trend_icon} {trend}</p>
+            </div>
+            <div>
+              <p class="text-gray-400 text-xs">シグナル</p>
+              <p>{signal}</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 入出金分析詳細（available時のみ） -->
+    <section class="bg-card rounded-lg p-6">
+      <h2 class="font-bold mb-4">🏦 入出金分析</h2>
+      <!-- total_jpy_deposited, total_jpy_withdrawn, net_jpy_invested, etc. -->
+    </section>
+
+    <!-- 注意書き -->
+    <section class="bg-card rounded-lg p-6">
+      <h2 class="font-bold mb-3">📝 注意事項</h2>
+      <div class="text-sm text-gray-400 space-y-2">
+        <p><strong>分析状態について:</strong></p>
+        <ul class="list-disc list-inside space-y-1 ml-2">
+          <li>available: 入出金データを含む完全な分析</li>
+          <li>fallback: 入出金APIが失敗し、約定ベースのみの分析</li>
+          <li>no_history: 入出金履歴なし</li>
+          <li>not_requested: 入出金分析が未リクエスト</li>
+        </ul>
+        <p class="mt-2"><strong>データについて:</strong></p>
+        <ul class="list-disc list-inside space-y-1 ml-2">
+          <li>trade_only の場合、入出金ベースの口座リターンは非表示です</li>
+          <li>暗号資産入庫は現在価格で仮評価（入庫時価格とは異なります）</li>
+          <li>一部データのみ取得の場合は概算値です</li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- 免責事項 -->
+    <footer class="text-center text-gray-500 text-xs">
+      ⚠️ この分析は参考情報です。投資判断はご自身で行ってください。
+    </footer>
+
+  </div>
+</body>
+</html>
+\`\`\`
+
+**重要**:
+- \`create_file\` で \`/mnt/user-data/outputs/portfolio-report.html\` を作成
+- \`present_files\` で提示
+- コードブロックでの出力やテキスト説明は不要
+- Tailwind CSS（jsdelivr pre-built CSS）を使用。\`<script src="https://cdn.tailwindcss.com">\` は本番非推奨の警告が出るため使わない
+- holdings 配列のうち jpy_value が null や 0 の銘柄は構成比チャートから除外してよい
+- テクニカルデータがない場合（technical が undefined）はテクニカルセクションを省略
+- 入出金分析が available でない場合は入出金詳細カードを省略
+- 売り切り銘柄（amount=0 で realized_pnl のみ）がある場合は別テーブルにまとめる
+
+---
+
+⚠️ 免責事項：この分析は参考情報であり、解釈には誤差が含まれる場合があります。
+`
+        }]
+      }
+    ],
+    metadata: {
+      level: PromptLevel.INTERMEDIATE,
+      category: PromptCategory.ANALYSIS,
+      estimatedTime: '30秒',
+      prerequisites: ['Private API キーの設定'],
+      tags: ['intermediate', 'portfolio', 'pnl', 'private-api', 'visual', 'html', 'artifact']
+    }
+  },
+
 ];
 
 
@@ -1996,6 +2340,7 @@ MACD（中央が0、左が弱気・右が強気）:
 // 日本語名のみ + 指定順に並べ替えて公開
 const desiredOrder = [
   '🌅 おはようレポート',
+  '💼 ポートフォリオ分析レポート',
   '🔰 BTCの価格を分析して',
   '🔰 ETHの価格を分析して',
   '🔰 今注目のコインは？',
