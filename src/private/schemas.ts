@@ -217,6 +217,11 @@ const PeriodPerformanceSchema = z.object({
 	note: z.string().describe('計算方法・注意事項の説明'),
 }).optional();
 
+const EquityPointSchema = z.object({
+	timestamp: z.string().describe('時点の日時（ISO8601 JST）'),
+	value_jpy: z.number().describe('その時点のJPY建て総資産額（円）'),
+});
+
 export const AnalyzeMyPortfolioDataSchema = z.object({
 	holdings: z.array(HoldingPnlSchema).describe('保有銘柄一覧（JPY評価額降順）'),
 	total_jpy_value: z.number().optional().describe('ポートフォリオ合計評価額'),
@@ -227,6 +232,8 @@ export const AnalyzeMyPortfolioDataSchema = z.object({
 	daily_performance: PeriodPerformanceSchema.describe('前日比パフォーマンス（当日0:00 JST〜現在の口座評価額増減）'),
 	yearly_performance: PeriodPerformanceSchema.describe('年初比パフォーマンス（当年1/1 00:00 JST〜現在の口座評価額増減）'),
 	monthly_performance: PeriodPerformanceSchema.describe('月初比パフォーマンス（当月1日 00:00 JST〜現在の口座評価額増減）'),
+	monthly_equity_series: z.array(EquityPointSchema).optional().describe('当月1日 00:00 JSTから現在までの日次JPY建て総資産推移。各点はその日00:00 JST時点の復元評価額。最終点は現在のリアルタイム評価額'),
+	yearly_equity_series: z.array(EquityPointSchema).optional().describe('当年1/1 00:00 JSTから現在までの月次JPY建て総資産推移。各点はその月1日 00:00 JST時点の復元評価額。最終点は現在のリアルタイム評価額'),
 	yearly_realized_pnl: PeriodRealizedPnlSchema.describe('年初来実現損益（補助指標）'),
 	monthly_realized_pnl: PeriodRealizedPnlSchema.describe('月初来実現損益（補助指標）'),
 	deposit_withdrawal_summary: DepositWithdrawalSummarySchema,

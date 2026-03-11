@@ -516,16 +516,23 @@ interface PeriodPerformance {
 }
 
 /**
- * 指定された通貨ペアの1dayキャンドルから、年初・月初の始値を取得する。
- * 期初時点の「口座評価額」を復元するために使用。
+ * 1dayキャンドルから期初始値 + 全日次始値マップを一括取得する。
+ * boundaryPrices: 既存の年初/月初/日初パフォーマンス計算用。
+ * dailyPrices: 資産推移時系列（equity series）構築用。asset → (candleTimestampMs → openPrice)。
  */
-async function fetchPeriodStartPrices(
+interface CandlePriceData {
+	boundaryPrices: Map<string, { yearStart?: number; monthStart?: number; dayStart?: number }>;
+	dailyPrices: Map<string, Map<number, number>>;
+}
+
+async function fetchCandlePriceData(
 	pairs: string[],
 	yearStartMs: number,
 	monthStartMs: number,
 	dayStartMs: number,
-): Promise<Map<string, { yearStart?: number; monthStart?: number; dayStart?: number }>> {
-	const result = new Map<string, { yearStart?: number; monthStart?: number; dayStart?: number }>();
+): Promise<CandlePriceData> {
+	const boundaryPrices = new Map<string, { yearStart?: number; monthStart?: number; dayStart?: number }>();
+	const dailyPrices = new Map<string, Map<number, number>>();
 	const nowJst = dayjs().tz('Asia/Tokyo');
 	const year = nowJst.year();
 
@@ -543,14 +550,18 @@ async function fetchPeriodStartPrices(
 			const ohlcv = json.data?.candlestick?.[0]?.ohlcv;
 			if (!Array.isArray(ohlcv) || ohlcv.length === 0) return;
 
+			const asset = pair.replace('_jpy', '');
 			let yearStartPrice: number | undefined;
 			let monthStartPrice: number | undefined;
 			let dayStartPrice: number | undefined;
+			const priceByDate = new Map<number, number>();
 
 			for (const candle of ohlcv) {
 				const ts = Number(candle[5]);
 				const open = Number(candle[0]);
 				if (!Number.isFinite(open) || open <= 0) continue;
+
+				priceByDate.set(ts, open);
 
 				if (yearStartPrice == null && ts >= yearStartMs) {
 					yearStartPrice = open;
@@ -561,18 +572,17 @@ async function fetchPeriodStartPrices(
 				if (dayStartPrice == null && ts >= dayStartMs) {
 					dayStartPrice = open;
 				}
-				if (yearStartPrice != null && monthStartPrice != null && dayStartPrice != null) break;
 			}
 
-			const asset = pair.replace('_jpy', '');
-			result.set(asset, { yearStart: yearStartPrice, monthStart: monthStartPrice, dayStart: dayStartPrice });
+			boundaryPrices.set(asset, { yearStart: yearStartPrice, monthStart: monthStartPrice, dayStart: dayStartPrice });
+			dailyPrices.set(asset, priceByDate);
 		} catch {
 			// Non-fatal: price unavailable for this pair
 		}
 	});
 
 	await Promise.all(promises);
-	return result;
+	return { boundaryPrices, dailyPrices };
 }
 
 /**
@@ -676,6 +686,57 @@ function calcPortfolioValue(
 		}
 	}
 	return total;
+}
+
+// ── 資産推移時系列（Equity Series） ──
+
+interface EquityPoint {
+	timestamp: string;
+	value_jpy: number;
+}
+
+/**
+ * 指定日付群について保有状態を復元し、各時点の JPY 建て総資産額を算出する。
+ * 最終点として現在のリアルタイム評価額を追加する。
+ */
+function buildEquitySeries(
+	dates: ReturnType<typeof dayjs>[],
+	currentHoldings: Array<{ asset: string; amount: string }>,
+	allTrades: RawTrade[],
+	dwData: DepositWithdrawalData | null,
+	dailyPrices: Map<string, Map<number, number>>,
+	currentValueJpy: number,
+	currentIso: string,
+): EquityPoint[] {
+	const series: EquityPoint[] = [];
+
+	for (const date of dates) {
+		const dateMs = date.valueOf();
+		const holdings = reconstructHoldingsAtDate(currentHoldings, allTrades, dateMs, dwData);
+
+		// Build price map for this date from daily candle opens
+		const priceMap = new Map<string, number>();
+		for (const [asset, priceByDate] of dailyPrices) {
+			const price = priceByDate.get(dateMs);
+			if (price != null) {
+				priceMap.set(asset, price);
+			}
+		}
+
+		const value = Math.round(calcPortfolioValue(holdings, priceMap));
+		series.push({
+			timestamp: date.format('YYYY-MM-DDTHH:mm:ssZ'),
+			value_jpy: value,
+		});
+	}
+
+	// Final point: current real-time value
+	series.push({
+		timestamp: currentIso,
+		value_jpy: currentValueJpy,
+	});
+
+	return series;
 }
 
 interface PeriodNetFlowResult {
@@ -859,9 +920,9 @@ export default async function analyzeMyPortfolioHandler(args: {
 				allRelevantPairs.add(t.pair);
 			}
 		}
-		const periodPricePromise = include_pnl
-			? fetchPeriodStartPrices([...allRelevantPairs], boundaries.yearStartMs, boundaries.monthStartMs, boundaries.dayStartMs)
-			: Promise.resolve(new Map<string, { yearStart?: number; monthStart?: number; dayStart?: number }>());
+		const candlePricePromise = include_pnl
+			? fetchCandlePriceData([...allRelevantPairs], boundaries.yearStartMs, boundaries.monthStartMs, boundaries.dayStartMs)
+			: Promise.resolve({ boundaryPrices: new Map(), dailyPrices: new Map() } as CandlePriceData);
 
 		const timestamp = nowIso();
 
@@ -969,8 +1030,11 @@ export default async function analyzeMyPortfolioHandler(args: {
 		let yearlyPerformance: PeriodPerformance | undefined;
 		let monthlyPerformance: PeriodPerformance | undefined;
 		let dailyPerformance: PeriodPerformance | undefined;
+		let monthlyEquitySeries: EquityPoint[] | undefined;
+		let yearlyEquitySeries: EquityPoint[] | undefined;
 		if (include_pnl) {
-			const periodPrices = await periodPricePromise;
+			const candlePriceData = await candlePricePromise;
+			const periodPrices = candlePriceData.boundaryPrices;
 			const currentJpyValueRounded = Math.round(totalJpyValue);
 			const performanceNote = '期初評価額は現在の保有状態から約定・入出金を逆算して復元し、期初時点の始値（1day candle open）で評価。暗号資産の入出庫は現在価格で仮評価。純入出金は元本移動のみ（出金手数料を含まない）。調整後増減 = 単純増減 - 純入出金（市場変動 + 出金手数料コスト）。';
 
@@ -1054,6 +1118,38 @@ export default async function analyzeMyPortfolioHandler(args: {
 				period_end: boundaries.nowIso,
 				note: performanceNote,
 			};
+
+			// 6.7. 資産推移時系列データの構築（月次: 日次点、年次: 月次点）
+			if (candlePriceData.dailyPrices.size > 0) {
+				const holdingsForReconstruction = nonZeroAssets.map((a) => ({ asset: a.asset, amount: a.onhand_amount }));
+				const nowJst = dayjs().tz('Asia/Tokyo');
+
+				// Monthly: daily points from month start through today 00:00 JST, + current
+				const monthDates: ReturnType<typeof dayjs>[] = [];
+				let d = dayjs(boundaries.monthStartMs).tz('Asia/Tokyo');
+				const todayStart = nowJst.startOf('day');
+				while (!d.isAfter(todayStart)) {
+					monthDates.push(d);
+					d = d.add(1, 'day');
+				}
+				monthlyEquitySeries = buildEquitySeries(
+					monthDates, holdingsForReconstruction, allTrades, dwData,
+					candlePriceData.dailyPrices, currentJpyValueRounded, boundaries.nowIso,
+				);
+
+				// Yearly: monthly points from year start through current month start, + current
+				const yearDates: ReturnType<typeof dayjs>[] = [];
+				let m = dayjs(boundaries.yearStartMs).tz('Asia/Tokyo');
+				const currentMonthStart = nowJst.startOf('month');
+				while (!m.isAfter(currentMonthStart)) {
+					yearDates.push(m);
+					m = m.add(1, 'month');
+				}
+				yearlyEquitySeries = buildEquitySeries(
+					yearDates, holdingsForReconstruction, allTrades, dwData,
+					candlePriceData.dailyPrices, currentJpyValueRounded, boundaries.nowIso,
+				);
+			}
 		}
 
 		// JPY 評価額降順ソート
@@ -1189,6 +1285,12 @@ export default async function analyzeMyPortfolioHandler(args: {
 			lines.push(`期間基準: JST`);
 			lines.push('※ 期初評価額は約定・入出金を逆算して復元、期初始値で評価。暗号資産入出庫は現在価格で仮評価');
 			lines.push('※ 出金元本は外部フローとして除外、出金手数料はコストとして performance に含む');
+		}
+		if (monthlyEquitySeries && monthlyEquitySeries.length > 0) {
+			lines.push(`月次資産推移: ${monthlyEquitySeries.length}点（日次）`);
+		}
+		if (yearlyEquitySeries && yearlyEquitySeries.length > 0) {
+			lines.push(`年次資産推移: ${yearlyEquitySeries.length}点（月次）`);
 		}
 
 		// 入出金分析状態と分析基準をsummaryに明示（structuredContentを見ないLLM向け）
@@ -1330,6 +1432,8 @@ export default async function analyzeMyPortfolioHandler(args: {
 			daily_performance: dailyPerformance,
 			yearly_performance: yearlyPerformance,
 			monthly_performance: monthlyPerformance,
+			monthly_equity_series: monthlyEquitySeries,
+			yearly_equity_series: yearlyEquitySeries,
 			yearly_realized_pnl: yearlyRealizedPnl ? {
 				realized_pnl: yearlyRealizedPnl.realized_pnl,
 				sell_count: yearlyRealizedPnl.sell_count,
