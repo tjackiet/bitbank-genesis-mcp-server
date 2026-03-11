@@ -1090,31 +1090,31 @@ export default async function analyzeMyPortfolioHandler(args: {
 
 		// 主指標: 年初比・月初比の口座評価額増減
 		if (yearlyPerformance) {
-			const ySign = yearlyPerformance.adjusted_change_jpy >= 0 ? '+' : '';
+			const ySign = yearlyPerformance.change_jpy >= 0 ? '+' : '';
 			lines.push(`年初比: ${formatPriceJPY(yearlyPerformance.start_value_jpy)} → ${formatPriceJPY(yearlyPerformance.current_value_jpy)}`);
+			lines.push(`  増減: ${ySign}${formatPriceJPY(yearlyPerformance.change_jpy)}${yearlyPerformance.change_pct != null ? ` (${formatPercent(yearlyPerformance.change_pct, { sign: true })})` : ''}`);
 			if (yearlyPerformance.net_flow_jpy !== 0 || yearlyPerformance.withdrawal_fee_jpy > 0) {
-				lines.push(`  調整後増減（入出金元本除く）: ${ySign}${formatPriceJPY(yearlyPerformance.adjusted_change_jpy)}${yearlyPerformance.adjusted_change_pct != null ? ` (${formatPercent(yearlyPerformance.adjusted_change_pct, { sign: true })})` : ''}`);
+				const adjSign = yearlyPerformance.adjusted_change_jpy >= 0 ? '+' : '';
+				lines.push(`  入出金調整後: ${adjSign}${formatPriceJPY(yearlyPerformance.adjusted_change_jpy)}${yearlyPerformance.adjusted_change_pct != null ? ` (${formatPercent(yearlyPerformance.adjusted_change_pct, { sign: true })})` : ''}`);
 				const flowSign = yearlyPerformance.net_flow_jpy >= 0 ? '+' : '';
 				lines.push(`  純入出金（元本）: ${flowSign}${formatPriceJPY(yearlyPerformance.net_flow_jpy)}`);
 				if (yearlyPerformance.withdrawal_fee_jpy > 0) {
 					lines.push(`  出金手数料: -${formatPriceJPY(yearlyPerformance.withdrawal_fee_jpy)}`);
 				}
-			} else {
-				lines.push(`  増減: ${ySign}${formatPriceJPY(yearlyPerformance.change_jpy)}${yearlyPerformance.change_pct != null ? ` (${formatPercent(yearlyPerformance.change_pct, { sign: true })})` : ''}`);
 			}
 		}
 		if (monthlyPerformance) {
-			const mSign = monthlyPerformance.adjusted_change_jpy >= 0 ? '+' : '';
+			const mSign = monthlyPerformance.change_jpy >= 0 ? '+' : '';
 			lines.push(`月初比: ${formatPriceJPY(monthlyPerformance.start_value_jpy)} → ${formatPriceJPY(monthlyPerformance.current_value_jpy)}`);
+			lines.push(`  増減: ${mSign}${formatPriceJPY(monthlyPerformance.change_jpy)}${monthlyPerformance.change_pct != null ? ` (${formatPercent(monthlyPerformance.change_pct, { sign: true })})` : ''}`);
 			if (monthlyPerformance.net_flow_jpy !== 0 || monthlyPerformance.withdrawal_fee_jpy > 0) {
-				lines.push(`  調整後増減（入出金元本除く）: ${mSign}${formatPriceJPY(monthlyPerformance.adjusted_change_jpy)}${monthlyPerformance.adjusted_change_pct != null ? ` (${formatPercent(monthlyPerformance.adjusted_change_pct, { sign: true })})` : ''}`);
+				const adjSign = monthlyPerformance.adjusted_change_jpy >= 0 ? '+' : '';
+				lines.push(`  入出金調整後: ${adjSign}${formatPriceJPY(monthlyPerformance.adjusted_change_jpy)}${monthlyPerformance.adjusted_change_pct != null ? ` (${formatPercent(monthlyPerformance.adjusted_change_pct, { sign: true })})` : ''}`);
 				const flowSign = monthlyPerformance.net_flow_jpy >= 0 ? '+' : '';
 				lines.push(`  純入出金（元本）: ${flowSign}${formatPriceJPY(monthlyPerformance.net_flow_jpy)}`);
 				if (monthlyPerformance.withdrawal_fee_jpy > 0) {
 					lines.push(`  出金手数料: -${formatPriceJPY(monthlyPerformance.withdrawal_fee_jpy)}`);
 				}
-			} else {
-				lines.push(`  増減: ${mSign}${formatPriceJPY(monthlyPerformance.change_jpy)}${monthlyPerformance.change_pct != null ? ` (${formatPercent(monthlyPerformance.change_pct, { sign: true })})` : ''}`);
 			}
 		}
 		if (yearlyPerformance || monthlyPerformance) {
