@@ -264,22 +264,7 @@ export default async function analyzeMtfFibonacci(
 // ── MCP ツール定義（tool-registry から自動収集） ──
 export const toolDef: ToolDefinition = {
 	name: 'analyze_mtf_fibonacci',
-	description: `複数のルックバック期間でフィボナッチ水準を一括計算し、コンフルエンス（合流）ゾーンを自動検出。
-
-【機能】
-- 各期間で独立にスイング検出・フィボナッチ・リトレースメント水準を算出
-- 異なる期間の水準が集中するコンフルエンス（合流）ゾーンを検出
-- 合流ゾーンの信頼度を strong / moderate / weak で判定
-
-【出力】
-- content: 各期間の要約 + コンフルエンスゾーン一覧
-- structuredContent.data: 全期間のフィボナッチ水準 + confluence 配列
-
-【パラメータ】
-- pair: 通貨ペア（デフォルト: btc_jpy）
-- lookbackDays: ルックバック期間の配列（デフォルト: [30, 90, 180]）
-
-analyze_fibonacci を1回ずつ呼ぶ必要なし。内部並列実行で高速。`,
+	description: `[Multi-Timeframe Fibonacci / Confluence] 複数期間フィボナッチ一括分析（MTF fibonacci / confluence zone）。複数ルックバック期間の水準を並列計算し、コンフルエンス（合流）ゾーンを自動検出。analyze_fibonacci を個別に呼ぶ必要なし。`,
 	inputSchema: AnalyzeMtfFibonacciInputSchema,
 	handler: async ({ pair, lookbackDays }: any) =>
 		analyzeMtfFibonacci(pair, lookbackDays),

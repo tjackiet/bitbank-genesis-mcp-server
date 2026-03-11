@@ -7,7 +7,7 @@ import { stddev } from '../../lib/math.js';
 
 export const toolDef: ToolDefinition = {
 	name: 'get_volatility_metrics',
-	description: '/candlestick をベースにボラティリティを算出。RV/ATR/Parkinson/GK/RS。view=summary|detailed|full。',
+	description: '[Volatility / ATR / RV] ボラティリティ指標（volatility / ATR / realized vol）を算出。RV・ATR・Parkinson・Garman-Klass・Rogers-Satchell。年率換算対応。',
 	inputSchema: GetVolMetricsInputSchema,
 	handler: async ({ pair, type, limit, windows, useLogReturns, annualize, view }: any) => {
 		const res: any = await getVolatilityMetrics(pair, type, limit, windows, { useLogReturns, annualize });

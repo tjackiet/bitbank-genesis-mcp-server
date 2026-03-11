@@ -197,24 +197,9 @@ export default async function analyzeBbSnapshot(
 // ── MCP ツール定義（tool-registry から自動収集） ──
 export const toolDef: ToolDefinition = {
 	name: 'analyze_bb_snapshot',
-	description: `ボリンジャーバンドの数値スナップショットを取得。視覚的判断は行わず、客観的な数値のみ提供。
+	description: `[Bollinger Bands / BB / Squeeze] ボリンジャーバンド（BB / squeeze / bandwidth / zScore）の数値スナップショット。軽量・BB特化。
 
-【mode の使い分け】
-- default (推奨): ±2σ帯の基本情報で高速チェック
-  - middle/upper(+2σ)/lower(-2σ)
-  - zScore: 現在価格が±2σ帯のどこに位置するか
-  - bandWidthPct: バンド幅の middle 比（スクイーズ/エクスパンション把握）
-  - 用途: 初動確認、定期監視、軽量スナップショット
-
-- extended: ±1σ/±2σ/±3σ を含む詳細分析
-  - 全階層のバンド値と各層での価格位置
-  - 極端値検出（±3σタッチ、バンドウォーク等）
-  - 用途: 異常値確認、詳細なボラティリティ分析
-
-【他ツールとの使い分け】
-- get_indicators: RSI/MACD等を含む総合テクニカル分析（重い）
-- analyze_bb_snapshot: BB特化で軽量（速い）
-- render_chart_svg: 視覚化が必要な場合`,
+mode=default: ±2σ帯の基本情報 / mode=extended: ±1σ/±2σ/±3σの詳細分析。`,
 	inputSchema: AnalyzeBbSnapshotInputSchema,
 	handler: async ({ pair, type, limit, mode }: any) => analyzeBbSnapshot(pair, type, limit, mode),
 };

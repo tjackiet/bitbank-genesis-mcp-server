@@ -409,13 +409,9 @@ export default async function getOrderbook(params: GetOrderbookParams | string =
 // ── MCP ツール定義（tool-registry から自動収集） ──
 export const toolDef: ToolDefinition = {
 	name: 'get_orderbook',
-	description: `板情報の統合ツール（単一の /depth API呼出しで全モードをカバー）。
+	description: `[Order Book / Depth / Spread] 板情報（order book / depth / bid-ask spread）の統合ツール。
 
-【mode 一覧】
-- summary（デフォルト）: 上位N層の正規化＋累計サイズ＋spread。topN=1-200。
-- pressure: 帯域(±0.1%/0.5%/1%等)別の買い/売り圧力バランス。bandsPct で帯域を指定。
-- statistics: 範囲分析(±0.5%/1%/2%)＋流動性ゾーン＋大口注文＋総合評価。ranges, priceZones で指定。
-- raw: 生の bids/asks 配列＋壁ゾーン自動推定。`,
+【mode】summary（デフォルト）: 上位N層+spread / pressure: 帯域別の買い/売り圧力 / statistics: 流動性ゾーン+大口注文 / raw: 生bids/asks+壁ゾーン推定。`,
 	inputSchema: GetOrderbookInputSchema,
 	handler: async ({ pair, mode, topN, bandsPct, ranges, priceZones }: any) =>
 		getOrderbook({ pair, mode, topN, bandsPct, ranges, priceZones }),

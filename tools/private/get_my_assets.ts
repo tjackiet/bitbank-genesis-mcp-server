@@ -202,7 +202,7 @@ export default async function getMyAssets(args: { include_jpy_valuation?: boolea
 // ── MCP ツール定義（tool-registry から自動収集） ──
 export const toolDef: ToolDefinition = {
 	name: 'get_my_assets',
-	description: '自分の保有資産・残高一覧を取得（balance / wallet / portfolio）。口座の全通貨について数量・円評価額・構成比を返す。Private API（要APIキー設定）。',
+	description: '[My Assets / Balance / Wallet] 自分の保有資産・残高一覧（my assets / balance / wallet / holdings）を取得。全通貨の数量・円評価額・構成比を返す。Private API。',
 	inputSchema: GetMyAssetsInputSchema,
 	handler: async (args: any) => getMyAssets(args ?? {}),
 };

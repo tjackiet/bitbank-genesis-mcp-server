@@ -1091,7 +1091,7 @@ export default async function analyzeCandlePatterns(
 // ── MCP ツール定義（tool-registry から自動収集） ──
 export const toolDef: ToolDefinition = {
 	name: 'analyze_candle_patterns',
-	description: 'BTC/JPY日足の1〜3本足パターンを検出し、直近文脈と過去統計を付けて解説します（未確定足対応）。',
+	description: '[Candlestick Patterns / Doji / Engulfing] ローソク足パターン検出（candle patterns / doji / engulfing / hammer / harami）。1〜3本足パターンを検出し文脈と過去統計を付けて解説。',
 	inputSchema: AnalyzeCandlePatternsInputSchema,
 	handler: async (args: any) => analyzeCandlePatterns(args),
 };
