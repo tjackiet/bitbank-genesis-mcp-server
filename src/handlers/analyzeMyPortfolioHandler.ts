@@ -465,11 +465,14 @@ function getJstPeriodBoundaries() {
 	const nowJst = dayjs().tz('Asia/Tokyo');
 	const yearStart = nowJst.startOf('year');
 	const monthStart = nowJst.startOf('month');
+	const dayStart = nowJst.startOf('day');
 	return {
 		yearStartMs: yearStart.valueOf(),
 		yearStartIso: yearStart.format('YYYY-MM-DDTHH:mm:ssZ'),
 		monthStartMs: monthStart.valueOf(),
 		monthStartIso: monthStart.format('YYYY-MM-DDTHH:mm:ssZ'),
+		dayStartMs: dayStart.valueOf(),
+		dayStartIso: dayStart.format('YYYY-MM-DDTHH:mm:ssZ'),
 		nowIso: nowJst.format('YYYY-MM-DDTHH:mm:ssZ'),
 	};
 }
@@ -498,8 +501,9 @@ async function fetchPeriodStartPrices(
 	pairs: string[],
 	yearStartMs: number,
 	monthStartMs: number,
-): Promise<Map<string, { yearStart?: number; monthStart?: number }>> {
-	const result = new Map<string, { yearStart?: number; monthStart?: number }>();
+	dayStartMs: number,
+): Promise<Map<string, { yearStart?: number; monthStart?: number; dayStart?: number }>> {
+	const result = new Map<string, { yearStart?: number; monthStart?: number; dayStart?: number }>();
 	const nowJst = dayjs().tz('Asia/Tokyo');
 	const year = nowJst.year();
 
@@ -519,6 +523,7 @@ async function fetchPeriodStartPrices(
 
 			let yearStartPrice: number | undefined;
 			let monthStartPrice: number | undefined;
+			let dayStartPrice: number | undefined;
 
 			for (const candle of ohlcv) {
 				const ts = Number(candle[5]);
@@ -531,11 +536,14 @@ async function fetchPeriodStartPrices(
 				if (monthStartPrice == null && ts >= monthStartMs) {
 					monthStartPrice = open;
 				}
-				if (yearStartPrice != null && monthStartPrice != null) break;
+				if (dayStartPrice == null && ts >= dayStartMs) {
+					dayStartPrice = open;
+				}
+				if (yearStartPrice != null && monthStartPrice != null && dayStartPrice != null) break;
 			}
 
 			const asset = pair.replace('_jpy', '');
-			result.set(asset, { yearStart: yearStartPrice, monthStart: monthStartPrice });
+			result.set(asset, { yearStart: yearStartPrice, monthStart: monthStartPrice, dayStart: dayStartPrice });
 		} catch {
 			// Non-fatal: price unavailable for this pair
 		}
@@ -834,8 +842,8 @@ export default async function analyzeMyPortfolioHandler(args: {
 			}
 		}
 		const periodPricePromise = include_pnl
-			? fetchPeriodStartPrices([...allRelevantPairs], boundaries.yearStartMs, boundaries.monthStartMs)
-			: Promise.resolve(new Map<string, { yearStart?: number; monthStart?: number }>());
+			? fetchPeriodStartPrices([...allRelevantPairs], boundaries.yearStartMs, boundaries.monthStartMs, boundaries.dayStartMs)
+			: Promise.resolve(new Map<string, { yearStart?: number; monthStart?: number; dayStart?: number }>());
 
 		const timestamp = nowIso();
 
@@ -942,6 +950,7 @@ export default async function analyzeMyPortfolioHandler(args: {
 		// 6.6. 期間別パフォーマンス（評価額比較）— 主指標
 		let yearlyPerformance: PeriodPerformance | undefined;
 		let monthlyPerformance: PeriodPerformance | undefined;
+		let dailyPerformance: PeriodPerformance | undefined;
 		if (include_pnl) {
 			const periodPrices = await periodPricePromise;
 			const currentJpyValueRounded = Math.round(totalJpyValue);
@@ -997,6 +1006,33 @@ export default async function analyzeMyPortfolioHandler(args: {
 				adjusted_change_jpy: monthAdjusted,
 				adjusted_change_pct: monthStartValue > 0 ? Math.round((monthAdjusted / monthStartValue) * 10000) / 100 : undefined,
 				period_start: boundaries.monthStartIso,
+				period_end: boundaries.nowIso,
+				note: performanceNote,
+			};
+
+			// 前日比（当日 00:00 JST）パフォーマンス
+			const dayStartHoldings = reconstructHoldingsAtDate(
+				nonZeroAssets.map((a) => ({ asset: a.asset, amount: a.onhand_amount })),
+				allTrades, boundaries.dayStartMs, dwData,
+			);
+			const dayStartPriceMap = new Map<string, number>();
+			for (const [asset, pp] of periodPrices) {
+				if (pp.dayStart != null) dayStartPriceMap.set(asset, pp.dayStart);
+			}
+			const dayStartValue = Math.round(calcPortfolioValue(dayStartHoldings, dayStartPriceMap));
+			const dayFlow = calcPeriodNetFlow(dwData, boundaries.dayStartMs, prices);
+			const dayChange = currentJpyValueRounded - dayStartValue;
+			const dayAdjusted = dayChange - dayFlow.net_flow_jpy;
+			dailyPerformance = {
+				start_value_jpy: dayStartValue,
+				current_value_jpy: currentJpyValueRounded,
+				change_jpy: dayChange,
+				change_pct: dayStartValue > 0 ? Math.round((dayChange / dayStartValue) * 10000) / 100 : undefined,
+				net_flow_jpy: dayFlow.net_flow_jpy,
+				withdrawal_fee_jpy: dayFlow.withdrawal_fee_jpy,
+				adjusted_change_jpy: dayAdjusted,
+				adjusted_change_pct: dayStartValue > 0 ? Math.round((dayAdjusted / dayStartValue) * 10000) / 100 : undefined,
+				period_start: boundaries.dayStartIso,
 				period_end: boundaries.nowIso,
 				note: performanceNote,
 			};
@@ -1088,33 +1124,47 @@ export default async function analyzeMyPortfolioHandler(args: {
 			lines.push(`口座合計: ${formatPrice(Math.round(totalJpyValue))}${jpyHolding ? ` (うち JPY: ${formatPriceJPY(jpyHolding.jpy_value ?? 0)})` : ''}`);
 		}
 
-		// 主指標: 年初比・月初比の口座評価額増減
+		// 主指標: 前日比・年初比・月初比の口座評価額増減
+		if (dailyPerformance) {
+			const dSign = dailyPerformance.change_jpy >= 0 ? '+' : '';
+			lines.push(`前日比: ${formatPriceJPY(dailyPerformance.start_value_jpy)} → ${formatPriceJPY(dailyPerformance.current_value_jpy)}`);
+			lines.push(`  増減: ${dSign}${formatPriceJPY(dailyPerformance.change_jpy)}${dailyPerformance.change_pct != null ? ` (${formatPercent(dailyPerformance.change_pct, { sign: true })})` : ''}`);
+			if (dailyPerformance.net_flow_jpy !== 0 || dailyPerformance.withdrawal_fee_jpy > 0) {
+				const adjSign = dailyPerformance.adjusted_change_jpy >= 0 ? '+' : '';
+				lines.push(`  入出金調整後: ${adjSign}${formatPriceJPY(dailyPerformance.adjusted_change_jpy)}${dailyPerformance.adjusted_change_pct != null ? ` (${formatPercent(dailyPerformance.adjusted_change_pct, { sign: true })})` : ''}`);
+				const flowSign = dailyPerformance.net_flow_jpy >= 0 ? '+' : '';
+				lines.push(`  純入出金（元本）: ${flowSign}${formatPriceJPY(dailyPerformance.net_flow_jpy)}`);
+				if (dailyPerformance.withdrawal_fee_jpy > 0) {
+					lines.push(`  出金手数料: -${formatPriceJPY(dailyPerformance.withdrawal_fee_jpy)}`);
+				}
+			}
+		}
 		if (yearlyPerformance) {
-			const ySign = yearlyPerformance.adjusted_change_jpy >= 0 ? '+' : '';
+			const ySign = yearlyPerformance.change_jpy >= 0 ? '+' : '';
 			lines.push(`年初比: ${formatPriceJPY(yearlyPerformance.start_value_jpy)} → ${formatPriceJPY(yearlyPerformance.current_value_jpy)}`);
+			lines.push(`  増減: ${ySign}${formatPriceJPY(yearlyPerformance.change_jpy)}${yearlyPerformance.change_pct != null ? ` (${formatPercent(yearlyPerformance.change_pct, { sign: true })})` : ''}`);
 			if (yearlyPerformance.net_flow_jpy !== 0 || yearlyPerformance.withdrawal_fee_jpy > 0) {
-				lines.push(`  調整後増減（入出金元本除く）: ${ySign}${formatPriceJPY(yearlyPerformance.adjusted_change_jpy)}${yearlyPerformance.adjusted_change_pct != null ? ` (${formatPercent(yearlyPerformance.adjusted_change_pct, { sign: true })})` : ''}`);
+				const adjSign = yearlyPerformance.adjusted_change_jpy >= 0 ? '+' : '';
+				lines.push(`  入出金調整後: ${adjSign}${formatPriceJPY(yearlyPerformance.adjusted_change_jpy)}${yearlyPerformance.adjusted_change_pct != null ? ` (${formatPercent(yearlyPerformance.adjusted_change_pct, { sign: true })})` : ''}`);
 				const flowSign = yearlyPerformance.net_flow_jpy >= 0 ? '+' : '';
 				lines.push(`  純入出金（元本）: ${flowSign}${formatPriceJPY(yearlyPerformance.net_flow_jpy)}`);
 				if (yearlyPerformance.withdrawal_fee_jpy > 0) {
 					lines.push(`  出金手数料: -${formatPriceJPY(yearlyPerformance.withdrawal_fee_jpy)}`);
 				}
-			} else {
-				lines.push(`  増減: ${ySign}${formatPriceJPY(yearlyPerformance.change_jpy)}${yearlyPerformance.change_pct != null ? ` (${formatPercent(yearlyPerformance.change_pct, { sign: true })})` : ''}`);
 			}
 		}
 		if (monthlyPerformance) {
-			const mSign = monthlyPerformance.adjusted_change_jpy >= 0 ? '+' : '';
+			const mSign = monthlyPerformance.change_jpy >= 0 ? '+' : '';
 			lines.push(`月初比: ${formatPriceJPY(monthlyPerformance.start_value_jpy)} → ${formatPriceJPY(monthlyPerformance.current_value_jpy)}`);
+			lines.push(`  増減: ${mSign}${formatPriceJPY(monthlyPerformance.change_jpy)}${monthlyPerformance.change_pct != null ? ` (${formatPercent(monthlyPerformance.change_pct, { sign: true })})` : ''}`);
 			if (monthlyPerformance.net_flow_jpy !== 0 || monthlyPerformance.withdrawal_fee_jpy > 0) {
-				lines.push(`  調整後増減（入出金元本除く）: ${mSign}${formatPriceJPY(monthlyPerformance.adjusted_change_jpy)}${monthlyPerformance.adjusted_change_pct != null ? ` (${formatPercent(monthlyPerformance.adjusted_change_pct, { sign: true })})` : ''}`);
+				const adjSign = monthlyPerformance.adjusted_change_jpy >= 0 ? '+' : '';
+				lines.push(`  入出金調整後: ${adjSign}${formatPriceJPY(monthlyPerformance.adjusted_change_jpy)}${monthlyPerformance.adjusted_change_pct != null ? ` (${formatPercent(monthlyPerformance.adjusted_change_pct, { sign: true })})` : ''}`);
 				const flowSign = monthlyPerformance.net_flow_jpy >= 0 ? '+' : '';
 				lines.push(`  純入出金（元本）: ${flowSign}${formatPriceJPY(monthlyPerformance.net_flow_jpy)}`);
 				if (monthlyPerformance.withdrawal_fee_jpy > 0) {
 					lines.push(`  出金手数料: -${formatPriceJPY(monthlyPerformance.withdrawal_fee_jpy)}`);
 				}
-			} else {
-				lines.push(`  増減: ${mSign}${formatPriceJPY(monthlyPerformance.change_jpy)}${monthlyPerformance.change_pct != null ? ` (${formatPercent(monthlyPerformance.change_pct, { sign: true })})` : ''}`);
 			}
 		}
 		if (yearlyPerformance || monthlyPerformance) {
@@ -1183,10 +1233,6 @@ export default async function analyzeMyPortfolioHandler(args: {
 		if (totalUnrealizedPnl != null) {
 			const sign = totalUnrealizedPnl >= 0 ? '+' : '';
 			lines.push(`合計評価損益（約定ベース）: ${sign}${formatPriceJPY(totalUnrealizedPnl)} (${formatPercent(totalUnrealizedPnlPct, { sign: true })})`);
-		}
-		if (totalRealizedPnl !== 0) {
-			const sign = totalRealizedPnl >= 0 ? '+' : '';
-			lines.push(`合計実現損益: ${sign}${formatPriceJPY(totalRealizedPnl)}`);
 		}
 		lines.push('');
 
@@ -1263,6 +1309,7 @@ export default async function analyzeMyPortfolioHandler(args: {
 			total_unrealized_pnl: totalUnrealizedPnl,
 			total_unrealized_pnl_pct: totalUnrealizedPnlPct,
 			total_realized_pnl: totalRealizedPnl !== 0 ? totalRealizedPnl : undefined,
+			daily_performance: dailyPerformance,
 			yearly_performance: yearlyPerformance,
 			monthly_performance: monthlyPerformance,
 			yearly_realized_pnl: yearlyRealizedPnl ? {
