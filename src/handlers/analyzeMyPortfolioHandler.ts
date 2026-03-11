@@ -89,24 +89,25 @@ async function tryGet<T>(client: BitbankPrivateClient, path: string, params?: Re
 	}
 }
 
-/** ページネーション付きで入金履歴を全件取得（最大 MAX_PAGES ページ） */
+/** ページネーション付きで入金履歴を取得（最大 MAX_PAGES ページ） */
 const MAX_PAGES = 10;
 
 async function paginateDeposits(
 	client: BitbankPrivateClient,
 	baseParams: Record<string, string>,
+	sinceMs?: number,
 ): Promise<{ deposits: RawDeposit[]; complete: boolean; error?: string }> {
 	const all: RawDeposit[] = [];
-	let since: string | undefined;
+	let since: string | undefined = sinceMs != null ? String(sinceMs) : undefined;
 	for (let page = 0; page < MAX_PAGES; page++) {
-		const params = { ...baseParams, count: '100', ...(since ? { since } : {}) };
+		const params = { ...baseParams, count: '1000', ...(since ? { since } : {}) };
 		const result = await tryGet<{ deposits: RawDeposit[] }>(client, '/v1/user/deposit_history', params);
 		if (!result.ok) {
 			return { deposits: all, complete: all.length === 0 ? false : true, error: result.error };
 		}
 		const batch = result.data.deposits || [];
 		all.push(...batch);
-		if (batch.length < 100) {
+		if (batch.length < 1000) {
 			return { deposits: all, complete: true };
 		}
 		// 次ページ: 最後のレコードの confirmed_at + 1ms を since に
@@ -120,18 +121,19 @@ async function paginateDeposits(
 async function paginateWithdrawals(
 	client: BitbankPrivateClient,
 	baseParams: Record<string, string>,
+	sinceMs?: number,
 ): Promise<{ withdrawals: RawWithdrawal[]; complete: boolean; error?: string }> {
 	const all: RawWithdrawal[] = [];
-	let since: string | undefined;
+	let since: string | undefined = sinceMs != null ? String(sinceMs) : undefined;
 	for (let page = 0; page < MAX_PAGES; page++) {
-		const params = { ...baseParams, count: '100', ...(since ? { since } : {}) };
+		const params = { ...baseParams, count: '1000', ...(since ? { since } : {}) };
 		const result = await tryGet<{ withdrawals: RawWithdrawal[] }>(client, '/v1/user/withdrawal_history', params);
 		if (!result.ok) {
 			return { withdrawals: all, complete: all.length === 0 ? false : true, error: result.error };
 		}
 		const batch = result.data.withdrawals || [];
 		all.push(...batch);
-		if (batch.length < 100) {
+		if (batch.length < 1000) {
 			return { withdrawals: all, complete: true };
 		}
 		const lastTs = batch[batch.length - 1]?.requested_at;
@@ -141,12 +143,13 @@ async function paginateWithdrawals(
 	return { withdrawals: all, complete: false };
 }
 
-/** ページネーション付きで約定履歴を全件取得（最大 MAX_PAGES ページ、古い順） */
+/** ページネーション付きで約定履歴を取得（最大 MAX_PAGES ページ、古い順） */
 async function paginateTrades(
 	client: BitbankPrivateClient,
+	sinceMs?: number,
 ): Promise<RawTrade[]> {
 	const all: RawTrade[] = [];
-	let since: string | undefined;
+	let since: string | undefined = sinceMs != null ? String(sinceMs) : undefined;
 	for (let page = 0; page < MAX_PAGES; page++) {
 		const params: Record<string, string> = { count: '1000', order: 'asc' };
 		if (since) params.since = since;
@@ -165,15 +168,16 @@ async function paginateTrades(
 
 /**
  * 入出金履歴を取得する（JPY + 暗号資産の両方、ページネーション対応）。
+ * sinceMs を指定すると、その日時以降のデータのみ取得する。
  * 全リクエスト失敗時は null を返す。一部失敗時は warnings 付きで返す。
  */
-async function fetchDepositWithdrawal(client: BitbankPrivateClient): Promise<DepositWithdrawalData | null> {
+async function fetchDepositWithdrawal(client: BitbankPrivateClient, sinceMs?: number): Promise<DepositWithdrawalData | null> {
 	try {
 		const [cryptoDepResult, jpyDepResult, cryptoWdResult, jpyWdResult] = await Promise.all([
-			paginateDeposits(client, {}),
-			paginateDeposits(client, { asset: 'jpy' }),
-			paginateWithdrawals(client, {}),
-			paginateWithdrawals(client, { asset: 'jpy' }),
+			paginateDeposits(client, {}, sinceMs),
+			paginateDeposits(client, { asset: 'jpy' }, sinceMs),
+			paginateWithdrawals(client, {}, sinceMs),
+			paginateWithdrawals(client, { asset: 'jpy' }, sinceMs),
 		]);
 
 		const warnings: string[] = [];
@@ -1012,19 +1016,21 @@ export default async function analyzeMyPortfolioHandler(args: {
 			return Number.isFinite(amount) && amount > 0;
 		});
 
-		// 2. 約定履歴 + 入出金履歴を並列取得（全件ページネーション）
+		// JST 基準の年初来・月初来の境界（API フェッチの since パラメータにも使用）
+		const boundaries = getJstPeriodBoundaries();
+
+		// 2. 約定履歴 + 入出金履歴を並列取得（年初以降のみ）
+		// 年次は年初比、月次は月初比の比較のため、年初以降のデータで十分。
+		// 全履歴を取得しないことで API 呼び出し回数を削減し、pagination 上限の問題も回避。
 		const tradePromise = include_pnl
-			? paginateTrades(client)
+			? paginateTrades(client, boundaries.yearStartMs)
 			: Promise.resolve([] as RawTrade[]);
 
 		const dwPromise = include_deposit_withdrawal
-			? fetchDepositWithdrawal(client)
+			? fetchDepositWithdrawal(client, boundaries.yearStartMs)
 			: Promise.resolve(null);
 
 		const [allTrades, dwData] = await Promise.all([tradePromise, dwPromise]);
-
-		// JST 基準の年初来・月初来の境界（period performance + realized PnL 両方で使用）
-		const boundaries = getJstPeriodBoundaries();
 
 		// 期間パフォーマンス用: 全関連ペアのキャンドルデータを早期フェッチ開始
 		const allRelevantPairs = new Set<string>();
@@ -1493,8 +1499,9 @@ export default async function analyzeMyPortfolioHandler(args: {
 
 		if (totalUnrealizedPnl != null) {
 			const sign = totalUnrealizedPnl >= 0 ? '+' : '';
-			lines.push(`合計評価損益（約定ベース）: ${sign}${formatPriceJPY(totalUnrealizedPnl)} (${formatPercent(totalUnrealizedPnlPct, { sign: true })})`);
+			lines.push(`合計評価損益（当年約定ベース、参考値）: ${sign}${formatPriceJPY(totalUnrealizedPnl)} (${formatPercent(totalUnrealizedPnlPct, { sign: true })})`);
 		}
+		lines.push('※ 評価損益は当年（1/1〜）の約定ベース。年初以前の取得原価は含みません');
 		lines.push('');
 
 		// 銘柄別サマリー（暗号資産のみ。JPY は口座合計に含む）
