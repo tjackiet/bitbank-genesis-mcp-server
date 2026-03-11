@@ -333,53 +333,93 @@ interface PnlResult {
 }
 
 /**
- * 約定履歴から通貨ごとの平均取得単価と実現損益を算出する。
+ * 約定履歴と暗号資産出庫から通貨ごとの平均取得単価と実現損益を算出する。
  * 移動平均法（総平均法）を採用。手数料（fee_amount_quote）を考慮。
+ *
+ * 暗号資産出庫（crypto withdrawal）は「売却」ではなく原価の按分減少として扱う:
+ *   - holdingQty と holdingCost を平均単価ベースで減らす
+ *   - realized_pnl には計上しない
+ * これにより、出庫後に残った少量保有の cost_basis が適正化され、
+ * 評価損益が過大マイナスになる問題を防ぐ。
  */
-function calcPnl(trades: RawTrade[], asset: string): PnlResult {
+function calcPnl(trades: RawTrade[], asset: string, withdrawals?: RawWithdrawal[]): PnlResult {
 	// この通貨に関する約定を古い順にソート
 	const pair = `${asset}_jpy`;
-	const relevant = trades
+	const relevantTrades = trades
 		.filter((t) => t.pair === pair)
 		.sort((a, b) => a.executed_at - b.executed_at);
 
-	if (relevant.length === 0) {
+	// この通貨に関する完了済み暗号資産出庫
+	const relevantWithdrawals = (withdrawals ?? [])
+		.filter((w) => w.asset === asset && w.status === 'DONE');
+
+	if (relevantTrades.length === 0 && relevantWithdrawals.length === 0) {
 		return { avg_buy_price: undefined, cost_basis: undefined, realized_pnl: 0, trade_count: 0 };
 	}
+
+	// 約定と出庫を時系列順に統合して処理
+	type TradeEvent = { type: 'trade'; ts: number; trade: RawTrade };
+	type WithdrawalEvent = { type: 'withdrawal'; ts: number; amount: number };
+	type Event = TradeEvent | WithdrawalEvent;
+
+	const events: Event[] = [
+		...relevantTrades.map((t): TradeEvent => ({ type: 'trade', ts: t.executed_at, trade: t })),
+		...relevantWithdrawals.map((w): WithdrawalEvent => ({
+			type: 'withdrawal',
+			ts: w.requested_at,
+			amount: Number(w.amount) + (Number(w.fee) || 0), // 出庫量 + 出庫手数料 = 口座から減った総量
+		})),
+	].sort((a, b) => a.ts - b.ts);
 
 	let holdingQty = 0;
 	let holdingCost = 0; // 保有分の取得原価合計（手数料込み）
 	let realizedPnl = 0;
 
-	for (const t of relevant) {
-		const qty = Number(t.amount);
-		const price = Number(t.price);
-		if (!Number.isFinite(qty) || !Number.isFinite(price)) continue;
+	for (const event of events) {
+		if (event.type === 'trade') {
+			const t = event.trade;
+			const qty = Number(t.amount);
+			const price = Number(t.price);
+			if (!Number.isFinite(qty) || !Number.isFinite(price)) continue;
 
-		// 決済通貨（JPY）建ての手数料
-		const feeQuote = Number(t.fee_amount_quote) || 0;
+			// 決済通貨（JPY）建ての手数料
+			const feeQuote = Number(t.fee_amount_quote) || 0;
 
-		if (t.side === 'buy') {
-			// 買い: 約定金額 + 手数料 = 取得原価
-			holdingCost += qty * price + feeQuote;
-			holdingQty += qty;
+			if (t.side === 'buy') {
+				// 買い: 約定金額 + 手数料 = 取得原価
+				holdingCost += qty * price + feeQuote;
+				holdingQty += qty;
+			} else {
+				// sell: 移動平均法で原価を按分
+				if (holdingQty > 0) {
+					const avgCost = holdingCost / holdingQty;
+					const sellCost = qty * avgCost;
+					const sellRevenue = qty * price - feeQuote; // 売却収入から手数料を差し引く
+					realizedPnl += sellRevenue - sellCost;
+					holdingCost -= sellCost;
+					holdingQty -= qty;
+					// 誤差修正: 数量がゼロ近くなったらコストもリセット
+					if (holdingQty < 1e-12) {
+						holdingQty = 0;
+						holdingCost = 0;
+					}
+				} else {
+					// 保有ゼロ状態での売り（空売り等）: 実現損益のみ計上
+					realizedPnl += qty * price - feeQuote;
+				}
+			}
 		} else {
-			// sell: 移動平均法で原価を按分
-			if (holdingQty > 0) {
+			// Crypto withdrawal: 原価を按分減少。realized_pnl には計上しない
+			const wdQty = event.amount;
+			if (holdingQty > 0 && wdQty > 0) {
 				const avgCost = holdingCost / holdingQty;
-				const sellCost = qty * avgCost;
-				const sellRevenue = qty * price - feeQuote; // 売却収入から手数料を差し引く
-				realizedPnl += sellRevenue - sellCost;
-				holdingCost -= sellCost;
-				holdingQty -= qty;
-				// 誤差修正: 数量がゼロ近くなったらコストもリセット
+				const removedQty = Math.min(wdQty, holdingQty);
+				holdingCost -= removedQty * avgCost;
+				holdingQty -= removedQty;
 				if (holdingQty < 1e-12) {
 					holdingQty = 0;
 					holdingCost = 0;
 				}
-			} else {
-				// 保有ゼロ状態での売り（空売り等）: 実現損益のみ計上
-				realizedPnl += qty * price - feeQuote;
 			}
 		}
 	}
@@ -391,7 +431,7 @@ function calcPnl(trades: RawTrade[], asset: string): PnlResult {
 		avg_buy_price: avgBuyPrice,
 		cost_basis: costBasis,
 		realized_pnl: Math.round(realizedPnl),
-		trade_count: relevant.length,
+		trade_count: relevantTrades.length,
 	};
 }
 
@@ -964,7 +1004,7 @@ export default async function analyzeMyPortfolioHandler(args: {
 			}
 
 			const pair = `${a.asset}_jpy`;
-			const pnl = include_pnl ? calcPnl(allTrades, a.asset) : undefined;
+			const pnl = include_pnl ? calcPnl(allTrades, a.asset, dwData?.withdrawals) : undefined;
 
 			if (pnl?.cost_basis != null) {
 				totalCostBasis += pnl.cost_basis;
@@ -1006,7 +1046,7 @@ export default async function analyzeMyPortfolioHandler(args: {
 			);
 			for (const asset of tradedAssets) {
 				if (!heldAssets.has(asset)) {
-					const pnl = calcPnl(allTrades, asset);
+					const pnl = calcPnl(allTrades, asset, dwData?.withdrawals);
 					if (pnl.realized_pnl !== 0) {
 						totalRealizedPnl += pnl.realized_pnl;
 					}
