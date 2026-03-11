@@ -2115,7 +2115,7 @@ deposit_withdrawal_summary のデータを表示:
 
 **分析状態の説明:**
 - \`available\`: 入出金データを含む完全な分析
-- \`fallback\`: 入出金 API が失敗し、約定ベースのみの分析（trade_only）
+- \`fallback\`: 入出金 API の全失敗または partial failure により、約定ベースのみの分析（trade_only）
 - \`no_history\`: 入出金履歴が0件（口座開設直後など）
 - \`not_requested\`: 入出金分析が未リクエスト
 
@@ -2322,7 +2322,7 @@ deposit_withdrawal_summary のデータを表示:
         <p><strong>分析状態について:</strong></p>
         <ul class="list-disc list-inside space-y-1 ml-2">
           <li>available: 入出金データを含む完全な分析</li>
-          <li>fallback: 入出金APIが失敗し、約定ベースのみの分析</li>
+          <li>fallback: 入出金APIの全失敗またはpartial failureにより、約定ベースのみの分析</li>
           <li>no_history: 入出金履歴なし</li>
           <li>not_requested: 入出金分析が未リクエスト</li>
         </ul>
