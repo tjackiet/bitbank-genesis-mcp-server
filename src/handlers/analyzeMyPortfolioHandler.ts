@@ -482,6 +482,7 @@ interface PeriodPerformance {
 	change_jpy: number;
 	change_pct: number | undefined;
 	net_flow_jpy: number;
+	withdrawal_fee_jpy: number;
 	adjusted_change_jpy: number;
 	adjusted_change_pct: number | undefined;
 	period_start: string;
@@ -647,17 +648,29 @@ function calcPortfolioValue(
 	return total;
 }
 
+interface PeriodNetFlowResult {
+	/** 純入出金額（元本移動のみ。出金手数料は含まない） */
+	net_flow_jpy: number;
+	/** 期間中の出金手数料合計（JPY）。コストとして performance に残る */
+	withdrawal_fee_jpy: number;
+}
+
 /**
- * 期間中の純入出金額を算出する。
- * 正値 = 純入金（口座に資金流入）、負値 = 純出金。
+ * 期間中の純入出金額と出金手数料を分離して算出する。
+ *
+ * - net_flow_jpy: 元本の移動のみ（出金手数料を含まない）。
+ *   正値 = 純入金（口座に資金流入）、負値 = 純出金。
+ * - withdrawal_fee_jpy: 出金時に失った手数料の合計。
+ *   adjusted_change から net_flow を引いた結果にこのコストが残る。
+ *
  * 暗号資産の入出庫は現在価格で仮評価。
  */
 function calcPeriodNetFlow(
 	dw: DepositWithdrawalData | null,
 	sinceMs: number,
 	prices: Map<string, number>,
-): number {
-	if (!dw) return 0;
+): PeriodNetFlowResult {
+	if (!dw) return { net_flow_jpy: 0, withdrawal_fee_jpy: 0 };
 
 	const completedDeposits = dw.deposits.filter(
 		(d) => d.status === 'DONE' && d.confirmed_at >= sinceMs,
@@ -667,6 +680,7 @@ function calcPeriodNetFlow(
 	);
 
 	let netFlow = 0;
+	let withdrawalFee = 0;
 
 	// Deposits (inflow)
 	for (const d of completedDeposits) {
@@ -681,20 +695,28 @@ function calcPeriodNetFlow(
 		}
 	}
 
-	// Withdrawals (outflow) — JPY + crypto
+	// Withdrawals — 元本（外部フロー）と手数料（コスト）を分離
 	for (const w of completedWithdrawals) {
+		const fee = Number(w.fee) || 0;
 		if (w.asset === 'jpy') {
 			netFlow -= Number(w.amount);
+			withdrawalFee += fee;
 		} else {
 			const price = prices.get(w.asset);
 			const amount = Number(w.amount);
 			if (price && Number.isFinite(amount) && amount > 0) {
 				netFlow -= amount * price;
+				if (fee > 0) {
+					withdrawalFee += fee * price;
+				}
 			}
 		}
 	}
 
-	return Math.round(netFlow);
+	return {
+		net_flow_jpy: Math.round(netFlow),
+		withdrawal_fee_jpy: Math.round(withdrawalFee),
+	};
 }
 
 // ── テクニカル分析 ──
@@ -923,7 +945,7 @@ export default async function analyzeMyPortfolioHandler(args: {
 		if (include_pnl) {
 			const periodPrices = await periodPricePromise;
 			const currentJpyValueRounded = Math.round(totalJpyValue);
-			const performanceNote = '期初評価額は現在の保有状態から約定・入出金を逆算して復元し、期初時点の始値（1day candle open）で評価。暗号資産の入出庫は現在価格で仮評価。調整後増減 = 単純増減 - 純入出金（市場変動のみの成績）。';
+			const performanceNote = '期初評価額は現在の保有状態から約定・入出金を逆算して復元し、期初時点の始値（1day candle open）で評価。暗号資産の入出庫は現在価格で仮評価。純入出金は元本移動のみ（出金手数料を含まない）。調整後増減 = 単純増減 - 純入出金（市場変動 + 出金手数料コスト）。';
 
 			// 年初比パフォーマンス
 			const yearStartHoldings = reconstructHoldingsAtDate(
@@ -935,15 +957,16 @@ export default async function analyzeMyPortfolioHandler(args: {
 				if (pp.yearStart != null) yearStartPriceMap.set(asset, pp.yearStart);
 			}
 			const yearStartValue = Math.round(calcPortfolioValue(yearStartHoldings, yearStartPriceMap));
-			const yearNetFlow = calcPeriodNetFlow(dwData, boundaries.yearStartMs, prices);
+			const yearFlow = calcPeriodNetFlow(dwData, boundaries.yearStartMs, prices);
 			const yearChange = currentJpyValueRounded - yearStartValue;
-			const yearAdjusted = yearChange - yearNetFlow;
+			const yearAdjusted = yearChange - yearFlow.net_flow_jpy;
 			yearlyPerformance = {
 				start_value_jpy: yearStartValue,
 				current_value_jpy: currentJpyValueRounded,
 				change_jpy: yearChange,
 				change_pct: yearStartValue > 0 ? Math.round((yearChange / yearStartValue) * 10000) / 100 : undefined,
-				net_flow_jpy: yearNetFlow,
+				net_flow_jpy: yearFlow.net_flow_jpy,
+				withdrawal_fee_jpy: yearFlow.withdrawal_fee_jpy,
 				adjusted_change_jpy: yearAdjusted,
 				adjusted_change_pct: yearStartValue > 0 ? Math.round((yearAdjusted / yearStartValue) * 10000) / 100 : undefined,
 				period_start: boundaries.yearStartIso,
@@ -961,15 +984,16 @@ export default async function analyzeMyPortfolioHandler(args: {
 				if (pp.monthStart != null) monthStartPriceMap.set(asset, pp.monthStart);
 			}
 			const monthStartValue = Math.round(calcPortfolioValue(monthStartHoldings, monthStartPriceMap));
-			const monthNetFlow = calcPeriodNetFlow(dwData, boundaries.monthStartMs, prices);
+			const monthFlow = calcPeriodNetFlow(dwData, boundaries.monthStartMs, prices);
 			const monthChange = currentJpyValueRounded - monthStartValue;
-			const monthAdjusted = monthChange - monthNetFlow;
+			const monthAdjusted = monthChange - monthFlow.net_flow_jpy;
 			monthlyPerformance = {
 				start_value_jpy: monthStartValue,
 				current_value_jpy: currentJpyValueRounded,
 				change_jpy: monthChange,
 				change_pct: monthStartValue > 0 ? Math.round((monthChange / monthStartValue) * 10000) / 100 : undefined,
-				net_flow_jpy: monthNetFlow,
+				net_flow_jpy: monthFlow.net_flow_jpy,
+				withdrawal_fee_jpy: monthFlow.withdrawal_fee_jpy,
 				adjusted_change_jpy: monthAdjusted,
 				adjusted_change_pct: monthStartValue > 0 ? Math.round((monthAdjusted / monthStartValue) * 10000) / 100 : undefined,
 				period_start: boundaries.monthStartIso,
@@ -1068,10 +1092,13 @@ export default async function analyzeMyPortfolioHandler(args: {
 		if (yearlyPerformance) {
 			const ySign = yearlyPerformance.adjusted_change_jpy >= 0 ? '+' : '';
 			lines.push(`年初比: ${formatPriceJPY(yearlyPerformance.start_value_jpy)} → ${formatPriceJPY(yearlyPerformance.current_value_jpy)}`);
-			if (yearlyPerformance.net_flow_jpy !== 0) {
-				lines.push(`  調整後増減（入出金影響除く）: ${ySign}${formatPriceJPY(yearlyPerformance.adjusted_change_jpy)}${yearlyPerformance.adjusted_change_pct != null ? ` (${formatPercent(yearlyPerformance.adjusted_change_pct, { sign: true })})` : ''}`);
+			if (yearlyPerformance.net_flow_jpy !== 0 || yearlyPerformance.withdrawal_fee_jpy > 0) {
+				lines.push(`  調整後増減（入出金元本除く）: ${ySign}${formatPriceJPY(yearlyPerformance.adjusted_change_jpy)}${yearlyPerformance.adjusted_change_pct != null ? ` (${formatPercent(yearlyPerformance.adjusted_change_pct, { sign: true })})` : ''}`);
 				const flowSign = yearlyPerformance.net_flow_jpy >= 0 ? '+' : '';
-				lines.push(`  純入出金: ${flowSign}${formatPriceJPY(yearlyPerformance.net_flow_jpy)}`);
+				lines.push(`  純入出金（元本）: ${flowSign}${formatPriceJPY(yearlyPerformance.net_flow_jpy)}`);
+				if (yearlyPerformance.withdrawal_fee_jpy > 0) {
+					lines.push(`  出金手数料: -${formatPriceJPY(yearlyPerformance.withdrawal_fee_jpy)}`);
+				}
 			} else {
 				lines.push(`  増減: ${ySign}${formatPriceJPY(yearlyPerformance.change_jpy)}${yearlyPerformance.change_pct != null ? ` (${formatPercent(yearlyPerformance.change_pct, { sign: true })})` : ''}`);
 			}
@@ -1079,10 +1106,13 @@ export default async function analyzeMyPortfolioHandler(args: {
 		if (monthlyPerformance) {
 			const mSign = monthlyPerformance.adjusted_change_jpy >= 0 ? '+' : '';
 			lines.push(`月初比: ${formatPriceJPY(monthlyPerformance.start_value_jpy)} → ${formatPriceJPY(monthlyPerformance.current_value_jpy)}`);
-			if (monthlyPerformance.net_flow_jpy !== 0) {
-				lines.push(`  調整後増減（入出金影響除く）: ${mSign}${formatPriceJPY(monthlyPerformance.adjusted_change_jpy)}${monthlyPerformance.adjusted_change_pct != null ? ` (${formatPercent(monthlyPerformance.adjusted_change_pct, { sign: true })})` : ''}`);
+			if (monthlyPerformance.net_flow_jpy !== 0 || monthlyPerformance.withdrawal_fee_jpy > 0) {
+				lines.push(`  調整後増減（入出金元本除く）: ${mSign}${formatPriceJPY(monthlyPerformance.adjusted_change_jpy)}${monthlyPerformance.adjusted_change_pct != null ? ` (${formatPercent(monthlyPerformance.adjusted_change_pct, { sign: true })})` : ''}`);
 				const flowSign = monthlyPerformance.net_flow_jpy >= 0 ? '+' : '';
-				lines.push(`  純入出金: ${flowSign}${formatPriceJPY(monthlyPerformance.net_flow_jpy)}`);
+				lines.push(`  純入出金（元本）: ${flowSign}${formatPriceJPY(monthlyPerformance.net_flow_jpy)}`);
+				if (monthlyPerformance.withdrawal_fee_jpy > 0) {
+					lines.push(`  出金手数料: -${formatPriceJPY(monthlyPerformance.withdrawal_fee_jpy)}`);
+				}
 			} else {
 				lines.push(`  増減: ${mSign}${formatPriceJPY(monthlyPerformance.change_jpy)}${monthlyPerformance.change_pct != null ? ` (${formatPercent(monthlyPerformance.change_pct, { sign: true })})` : ''}`);
 			}
@@ -1090,6 +1120,7 @@ export default async function analyzeMyPortfolioHandler(args: {
 		if (yearlyPerformance || monthlyPerformance) {
 			lines.push(`期間基準: JST`);
 			lines.push('※ 期初評価額は約定・入出金を逆算して復元、期初始値で評価。暗号資産入出庫は現在価格で仮評価');
+			lines.push('※ 出金元本は外部フローとして除外、出金手数料はコストとして performance に含む');
 		}
 
 		// 入出金分析状態と分析基準をsummaryに明示（structuredContentを見ないLLM向け）
