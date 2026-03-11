@@ -99,14 +99,14 @@ async function paginateDeposits(
 	const all: RawDeposit[] = [];
 	let since: string | undefined;
 	for (let page = 0; page < MAX_PAGES; page++) {
-		const params = { ...baseParams, count: '100', ...(since ? { since } : {}) };
+		const params = { ...baseParams, count: '1000', ...(since ? { since } : {}) };
 		const result = await tryGet<{ deposits: RawDeposit[] }>(client, '/v1/user/deposit_history', params);
 		if (!result.ok) {
 			return { deposits: all, complete: all.length === 0 ? false : true, error: result.error };
 		}
 		const batch = result.data.deposits || [];
 		all.push(...batch);
-		if (batch.length < 100) {
+		if (batch.length < 1000) {
 			return { deposits: all, complete: true };
 		}
 		// 次ページ: 最後のレコードの confirmed_at + 1ms を since に
@@ -124,14 +124,14 @@ async function paginateWithdrawals(
 	const all: RawWithdrawal[] = [];
 	let since: string | undefined;
 	for (let page = 0; page < MAX_PAGES; page++) {
-		const params = { ...baseParams, count: '100', ...(since ? { since } : {}) };
+		const params = { ...baseParams, count: '1000', ...(since ? { since } : {}) };
 		const result = await tryGet<{ withdrawals: RawWithdrawal[] }>(client, '/v1/user/withdrawal_history', params);
 		if (!result.ok) {
 			return { withdrawals: all, complete: all.length === 0 ? false : true, error: result.error };
 		}
 		const batch = result.data.withdrawals || [];
 		all.push(...batch);
-		if (batch.length < 100) {
+		if (batch.length < 1000) {
 			return { withdrawals: all, complete: true };
 		}
 		const lastTs = batch[batch.length - 1]?.requested_at;
