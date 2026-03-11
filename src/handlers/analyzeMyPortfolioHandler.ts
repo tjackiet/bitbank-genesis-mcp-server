@@ -141,6 +141,28 @@ async function paginateWithdrawals(
 	return { withdrawals: all, complete: false };
 }
 
+/** ページネーション付きで約定履歴を全件取得（最大 MAX_PAGES ページ、古い順） */
+async function paginateTrades(
+	client: BitbankPrivateClient,
+): Promise<RawTrade[]> {
+	const all: RawTrade[] = [];
+	let since: string | undefined;
+	for (let page = 0; page < MAX_PAGES; page++) {
+		const params: Record<string, string> = { count: '1000', order: 'asc' };
+		if (since) params.since = since;
+		const result = await tryGet<{ trades: RawTrade[] }>(client, '/v1/user/spot/trade_history', params);
+		if (!result.ok) break;
+		const batch = result.data.trades || [];
+		all.push(...batch);
+		if (batch.length < 1000) break;
+		// 次ページ: 最後の約定の executed_at + 1ms を since に
+		const lastTs = batch[batch.length - 1]?.executed_at;
+		if (!lastTs) break;
+		since = String(lastTs + 1);
+	}
+	return all;
+}
+
 /**
  * 入出金履歴を取得する（JPY + 暗号資産の両方、ページネーション対応）。
  * 全リクエスト失敗時は null を返す。一部失敗時は warnings 付きで返す。
@@ -813,20 +835,16 @@ export default async function analyzeMyPortfolioHandler(args: {
 			return Number.isFinite(amount) && amount > 0;
 		});
 
-		// 2. 約定履歴 + 入出金履歴を並列取得
+		// 2. 約定履歴 + 入出金履歴を並列取得（全件ページネーション）
 		const tradePromise = include_pnl
-			? client.get<{ trades: RawTrade[] }>(
-				'/v1/user/spot/trade_history',
-				{ count: '1000', order: 'asc' },
-			).catch(() => ({ trades: [] as RawTrade[] }))
-			: Promise.resolve({ trades: [] as RawTrade[] });
+			? paginateTrades(client)
+			: Promise.resolve([] as RawTrade[]);
 
 		const dwPromise = include_deposit_withdrawal
 			? fetchDepositWithdrawal(client)
 			: Promise.resolve(null);
 
-		const [tradeData, dwData] = await Promise.all([tradePromise, dwPromise]);
-		const allTrades = tradeData.trades || [];
+		const [allTrades, dwData] = await Promise.all([tradePromise, dwPromise]);
 
 		// JST 基準の年初来・月初来の境界（period performance + realized PnL 両方で使用）
 		const boundaries = getJstPeriodBoundaries();
