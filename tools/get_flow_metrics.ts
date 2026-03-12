@@ -8,6 +8,50 @@ import type { ToolDefinition } from '../src/tool-definition.js';
 
 type Tx = { price: number; amount: number; side: 'buy' | 'sell'; timestampMs: number; isoTime: string };
 
+export interface FlowMetricsBucket {
+  timestampMs: number;
+  isoTime: string;
+  isoTimeJST?: string;
+  displayTime?: string;
+  buyVolume: number;
+  sellVolume: number;
+  totalVolume: number;
+  cvd: number;
+  zscore: number | null;
+  spike: 'notice' | 'warning' | 'strong' | null;
+}
+
+export interface BuildFlowMetricsTextInput {
+  baseSummary: string;
+  dataWarning?: string;
+  totalTrades: number;
+  buyVolume: number;
+  sellVolume: number;
+  netVolume: number;
+  aggressorRatio: number;
+  cvd: number;
+  buckets: FlowMetricsBucket[];
+  bucketMs: number;
+}
+
+/** テキスト組み立て（フロー分析結果）— テスト可能な純粋関数 */
+export function buildFlowMetricsText(input: BuildFlowMetricsTextInput): string {
+  const { baseSummary, dataWarning, totalTrades, buyVolume, sellVolume, netVolume, aggressorRatio, cvd, buckets, bucketMs } = input;
+  const bucketLines = buckets.map((b, i) => {
+    const t = b.displayTime || b.isoTimeJST || b.isoTime || '?';
+    const sp = b.spike ? ` spike:${b.spike}` : '';
+    return `[${i}] ${t} buy:${b.buyVolume} sell:${b.sellVolume} cvd:${b.cvd} z:${b.zscore ?? 'n/a'}${sp}`;
+  });
+  const warningLine = dataWarning ? `\n${dataWarning}` : '';
+  return baseSummary
+    + warningLine
+    + `\naggregates: totalTrades=${totalTrades} buyVol=${Number(buyVolume.toFixed(4))} sellVol=${Number(sellVolume.toFixed(4))} netVol=${Number(netVolume.toFixed(4))} aggRatio=${aggressorRatio} finalCvd=${Number(cvd.toFixed(4))}`
+    + `\n\n📋 全${buckets.length}件のバケット (${bucketMs}ms間隔):\n` + bucketLines.join('\n')
+    + `\n\n---\n📌 含まれるもの: 時系列バケット（買い/売り出来高・CVD・Zスコア・スパイク）、集計値`
+    + `\n📌 含まれないもの: 個別約定の詳細、OHLCV価格データ、板情報、テクニカル指標`
+    + `\n📌 補完ツール: get_transactions（個別約定）, get_candles（OHLCV）, get_orderbook（板情報）, analyze_indicators（指標）`;
+}
+
 /** 複数の getTransactions 結果をマージし重複を除去する */
 function mergeTxResults(results: unknown[]): Tx[] {
   const seen = new Set<string>();
@@ -225,19 +269,18 @@ export default async function getFlowMetrics(
       extra: `trades=${totalTrades} buy%=${(aggressorRatio * 100).toFixed(1)} CVD=${cvd.toFixed(2)}${spikeInfo}${rangeLabel}`,
     });
     // テキスト summary に全バケットデータを含める（LLM が structuredContent.data を読めない対策）
-    const bucketLines = outBuckets.map((b, i) => {
-      const t = b.displayTime || b.isoTimeJST || b.isoTime || '?';
-      const sp = b.spike ? ` spike:${b.spike}` : '';
-      return `[${i}] ${t} buy:${b.buyVolume} sell:${b.sellVolume} cvd:${b.cvd} z:${b.zscore ?? 'n/a'}${sp}`;
+    const summary = buildFlowMetricsText({
+      baseSummary,
+      dataWarning,
+      totalTrades,
+      buyVolume,
+      sellVolume,
+      netVolume,
+      aggressorRatio,
+      cvd,
+      buckets: outBuckets,
+      bucketMs,
     });
-    const warningLine = dataWarning ? `\n${dataWarning}` : '';
-    const summary = baseSummary
-      + warningLine
-      + `\naggregates: totalTrades=${totalTrades} buyVol=${Number(buyVolume.toFixed(4))} sellVol=${Number(sellVolume.toFixed(4))} netVol=${Number(netVolume.toFixed(4))} aggRatio=${aggressorRatio} finalCvd=${Number(cvd.toFixed(4))}`
-      + `\n\n📋 全${outBuckets.length}件のバケット (${bucketMs}ms間隔):\n` + bucketLines.join('\n')
-      + `\n\n---\n📌 含まれるもの: 時系列バケット（買い/売り出来高・CVD・Zスコア・スパイク）、集計値`
-      + `\n📌 含まれないもの: 個別約定の詳細、OHLCV価格データ、板情報、テクニカル指標`
-      + `\n📌 補完ツール: get_transactions（個別約定）, get_candles（OHLCV）, get_orderbook（板情報）, analyze_indicators（指標）`;
 
     const data = {
       source: 'transactions' as const,

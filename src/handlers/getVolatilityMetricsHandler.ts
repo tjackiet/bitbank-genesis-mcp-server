@@ -5,6 +5,95 @@ import { formatPercent, formatCurrency, formatCurrencyShort, formatPriceJPY } fr
 import { toIsoTime } from '../../lib/datetime.js';
 import { stddev } from '../../lib/math.js';
 
+export interface VolViewInput {
+  pair: string;
+  type: string;
+  lastClose: number | null;
+  ann: boolean;
+  annFactor: number;
+  annFactorFull: number;
+  sampleSize: number | string;
+  rvAnn: number | null;
+  pkAnn: number | null;
+  gkAnn: number | null;
+  rsAnn: number | null;
+  atrAbs: number | null;
+  atrPct: number | null;
+  tagsAll: string[];
+  rolling: Array<{ window: number; rv_std: number; rv_std_ann?: number; atr?: number; parkinson?: number; garmanKlass?: number; rogersSatchell?: number }>;
+}
+
+/** beginner ビューのテキスト組み立て */
+export function buildVolatilityBeginnerText(input: VolViewInput): string {
+  const { pair, type, lastClose, atrAbs, atrPct, rvAnn, tagsAll } = input;
+  const rvPct = formatPercent(rvAnn, { multiply: true, digits: 0 });
+  const atrJpy = formatPriceJPY(atrAbs);
+  const atrPctStr = formatPercent(atrPct, { multiply: true });
+  const closeStr = formatPriceJPY(lastClose);
+  return [
+    `${String(pair).toUpperCase()} [${String(type)}] 現在価格: ${closeStr}`,
+    `・年間のおおよその動き: 約${rvPct}（1年でこのくらい上下しやすい目安）`,
+    `・1日の平均的な動き: 約${atrJpy}（約${atrPctStr}）`,
+    tagsAll.length ? `・今の傾向: ${tagsAll.map(t => t.replaceAll('_', ' ')).join(', ')}` : null,
+  ].filter(Boolean).join('\n');
+}
+
+/** summary ビューのテキスト組み立て */
+export function buildVolatilitySummaryText(input: VolViewInput): string {
+  const { pair, type, sampleSize, rvAnn, pkAnn, gkAnn, rsAnn, atrAbs, tagsAll } = input;
+  const fmtPct = (x: any) => formatPercent(x, { multiply: true });
+  const fmtCurrShort = (p: any, v: any) => formatCurrencyShort(v, p);
+  return `${String(pair).toUpperCase()} [${String(type)}] samples=${sampleSize ?? 'n/a'} RV=${fmtPct(rvAnn)} ATR=${fmtCurrShort(pair, atrAbs)} PK=${fmtPct(pkAnn)} GK=${fmtPct(gkAnn)} RS=${fmtPct(rsAnn)} Tags: ${tagsAll.join(', ')}`;
+}
+
+export interface VolDetailedInput extends VolViewInput {
+  series?: {
+    ts: number[];
+    close: number[];
+    ret: number[];
+  };
+}
+
+/** detailed/full ビューのテキスト組み立て */
+export function buildVolatilityDetailedText(input: VolDetailedInput, view: 'detailed' | 'full'): string {
+  const { pair, type, lastClose, ann, annFactor, sampleSize, rvAnn, pkAnn, gkAnn, rsAnn, atrAbs, tagsAll, rolling } = input;
+  const fmtPct = (x: any) => formatPercent(x, { multiply: true });
+  const fmtCurr = (p: any, v: any) => formatCurrency(v, p);
+
+  const windowsList = rolling.map(r => r.window).join('/');
+  const header = `${String(pair).toUpperCase()} [${String(type)}] close=${lastClose != null ? Number(lastClose).toLocaleString() : 'n/a'}\n`;
+  const block1 = `【Volatility Metrics${ann ? ' (annualized)' : ''}, ${sampleSize ?? 'n/a'} samples】\nRV (std): ${fmtPct(rvAnn)}\nATR: ${fmtCurr(pair, atrAbs)}\nParkinson: ${fmtPct(pkAnn)}\nGarman-Klass: ${fmtPct(gkAnn)}\nRogers-Satchell: ${fmtPct(rsAnn)}`;
+
+  const maxW = rolling.length ? Math.max(...rolling.map(r => r.window)) : null;
+  const baseVal = maxW != null ? (rolling.find(r => r.window === maxW)?.rv_std_ann ?? ((rolling.find(r => r.window === maxW)?.rv_std ?? null) as number) * (ann ? annFactor : 1)) : null;
+  const arrowFor = (val: number | null | undefined) => {
+    if (val == null || baseVal == null) return '→';
+    if (val > baseVal * 1.05) return '⬆⬆';
+    if (val > baseVal) return '⬆';
+    if (val < baseVal * 0.95) return '⬇⬇';
+    if (val < baseVal) return '⬇';
+    return '→';
+  };
+  const trendLines = rolling.map(r => {
+    const now = r.rv_std_ann ?? (r.rv_std != null ? r.rv_std * (ann ? annFactor : 1) : null);
+    return `${r.window}-day RV: ${fmtPct(now)} ${arrowFor(now)}`;
+  });
+
+  let text = header + '\n' + block1 + '\n\n' + `【Rolling Trends (${windowsList}-day windows)】\n` + trendLines.join('\n') + '\n\n' + `【Assessment】\nTags: ${tagsAll.join(', ')}`;
+
+  if (view === 'full' && input.series) {
+    const { ts: tsArr, close: cArr, ret: retArr } = input.series;
+    const firstIso = tsArr.length ? (toIsoTime(tsArr[0]) ?? 'n/a') : 'n/a';
+    const lastIso = tsArr.length ? (toIsoTime(tsArr[tsArr.length - 1]) ?? 'n/a') : 'n/a';
+    const minClose = cArr.length ? Math.min(...cArr) : null;
+    const maxClose = cArr.length ? Math.max(...cArr) : null;
+    const mean = retArr.length ? (retArr.reduce((s, v) => s + v, 0) / retArr.length) : null;
+    const std = retArr.length ? stddev(retArr) : null;
+    text += `\n\n【Series】\nTotal: ${sampleSize ?? cArr.length} candles\nFirst: ${firstIso} , Last: ${lastIso}\nClose range: ${minClose != null ? Number(minClose).toLocaleString() : 'n/a'} - ${maxClose != null ? Number(maxClose).toLocaleString() : 'n/a'} JPY\nReturns: mean=${formatPercent(mean, { multiply: true, digits: 2 })}, std=${formatPercent(std, { multiply: true, digits: 2 })}${ann ? ' (base interval)' : ''}`;
+  }
+  return text;
+}
+
 export const toolDef: ToolDefinition = {
 	name: 'get_volatility_metrics',
 	description: '[Volatility / ATR / RV] ボラティリティ指標（volatility / ATR / realized vol）を算出。RV・ATR・Parkinson・Garman-Klass・Rogers-Satchell。年率換算対応。',
@@ -57,65 +146,35 @@ export const toolDef: ToolDefinition = {
 		}
 		const tagsAll = [...new Set([...(tagsBase || []), ...tagsDerived])];
 
+		const viewInput: VolViewInput = {
+			pair, type, lastClose, ann, annFactor, annFactorFull,
+			sampleSize: meta.sampleSize ?? 'n/a',
+			rvAnn, pkAnn, gkAnn, rsAnn, atrAbs, atrPct, tagsAll, rolling: roll,
+		};
+
 		// beginner view (plain language for non-experts)
 		if (view === 'beginner') {
-			const rvPct = formatPercent(rvAnn, { multiply: true, digits: 0 });
-			const atrJpy = formatPriceJPY(atrAbs);
-			const atrPctStr = formatPercent(atrPct, { multiply: true });
-			const closeStr = formatPriceJPY(lastClose);
-			const lines = [
-				`${String(pair).toUpperCase()} [${String(type)}] 現在価格: ${closeStr}`,
-				`・年間のおおよその動き: 約${rvPct}（1年でこのくらい上下しやすい目安）`,
-				`・1日の平均的な動き: 約${atrJpy}（約${atrPctStr}）`,
-				tagsAll.length ? `・今の傾向: ${tagsAll.map(t => t.replaceAll('_', ' ')).join(', ')}` : null,
-			].filter(Boolean).join('\n');
-			return { content: [{ type: 'text', text: lines }], structuredContent: { ...res, data: { ...res.data, tags: tagsAll } } as Record<string, unknown> };
+			const text = buildVolatilityBeginnerText(viewInput);
+			return { content: [{ type: 'text', text }], structuredContent: { ...res, data: { ...res.data, tags: tagsAll } } as Record<string, unknown> };
 		}
 
 		// summary view
 		if (view === 'summary') {
-			const line = `${String(pair).toUpperCase()} [${String(type)}] samples=${meta.sampleSize ?? 'n/a'} RV=${fmtPct(rvAnn)} ATR=${fmtCurrencyShortFn(pair, atrAbs)} PK=${fmtPct(pkAnn)} GK=${fmtPct(gkAnn)} RS=${fmtPct(rsAnn)} Tags: ${tagsAll.join(', ')}`;
-			return { content: [{ type: 'text', text: line }], structuredContent: { ...res, data: { ...res.data, tags: tagsAll } } as Record<string, unknown> };
+			const text = buildVolatilitySummaryText(viewInput);
+			return { content: [{ type: 'text', text }], structuredContent: { ...res, data: { ...res.data, tags: tagsAll } } as Record<string, unknown> };
 		}
 
 		// detailed/full
-		const windowsList = roll.map(r => r.window).join('/');
-		const header = `${String(pair).toUpperCase()} [${String(type)}] close=${lastClose != null ? Number(lastClose).toLocaleString() : 'n/a'}\n`;
-		const block1 = `【Volatility Metrics${ann ? ' (annualized)' : ''}, ${meta.sampleSize ?? 'n/a'} samples】\nRV (std): ${fmtPct(rvAnn)}\nATR: ${fmtCurrencyFn(pair, atrAbs)}\nParkinson: ${fmtPct(pkAnn)}\nGarman-Klass: ${fmtPct(gkAnn)}\nRogers-Satchell: ${fmtPct(rsAnn)}`;
-
-		const maxW = roll.length ? Math.max(...roll.map(r => r.window)) : null;
-		const baseVal = maxW != null ? (roll.find(r => r.window === maxW)?.rv_std_ann ?? ((roll.find(r => r.window === maxW)?.rv_std ?? null) as number) * (ann ? annFactor : 1)) : null;
-		const arrowFor = (val: number | null | undefined) => {
-			if (val == null || baseVal == null) return '→';
-			if (val > baseVal * 1.05) return '⬆⬆';
-			if (val > baseVal) return '⬆';
-			if (val < baseVal * 0.95) return '⬇⬇';
-			if (val < baseVal) return '⬇';
-			return '→';
+		const series = res?.data?.series || {};
+		const detailedInput: VolDetailedInput = {
+			...viewInput,
+			series: {
+				ts: Array.isArray(series.ts) ? series.ts : [],
+				close: Array.isArray(series.close) ? series.close : [],
+				ret: Array.isArray(series.ret) ? series.ret : [],
+			},
 		};
-		const trendLines = roll.map(r => {
-			const now = r.rv_std_ann ?? (r.rv_std != null ? r.rv_std * (ann ? annFactor : 1) : null);
-			return `${r.window}-day RV: ${fmtPct(now)} ${arrowFor(now)}`;
-		});
-
-		let text = header + '\n' + block1 + '\n\n' + `【Rolling Trends (${windowsList}-day windows)】\n` + trendLines.join('\n') + '\n\n' + `【Assessment】\nTags: ${tagsAll.join(', ')}`;
-		if (view === 'full') {
-			const series = res?.data?.series || {};
-			const tsArr: number[] = Array.isArray(series.ts) ? series.ts : [];
-			const firstIso = tsArr.length ? (toIsoTime(tsArr[0]) ?? 'n/a') : 'n/a';
-			const lastIso = tsArr.length ? (toIsoTime(tsArr[tsArr.length - 1]) ?? 'n/a') : 'n/a';
-			const cArr: number[] = Array.isArray(series.close) ? series.close : [];
-			const minClose = cArr.length ? Math.min(...cArr) : null;
-			const maxClose = cArr.length ? Math.max(...cArr) : null;
-			const retArr: number[] = Array.isArray(series.ret) ? series.ret : [];
-			const mean = retArr.length ? (retArr.reduce((s, v) => s + v, 0) / retArr.length) : null;
-			const std = retArr.length ? stddev(retArr) : null;
-			text += `\n\n【Series】\nTotal: ${meta.sampleSize ?? cArr.length} candles\nFirst: ${firstIso} , Last: ${lastIso}\nClose range: ${minClose != null ? Number(minClose).toLocaleString() : 'n/a'} - ${maxClose != null ? Number(maxClose).toLocaleString() : 'n/a'} JPY\nReturns: mean=${formatPercent(mean, { multiply: true, digits: 2 })}, std=${formatPercent(std, { multiply: true, digits: 2 })}${ann ? ' (base interval)' : ''}`;
-		}
+		const text = buildVolatilityDetailedText(detailedInput, view === 'full' ? 'full' : 'detailed');
 		return { content: [{ type: 'text', text }], structuredContent: { ...res, data: { ...res.data, tags: tagsAll } } as Record<string, unknown> };
-
-		function fmtPct(x: any) { return formatPercent(x, { multiply: true }); }
-		function fmtCurrencyFn(p: any, v: any) { return formatCurrency(v, p); }
-		function fmtCurrencyShortFn(p: any, v: any) { return formatCurrencyShort(v, p); }
 	},
 };

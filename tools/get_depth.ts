@@ -7,6 +7,37 @@ import { GetDepthOutputSchema } from '../src/schemas.js';
 
 export interface GetDepthOptions { timeoutMs?: number; maxLevels?: number }
 
+export interface BuildDepthTextInput {
+  timestamp: number;
+  summary: string;
+  bids: Array<[unknown, unknown]>;
+  asks: Array<[unknown, unknown]>;
+  mid: number | null;
+}
+
+/** テキスト組み立て（板データ表示）— テスト可能な純粋関数 */
+export function buildDepthText(input: BuildDepthTextInput): string {
+  const { timestamp, summary, bids, asks, mid } = input;
+  const text = [
+    `📸 ${formatTimestampJST(timestamp)}`,
+    '',
+    summary,
+    `板の層数: 買い ${bids.length}層 / 売り ${asks.length}層`,
+    mid ? `中値: ${mid.toLocaleString()}円` : '',
+    '',
+    `🟢 買い板 (全${bids.length}層):`,
+    ...bids.map(([p, s]: [unknown, unknown], i: number) => `  ${i + 1}. ${Number(p).toLocaleString()}円 ${s}`),
+    '',
+    `🔴 売り板 (全${asks.length}層):`,
+    ...asks.map(([p, s]: [unknown, unknown], i: number) => `  ${i + 1}. ${Number(p).toLocaleString()}円 ${s}`),
+  ].filter(Boolean).join('\n');
+
+  return text
+    + `\n\n---\n📌 含まれるもの: 現時点の板（bid/ask全レベル）、壁ゾーン推定`
+    + `\n📌 含まれないもの: 板の時系列変化、約定履歴、テクニカル指標、出来高フロー`
+    + `\n📌 補完ツール: get_orderbook（分析モード付き板情報）, get_flow_metrics（出来高フロー）, get_transactions（約定履歴）`;
+}
+
 export default async function getDepth(
   pair: string,
   { timeoutMs = 3000, maxLevels = 200 }: GetDepthOptions = {}
@@ -55,24 +86,7 @@ export default async function getDepth(
     };
 
     // タイムスタンプ付きテキスト出力（全板データを含める: LLM が structuredContent.data を読めない対策）
-    const text = [
-      `📸 ${formatTimestampJST(data.timestamp)}`,
-      '',
-      summary,
-      `板の層数: 買い ${bids.length}層 / 売り ${asks.length}層`,
-      mid ? `中値: ${mid.toLocaleString()}円` : '',
-      '',
-      `🟢 買い板 (全${bids.length}層):`,
-      ...bids.map(([p, s]: [unknown, unknown], i: number) => `  ${i + 1}. ${Number(p).toLocaleString()}円 ${s}`),
-      '',
-      `🔴 売り板 (全${asks.length}層):`,
-      ...asks.map(([p, s]: [unknown, unknown], i: number) => `  ${i + 1}. ${Number(p).toLocaleString()}円 ${s}`),
-    ].filter(Boolean).join('\n');
-
-    const textWithBoundary = text
-      + `\n\n---\n📌 含まれるもの: 現時点の板（bid/ask全レベル）、壁ゾーン推定`
-      + `\n📌 含まれないもの: 板の時系列変化、約定履歴、テクニカル指標、出来高フロー`
-      + `\n📌 補完ツール: get_orderbook（分析モード付き板情報）, get_flow_metrics（出来高フロー）, get_transactions（約定履歴）`;
+    const textWithBoundary = buildDepthText({ timestamp: data.timestamp, summary, bids, asks, mid });
 
     const meta = createMeta(chk.pair);
     return GetDepthOutputSchema.parse(ok(textWithBoundary, data as any, meta as any));
