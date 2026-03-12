@@ -1,7 +1,7 @@
 import analyzeFibonacci from '../../tools/analyze_fibonacci.js';
 import { AnalyzeFibonacciInputSchema, AnalyzeFibonacciOutputSchema } from '../schemas.js';
 import type { ToolDefinition } from '../tool-definition.js';
-import { formatPair, timeframeLabel, formatPrice, formatPercent } from '../../lib/formatter.js';
+import { formatPair, timeframeLabel } from '../../lib/formatter.js';
 
 export const toolDef: ToolDefinition = {
 	name: 'analyze_fibonacci',

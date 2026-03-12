@@ -7,3 +7,4 @@ cache/
 .claude/worktrees/
 output/
 .cursor/
+.DS_Store
