@@ -8,6 +8,55 @@ import { GetVolMetricsOutputSchema } from '../src/schemas.js';
 
 type Candle = { open: number; high: number; low: number; close: number; isoTime?: string | null };
 
+export interface RollingEntry {
+  window: number;
+  rv_std: number;
+  rv_std_ann?: number;
+  atr?: number;
+  parkinson?: number;
+  garmanKlass?: number;
+  rogersSatchell?: number;
+}
+
+export interface BuildVolatilityMetricsTextInput {
+  baseSummary: string;
+  aggregates: {
+    rv_std: number;
+    rv_std_ann?: number;
+    parkinson: number;
+    garmanKlass: number;
+    rogersSatchell: number;
+    atr: number;
+  };
+  rolling: RollingEntry[];
+}
+
+/** テキスト組み立て（ボラティリティ詳細）— テスト可能な純粋関数 */
+export function buildVolatilityMetricsText(input: BuildVolatilityMetricsTextInput): string {
+  const { baseSummary, aggregates: a, rolling } = input;
+  const aggLines = [
+    `rv_std:${a.rv_std}`,
+    a.rv_std_ann != null ? `rv_std_ann:${a.rv_std_ann}` : '',
+    `parkinson:${a.parkinson}`,
+    `garmanKlass:${a.garmanKlass}`,
+    `rogersSatchell:${a.rogersSatchell}`,
+    `atr:${a.atr}`,
+  ].filter(Boolean).join(' ');
+  const rollLines = rolling.map((r) => {
+    const parts = [`w=${r.window} rv:${r.rv_std.toFixed(6)}`];
+    if (r.rv_std_ann != null) parts.push(`ann:${r.rv_std_ann.toFixed(6)}`);
+    if (r.atr != null) parts.push(`atr:${r.atr.toFixed(2)}`);
+    if (r.parkinson != null) parts.push(`pk:${r.parkinson.toFixed(6)}`);
+    return parts.join(' ');
+  });
+  return baseSummary
+    + `\n\naggregates: ${aggLines}`
+    + `\n\n📊 ローリング分析:\n` + rollLines.join('\n')
+    + `\n\n---\n📌 含まれるもの: ボラティリティ指標（RV・Parkinson・GK・RS・ATR）、ローリング分析`
+    + `\n📌 含まれないもの: 価格の方向性・トレンド、出来高フロー、板情報、テクニカル指標`
+    + `\n📌 補完ツール: get_candles（価格OHLCV）, analyze_indicators（方向性指標）, get_flow_metrics（出来高フロー）`;
+}
+
 function baseIntervalMsOf(type: string): number {
   switch (type) {
     case '1min': return 60_000;
@@ -200,27 +249,11 @@ export default async function getVolatilityMetrics(
       extra: `rv=${(rvRefAnn).toFixed(3)}(ann)${tags.length ? ' ' + tags.join(',') : ''}`,
     });
     // テキスト summary にボラティリティ詳細を含める（LLM が structuredContent.data を読めない対策）
-    const aggLines = [
-      `rv_std:${data.aggregates.rv_std}`,
-      data.aggregates.rv_std_ann != null ? `rv_std_ann:${data.aggregates.rv_std_ann}` : '',
-      `parkinson:${data.aggregates.parkinson}`,
-      `garmanKlass:${data.aggregates.garmanKlass}`,
-      `rogersSatchell:${data.aggregates.rogersSatchell}`,
-      `atr:${data.aggregates.atr}`,
-    ].filter(Boolean).join(' ');
-    const rollLines = rollingOut.map((r) => {
-      const parts = [`w=${r.window} rv:${r.rv_std.toFixed(6)}`];
-      if (r.rv_std_ann != null) parts.push(`ann:${r.rv_std_ann.toFixed(6)}`);
-      if (r.atr != null) parts.push(`atr:${r.atr.toFixed(2)}`);
-      if (r.parkinson != null) parts.push(`pk:${r.parkinson.toFixed(6)}`);
-      return parts.join(' ');
+    const summary = buildVolatilityMetricsText({
+      baseSummary: baseSummaryVol,
+      aggregates: data.aggregates,
+      rolling: rollingOut,
     });
-    const summary = baseSummaryVol
-      + `\n\naggregates: ${aggLines}`
-      + `\n\n📊 ローリング分析:\n` + rollLines.join('\n')
-      + `\n\n---\n📌 含まれるもの: ボラティリティ指標（RV・Parkinson・GK・RS・ATR）、ローリング分析`
-      + `\n📌 含まれないもの: 価格の方向性・トレンド、出来高フロー、板情報、テクニカル指標`
-      + `\n📌 補完ツール: get_candles（価格OHLCV）, analyze_indicators（方向性指標）, get_flow_metrics（出来高フロー）`;
 
     const meta = createMeta(chk.pair, { type, count: candles.length });
     return GetVolMetricsOutputSchema.parse(ok(summary, data as any, meta as any)) as any;

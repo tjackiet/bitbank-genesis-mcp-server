@@ -6,6 +6,156 @@ import { avg } from '../lib/math.js';
 import { AnalyzeIchimokuSnapshotInputSchema, AnalyzeIchimokuSnapshotOutputSchema } from '../src/schemas.js';
 import type { ToolDefinition } from '../src/tool-definition.js';
 
+export interface BuildIchimokuSnapshotTextInput {
+  pair: string;
+  type: string;
+  close: number | null;
+  pricePosition: 'above_cloud' | 'in_cloud' | 'below_cloud' | 'unknown';
+  tenkan: number | null;
+  kijun: number | null;
+  tenkanKijun: 'bullish' | 'bearish' | 'neutral' | 'unknown';
+  tkDist: number | null;
+  cloudTop: number | null;
+  cloudBottom: number | null;
+  direction: string | null;
+  thickness: number | null;
+  thicknessPct: number | null;
+  strength: string | null;
+  futureCloudTop: number | null;
+  futureCloudBottom: number | null;
+  chikouSpan: { position: 'above' | 'below' | null; distance: number | null; clearance: number | null };
+  sanpuku: {
+    kouten: boolean;
+    gyakuten: boolean;
+    conditions: { priceAboveCloud: boolean; tenkanAboveKijun: boolean; chikouAbovePrice: boolean };
+  };
+  recentCrosses: Array<{ type: 'golden_cross' | 'death_cross'; barsAgo: number; description: string }>;
+  kumoTwist: { detected: boolean; barsAgo?: number; direction?: 'bullish' | 'bearish' };
+  overallSignal: string;
+  overallConfidence: string;
+  scenarios: {
+    scenarios: { bullish: { condition: string; target: number; probability: string }; bearish: { condition: string; target: number; probability: string } };
+    keyLevels: { support: number[]; resistance: number[] };
+    watchPoints: string[];
+  };
+  trend: {
+    trendStrength: { shortTerm: number; mediumTerm: number };
+    momentum: string;
+  };
+  cloudHistory: Array<{ barsAgo: number; position: string }>;
+  // Raw numeric data for 数値データ section
+  currentSpanA: number | null;
+  currentSpanB: number | null;
+  futureSpanA: number | null;
+  futureSpanB: number | null;
+  tkDistPct: number | null;
+}
+
+/** テキスト組み立て（一目均衡表スナップショット表示）— テスト可能な純粋関数 */
+export function buildIchimokuSnapshotText(input: BuildIchimokuSnapshotTextInput): string {
+  const {
+    pair, type, close, pricePosition, tenkan, kijun, tenkanKijun, tkDist,
+    cloudTop, cloudBottom, direction, thickness, thicknessPct, strength,
+    futureCloudTop, futureCloudBottom, chikouSpan, sanpuku, recentCrosses,
+    kumoTwist, overallSignal, overallConfidence, scenarios, trend, cloudHistory,
+    currentSpanA, currentSpanB, futureSpanA, futureSpanB, tkDistPct,
+  } = input;
+  const lines: string[] = [];
+  lines.push(`${String(pair).toUpperCase()} ${String(type)} 一目均衡表分析`);
+  if (close != null) lines.push(`価格: ${Number(close).toLocaleString()}円`);
+  lines.push('');
+  lines.push('【基本配置】');
+  if (pricePosition !== 'unknown') {
+    const clr = (close != null && cloudTop != null && cloudBottom != null)
+      ? (pricePosition === 'above_cloud' ? (close - cloudTop) : (pricePosition === 'below_cloud' ? (cloudBottom - close) : 0))
+      : null;
+    const clrPct = (clr != null && close != null && close !== 0) ? Number(((clr / close) * 100).toFixed(2)) : null;
+    lines.push(`・価格位置: ${pricePosition.replace('_', ' ')}${clr != null ? ` (クリアランス: ${clr >= 0 ? '+' : ''}${clr.toLocaleString()}円${clrPct != null ? `, ${clrPct}%` : ''})` : ''}`);
+  }
+  if (tenkan != null) lines.push(`・転換線: ${Number(tenkan).toLocaleString()}円${(close != null) ? ` (価格比 ${Number(((tenkan - close) / close) * 100).toFixed(1)}%)` : ''}`);
+  if (kijun != null) lines.push(`・基準線: ${Number(kijun).toLocaleString()}円`);
+  if (tenkan != null && kijun != null) lines.push(`・転換線と基準線: ${tenkanKijun === 'bullish' ? '強気' : tenkanKijun === 'bearish' ? '弱気' : '中立'}配置${tkDist != null ? ` (転換線が${Math.abs(tkDist).toLocaleString()}円${tenkan > (kijun as number) ? '上' : '下'})` : ''}`);
+  lines.push('');
+  lines.push('【雲の状態（今日の雲）】');
+  lines.push(`・雲の方向: ${direction}`);
+  if (thickness != null) lines.push(`・雲の厚み: ${thickness.toLocaleString()}円${thicknessPct != null ? ` (${thicknessPct}%)` : ''} - ${strength ?? 'n/a'}の強度`);
+  if (cloudTop != null && cloudBottom != null) lines.push(`・雲の範囲: ${Number(cloudBottom).toLocaleString()}円 ~ ${Number(cloudTop).toLocaleString()}円`);
+  // 26日後の雲（将来の参考情報）
+  if (futureCloudTop != null && futureCloudBottom != null) {
+    lines.push('');
+    lines.push('【26日後の雲（先行スパン）】');
+    lines.push(`・雲の範囲: ${Number(futureCloudBottom).toLocaleString()}円 ~ ${Number(futureCloudTop).toLocaleString()}円`);
+    if (close != null) {
+      const futurePos = close > futureCloudTop ? '雲の上' : close < futureCloudBottom ? '雲の下' : '雲の中';
+      lines.push(`・現在価格との比較: ${futurePos}`);
+    }
+  }
+  lines.push('');
+  lines.push('【遅行スパン】');
+  if (chikouSpan.position) lines.push(`・位置: 26本前の価格より${chikouSpan.position === 'above' ? '上' : '下'}${chikouSpan.distance != null ? ` (${chikouSpan.distance >= 0 ? '+' : ''}${chikouSpan.distance.toLocaleString()}円)` : ''}`);
+  lines.push('');
+  lines.push('【シグナル分析】');
+  const achieved = ['priceAboveCloud', 'tenkanAboveKijun', 'chikouAbovePrice'].filter(k => (sanpuku.conditions as any)[k]).length;
+  lines.push(`・三役判定: ${sanpuku.kouten ? '好転' : (sanpuku.gyakuten ? '逆転' : `好転条件 ${achieved}/3 達成`)}`);
+  lines.push(`  ${(sanpuku.conditions as any).priceAboveCloud ? '✓' : '✗'} 価格が雲の上`);
+  lines.push(`  ${(sanpuku.conditions as any).tenkanAboveKijun ? '✓' : '✗'} 転換線が基準線の上`);
+  lines.push(`  ${(sanpuku.conditions as any).chikouAbovePrice ? '✓' : '✗'} 遅行スパンが好転中`);
+  if (recentCrosses.length) lines.push('・直近のイベント:');
+  for (const ev of recentCrosses) lines.push(`  - ${ev.barsAgo}本前: ${ev.type === 'golden_cross' ? 'ゴールデンクロス' : 'デッドクロス'}`);
+  if (kumoTwist.detected) lines.push(`・雲のねじれ: ${kumoTwist.barsAgo}本前に${kumoTwist.direction === 'bullish' ? '強気' : '弱気'}のねじれ発生`);
+  lines.push(`・総合評価: ${overallSignal.replace('_', ' ')} (信頼度: ${overallConfidence})`);
+
+  // Phase 3 content additions
+  lines.push('');
+  lines.push('【今後の注目ポイント】');
+  if (scenarios?.scenarios) {
+    const bull = scenarios.scenarios.bullish;
+    const bear = scenarios.scenarios.bearish;
+    if (bull) lines.push(`・上昇シナリオ: ${bull.condition} → ${Number(bull.target).toLocaleString()}円 (可能性: ${bull.probability})`);
+    if (bear) lines.push(`・下落シナリオ: ${bear.condition} → ${Number(bear.target).toLocaleString()}円 (可能性: ${bear.probability})`);
+  }
+  lines.push('');
+  lines.push('・重要価格:');
+  if (scenarios?.keyLevels?.support?.length) {
+    lines.push(`  - サポート: ${scenarios.keyLevels.support.map((x: number) => `${Number(x).toLocaleString()}円`).join('、')}`);
+  }
+  if (scenarios?.keyLevels?.resistance?.length) {
+    lines.push(`  - レジスタンス: ${scenarios.keyLevels.resistance.map((x: number) => `${Number(x).toLocaleString()}円`).join('、')}`);
+  }
+  if (Array.isArray(scenarios?.watchPoints)) {
+    lines.push('');
+    lines.push('・ウォッチリスト:');
+    for (const wp of scenarios.watchPoints) lines.push(`  - ${wp}`);
+  }
+
+  // Phase 4 trend content (optional)
+  if (trend) {
+    lines.push('');
+    lines.push('【トレンド分析】');
+    lines.push(`・短期強度: ${trend.trendStrength.shortTerm}`);
+    lines.push(`・中期強度: ${trend.trendStrength.mediumTerm}`);
+    const m = trend.momentum;
+    lines.push(`・モメンタム: ${m === 'accelerating' ? '加速中' : m === 'decelerating' ? '減速中' : '安定'}`);
+  }
+
+  // structuredContent.data の数値詳細もテキストに含める（LLM が読めない対策）
+  lines.push('');
+  lines.push('【数値データ】');
+  lines.push(`転換線: ${tenkan} / 基準線: ${kijun}`);
+  lines.push(`雲(今日): spanA=${currentSpanA} spanB=${currentSpanB} top=${cloudTop} bottom=${cloudBottom} 厚み=${thickness}`);
+  lines.push(`雲(26日後): spanA=${futureSpanA} spanB=${futureSpanB} top=${futureCloudTop} bottom=${futureCloudBottom}`);
+  lines.push(`転換-基準: 距離=${tkDist}円 (${tkDistPct}%)`);
+  if (chikouSpan.distance != null) lines.push(`遅行スパン距離: ${chikouSpan.distance}円`);
+  if (cloudHistory.length > 0) {
+    lines.push(`雲の履歴(直近${cloudHistory.length}本): ${cloudHistory.map(h => `${h.barsAgo}=${h.position}`).join(' ')}`);
+  }
+
+  return lines.join('\n')
+    + `\n\n---\n📌 含まれるもの: 一目均衡表の全要素（転換線・基準線・雲・遅行スパン）、三役判定、シグナル`
+    + `\n📌 含まれないもの: 他のテクニカル指標（RSI・MACD・BB）、出来高フロー、板情報`
+    + `\n📌 補完ツール: analyze_indicators（他指標）, analyze_bb_snapshot（BB）, get_flow_metrics（出来高）, get_orderbook（板情報）`;
+}
+
 export default async function analyzeIchimokuSnapshot(
   pair: string = 'btc_jpy',
   type: string = '1day',
@@ -240,101 +390,38 @@ export default async function analyzeIchimokuSnapshot(
     };
 
     const meta = createMeta(chk.pair, { type, count: indRes.data.normalized.length });
-    // Build content summary
-    const lines: string[] = [];
-    lines.push(`${String(chk.pair).toUpperCase()} ${String(type)} 一目均衡表分析`);
-    if (close != null) lines.push(`価格: ${Number(close).toLocaleString()}円`);
-    lines.push('');
-    lines.push('【基本配置】');
-    if (pricePosition !== 'unknown') {
-      const clr = (close != null && cloudTop != null && cloudBottom != null)
-        ? (pricePosition === 'above_cloud' ? (close - cloudTop) : (pricePosition === 'below_cloud' ? (cloudBottom - close) : 0))
-        : null;
-      const clrPct = (clr != null && close != null && close !== 0) ? Number(((clr / close) * 100).toFixed(2)) : null;
-      lines.push(`・価格位置: ${pricePosition.replace('_', ' ')}${clr != null ? ` (クリアランス: ${clr >= 0 ? '+' : ''}${clr.toLocaleString()}円${clrPct != null ? `, ${clrPct}%` : ''})` : ''}`);
-    }
-    if (tenkan != null) lines.push(`・転換線: ${Number(tenkan).toLocaleString()}円${(close != null) ? ` (価格比 ${Number(((tenkan - close) / close) * 100).toFixed(1)}%)` : ''}`);
-    if (kijun != null) lines.push(`・基準線: ${Number(kijun).toLocaleString()}円`);
-    if (tenkan != null && kijun != null) lines.push(`・転換線と基準線: ${tenkanKijun === 'bullish' ? '強気' : tenkanKijun === 'bearish' ? '弱気' : '中立'}配置${tkDist != null ? ` (転換線が${Math.abs(tkDist).toLocaleString()}円${tenkan > (kijun as number) ? '上' : '下'})` : ''}`);
-    lines.push('');
-    lines.push('【雲の状態（今日の雲）】');
-    lines.push(`・雲の方向: ${direction}`);
-    if (thickness != null) lines.push(`・雲の厚み: ${thickness.toLocaleString()}円${thicknessPct != null ? ` (${thicknessPct}%)` : ''} - ${strength ?? 'n/a'}の強度`);
-    if (cloudTop != null && cloudBottom != null) lines.push(`・雲の範囲: ${Number(cloudBottom).toLocaleString()}円 ~ ${Number(cloudTop).toLocaleString()}円`);
-    // 26日後の雲（将来の参考情報）
-    if (futureCloudTop != null && futureCloudBottom != null) {
-      lines.push('');
-      lines.push('【26日後の雲（先行スパン）】');
-      lines.push(`・雲の範囲: ${Number(futureCloudBottom).toLocaleString()}円 ~ ${Number(futureCloudTop).toLocaleString()}円`);
-      if (close != null) {
-        const futurePos = close > futureCloudTop ? '雲の上' : close < futureCloudBottom ? '雲の下' : '雲の中';
-        lines.push(`・現在価格との比較: ${futurePos}`);
-      }
-    }
-    lines.push('');
-    lines.push('【遅行スパン】');
-    if (chikouSpan.position) lines.push(`・位置: 26本前の価格より${chikouSpan.position === 'above' ? '上' : '下'}${chikouSpan.distance != null ? ` (${chikouSpan.distance >= 0 ? '+' : ''}${chikouSpan.distance.toLocaleString()}円)` : ''}`);
-    lines.push('');
-    lines.push('【シグナル分析】');
-    const achieved = ['priceAboveCloud', 'tenkanAboveKijun', 'chikouAbovePrice'].filter(k => (sanpuku.conditions as any)[k]).length;
-    lines.push(`・三役判定: ${sanpuku.kouten ? '好転' : (sanpuku.gyakuten ? '逆転' : `好転条件 ${achieved}/3 達成`)}`);
-    lines.push(`  ${(sanpuku.conditions as any).priceAboveCloud ? '✓' : '✗'} 価格が雲の上`);
-    lines.push(`  ${(sanpuku.conditions as any).tenkanAboveKijun ? '✓' : '✗'} 転換線が基準線の上`);
-    lines.push(`  ${(sanpuku.conditions as any).chikouAbovePrice ? '✓' : '✗'} 遅行スパンが好転中`);
-    if (recentCrosses.length) lines.push('・直近のイベント:');
-    for (const ev of recentCrosses) lines.push(`  - ${ev.barsAgo}本前: ${ev.type === 'golden_cross' ? 'ゴールデンクロス' : 'デッドクロス'}`);
-    if (kumoTwist.detected) lines.push(`・雲のねじれ: ${kumoTwist.barsAgo}本前に${kumoTwist.direction === 'bullish' ? '強気' : '弱気'}のねじれ発生`);
-    lines.push(`・総合評価: ${overallSignal.replace('_', ' ')} (信頼度: ${overallConfidence})`);
-
-    // Phase 3 content additions
-    lines.push('');
-    lines.push('【今後の注目ポイント】');
-    if ((data as any)?.scenarios?.scenarios) {
-      const bull = (data as any).scenarios.scenarios.bullish;
-      const bear = (data as any).scenarios.scenarios.bearish;
-      if (bull) lines.push(`・上昇シナリオ: ${bull.condition} → ${Number(bull.target).toLocaleString()}円 (可能性: ${bull.probability})`);
-      if (bear) lines.push(`・下落シナリオ: ${bear.condition} → ${Number(bear.target).toLocaleString()}円 (可能性: ${bear.probability})`);
-    }
-    lines.push('');
-    lines.push('・重要価格:');
-    if ((data as any)?.scenarios?.keyLevels?.support?.length) {
-      lines.push(`  - サポート: ${(data as any).scenarios.keyLevels.support.map((x: number) => `${Number(x).toLocaleString()}円`).join('、')}`);
-    }
-    if ((data as any)?.scenarios?.keyLevels?.resistance?.length) {
-      lines.push(`  - レジスタンス: ${(data as any).scenarios.keyLevels.resistance.map((x: number) => `${Number(x).toLocaleString()}円`).join('、')}`);
-    }
-    if (Array.isArray((data as any)?.scenarios?.watchPoints)) {
-      lines.push('');
-      lines.push('・ウォッチリスト:');
-      for (const wp of (data as any).scenarios.watchPoints) lines.push(`  - ${wp}`);
-    }
-
-    // Phase 4 trend content (optional)
-    if ((data as any)?.trend) {
-      lines.push('');
-      lines.push('【トレンド分析】');
-      lines.push(`・短期強度: ${(data as any).trend.trendStrength.shortTerm}`);
-      lines.push(`・中期強度: ${(data as any).trend.trendStrength.mediumTerm}`);
-      const m = (data as any).trend.momentum;
-      lines.push(`・モメンタム: ${m === 'accelerating' ? '加速中' : m === 'decelerating' ? '減速中' : '安定'}`);
-    }
-
-    // structuredContent.data の数値詳細もテキストに含める（LLM が読めない対策）
-    lines.push('');
-    lines.push('【数値データ】');
-    lines.push(`転換線: ${tenkan} / 基準線: ${kijun}`);
-    lines.push(`雲(今日): spanA=${currentSpanA} spanB=${currentSpanB} top=${cloudTop} bottom=${cloudBottom} 厚み=${thickness}`);
-    lines.push(`雲(26日後): spanA=${futureSpanA} spanB=${futureSpanB} top=${futureCloudTop} bottom=${futureCloudBottom}`);
-    lines.push(`転換-基準: 距離=${tkDist}円 (${tkDistPct}%)`);
-    if (chikouSpan.distance != null) lines.push(`遅行スパン距離: ${chikouSpan.distance}円`);
-    if (cloudHistory.length > 0) {
-      lines.push(`雲の履歴(直近${cloudHistory.length}本): ${cloudHistory.map(h => `${h.barsAgo}=${h.position}`).join(' ')}`);
-    }
-
-    const text = lines.join('\n')
-      + `\n\n---\n📌 含まれるもの: 一目均衡表の全要素（転換線・基準線・雲・遅行スパン）、三役判定、シグナル`
-      + `\n📌 含まれないもの: 他のテクニカル指標（RSI・MACD・BB）、出来高フロー、板情報`
-      + `\n📌 補完ツール: analyze_indicators（他指標）, analyze_bb_snapshot（BB）, get_flow_metrics（出来高）, get_orderbook（板情報）`;
+    const text = buildIchimokuSnapshotText({
+      pair: chk.pair,
+      type,
+      close,
+      pricePosition,
+      tenkan,
+      kijun,
+      tenkanKijun,
+      tkDist,
+      cloudTop,
+      cloudBottom,
+      direction,
+      thickness,
+      thicknessPct,
+      strength,
+      futureCloudTop,
+      futureCloudBottom,
+      chikouSpan,
+      sanpuku,
+      recentCrosses,
+      kumoTwist,
+      overallSignal,
+      overallConfidence,
+      scenarios: data.scenarios as any,
+      trend: data.trend as any,
+      cloudHistory,
+      currentSpanA,
+      currentSpanB,
+      futureSpanA,
+      futureSpanB,
+      tkDistPct,
+    });
     return AnalyzeIchimokuSnapshotOutputSchema.parse(ok(text, data as any, meta as any)) as any;
   } catch (e: unknown) {
     return failFromError(e, { schema: AnalyzeIchimokuSnapshotOutputSchema }) as any;

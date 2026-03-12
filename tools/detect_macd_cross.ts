@@ -7,6 +7,118 @@ import { dayjs } from '../lib/datetime.js';
 import { z } from 'zod';
 import type { ToolDefinition } from '../src/tool-definition.js';
 
+// ── テキスト組み立て: 純粋エクスポート関数 ──
+
+export interface MacdScreenCross {
+	pair: string;
+	type: 'golden' | 'dead';
+	crossDate: string | null;
+	barsAgo: number;
+	macdAtCross: number | null;
+	signalAtCross: number | null;
+	histogramDelta: number | null;
+	returnSinceCrossPct: number | null;
+	prevCross: { type: 'golden' | 'dead'; barsAgo: number } | null;
+}
+
+export interface BuildMacdScreenTextInput {
+	baseSummary: string;
+	crosses: MacdScreenCross[];
+	includeForming: boolean;
+	includeStats: boolean;
+}
+
+export function buildMacdScreenText(input: BuildMacdScreenTextInput): string {
+	const { baseSummary, crosses } = input;
+	const crossLines = crosses.map((r, i) => {
+		const date = r.crossDate ? String(r.crossDate).slice(0, 10) : '?';
+		const ret = r.returnSinceCrossPct != null ? ` ret:${r.returnSinceCrossPct >= 0 ? '+' : ''}${r.returnSinceCrossPct}%` : '';
+		const hd = r.histogramDelta != null ? ` histDelta:${r.histogramDelta}` : '';
+		const prev = r.prevCross ? ` prev:${r.prevCross.type}(${r.prevCross.barsAgo}bars)` : '';
+		return `[${i}] ${r.pair} ${r.type} @${date} barsAgo:${r.barsAgo} macd:${r.macdAtCross} sig:${r.signalAtCross}${hd}${ret}${prev}`;
+	});
+	return baseSummary + `\n\n📋 全${crosses.length}件のクロス詳細:\n` + crossLines.join('\n')
+		+ `\n\n---\n📌 含まれるもの: MACDクロス検出（種類・日付・ヒストグラム差分・リターン率・前回クロス）`
+		+ `\n📌 含まれないもの: 他のテクニカル指標（RSI・BB等）、出来高分析、板情報`
+		+ `\n📌 補完ツール: analyze_indicators（全指標詳細）, analyze_market_signal（総合シグナル）, get_flow_metrics（出来高）`;
+}
+
+export interface BuildMacdSingleTextInput {
+	pair: string;
+	lastClose: number | null;
+	forming: Record<string, unknown> | null;
+	statistics: Record<string, unknown> | null;
+	history: Record<string, unknown> | null;
+	historyDays: number;
+	includeForming: boolean;
+	includeStats: boolean;
+}
+
+export function buildMacdSingleText(input: BuildMacdSingleTextInput): string {
+	const { pair, lastClose, forming, statistics, history, historyDays, includeForming, includeStats } = input;
+	const lines: string[] = [];
+	const pairStr = String(pair).toUpperCase();
+	lines.push(lastClose != null ? `${pairStr} close=${Number(lastClose).toLocaleString()}円` : pairStr);
+
+	if (forming) {
+		const f = forming as any;
+		if (f.status === 'forming_golden' || f.status === 'forming_dead') {
+			const days = f.estimatedCrossDays != null ? (f.estimatedCrossDays <= 1.5 ? '1-2日以内' : `${Math.round(f.estimatedCrossDays)}日程度`) : '不明';
+			const compStr = f.completion != null ? `${Math.round((f.completion || 0) * 100)}%` : 'n/a';
+			const crossType = f.status === 'forming_golden' ? 'ゴールデン' : 'デッド';
+			const fmt = (v: any, d = 2) => (v == null ? 'n/a' : Number(v).toFixed(d));
+			const estDate = (() => {
+				if (f.estimatedCrossDays == null) return '不明';
+				try { return dayjs().add(Math.max(0, Math.round(f.estimatedCrossDays)), 'day').format('YYYY-MM-DD'); } catch { return '不明'; }
+			})();
+			lines.push(`${crossType}クロス形成中: 完成度${compStr}、推定クロス日 ${estDate}（あと${days}）`);
+			lines.push(`- ヒストグラム: ${fmt(f.currentHistogram, 2)} (直近5本: [${(f.histogramTrend || []).map((v: any) => v == null ? 'n/a' : String(v)).join(', ')}])`);
+			lines.push(`- MACD: ${fmt(f.currentMACD, 2)} / Signal: ${fmt(f.currentSignal, 2)}`);
+		} else if (f.status === 'crossed_recently') {
+			const dateStr = f.lastCrossDate ? String(f.lastCrossDate).slice(0, 10) : '不明';
+			const agoStr = f.lastCrossBarsAgo != null ? `${f.lastCrossBarsAgo}日前` : '直近';
+			const typ = f.lastCrossType === 'dead' ? 'デッド' : 'ゴールデン';
+			lines.push(`${typ}クロス発生: ${dateStr}（${agoStr}）`);
+		} else {
+			lines.push('現在クロス形成の兆候なし');
+		}
+	}
+
+	if (statistics && history) {
+		const gStats = (statistics as any).golden;
+		const dStats = (statistics as any).dead;
+		const goldenCrosses = (history as any).goldenCrosses as CrossPerf[];
+		const deadCrosses = (history as any).deadCrosses as CrossPerf[];
+		if (gStats.totalSamples > 0) {
+			const avgStr = gStats.avgDay5Return != null ? `${gStats.avgDay5Return >= 0 ? '+' : ''}${gStats.avgDay5Return}%` : 'n/a';
+			const upCount = goldenCrosses.filter(c => (c.performance.day5 ?? -Infinity) > 0).length;
+			const rangeStr = (gStats.worstCase != null && gStats.bestCase != null)
+				? `${gStats.worstCase >= 0 ? '+' : ''}${gStats.worstCase}% 〜 ${gStats.bestCase >= 0 ? '+' : ''}${gStats.bestCase}%`
+				: 'n/a';
+			lines.push(`過去${historyDays}日: ゴールデンクロス${goldenCrosses.length}回`);
+			const upPct = goldenCrosses.length ? Math.round((upCount / goldenCrosses.length) * 100) : 0;
+			lines.push(`- クロス後5日間: 平均${avgStr}、上昇した割合 ${upCount}/${goldenCrosses.length}回（${upPct}%）`);
+			lines.push(`- 範囲: ${rangeStr}`);
+		}
+		if (dStats.totalSamples > 0) {
+			const avgStr = dStats.avgDay5Return != null ? `${dStats.avgDay5Return >= 0 ? '+' : ''}${dStats.avgDay5Return}%` : 'n/a';
+			const downCount = deadCrosses.filter(c => (c.performance.day5 ?? Infinity) < 0).length;
+			const rangeStr = (dStats.worstCase != null && dStats.bestCase != null)
+				? `${dStats.worstCase >= 0 ? '+' : ''}${dStats.worstCase}% 〜 ${dStats.bestCase >= 0 ? '+' : ''}${dStats.bestCase}%`
+				: 'n/a';
+			lines.push(`デッドクロス${deadCrosses.length}回`);
+			const downPct = deadCrosses.length ? Math.round((downCount / deadCrosses.length) * 100) : 0;
+			lines.push(`- クロス後5日間: 平均${avgStr}、下落した割合 ${downCount}/${deadCrosses.length}回（${downPct}%）`);
+			lines.push(`- 範囲: ${rangeStr}`);
+		}
+	}
+
+	return lines.join('\n')
+		+ `\n\n---\n📌 含まれるもの: MACD分析（${includeForming ? 'forming検出' : ''}${includeForming && includeStats ? '・' : ''}${includeStats ? '過去統計' : ''}）`
+		+ `\n📌 含まれないもの: 他のテクニカル指標（RSI・BB等）、出来高分析、板情報`
+		+ `\n📌 補完ツール: analyze_indicators（全指標詳細）, analyze_market_signal（総合シグナル）, get_flow_metrics（出来高）`;
+}
+
 // ── 共通: クロス検出ヘルパー ──
 
 type CrossDetailed = {
@@ -163,17 +275,18 @@ async function screenMode(
 	if (opts.limit != null) conds.push(`top${opts.limit}`);
 	const condStr = conds.length ? ` (全${totalFound}件中, 条件: ${conds.join(', ')})` : '';
 	const baseSummary = formatSummary({ pair: 'multi', latest: undefined, extra: `crosses=${resultsScreened.length}${condStr}${brief ? ' [' + brief + ']' : ''}` });
-	const crossLines = filtered.map((r, i) => {
-		const date = r.crossDate ? String(r.crossDate).slice(0, 10) : '?';
-		const ret = r.returnSinceCrossPct != null ? ` ret:${r.returnSinceCrossPct >= 0 ? '+' : ''}${r.returnSinceCrossPct}%` : '';
-		const hd = r.histogramDelta != null ? ` histDelta:${r.histogramDelta}` : '';
-		const prev = r.prevCross ? ` prev:${r.prevCross.type}(${r.prevCross.barsAgo}bars)` : '';
-		return `[${i}] ${r.pair} ${r.type} @${date} barsAgo:${r.barsAgo} macd:${r.macdAtCross} sig:${r.signalAtCross}${hd}${ret}${prev}`;
-	});
-	const summary = baseSummary + `\n\n📋 全${filtered.length}件のクロス詳細:\n` + crossLines.join('\n')
-		+ `\n\n---\n📌 含まれるもの: MACDクロス検出（種類・日付・ヒストグラム差分・リターン率・前回クロス）`
-		+ `\n📌 含まれないもの: 他のテクニカル指標（RSI・BB等）、出来高分析、板情報`
-		+ `\n📌 補完ツール: analyze_indicators（全指標詳細）, analyze_market_signal（総合シグナル）, get_flow_metrics（出来高）`;
+	const screenCrosses: MacdScreenCross[] = filtered.map(r => ({
+		pair: r.pair,
+		type: r.type,
+		crossDate: r.crossDate,
+		barsAgo: r.barsAgo,
+		macdAtCross: r.macdAtCross,
+		signalAtCross: r.signalAtCross,
+		histogramDelta: r.histogramDelta,
+		returnSinceCrossPct: r.returnSinceCrossPct,
+		prevCross: r.prevCross ? { type: r.prevCross.type, barsAgo: r.prevCross.barsAgo } : null,
+	}));
+	const summary = buildMacdScreenText({ baseSummary, crosses: screenCrosses, includeForming: false, includeStats: false });
 	const data: Record<string, unknown> = { results: resultsScreened };
 	if (view === 'detailed') {
 		data.resultsDetailed = allDetailed;
@@ -313,67 +426,7 @@ async function singlePairMode(
 	}
 
 	// Build summary text
-	const lines: string[] = [];
-	const pairStr = String(pair).toUpperCase();
-	lines.push(lastClose != null ? `${pairStr} close=${Number(lastClose).toLocaleString()}円` : pairStr);
-
-	if (forming) {
-		const f = forming as any;
-		if (f.status === 'forming_golden' || f.status === 'forming_dead') {
-			const days = f.estimatedCrossDays != null ? (f.estimatedCrossDays <= 1.5 ? '1-2日以内' : `${Math.round(f.estimatedCrossDays)}日程度`) : '不明';
-			const compStr = f.completion != null ? `${Math.round((f.completion || 0) * 100)}%` : 'n/a';
-			const crossType = f.status === 'forming_golden' ? 'ゴールデン' : 'デッド';
-			const fmt = (v: any, d = 2) => (v == null ? 'n/a' : Number(v).toFixed(d));
-			const estDate = (() => {
-				if (f.estimatedCrossDays == null) return '不明';
-				try { return dayjs().add(Math.max(0, Math.round(f.estimatedCrossDays)), 'day').format('YYYY-MM-DD'); } catch { return '不明'; }
-			})();
-			lines.push(`${crossType}クロス形成中: 完成度${compStr}、推定クロス日 ${estDate}（あと${days}）`);
-			lines.push(`- ヒストグラム: ${fmt(f.currentHistogram, 2)} (直近5本: [${(f.histogramTrend || []).map((v: any) => v == null ? 'n/a' : String(v)).join(', ')}])`);
-			lines.push(`- MACD: ${fmt(f.currentMACD, 2)} / Signal: ${fmt(f.currentSignal, 2)}`);
-		} else if (f.status === 'crossed_recently') {
-			const dateStr = f.lastCrossDate ? String(f.lastCrossDate).slice(0, 10) : '不明';
-			const agoStr = f.lastCrossBarsAgo != null ? `${f.lastCrossBarsAgo}日前` : '直近';
-			const typ = f.lastCrossType === 'dead' ? 'デッド' : 'ゴールデン';
-			lines.push(`${typ}クロス発生: ${dateStr}（${agoStr}）`);
-		} else {
-			lines.push('現在クロス形成の兆候なし');
-		}
-	}
-
-	if (statistics && history) {
-		const gStats = (statistics as any).golden;
-		const dStats = (statistics as any).dead;
-		const goldenCrosses = (history as any).goldenCrosses as CrossPerf[];
-		const deadCrosses = (history as any).deadCrosses as CrossPerf[];
-		if (gStats.totalSamples > 0) {
-			const avgStr = gStats.avgDay5Return != null ? `${gStats.avgDay5Return >= 0 ? '+' : ''}${gStats.avgDay5Return}%` : 'n/a';
-			const upCount = goldenCrosses.filter(c => (c.performance.day5 ?? -Infinity) > 0).length;
-			const rangeStr = (gStats.worstCase != null && gStats.bestCase != null)
-				? `${gStats.worstCase >= 0 ? '+' : ''}${gStats.worstCase}% 〜 ${gStats.bestCase >= 0 ? '+' : ''}${gStats.bestCase}%`
-				: 'n/a';
-			lines.push(`過去${historyDays}日: ゴールデンクロス${goldenCrosses.length}回`);
-			const upPct = goldenCrosses.length ? Math.round((upCount / goldenCrosses.length) * 100) : 0;
-			lines.push(`- クロス後5日間: 平均${avgStr}、上昇した割合 ${upCount}/${goldenCrosses.length}回（${upPct}%）`);
-			lines.push(`- 範囲: ${rangeStr}`);
-		}
-		if (dStats.totalSamples > 0) {
-			const avgStr = dStats.avgDay5Return != null ? `${dStats.avgDay5Return >= 0 ? '+' : ''}${dStats.avgDay5Return}%` : 'n/a';
-			const downCount = deadCrosses.filter(c => (c.performance.day5 ?? Infinity) < 0).length;
-			const rangeStr = (dStats.worstCase != null && dStats.bestCase != null)
-				? `${dStats.worstCase >= 0 ? '+' : ''}${dStats.worstCase}% 〜 ${dStats.bestCase >= 0 ? '+' : ''}${dStats.bestCase}%`
-				: 'n/a';
-			lines.push(`デッドクロス${deadCrosses.length}回`);
-			const downPct = deadCrosses.length ? Math.round((downCount / deadCrosses.length) * 100) : 0;
-			lines.push(`- クロス後5日間: 平均${avgStr}、下落した割合 ${downCount}/${deadCrosses.length}回（${downPct}%）`);
-			lines.push(`- 範囲: ${rangeStr}`);
-		}
-	}
-
-	const summaryText = lines.join('\n')
-		+ `\n\n---\n📌 含まれるもの: MACD分析（${includeForming ? 'forming検出' : ''}${includeForming && includeStats ? '・' : ''}${includeStats ? '過去統計' : ''}）`
-		+ `\n📌 含まれないもの: 他のテクニカル指標（RSI・BB等）、出来高分析、板情報`
-		+ `\n📌 補完ツール: analyze_indicators（全指標詳細）, analyze_market_signal（総合シグナル）, get_flow_metrics（出来高）`;
+	const summaryText = buildMacdSingleText({ pair, lastClose, forming, statistics, history, historyDays, includeForming, includeStats });
 
 	return ok(summaryText, { forming, history, statistics }, { pair, historyDays, performanceWindows, minHistogramForForming, includeForming, includeStats });
 }

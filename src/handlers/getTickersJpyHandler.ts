@@ -3,6 +3,59 @@ import type { ToolDefinition } from '../tool-definition.js';
 import { z } from 'zod';
 import { formatPercent, formatPrice, formatVolumeJPY } from '../../lib/formatter.js';
 
+export interface NormalizedTicker {
+  pair: string;
+  lastN: number | null;
+  openN: number | null;
+  highN: number | null;
+  lowN: number | null;
+  buyN: number | null;
+  sellN: number | null;
+  changeN: number | null;
+  volN: number | null;
+  volumeInJPY: number | null;
+}
+
+/** ranked ビューのテキスト組み立て — テスト可能な純粋関数 */
+export function buildTickersJpyRankedText(
+  totalItems: number,
+  ranked: NormalizedTicker[],
+  sortBy: string,
+  order: string,
+  limit: number,
+): string {
+  const lines = ranked.map((r, i) => {
+    const chg = formatPercent(r.changeN, { sign: true, digits: 2 });
+    const px = formatPrice(r.lastN);
+    const volTxt = formatVolumeJPY(r.volumeInJPY);
+    return `${i + 1}. ${String(r.pair).toUpperCase().replace('_', '/')} ${chg}（${px}、出来高${volTxt}）`;
+  });
+  return [
+    `全${totalItems}ペア取得（sortBy=${sortBy}, ${order}, top${limit}）`,
+    '',
+    lines.join('\n'),
+  ].join('\n');
+}
+
+/** items ビューのテキスト組み立て — テスト可能な純粋関数 */
+export function buildTickersJpyItemsText(items: NormalizedTicker[]): string {
+  const lines: string[] = [];
+  lines.push(`全${items.length}ペア取得`);
+  lines.push('');
+  const top5 = items.slice(0, 5);
+  for (const it of top5) {
+    const pairDisplay = String(it.pair).toUpperCase().replace('_', '/');
+    const priceStr = formatPrice(it.lastN);
+    const changeStr = formatPercent(it.changeN, { sign: true, digits: 2 });
+    const volStr = formatVolumeJPY(it.volumeInJPY);
+    lines.push(`${pairDisplay}: ${priceStr} (${changeStr}) 出来高${volStr}`);
+  }
+  if (items.length > 5) {
+    lines.push(`... 他${items.length - 5}ペア`);
+  }
+  return lines.join('\n');
+}
+
 export const toolDef: ToolDefinition = {
 	name: 'get_tickers_jpy',
 	description: '[All Tickers / Market Overview] 全JPYペアのティッカー一覧（tickers / ranking / market overview）を取得。変化率・出来高でランキング表示可能。',
@@ -61,17 +114,7 @@ export const toolDef: ToolDefinition = {
 		const ranked = sorted.slice(0, Number(limit || 5));
 
 		if (view === 'ranked') {
-			const lines = ranked.map((r, i) => {
-				const chg = formatPercent(r.changeN, { sign: true, digits: 2 });
-				const px = fmtPrice(r.lastN);
-				const volTxt = formatVolume(r.volumeInJPY);
-				return `${i + 1}. ${String(r.pair).toUpperCase().replace('_', '/')} ${chg}（${px}、出来高${volTxt}）`;
-			});
-			const text = [
-				`全${items.length}ペア取得（sortBy=${sortBy}, ${order}, top${limit}）`,
-				'',
-				lines.join('\n'),
-			].join('\n');
+			const text = buildTickersJpyRankedText(items.length, ranked, sortBy, order, limit);
 			return {
 				content: [{ type: 'text', text }],
 				structuredContent: {
@@ -84,21 +127,7 @@ export const toolDef: ToolDefinition = {
 		}
 
 		// view=items: 全データ一覧（上位5件をサマリ表示）
-		const top5 = norm.slice(0, 5);
-		const lines: string[] = [];
-		lines.push(`全${norm.length}ペア取得`);
-		lines.push('');
-		for (const it of top5) {
-			const pairDisplay = String(it.pair).toUpperCase().replace('_', '/');
-			const priceStr = fmtPrice(it.lastN);
-			const changeStr = formatPercent(it.changeN, { sign: true, digits: 2 });
-			const volStr = formatVolume(it.volumeInJPY);
-			lines.push(`${pairDisplay}: ${priceStr} (${changeStr}) 出来高${volStr}`);
-		}
-		if (norm.length > 5) {
-			lines.push(`... 他${norm.length - 5}ペア`);
-		}
-		const text = lines.join('\n');
+		const text = buildTickersJpyItemsText(norm);
 		return {
 			content: [{ type: 'text', text }],
 			structuredContent: { ...res, data: { items: norm } } as Record<string, unknown>,

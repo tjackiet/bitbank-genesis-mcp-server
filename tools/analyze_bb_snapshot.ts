@@ -6,6 +6,66 @@ import { nowIso } from '../lib/datetime.js';
 import { AnalyzeBbSnapshotInputSchema, AnalyzeBbSnapshotOutputSchema } from '../src/schemas.js';
 import type { ToolDefinition } from '../src/tool-definition.js';
 
+export interface BbTimeseriesEntry {
+  time: string;
+  zScore: number | null;
+  bandWidthPct: number | null;
+}
+
+export interface BuildBbDefaultTextInput {
+  baseSummary: string;
+  position: string | null;
+  bandwidth_state: string | null;
+  volatility_trend: string | null;
+  bandWidthPct_percentile: number | null;
+  current_vs_avg: string | null;
+  signals: string[];
+  next_steps: {
+    if_need_detail: string;
+    if_need_visualization: string;
+    if_extreme_detected?: string;
+  };
+  mid: number | null;
+  upper: number | null;
+  lower: number | null;
+  zScore: number | null;
+  bandWidthPct: number | null;
+  timeseries: BbTimeseriesEntry[] | null;
+}
+
+/** テキスト組み立て（BBデフォルトモード表示）— テスト可能な純粋関数 */
+export function buildBbDefaultText(input: BuildBbDefaultTextInput): string {
+  const { baseSummary, position, bandwidth_state, volatility_trend, bandWidthPct_percentile, current_vs_avg, signals, next_steps, mid, upper, lower, zScore, bandWidthPct, timeseries } = input;
+  return [
+    String(baseSummary),
+    '',
+    `Position: ${position ?? 'n/a'}`,
+    `Band State: ${bandwidth_state ?? 'n/a'}`,
+    `Volatility Trend: ${volatility_trend ?? 'n/a'}`,
+    ...(bandWidthPct_percentile != null ? [
+      `Band Width Percentile: ${bandWidthPct_percentile}th (${current_vs_avg} vs avg)`
+    ] : []),
+    '',
+    'Signals:',
+    ...(signals && signals.length ? signals.map((s) => `- ${s}`) : ['- None']),
+    '',
+    'Next Steps:',
+    `- ${next_steps.if_need_detail}`,
+    `- ${next_steps.if_need_visualization}`,
+    '',
+    '📊 数値データ:',
+    `BB middle:${mid} upper:${upper} lower:${lower} zScore:${zScore?.toFixed(3)} bw:${bandWidthPct?.toFixed(2)}%`,
+    ...(timeseries ? [
+      '',
+      `📋 直近${timeseries.length}本のBB推移:`,
+      ...timeseries.map((t) => `${t.time.slice(0, 10)} z:${t.zScore} bw:${t.bandWidthPct}%`),
+    ] : []),
+  ].join('\n')
+    + `\n\n---\n📌 含まれるもの: ボリンジャーバンド（±2σ）、Zスコア、バンド幅、直近30本の推移`
+    + `\n📌 含まれないもの: 他のテクニカル指標（RSI・MACD・一目均衡表）、出来高フロー、板情報`
+    + `\n📌 補完ツール: analyze_indicators（他指標）, analyze_ichimoku_snapshot（一目）, get_flow_metrics（出来高）, get_volatility_metrics（ボラ詳細）`;
+}
+
 export default async function analyzeBbSnapshot(
   pair: string = 'btc_jpy',
   type: string = '1day',
@@ -146,34 +206,22 @@ export default async function analyzeBbSnapshot(
       };
       const data = { mode, price: close ?? null, bb: { middle: mid, upper, lower, zScore, bandWidthPct }, interpretation, context, signals, next_steps } as any;
       // content 強化用: LLM が本文だけ見ても要点が掴めるように複数行の要約を生成
-      const summaryLines = [
-        String(summaryBase),
-        '',
-        `Position: ${interpretation.position ?? 'n/a'}`,
-        `Band State: ${interpretation.bandwidth_state ?? 'n/a'}`,
-        `Volatility Trend: ${interpretation.volatility_trend ?? 'n/a'}`,
-        ...(context.bandWidthPct_percentile != null ? [
-          `Band Width Percentile: ${context.bandWidthPct_percentile}th (${context.current_vs_avg} vs avg)`
-        ] : []),
-        '',
-        'Signals:',
-        ...(signals && signals.length ? signals.map((s) => `- ${s}`) : ['- None']),
-        '',
-        'Next Steps:',
-        `- ${next_steps.if_need_detail}`,
-        `- ${next_steps.if_need_visualization}`,
-        '',
-        '📊 数値データ:',
-        `BB middle:${mid} upper:${upper} lower:${lower} zScore:${zScore?.toFixed(3)} bw:${bandWidthPct?.toFixed(2)}%`,
-        ...(timeseries ? [
-          '',
-          `📋 直近${timeseries.length}本のBB推移:`,
-          ...timeseries.map((t) => `${t.time.slice(0, 10)} z:${t.zScore} bw:${t.bandWidthPct}%`),
-        ] : []),
-      ].join('\n')
-        + `\n\n---\n📌 含まれるもの: ボリンジャーバンド（±2σ）、Zスコア、バンド幅、直近30本の推移`
-        + `\n📌 含まれないもの: 他のテクニカル指標（RSI・MACD・一目均衡表）、出来高フロー、板情報`
-        + `\n📌 補完ツール: analyze_indicators（他指標）, analyze_ichimoku_snapshot（一目）, get_flow_metrics（出来高）, get_volatility_metrics（ボラ詳細）`;
+      const summaryLines = buildBbDefaultText({
+        baseSummary: summaryBase,
+        position: interpretation.position,
+        bandwidth_state: interpretation.bandwidth_state,
+        volatility_trend: interpretation.volatility_trend,
+        bandWidthPct_percentile: context.bandWidthPct_percentile,
+        current_vs_avg: context.current_vs_avg,
+        signals,
+        next_steps,
+        mid,
+        upper,
+        lower,
+        zScore,
+        bandWidthPct,
+        timeseries,
+      });
       const meta = createMeta(chk.pair, { type, count: indRes.data.normalized.length, mode, extra: { timeseries: timeseries ? { last_30_candles: timeseries } : undefined, metadata: { calculation_params: { period: 20, std_dev_multiplier: 2 }, data_quality: 'complete', last_updated: nowIso() } } });
       return AnalyzeBbSnapshotOutputSchema.parse(ok(summaryLines, data, meta as any)) as any;
     }

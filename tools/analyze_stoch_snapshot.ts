@@ -11,6 +11,51 @@ const DEFAULT_K_PERIOD = 14;
 const DEFAULT_SMOOTH_K = 3;
 const DEFAULT_SMOOTH_D = 3;
 
+export interface BuildStochSnapshotTextInput {
+  baseSummary: string;
+  kStr: string;
+  dStr: string;
+  zoneJp: string;
+  kPeriod: number;
+  smoothK: number;
+  smoothD: number;
+  crossDesc: string;
+  divType: 'bullish' | 'bearish' | 'none';
+  divDesc: string;
+  recentCrosses: Array<{
+    type: 'bullish_cross' | 'bearish_cross';
+    barsAgo: number;
+    date: string;
+    zone: 'overbought' | 'oversold' | 'neutral';
+  }>;
+}
+
+/** テキスト組み立て（Stochスナップショット）— テスト可能な純粋関数 */
+export function buildStochSnapshotText(input: BuildStochSnapshotTextInput): string {
+  const { baseSummary, kStr, dStr, zoneJp, kPeriod, smoothK, smoothD, crossDesc, divType, divDesc, recentCrosses } = input;
+  const recentLines = recentCrosses.slice(-5).reverse().map(rc => {
+    const zJp = rc.zone === 'overbought' ? '買われすぎ圏' : rc.zone === 'oversold' ? '売られすぎ圏' : 'ニュートラル圏';
+    return `${rc.type === 'bullish_cross' ? '↑' : '↓'} ${rc.type} - ${rc.barsAgo} bars ago (${rc.date}) [${zJp}]`;
+  });
+  return [
+    baseSummary,
+    '',
+    `%K: ${kStr}`,
+    `%D: ${dStr}`,
+    `ゾーン: ${zoneJp}`,
+    `パラメータ: (${kPeriod}, ${smoothK}, ${smoothD})`,
+    '',
+    `クロス: ${crossDesc}`,
+    ...(divType !== 'none' ? [`ダイバージェンス: ${divDesc}`] : []),
+    ...(recentLines.length ? ['', 'Recent Crosses:', ...recentLines] : []),
+    '',
+    '---',
+    '📌 含まれるもの: %K・%D の値、ゾーン判定、クロスオーバー、ダイバージェンス',
+    '📌 含まれないもの: RSI・SMA・EMA・MACD・BB・一目均衡表、出来高フロー',
+    '📌 補完ツール: analyze_indicators（他指標）, analyze_rsi_snapshot（RSI）, analyze_ema_snapshot（EMA）',
+  ].filter(Boolean).join('\n');
+}
+
 function zoneOf(k: number | null): 'overbought' | 'oversold' | 'neutral' {
 	if (k == null) return 'neutral';
 	if (k >= 80) return 'overbought';
@@ -145,27 +190,19 @@ export default async function analyzeStochSnapshot(
 		const kStr = stochK != null ? stochK.toFixed(2) : 'n/a';
 		const dStr = stochD != null ? stochD.toFixed(2) : 'n/a';
 		const zoneJp = zone === 'overbought' ? '買われすぎ (>80)' : zone === 'oversold' ? '売られすぎ (<20)' : 'ニュートラル';
-		const recentLines = recentCrosses.slice(-5).reverse().map(rc => {
-			const zJp = rc.zone === 'overbought' ? '買われすぎ圏' : rc.zone === 'oversold' ? '売られすぎ圏' : 'ニュートラル圏';
-			return `${rc.type === 'bullish_cross' ? '↑' : '↓'} ${rc.type} - ${rc.barsAgo} bars ago (${rc.date}) [${zJp}]`;
+		const summaryText = buildStochSnapshotText({
+			baseSummary: formatSummary({ pair: chk.pair, latest: close ?? undefined, extra: `Stoch(%K/${kStr}, %D/${dStr}) zone=${zone}` }),
+			kStr,
+			dStr,
+			zoneJp,
+			kPeriod,
+			smoothK,
+			smoothD,
+			crossDesc,
+			divType,
+			divDesc,
+			recentCrosses,
 		});
-		const summaryText = [
-			formatSummary({ pair: chk.pair, latest: close ?? undefined, extra: `Stoch(%K/${kStr}, %D/${dStr}) zone=${zone}` }),
-			'',
-			`%K: ${kStr}`,
-			`%D: ${dStr}`,
-			`ゾーン: ${zoneJp}`,
-			`パラメータ: (${kPeriod}, ${smoothK}, ${smoothD})`,
-			'',
-			`クロス: ${crossDesc}`,
-			...(divType !== 'none' ? [`ダイバージェンス: ${divDesc}`] : []),
-			...(recentLines.length ? ['', 'Recent Crosses:', ...recentLines] : []),
-			'',
-			'---',
-			'📌 含まれるもの: %K・%D の値、ゾーン判定、クロスオーバー、ダイバージェンス',
-			'📌 含まれないもの: RSI・SMA・EMA・MACD・BB・一目均衡表、出来高フロー',
-			'📌 補完ツール: analyze_indicators（他指標）, analyze_rsi_snapshot（RSI）, analyze_ema_snapshot（EMA）',
-		].filter(Boolean).join('\n');
 
 		const data = {
 			latest: { close },
