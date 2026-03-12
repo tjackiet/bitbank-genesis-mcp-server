@@ -4,6 +4,225 @@ import type { ToolDefinition } from '../tool-definition.js';
 import { formatPriceJPY, formatPercent } from '../../lib/formatter.js';
 import { toDisplayTime, nowIso } from '../../lib/datetime.js';
 
+// ── テキスト組み立て: 純粋エクスポート関数 ──
+
+export interface BuildIndicatorsTextInput {
+	pair: string;
+	type: string;
+	nowJst: string;
+	close: number | null;
+	prev: number | null;
+	deltaPrev: { amt: number; pct: number } | null;
+	deltaLabel: string;
+	trend: string;
+	// RSI
+	rsi: number | null;
+	recentRsiFormatted: string[];
+	rsiUnitLabel: string;
+	// MACD
+	macdHist: number | null;
+	lastMacdCross: { type: 'golden' | 'dead'; barsAgo: number } | null;
+	divergence: string | null;
+	// SMA
+	sma25: number | null;
+	sma75: number | null;
+	sma200: number | null;
+	s25Slope: number | null;
+	s75Slope: number | null;
+	s200Slope: number | null;
+	arrangement: string;
+	crossInfo: string | null;
+	// BB
+	bbMid: number | null;
+	bbUp: number | null;
+	bbLo: number | null;
+	sigmaZ: number | null;
+	bandWidthPct: number | null;
+	bwTrend: string | null;
+	sigmaHistory: Array<{ off: number; z: number } | null> | null;
+	// Ichimoku
+	tenkan: number | null;
+	kijun: number | null;
+	spanA: number | null;
+	spanB: number | null;
+	cloudTop: number | null;
+	cloudBot: number | null;
+	cloudPos: string;
+	cloudThickness: number | null;
+	cloudThicknessPct: number | null;
+	chikouBull: boolean | null;
+	threeSignals: { judge: string };
+	toCloudDistance: number | null;
+	ichimokuConvSlope: number | null;
+	ichimokuBaseSlope: number | null;
+	// Stoch
+	stochK: number | null;
+	stochD: number | null;
+	stochPrevK: number | null;
+	stochPrevD: number | null;
+	// OBV
+	obvVal: number | null;
+	obvSma20: number | null;
+	obvTrend: string | null;
+	obvPrev: number | null;
+	obvUnit: string;
+}
+
+export function buildIndicatorsText(input: BuildIndicatorsTextInput): string {
+	const {
+		pair, type, nowJst, close, prev, deltaPrev, deltaLabel, trend,
+		rsi, recentRsiFormatted, rsiUnitLabel,
+		macdHist, lastMacdCross, divergence,
+		sma25, sma75, sma200, s25Slope, s75Slope, s200Slope, arrangement, crossInfo,
+		bbMid, bbUp, bbLo, sigmaZ, bandWidthPct, bwTrend, sigmaHistory,
+		tenkan, kijun, spanA, spanB, cloudTop: _cloudTop, cloudBot: _cloudBot, cloudPos,
+		cloudThickness, cloudThicknessPct, chikouBull, threeSignals, toCloudDistance,
+		ichimokuConvSlope, ichimokuBaseSlope,
+		stochK, stochD, stochPrevK, stochPrevD,
+		obvVal, obvSma20, obvTrend, obvPrev, obvUnit,
+	} = input;
+
+	const fmtJPY = formatPriceJPY;
+	const fmtPct = (v: number | null | undefined, digits = 1) => formatPercent(v, { sign: true, digits });
+	const vsCurPct = (ref?: number | null) => {
+		if (close == null || ref == null || !Number.isFinite(close) || !Number.isFinite(ref) || ref === 0) return 'n/a';
+		const pct = ((ref - close) / Math.abs(close)) * 100;
+		const dir = ref >= close ? '上方' : '下方';
+		return `${fmtPct(pct, 1)} ${dir}`;
+	};
+	const slopeSym = (s: number | null | undefined) => (s == null ? '➡️' : (s > 0 ? '📈' : (s < 0 ? '📉' : '➡️')));
+	const rsiInterp = (val: number | null) => {
+		if (val == null) return '—';
+		if (val < 30) return '売られすぎ圏（反発の可能性）';
+		if (val < 50) return '弱め（反発余地）';
+		if (val < 70) return '中立〜強め';
+		return '買われすぎ圏（反落の可能性）';
+	};
+
+	const lines: string[] = [];
+	// Header with time and 24h change
+	lines.push(`=== ${String(pair).toUpperCase()} ${String(type)} 分析 ===`);
+	lines.push(`${nowJst} 現在`);
+	const chgLine = deltaPrev ? `(${deltaLabel}: ${fmtPct(deltaPrev.pct, 1)})` : '';
+	lines.push(deltaPrev ? `${fmtJPY(close)} ${chgLine}` : fmtJPY(close));
+	lines.push('');
+	// 総合判定（簡潔）
+	lines.push('【総合判定】');
+	const trendText = trend === 'strong_downtrend' ? '強い下降トレンド ⚠️' : (trend === 'uptrend' ? '上昇トレンド' : '中立/レンジ');
+	const rsiHint = (rsi == null) ? '—' : (Number(rsi) < 30 ? '売られすぎ' : (Number(rsi) > 70 ? '買われすぎ' : '中立圏'));
+	const bwState = bandWidthPct == null ? '—' : (bandWidthPct < 8 ? 'スクイーズ' : (bandWidthPct > 20 ? 'エクスパンション' : '標準'));
+	lines.push(`  トレンド: ${trendText}`);
+	lines.push(`  勢い: RSI=${rsi ?? 'n/a'} → ${rsiHint}`);
+	lines.push(`  リスク: BB幅=${bandWidthPct != null ? bandWidthPct + '%' : 'n/a'} → ${bwState}${bwTrend ? `（${bwTrend}）` : ''}`);
+	lines.push('');
+	// Momentum
+	lines.push('【モメンタム】');
+	lines.push(`  RSI(14): ${rsi ?? 'n/a'} → ${rsiInterp(Number(rsi))}`);
+	if (recentRsiFormatted.length >= 2) {
+		lines.push(`    【RSI推移（直近${recentRsiFormatted.length}${rsiUnitLabel}）】`);
+		lines.push('');
+		lines.push(`    ${recentRsiFormatted.join(' → ')}`);
+	}
+	const macdHistFmt = macdHist == null ? 'n/a' : `${Math.round(Number(macdHist)).toLocaleString()}`;
+	const macdHint = (macdHist == null) ? '—' : (Number(macdHist) >= 0 ? '強気継続（プラス＝上昇圧力）' : '弱気継続（マイナス＝下落圧力）');
+	lines.push(`  MACD: hist=${macdHistFmt} → ${macdHint}`);
+	const crossStr = lastMacdCross ? `${lastMacdCross.type === 'golden' ? 'ゴールデン' : 'デッド'}クロス: ${lastMacdCross.barsAgo}本前` : '直近クロス: なし';
+	lines.push(`    ・${crossStr}`);
+	lines.push(`    ・ダイバージェンス: ${divergence ?? 'なし'}`);
+	lines.push('');
+	// Trend (SMA)
+	lines.push('【トレンド（移動平均線）】');
+	lines.push(`  配置: ${arrangement}`);
+	lines.push(`  SMA(25): ${fmtJPY(sma25)} (${vsCurPct(sma25)}) ${slopeSym(s25Slope)}`);
+	lines.push(`  SMA(75): ${fmtJPY(sma75)} (${vsCurPct(sma75)}) ${slopeSym(s75Slope)}`);
+	lines.push(`  SMA(200): ${fmtJPY(sma200)} (${vsCurPct(sma200)}) ${slopeSym(s200Slope)}`);
+	if (crossInfo) lines.push(`  ${crossInfo}`);
+	lines.push('');
+	// Volatility (BB)
+	lines.push('【ボラティリティ（ボリンジャーバンド±2σ）】');
+	lines.push(`  現在位置: ${sigmaZ != null ? `${sigmaZ}σ` : 'n/a'} → ${sigmaZ != null ? (sigmaZ <= -1 ? '売られすぎ' : (sigmaZ >= 1 ? '買われすぎ' : '中立')) : '—'}`);
+	lines.push(`  middle: ${fmtJPY(bbMid)} (${vsCurPct(bbMid)})`);
+	lines.push(`  upper:  ${fmtJPY(bbUp)} (${vsCurPct(bbUp)})`);
+	lines.push(`  lower:  ${fmtJPY(bbLo)} (${vsCurPct(bbLo)})${(bbLo != null && close != null && Number(bbLo) < Number(close)) ? '' : ' ← 現在価格に近い'}`);
+	if (bandWidthPct != null) lines.push(`  バンド幅: ${bandWidthPct}% → ${bwTrend ?? '—'}`);
+	if (sigmaHistory && sigmaHistory[0] && sigmaHistory[1]) {
+		const ago5 = sigmaHistory[0]?.z; const curZ = sigmaHistory[1]?.z;
+		lines.push('  過去推移:');
+		if (ago5 != null) lines.push(`    ・5日前: ${ago5}σ`);
+		if (curZ != null) lines.push(`    ・現在: ${curZ}σ`);
+	}
+	lines.push('');
+	// Ichimoku
+	lines.push('【一目均衡表】');
+	lines.push(`  現在位置: ${cloudPos === 'below_cloud' ? '雲の下 → 弱気' : (cloudPos === 'above_cloud' ? '雲の上 → 強気' : '雲の中 → 中立')}`);
+	lines.push(`  転換線: ${fmtJPY(tenkan)} (${vsCurPct(tenkan)}) ${slopeSym(ichimokuConvSlope)}`);
+	lines.push(`  基準線: ${fmtJPY(kijun)} (${vsCurPct(kijun)}) ${slopeSym(ichimokuBaseSlope)}`);
+	lines.push(`  先行スパンA: ${fmtJPY(spanA)} (${vsCurPct(spanA)})`);
+	lines.push(`  先行スパンB: ${fmtJPY(spanB)} (${vsCurPct(spanB)})`);
+	if (cloudThickness != null) lines.push(`  雲の厚さ: ${Math.round(cloudThickness).toLocaleString()}円（${cloudThicknessPct != null ? `${cloudThicknessPct.toFixed(1)}%` : 'n/a'}）`);
+	if (chikouBull != null) lines.push(`  遅行スパン: ${chikouBull ? '価格より上 → 強気' : '価格より下 → 弱気'}`);
+	if (threeSignals) lines.push(`  三役判定: ${threeSignals.judge}`);
+	if (toCloudDistance != null && cloudPos === 'below_cloud') lines.push(`  雲突入まで: ${toCloudDistance.toFixed(1)}%`);
+	lines.push('');
+	// Stochastic RSI
+	lines.push('【ストキャスティクスRSI】');
+	if (stochK != null && stochD != null) {
+		lines.push(`  %K: ${Number(stochK).toFixed(1)}  %D: ${Number(stochD).toFixed(1)}`);
+		const stochZone = Number(stochK) <= 20 ? '売られすぎゾーン' : (Number(stochK) >= 80 ? '買われすぎゾーン' : '中立圏');
+		const stochStrength = Number(stochK) <= 10 ? '（強い売られすぎ）' : (Number(stochK) >= 90 ? '（強い買われすぎ）' : '');
+		lines.push(`  判定: ${stochZone}${stochStrength}`);
+		if (stochPrevK != null && stochPrevD != null) {
+			const prevBelow = Number(stochPrevK) < Number(stochPrevD);
+			const curAbove = Number(stochK) > Number(stochD);
+			const prevAbove = Number(stochPrevK) > Number(stochPrevD);
+			const curBelow = Number(stochK) < Number(stochD);
+			if (prevBelow && curAbove) {
+				lines.push('  クロス: %Kが%Dを上抜け（買いシグナル候補）');
+			} else if (prevAbove && curBelow) {
+				lines.push('  クロス: %Kが%Dを下抜け（売りシグナル候補）');
+			} else {
+				lines.push('  クロス: なし');
+			}
+		}
+	} else {
+		lines.push('  データ不足');
+	}
+	lines.push('');
+	// OBV
+	lines.push('【OBV (On-Balance Volume)】');
+	if (obvVal != null) {
+		lines.push(`  現在値: ${Number(obvVal).toLocaleString(undefined, { maximumFractionDigits: 2 })} ${obvUnit}`.trim());
+		if (obvSma20 != null) lines.push(`  SMA(20): ${Number(obvSma20).toLocaleString(undefined, { maximumFractionDigits: 2 })} ${obvUnit}`.trim());
+		if (obvTrend != null) {
+			const obvTrendLabel = obvTrend === 'rising' ? 'OBV > SMA → 出来高が上昇を支持' : (obvTrend === 'falling' ? 'OBV < SMA → 出来高が下落を支持' : 'OBV ≈ SMA → 出来高中立');
+			lines.push(`  トレンド: ${obvTrendLabel}`);
+		}
+		// Divergence check: price direction vs OBV direction over recent bars
+		if (obvPrev != null && prev != null && close != null) {
+			const priceUp = Number(close) > Number(prev);
+			const priceDn = Number(close) < Number(prev);
+			const obvUp = Number(obvVal) > Number(obvPrev);
+			const obvDn = Number(obvVal) < Number(obvPrev);
+			if (priceUp && obvDn) {
+				lines.push('  ダイバージェンス: ベアリッシュ（価格↑・OBV↓）→ 上昇の持続力に疑問');
+			} else if (priceDn && obvUp) {
+				lines.push('  ダイバージェンス: ブルリッシュ（価格↓・OBV↑）→ 反発の可能性');
+			} else {
+				lines.push('  ダイバージェンス: なし（価格とOBVが同方向）');
+			}
+		}
+	} else {
+		lines.push('  データ不足');
+	}
+	lines.push('');
+	lines.push('【次に確認すべきこと】');
+	lines.push('  ・より詳しく: analyze_bb_snapshot / analyze_ichimoku_snapshot / analyze_sma_snapshot');
+	lines.push('  ・転換サイン例: RSI>40, MACDヒストグラムのプラ転, 25日線の明確な上抜け');
+	lines.push('');
+	lines.push('詳細は structuredContent.data.indicators / chart を参照。');
+	return lines.join('\n');
+}
+
 export const toolDef: ToolDefinition = {
 	name: 'analyze_indicators',
 	description: '[Technical Indicators / RSI / MACD / SMA] テクニカル指標の総合分析（indicators / RSI / MACD / SMA / BB / Ichimoku / Stochastic RSI）。十分な limit を指定（例: 日足200本）。\n\n【重要】バックテストには run_backtest を使用。',
@@ -16,14 +235,6 @@ export const toolDef: ToolDefinition = {
 		const close = candles.at(-1)?.close ?? null;
 		const prev = candles.at(-2)?.close ?? null;
 		const nowJst = toDisplayTime(undefined) ?? nowIso();
-		const fmtJPY = formatPriceJPY;
-		const fmtPct = (v: number | null | undefined, digits = 1) => formatPercent(v, { sign: true, digits });
-		const vsCurPct = (ref?: number | null) => {
-			if (close == null || ref == null || !Number.isFinite(close) || !Number.isFinite(ref) || ref === 0) return 'n/a';
-			const pct = ((ref - close) / Math.abs(close)) * 100;
-			const dir = ref >= close ? '上方' : '下方';
-			return `${fmtPct(pct, 1)} ${dir}`;
-		};
 		const deltaPrev = (() => {
 			if (close == null || prev == null || !Number.isFinite(prev) || prev === 0) return null;
 			const amt = Number(close) - Number(prev);
@@ -49,15 +260,6 @@ export const toolDef: ToolDefinition = {
 			});
 		})();
 		const recentRsiFormatted = recentRsiRaw.map(v => (v == null ? 'n/a' : Number(v).toFixed(1)));
-		const rsiTrendLabel = (() => {
-			if (recentRsiRaw.length < 2) return null;
-			const first = recentRsiRaw.find(v => v != null);
-			const last = [...recentRsiRaw].reverse().find(v => v != null);
-			if (first == null || last == null) return null;
-			const diff = last - first;
-			if (Math.abs(diff) < 1) return '横ばい';
-			return diff > 0 ? '回復傾向' : '悪化傾向';
-		})();
 		const rsiUnitLabel = (() => {
 			const t = String(type ?? '').toLowerCase();
 			if (t.includes('day')) return '日';
@@ -79,8 +281,6 @@ export const toolDef: ToolDefinition = {
 		const bandWidthPct = (bbUp != null && bbLo != null && bbMid)
 			? Number((((bbUp - bbLo) / bbMid) * 100).toFixed(2))
 			: null;
-		const macdLine = ind.MACD_line ?? null;
-		const macdSignal = ind.MACD_signal ?? null;
 		const macdHist = ind.MACD_hist ?? null;
 		const spanA = ind.ICHIMOKU_spanA ?? null;
 		const spanB = ind.ICHIMOKU_spanB ?? null;
@@ -92,7 +292,6 @@ export const toolDef: ToolDefinition = {
 			? (close > cloudTop ? 'above_cloud' : (close < cloudBot ? 'below_cloud' : 'in_cloud'))
 			: 'unknown';
 		const trend = res?.data?.trend ?? 'unknown';
-		const count = res?.meta?.count ?? candles.length ?? 0;
 		// Helpers: slope and last cross
 		const slopeOf = (seriesKey: string, n = 5): number | null => {
 			const arr = Array.isArray(res?.data?.indicators?.series?.[seriesKey]) ? res.data.indicators.series[seriesKey] : null;
@@ -103,7 +302,6 @@ export const toolDef: ToolDefinition = {
 			if (!Number.isFinite(a) || !Number.isFinite(b) || len <= 1) return null;
 			return (b - a) / (len - 1);
 		};
-		const slopeSym = (s: number | null | undefined) => (s == null ? '➡️' : (s > 0 ? '📈' : (s < 0 ? '📉' : '➡️')));
 		const lastMacdCross = (() => {
 			const macdArr = Array.isArray(res?.data?.indicators?.series?.MACD_line) ? res.data.indicators.series.MACD_line : null;
 			const sigArr = Array.isArray(res?.data?.indicators?.series?.MACD_signal) ? res.data.indicators.series.MACD_signal : null;
@@ -126,7 +324,7 @@ export const toolDef: ToolDefinition = {
 			}
 			if (lastIdx == null) return null;
 			const barsAgo = (L - 1) - lastIdx;
-			return { type: lastType, barsAgo };
+			return { type: lastType as 'golden' | 'dead', barsAgo };
 		})();
 		const divergence = (() => {
 			// simple divergence check over last 14 bars using linear slope
@@ -156,11 +354,6 @@ export const toolDef: ToolDefinition = {
 			pts.sort((a, b) => a.v - b.v);
 			return pts.map(p => p.label).join(' < ');
 		})();
-		const devPct = (ma?: number | null) => {
-			if (!Number.isFinite(curNum) || !Number.isFinite(Number(ma))) return null;
-			return ((Number(ma) - curNum) / Math.abs(curNum)) * 100;
-		};
-		const s25Dev = devPct(sma25), s75Dev = devPct(sma75), s200Dev = devPct(sma200);
 		const s25Slope = slopeOf('SMA_25', 5), s75Slope = slopeOf('SMA_75', 5), s200Slope = slopeOf('SMA_200', 7);
 		// BB width trend and sigma history (last 5-7 bars)
 		const bbSeries = {
@@ -229,52 +422,7 @@ export const toolDef: ToolDefinition = {
 			}
 			return 0;
 		})();
-
-		const lines: string[] = [];
-		// Header with time and 24h change
-		lines.push(`=== ${String(pair).toUpperCase()} ${String(type)} 分析 ===`);
-		lines.push(`${nowJst} 現在`);
-		const chgLine = deltaPrev ? `(${deltaLabel}: ${fmtPct(deltaPrev.pct, 1)})` : '';
-		lines.push(deltaPrev ? `${fmtJPY(close)} ${chgLine}` : fmtJPY(close));
-		lines.push('');
-		// 総合判定（簡潔）
-		lines.push('【総合判定】');
-		const trendText = trend === 'strong_downtrend' ? '強い下降トレンド ⚠️' : (trend === 'uptrend' ? '上昇トレンド' : '中立/レンジ');
-		const rsiHint = (rsi == null) ? '—' : (Number(rsi) < 30 ? '売られすぎ' : (Number(rsi) > 70 ? '買われすぎ' : '中立圏'));
-		const bwState = bandWidthPct == null ? '—' : (bandWidthPct < 8 ? 'スクイーズ' : (bandWidthPct > 20 ? 'エクスパンション' : '標準'));
-		lines.push(`  トレンド: ${trendText}`);
-		lines.push(`  勢い: RSI=${rsi ?? 'n/a'} → ${rsiHint}`);
-		lines.push(`  リスク: BB幅=${bandWidthPct != null ? bandWidthPct + '%' : 'n/a'} → ${bwState}${bwTrend ? `（${bwTrend}）` : ''}`);
-		lines.push('');
-		// Momentum
-		lines.push('【モメンタム】');
-		const rsiInterp = (val: number | null) => {
-			if (val == null) return '—';
-			if (val < 30) return '売られすぎ圏（反発の可能性）';
-			if (val < 50) return '弱め（反発余地）';
-			if (val < 70) return '中立〜強め';
-			return '買われすぎ圏（反落の可能性）';
-		};
-		lines.push(`  RSI(14): ${rsi ?? 'n/a'} → ${rsiInterp(Number(rsi))}`);
-		if (recentRsiFormatted.length >= 2) {
-			lines.push(`    【RSI推移（直近${recentRsiFormatted.length}${rsiUnitLabel}）】`);
-			lines.push('');
-			lines.push(`    ${recentRsiFormatted.join(' → ')}`);
-		}
-		const macdHistFmt = macdHist == null ? 'n/a' : `${Math.round(Number(macdHist)).toLocaleString()}`;
-		const macdHint = (macdHist == null) ? '—' : (Number(macdHist) >= 0 ? '強気継続（プラス＝上昇圧力）' : '弱気継続（マイナス＝下落圧力）');
-		lines.push(`  MACD: hist=${macdHistFmt} → ${macdHint}`);
-		const crossStr = lastMacdCross ? `${lastMacdCross.type === 'golden' ? 'ゴールデン' : 'デッド'}クロス: ${lastMacdCross.barsAgo}本前` : '直近クロス: なし';
-		lines.push(`    ・${crossStr}`);
-		lines.push(`    ・ダイバージェンス: ${divergence ?? 'なし'}`);
-		lines.push('');
-		// Trend (SMA)
-		lines.push('【トレンド（移動平均線）】');
-		lines.push(`  配置: ${arrangement}`);
-		lines.push(`  SMA(25): ${fmtJPY(sma25)} (${vsCurPct(sma25)}) ${slopeSym(s25Slope)}`);
-		lines.push(`  SMA(75): ${fmtJPY(sma75)} (${vsCurPct(sma75)}) ${slopeSym(s75Slope)}`);
-		lines.push(`  SMA(200): ${fmtJPY(sma200)} (${vsCurPct(sma200)}) ${slopeSym(s200Slope)}`);
-		// Simple cross info
+		// Simple cross info (SMA 25/75)
 		const crossInfo = (() => {
 			const s25 = Array.isArray(res?.data?.indicators?.series?.SMA_25) ? res.data.indicators.series.SMA_25 : null;
 			const s75 = Array.isArray(res?.data?.indicators?.series?.SMA_75) ? res.data.indicators.series.SMA_75 : null;
@@ -290,100 +438,30 @@ export const toolDef: ToolDefinition = {
 			if (lastIdx == null) return '直近クロス: なし';
 			return `直近クロス: ${t === 'golden' ? 'ゴールデン' : 'デッド'}（${(L - 1 - lastIdx)}本前）`;
 		})();
-		if (crossInfo) lines.push(`  ${crossInfo}`);
-		lines.push('');
-		// Volatility (BB)
-		lines.push('【ボラティリティ（ボリンジャーバンド±2σ）】');
-		lines.push(`  現在位置: ${sigmaZ != null ? `${sigmaZ}σ` : 'n/a'} → ${sigmaZ != null ? (sigmaZ <= -1 ? '売られすぎ' : (sigmaZ >= 1 ? '買われすぎ' : '中立')) : '—'}`);
-		lines.push(`  middle: ${fmtJPY(bbMid)} (${vsCurPct(bbMid)})`);
-		lines.push(`  upper:  ${fmtJPY(bbUp)} (${vsCurPct(bbUp)})`);
-		lines.push(`  lower:  ${fmtJPY(bbLo)} (${vsCurPct(bbLo)})${(bbLo != null && close != null && Number(bbLo) < Number(close)) ? '' : ' ← 現在価格に近い'}`);
-		if (bandWidthPct != null) lines.push(`  バンド幅: ${bandWidthPct}% → ${bwTrend ?? '—'}`);
-		if (sigmaHistory && sigmaHistory[0] && sigmaHistory[1]) {
-			const ago5 = sigmaHistory[0]?.z; const curZ = sigmaHistory[1]?.z;
-			lines.push('  過去推移:');
-			if (ago5 != null) lines.push(`    ・5日前: ${ago5}σ`);
-			if (curZ != null) lines.push(`    ・現在: ${curZ}σ`);
-		}
-		lines.push('');
-		// Ichimoku
-		lines.push('【一目均衡表】');
-		lines.push(`  現在位置: ${cloudPos === 'below_cloud' ? '雲の下 → 弱気' : (cloudPos === 'above_cloud' ? '雲の上 → 強気' : '雲の中 → 中立')}`);
-		lines.push(`  転換線: ${fmtJPY(tenkan)} (${vsCurPct(tenkan)}) ${slopeSym(slopeOf('ICHIMOKU_conversion', 5))}`);
-		lines.push(`  基準線: ${fmtJPY(kijun)} (${vsCurPct(kijun)}) ${slopeSym(slopeOf('ICHIMOKU_base', 5))}`);
-		lines.push(`  先行スパンA: ${fmtJPY(spanA)} (${vsCurPct(spanA)})`);
-		lines.push(`  先行スパンB: ${fmtJPY(spanB)} (${vsCurPct(spanB)})`);
-		if (cloudThickness != null) lines.push(`  雲の厚さ: ${Math.round(cloudThickness).toLocaleString()}円（${cloudThicknessPct != null ? `${cloudThicknessPct.toFixed(1)}%` : 'n/a'}）`);
-		if (chikouBull != null) lines.push(`  遅行スパン: ${chikouBull ? '価格より上 → 強気' : '価格より下 → 弱気'}`);
-		if (threeSignals) lines.push(`  三役判定: ${threeSignals.judge}`);
-		if (toCloudDistance != null && cloudPos === 'below_cloud') lines.push(`  雲突入まで: ${toCloudDistance.toFixed(1)}%`);
-		lines.push('');
-		// Stochastic RSI
+		// Stochastic RSI and OBV values
 		const stochK = ind.STOCH_RSI_K ?? null;
 		const stochD = ind.STOCH_RSI_D ?? null;
 		const stochPrevK = ind.STOCH_RSI_prevK ?? null;
 		const stochPrevD = ind.STOCH_RSI_prevD ?? null;
-		lines.push('【ストキャスティクスRSI】');
-		if (stochK != null && stochD != null) {
-			lines.push(`  %K: ${Number(stochK).toFixed(1)}  %D: ${Number(stochD).toFixed(1)}`);
-			const stochZone = Number(stochK) <= 20 ? '売られすぎゾーン' : (Number(stochK) >= 80 ? '買われすぎゾーン' : '中立圏');
-			const stochStrength = Number(stochK) <= 10 ? '（強い売られすぎ）' : (Number(stochK) >= 90 ? '（強い買われすぎ）' : '');
-			lines.push(`  判定: ${stochZone}${stochStrength}`);
-			if (stochPrevK != null && stochPrevD != null) {
-				const prevBelow = Number(stochPrevK) < Number(stochPrevD);
-				const curAbove = Number(stochK) > Number(stochD);
-				const prevAbove = Number(stochPrevK) > Number(stochPrevD);
-				const curBelow = Number(stochK) < Number(stochD);
-				if (prevBelow && curAbove) {
-					lines.push('  クロス: %Kが%Dを上抜け（買いシグナル候補）');
-				} else if (prevAbove && curBelow) {
-					lines.push('  クロス: %Kが%Dを下抜け（売りシグナル候補）');
-				} else {
-					lines.push('  クロス: なし');
-				}
-			}
-		} else {
-			lines.push('  データ不足');
-		}
-		lines.push('');
-		// OBV
 		const obvVal = ind.OBV ?? null;
 		const obvSma20 = ind.OBV_SMA20 ?? null;
 		const obvTrend = ind.OBV_trend ?? null;
-		lines.push('【OBV (On-Balance Volume)】');
-		if (obvVal != null) {
-			const obvUnit = String(pair).toLowerCase().includes('btc') ? 'BTC' : '';
-			lines.push(`  現在値: ${Number(obvVal).toLocaleString(undefined, { maximumFractionDigits: 2 })} ${obvUnit}`.trim());
-			if (obvSma20 != null) lines.push(`  SMA(20): ${Number(obvSma20).toLocaleString(undefined, { maximumFractionDigits: 2 })} ${obvUnit}`.trim());
-			if (obvTrend != null) {
-				const obvTrendLabel = obvTrend === 'rising' ? 'OBV > SMA → 出来高が上昇を支持' : (obvTrend === 'falling' ? 'OBV < SMA → 出来高が下落を支持' : 'OBV ≈ SMA → 出来高中立');
-				lines.push(`  トレンド: ${obvTrendLabel}`);
-			}
-			// Divergence check: price direction vs OBV direction over recent bars
-			const obvPrev = ind.OBV_prevObv ?? null;
-			if (obvPrev != null && prev != null && close != null) {
-				const priceUp = Number(close) > Number(prev);
-				const priceDn = Number(close) < Number(prev);
-				const obvUp = Number(obvVal) > Number(obvPrev);
-				const obvDn = Number(obvVal) < Number(obvPrev);
-				if (priceUp && obvDn) {
-					lines.push('  ダイバージェンス: ベアリッシュ（価格↑・OBV↓）→ 上昇の持続力に疑問');
-				} else if (priceDn && obvUp) {
-					lines.push('  ダイバージェンス: ブルリッシュ（価格↓・OBV↑）→ 反発の可能性');
-				} else {
-					lines.push('  ダイバージェンス: なし（価格とOBVが同方向）');
-				}
-			}
-		} else {
-			lines.push('  データ不足');
-		}
-		lines.push('');
-		lines.push('【次に確認すべきこと】');
-		lines.push('  ・より詳しく: analyze_bb_snapshot / analyze_ichimoku_snapshot / analyze_sma_snapshot');
-		lines.push('  ・転換サイン例: RSI>40, MACDヒストグラムのプラ転, 25日線の明確な上抜け');
-		lines.push('');
-		lines.push('詳細は structuredContent.data.indicators / chart を参照。');
-		const text = lines.join('\n');
+		const obvPrev = ind.OBV_prevObv ?? null;
+
+		const text = buildIndicatorsText({
+			pair, type, nowJst, close, prev, deltaPrev, deltaLabel, trend,
+			rsi, recentRsiFormatted, rsiUnitLabel,
+			macdHist, lastMacdCross, divergence,
+			sma25, sma75, sma200, s25Slope, s75Slope, s200Slope, arrangement, crossInfo,
+			bbMid, bbUp, bbLo, sigmaZ, bandWidthPct, bwTrend, sigmaHistory,
+			tenkan, kijun, spanA, spanB, cloudTop, cloudBot, cloudPos,
+			cloudThickness, cloudThicknessPct, chikouBull, threeSignals, toCloudDistance,
+			ichimokuConvSlope: slopeOf('ICHIMOKU_conversion', 5),
+			ichimokuBaseSlope: slopeOf('ICHIMOKU_base', 5),
+			stochK, stochD, stochPrevK, stochPrevD,
+			obvVal, obvSma20, obvTrend, obvPrev,
+			obvUnit: String(pair).toLowerCase().includes('btc') ? 'BTC' : '',
+		});
 		return { content: [{ type: 'text', text }], structuredContent: res as Record<string, unknown> };
 	},
 };

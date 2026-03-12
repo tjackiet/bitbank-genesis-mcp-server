@@ -9,6 +9,65 @@ import type { ToolDefinition } from '../src/tool-definition.js';
 
 const FIXED_EMA_PERIODS = [12, 26, 50, 200] as const;
 
+export interface MaLineEntry {
+  period: number;
+  value: number | null;
+  distancePct: number | null;
+  distanceAbs: number | null;
+  slope: 'rising' | 'falling' | 'flat';
+  slopePctPerBar: number | null;
+  pricePosition?: 'above' | 'below' | 'equal';
+}
+
+export interface CrossStatus {
+  a: string;
+  b: string;
+  type: 'golden' | 'dead';
+  delta: number;
+}
+
+export interface RecentCrossEntry {
+  type: 'golden_cross' | 'dead_cross';
+  pair: [number, number];
+  barsAgo: number;
+  date: string;
+}
+
+export interface BuildEmaSnapshotTextInput {
+  baseSummary: string;
+  type: string;
+  maLines: MaLineEntry[];
+  crossStatuses: CrossStatus[];
+  recentCrosses: RecentCrossEntry[];
+}
+
+/** テキスト組み立て（EMAスナップショット）— テスト可能な純粋関数 */
+export function buildEmaSnapshotText(input: BuildEmaSnapshotTextInput): string {
+  const { baseSummary, type, maLines, crossStatuses, recentCrosses } = input;
+  const distanceLines = maLines.map(it => {
+    const valStr = it.value != null ? it.value : 'n/a';
+    const pctStr = it.distancePct != null ? `${it.distancePct >= 0 ? '+' : ''}${it.distancePct}%` : 'n/a';
+    const absStr = it.distanceAbs != null ? `${it.distanceAbs >= 0 ? '+' : ''}${Number(it.distanceAbs).toLocaleString()}円` : 'n/a';
+    const slopeRate = it.slopePctPerBar != null ? `${it.slopePctPerBar >= 0 ? '+' : ''}${it.slopePctPerBar}%/${type === '1day' ? 'day' : 'bar'}` : null;
+    const pos = it.pricePosition ? (it.pricePosition === 'above' ? '（価格は上）' : it.pricePosition === 'below' ? '（価格は下）' : '（同水準）') : '';
+    return `EMA(${it.period}): ${valStr} (${pctStr}, ${absStr}) slope=${it.slope}${slopeRate ? ` (${slopeRate})` : ''}${pos}`;
+  });
+  const crossStatusLines = crossStatuses.map(c => `${c.a}/${c.b}: ${c.type} (delta:${c.delta})`);
+  const allRecentLines = recentCrosses.map(rc => `${rc.type} ${rc.pair.join('/')} - ${rc.barsAgo} bars ago (${rc.date})`);
+  return [
+    baseSummary,
+    '',
+    ...distanceLines,
+    ...(crossStatusLines.length ? ['', 'Cross Status:', ...crossStatusLines] : []),
+    ...(allRecentLines.length ? ['', 'Recent Crosses (all):', ...allRecentLines] : []),
+    '',
+    '---',
+    '📌 含まれるもの: EMA値・傾き・クロス状態・配列パターン・価格との乖離',
+    '📌 含まれないもの: SMA・RSI・MACD・BB・一目均衡表、出来高フロー、板情報',
+    '📌 補完ツール: analyze_sma_snapshot（SMA）, analyze_indicators（他指標）, analyze_bb_snapshot（BB）, get_flow_metrics（出来高）',
+  ].filter(Boolean).join('\n');
+}
+
 export default async function analyzeEmaSnapshot(
   pair: string = 'btc_jpy',
   type: string = '1day',
@@ -184,30 +243,25 @@ export default async function analyzeEmaSnapshot(
     }
 
     const topPeriods = Array.from(new Set(periods)).sort((a, b) => a - b);
-    const distanceLines = topPeriods.map(p => {
+    const maLines: MaLineEntry[] = topPeriods.map(p => {
       const it = emasExt[String(p)];
-      const valStr = it?.value != null ? it.value : 'n/a';
-      const pctStr = it.distancePct != null ? `${it.distancePct >= 0 ? '+' : ''}${it.distancePct}%` : 'n/a';
-      const absStr = it.distanceAbs != null ? `${it.distanceAbs >= 0 ? '+' : ''}${Number(it.distanceAbs).toLocaleString()}円` : 'n/a';
-      const slopeRate = it?.slopePctPerBar != null ? `${it.slopePctPerBar >= 0 ? '+' : ''}${it.slopePctPerBar}%/${type === '1day' ? 'day' : 'bar'}` : null;
-      const pos = it?.pricePosition ? (it.pricePosition === 'above' ? '（価格は上）' : it.pricePosition === 'below' ? '（価格は下）' : '（同水準）') : '';
-      return `EMA(${p}): ${valStr} (${pctStr}, ${absStr}) slope=${it?.slope}${slopeRate ? ` (${slopeRate})` : ''}${pos}`;
+      return {
+        period: p,
+        value: it?.value ?? null,
+        distancePct: it?.distancePct ?? null,
+        distanceAbs: it?.distanceAbs ?? null,
+        slope: it?.slope ?? 'flat',
+        slopePctPerBar: it?.slopePctPerBar ?? null,
+        pricePosition: it?.pricePosition,
+      };
     });
-    const recentLines = recentCrosses.slice(-3).reverse().map(rc => `${rc.type} ${rc.pair.join('/')} - ${rc.barsAgo} bars ago (${rc.date})`);
-    const crossStatusLines = crosses.map(c => `${c.a}/${c.b}: ${c.type} (delta:${c.delta})`);
-    const allRecentLines = recentCrosses.map(rc => `${rc.type} ${rc.pair.join('/')} - ${rc.barsAgo} bars ago (${rc.date})`);
-    const summaryText = [
-      formatSummary({ pair: chk.pair, latest: close ?? undefined, extra: `align=${alignment} pos=${position}` }),
-      '',
-      ...distanceLines,
-      ...(crossStatusLines.length ? ['', 'Cross Status:', ...crossStatusLines] : []),
-      ...(allRecentLines.length ? ['', 'Recent Crosses (all):', ...allRecentLines] : []),
-      '',
-      '---',
-      '📌 含まれるもの: EMA値・傾き・クロス状態・配列パターン・価格との乖離',
-      '📌 含まれないもの: SMA・RSI・MACD・BB・一目均衡表、出来高フロー、板情報',
-      '📌 補完ツール: analyze_sma_snapshot（SMA）, analyze_indicators（他指標）, analyze_bb_snapshot（BB）, get_flow_metrics（出来高）',
-    ].filter(Boolean).join('\n');
+    const summaryText = buildEmaSnapshotText({
+      baseSummary: formatSummary({ pair: chk.pair, latest: close ?? undefined, extra: `align=${alignment} pos=${position}` }),
+      type,
+      maLines,
+      crossStatuses: crosses,
+      recentCrosses,
+    });
 
     const data = {
       latest: { close },
