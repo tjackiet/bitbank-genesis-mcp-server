@@ -1,4 +1,4 @@
-# CLAUDE.md - AIForge (bitbank-mcp-sandbox)
+# CLAUDE.md - AIForge (bitbank-genesis-mcp-server)
 
 ## プロジェクト概要
 
@@ -22,7 +22,7 @@ npm run http                # HTTP サーバー
 npm run gen:types           # Zod スキーマから型定義を生成
 npm run typecheck           # tsc --noEmit
 npm run build               # gen:types + typecheck
-npm test                    # tools/tests/test_get_tickers_jpy.ts を実行
+npm test                    # vitest で全テスト実行
 
 # PR 前に必ず実行
 npm run gen:types && npm run typecheck
@@ -35,9 +35,11 @@ npm run gen:types && npm run typecheck
 | `src/server.ts` | MCP サーバー本体（自動登録ループ・トランスポート） |
 | `src/tool-registry.ts` | **全ツール定義の集約**（allToolDefs 配列） |
 | `src/schemas.ts` | Zod スキーマ定義（**単一ソース**） |
-| `tools/` | 各ツール実装＋ `toolDef` エクスポート |
+| `tools/` | 各 MCP ツール実装＋ `toolDef` エクスポート |
 | `src/handlers/` | 複雑なハンドラロジック（100行超のツール用） |
 | `lib/` | 共有ユーティリティ（`result.ts`, `validate.ts`, `http.ts`, `datetime.ts` 等） |
+| `tests/` | vitest テスト（`tests/lib/` にライブラリテスト含む） |
+| `scripts/` | CLI スクリプト・コード生成（`gen_types.ts`, `*_cli.ts` 等） |
 | `docs/private-api-plan.md` | bitbank private API 連携の開発計画（Phase 方針・完了基準） |
 
 ## コードスタイル・規約
