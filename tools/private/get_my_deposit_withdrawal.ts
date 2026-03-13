@@ -305,6 +305,10 @@ export default async function getMyDepositWithdrawal(args: {
 			if (jpyDeposits.length > 0) {
 				const totalJpy = jpyDeposits.reduce((sum, d) => sum + Number(d.amount), 0);
 				lines.push(`  JPY 入金: ${jpyDeposits.length}件 合計 ${formatPrice(Math.round(totalJpy))}`);
+				for (const d of jpyDeposits.slice(0, 5)) {
+					lines.push(`    JPY ${formatPrice(Math.round(Number(d.amount)))} (${d.status})${d.found_at ? ` ${d.found_at}` : ''}`);
+				}
+				if (jpyDeposits.length > 5) lines.push(`    ... 他 ${jpyDeposits.length - 5}件`);
 			}
 			if (cryptoDeposits.length > 0) {
 				lines.push(`  暗号資産入庫: ${cryptoDeposits.length}件（明細表示は先頭5件のみ）`);
@@ -327,6 +331,10 @@ export default async function getMyDepositWithdrawal(args: {
 			if (jpyWithdrawals.length > 0) {
 				const totalJpy = jpyWithdrawals.reduce((sum, w) => sum + Number(w.amount), 0);
 				lines.push(`  JPY 出金: ${jpyWithdrawals.length}件 合計 ${formatPrice(Math.round(totalJpy))}`);
+				for (const w of jpyWithdrawals.slice(0, 5)) {
+					lines.push(`    JPY ${formatPrice(Math.round(Number(w.amount)))} (${w.status})${w.requested_at ? ` ${w.requested_at}` : ''}`);
+				}
+				if (jpyWithdrawals.length > 5) lines.push(`    ... 他 ${jpyWithdrawals.length - 5}件`);
 			}
 			if (cryptoWithdrawals.length > 0) {
 				lines.push(`  暗号資産出庫: ${cryptoWithdrawals.length}件（明細表示は先頭5件のみ）`);
