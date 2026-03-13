@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { ok, fail, failFromError, failFromValidation } from './result.js';
+import { ok, fail, failFromError, failFromValidation } from '../../../lib/result.js';
 
 describe('ok', () => {
   it('ok: true の結果を生成する', () => {

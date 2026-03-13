@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { getErrorMessage, isAbortError } from './error.js';
+import { getErrorMessage, isAbortError } from '../../../lib/error.js';
 
 describe('getErrorMessage', () => {
   it('Error インスタンスから message を取得する', () => {

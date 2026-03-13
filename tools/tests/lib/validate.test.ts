@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { normalizePair, ensurePair, validateLimit, validateDate, createMeta, ALLOWED_PAIRS } from './validate.js';
+import { normalizePair, ensurePair, validateLimit, validateDate, createMeta, ALLOWED_PAIRS } from '../../../lib/validate.js';
 
 describe('normalizePair', () => {
   it('正規形式はそのまま返す', () => {

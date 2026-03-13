@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { toIsoTime, toIsoMs, toIsoWithTz, toDisplayTime, nowIso, daysAgo, today, dayjs } from './datetime.js';
+import { toIsoTime, toIsoMs, toIsoWithTz, toDisplayTime, nowIso, daysAgo, today, dayjs } from '../../../lib/datetime.js';
 
 describe('toIsoTime', () => {
   it('ミリ秒タイムスタンプを ISO8601 に変換する', () => {

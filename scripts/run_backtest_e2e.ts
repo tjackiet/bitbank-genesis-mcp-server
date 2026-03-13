@@ -2,16 +2,16 @@
  * test_run_backtest.ts - 汎用バックテストのテスト
  * 
  * 使用法:
- *   npx tsx tools/tests/test_run_backtest_e2e.ts [strategy_type]
+ *   npx tsx scripts/run_backtest_e2e.ts [strategy_type]
  *
  * 例:
- *   npx tsx tools/tests/test_run_backtest_e2e.ts sma_cross
- *   npx tsx tools/tests/test_run_backtest_e2e.ts rsi
- *   npx tsx tools/tests/test_run_backtest_e2e.ts macd_cross
- *   npx tsx tools/tests/test_run_backtest_e2e.ts bb_breakout
+ *   npx tsx scripts/run_backtest_e2e.ts sma_cross
+ *   npx tsx scripts/run_backtest_e2e.ts rsi
+ *   npx tsx scripts/run_backtest_e2e.ts macd_cross
+ *   npx tsx scripts/run_backtest_e2e.ts bb_breakout
  */
 
-import runBacktest from '../trading_process/run_backtest.js';
+import runBacktest from '../tools/trading_process/run_backtest.js';
 import { writeFileSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';

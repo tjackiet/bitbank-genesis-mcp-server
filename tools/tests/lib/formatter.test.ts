@@ -8,7 +8,7 @@ import {
   formatPercent,
   formatVolumeJPY,
   formatSummary,
-} from './formatter.js';
+} from '../../../lib/formatter.js';
 
 describe('formatPair', () => {
   it('アンダースコアをスラッシュに変換し大文字化する', () => {
