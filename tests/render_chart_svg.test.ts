@@ -4,7 +4,7 @@ vi.mock('../tools/analyze_indicators.js', () => ({
   default: vi.fn(),
 }));
 
-vi.mock('../tools/get_depth.js', () => ({
+vi.mock('../lib/get-depth.js', () => ({
   default: vi.fn(),
 }));
 

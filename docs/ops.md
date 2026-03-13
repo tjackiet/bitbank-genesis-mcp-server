@@ -11,7 +11,7 @@ npm run stat -- --last 24h
 
 ### CI / Cron 例
 ```cron
-0 9 * * * cd /path/to/bb-mcp-sandbox && /usr/bin/npm run stat --silent -- --last 24h >> reports/$(date +\%F).log 2>&1
+0 9 * * * cd /path/to/bitbank-genesis-mcp-server && /usr/bin/npm run stat --silent -- --last 24h >> reports/$(date +\%F).log 2>&1
 ```
 
 

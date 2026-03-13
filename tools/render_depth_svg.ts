@@ -1,7 +1,7 @@
 // tools/render_depth_svg.ts
 import fs from 'fs/promises';
 import path from 'path';
-import getDepth from './get_depth.js';
+import getDepth from '../lib/get-depth.js';
 import { ok, fail, failFromError } from '../lib/result.js';
 import { formatPair } from '../lib/formatter.js';
 import { toDisplayTime, nowIso } from '../lib/datetime.js';

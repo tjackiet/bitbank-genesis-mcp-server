@@ -2,7 +2,7 @@
 
 ## プロジェクト概要
 
-bitbank 暗号資産取引所の MCP サーバー。26 ツールでリアルタイム市場データ取得・テクニカル分析・チャート描画・バックテストを提供。
+bitbank 暗号資産取引所の MCP サーバー。リアルタイム市場データ取得・テクニカル分析・チャート描画・バックテストを提供。
 
 ## 技術スタック
 
@@ -71,8 +71,7 @@ npm run gen:types && npm run typecheck
 ## リポジトリルール
 
 - `main` ブランチ保護。PR 経由でマージ。
-- `CLAUDE.md` が正。編集後 `cp CLAUDE.md .cursorrules` で同期。
-- `AGENTS.md` は `CLAUDE.md` への symlink。
+- `CLAUDE.md` が正。`.cursorrules` / `AGENTS.md` はいずれも `CLAUDE.md` への symlink。
 
 ---
 
