@@ -5,9 +5,9 @@
  * Usage: tsx tools/render_candle_pattern_diagram_cli.ts [output.svg]
  */
 
-import renderCandlePatternDiagram from './render_candle_pattern_diagram.js';
+import renderCandlePatternDiagram from '../tools/render_candle_pattern_diagram.js';
 import * as fs from 'fs';
-import { parseArgs } from './lib/cli-utils.js';
+import { parseArgs } from './cli-utils.js';
 
 async function main() {
   const { positional } = parseArgs();

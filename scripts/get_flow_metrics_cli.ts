@@ -1,5 +1,5 @@
-import getFlowMetrics from './get_flow_metrics.js';
-import { runCli, parseArgs, intArg } from './lib/cli-utils.js';
+import getFlowMetrics from '../tools/get_flow_metrics.js';
+import { runCli, parseArgs, intArg } from './cli-utils.js';
 
 runCli(() => {
   const { positional } = parseArgs();

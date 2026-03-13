@@ -1,5 +1,5 @@
-import getCandles from './get_candles.js';
-import { runCli, parseArgs, intArg } from './lib/cli-utils.js';
+import getCandles from '../tools/get_candles.js';
+import { runCli, parseArgs, intArg } from './cli-utils.js';
 
 runCli(() => {
   const { positional } = parseArgs();

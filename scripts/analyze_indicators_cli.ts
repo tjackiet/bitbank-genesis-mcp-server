@@ -1,5 +1,5 @@
-import analyzeIndicators from './analyze_indicators.js';
-import { runCli, parseArgs, intArg } from './lib/cli-utils.js';
+import analyzeIndicators from '../tools/analyze_indicators.js';
+import { runCli, parseArgs, intArg } from './cli-utils.js';
 
 runCli(() => {
   const { positional } = parseArgs();

@@ -1,5 +1,5 @@
-import getVolatilityMetrics from './get_volatility_metrics.js';
-import { runCli, parseArgs, intArg } from './lib/cli-utils.js';
+import getVolatilityMetrics from '../tools/get_volatility_metrics.js';
+import { runCli, parseArgs, intArg } from './cli-utils.js';
 
 runCli(() => {
   const { positional, flags } = parseArgs();

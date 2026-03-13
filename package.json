@@ -10,12 +10,12 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
 
-    "stat": "tsx tools/stat.ts",
-    "report": "tsx tools/report.ts",
+    "stat": "tsx scripts/stat.ts",
+    "report": "tsx scripts/report.ts",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "ci:typecheck": "npm run gen:types && tsc --noEmit -p tsconfig.json",
     "build": "npm run ci:typecheck",
-    "gen:types": "tsx tools/gen_types.ts",
+    "gen:types": "tsx scripts/gen_types.ts",
     "postinstall": "mkdir -p assets && cp node_modules/lightweight-charts/dist/lightweight-charts.standalone.production.js assets/lightweight-charts.standalone.js || true"
   },
   "keywords": [],

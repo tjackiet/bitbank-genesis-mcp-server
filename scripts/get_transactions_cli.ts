@@ -1,5 +1,5 @@
-import getTransactions from './get_transactions.js';
-import { runCli, parseArgs, intArg } from './lib/cli-utils.js';
+import getTransactions from '../tools/get_transactions.js';
+import { runCli, parseArgs, intArg } from './cli-utils.js';
 
 runCli(() => {
   const { positional } = parseArgs();

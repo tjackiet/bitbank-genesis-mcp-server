@@ -7,8 +7,8 @@
  *   tsx tools/analyze_candle_patterns_cli.ts 2025-11-05         # ISO format
  */
 
-import analyzeCandlePatterns from './analyze_candle_patterns.js';
-import { parseArgs } from './lib/cli-utils.js';
+import analyzeCandlePatterns from '../tools/analyze_candle_patterns.js';
+import { parseArgs } from './cli-utils.js';
 
 async function main() {
   const { positional } = parseArgs();
