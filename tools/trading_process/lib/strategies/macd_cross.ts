@@ -15,6 +15,7 @@ import type { Candle } from '../../types.js';
 import type { Strategy, Signal, Overlay, ParamValidationResult } from './types.js';
 import { calculateSMA } from '../sma.js';
 import { calculateRSI } from './rsi.js';
+import { ema as calculateEMA } from '../../../../lib/indicators.js';
 
 /**
  * MACD戦略のデフォルトパラメータ
@@ -29,36 +30,6 @@ const DEFAULT_PARAMS: Record<string, number> = {
   rsi_filter_period: 0,
   rsi_filter_max: 100,   // RSI < この値 の場合のみ買い（100=フィルター無効）
 };
-
-/**
- * EMA（指数移動平均）を計算
- *
- * @param prices 価格配列（古い順）
- * @param period EMA期間
- * @returns EMA配列
- */
-function calculateEMA(prices: number[], period: number): number[] {
-  const result: number[] = new Array(prices.length).fill(NaN);
-
-  if (prices.length < period) {
-    return result;
-  }
-
-  // 最初のEMAはSMAとして計算
-  let sum = 0;
-  for (let i = 0; i < period; i++) {
-    sum += prices[i];
-  }
-  result[period - 1] = sum / period;
-
-  // EMA計算（multiplier = 2 / (period + 1)）
-  const multiplier = 2 / (period + 1);
-  for (let i = period; i < prices.length; i++) {
-    result[i] = (prices[i] - result[i - 1]) * multiplier + result[i - 1];
-  }
-
-  return result;
-}
 
 /**
  * MACDを計算

@@ -7,6 +7,7 @@
 
 import type { Candle } from '../../types.js';
 import type { Strategy, Signal, Overlay, ParamValidationResult } from './types.js';
+import { rsi } from '../../../../lib/indicators.js';
 
 /**
  * RSI戦略のデフォルトパラメータ
@@ -18,65 +19,14 @@ const DEFAULT_PARAMS = {
 };
 
 /**
- * RSIを計算
+ * RSIを計算（lib/indicators.ts への委譲）
  *
  * @param closes 終値配列（古い順）
  * @param period RSI期間
  * @returns RSI配列（0-100、先頭period個はNaN）
  */
 export function calculateRSI(closes: number[], period: number): number[] {
-  const result: number[] = new Array(closes.length).fill(NaN);
-
-  if (closes.length < period + 1) {
-    return result;
-  }
-
-  // 価格変化を計算
-  const changes: number[] = [];
-  for (let i = 1; i < closes.length; i++) {
-    changes.push(closes[i] - closes[i - 1]);
-  }
-
-  // 最初の平均利益・平均損失を計算
-  let avgGain = 0;
-  let avgLoss = 0;
-  for (let i = 0; i < period; i++) {
-    const change = changes[i];
-    if (change > 0) {
-      avgGain += change;
-    } else {
-      avgLoss += Math.abs(change);
-    }
-  }
-  avgGain /= period;
-  avgLoss /= period;
-
-  // 最初のRSI
-  if (avgLoss === 0) {
-    result[period] = 100;
-  } else {
-    const rs = avgGain / avgLoss;
-    result[period] = 100 - 100 / (1 + rs);
-  }
-
-  // Wilder's Smoothing Method で続きを計算
-  for (let i = period; i < changes.length; i++) {
-    const change = changes[i];
-    const gain = change > 0 ? change : 0;
-    const loss = change < 0 ? Math.abs(change) : 0;
-
-    avgGain = (avgGain * (period - 1) + gain) / period;
-    avgLoss = (avgLoss * (period - 1) + loss) / period;
-
-    if (avgLoss === 0) {
-      result[i + 1] = 100;
-    } else {
-      const rs = avgGain / avgLoss;
-      result[i + 1] = 100 - 100 / (1 + rs);
-    }
-  }
-
-  return result;
+  return rsi(closes, period);
 }
 
 /**

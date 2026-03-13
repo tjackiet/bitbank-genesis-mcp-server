@@ -5,6 +5,12 @@ import { formatSummary } from '../lib/formatter.js';
 import { getFetchCount } from '../lib/indicator_buffer.js';
 import { GetIndicatorsDataSchema, GetIndicatorsMetaSchema, GetIndicatorsOutputSchema } from '../src/schemas.js';
 import { TtlCache } from '../lib/cache.js';
+import {
+  sma as rawSma,
+  ema as rawEma,
+  rsi as rawRsi,
+  toNumericSeries,
+} from '../lib/indicators.js';
 import type {
   Result,
   Candle,
@@ -41,70 +47,14 @@ export function clearIndicatorCache(): void {
   indicatorCache.clear();
 }
 
-// --- Indicators implementations ---
+// --- Indicators (delegates to lib/indicators.ts) ---
 
 export function sma(values: number[], period: number = 25): NumericSeries {
-  const results: NumericSeries = [];
-  let sum = 0;
-  for (let i = 0; i < values.length; i++) {
-    sum += values[i];
-    if (i >= period) {
-      sum -= values[i - period];
-    }
-    if (i >= period - 1) {
-      results.push(Number((sum / period).toFixed(2)));
-    } else {
-      results.push(null);
-    }
-  }
-  return results;
+  return toNumericSeries(rawSma(values, period), 2);
 }
 
 export function rsi(values: number[], period: number = 14): NumericSeries {
-  const results: Array<number | null | { value: number; gains: number; losses: number }> = [];
-  let gains = 0;
-  let losses = 0;
-
-  for (let i = 0; i < values.length; i++) {
-    if (i === 0) {
-      results.push(null);
-      continue;
-    }
-
-    const diff = values[i] - values[i - 1];
-
-    if (i <= period) {
-      if (diff >= 0) gains += diff; else losses -= diff;
-    }
-
-    if (i === period) {
-      // First RSI: use simple averages, store them for Wilder smoothing continuity
-      const avgGain = gains / period;
-      const avgLoss = losses / period;
-      const rs = avgGain / (avgLoss || 1);
-      const rsiValue = Number((100 - 100 / (1 + rs)).toFixed(2));
-      results.push({ value: rsiValue, gains: avgGain, losses: avgLoss });
-    } else if (i > period) {
-      const prev = results[i - 1];
-      const prevGains = typeof prev === 'object' && prev ? prev.gains : 0;
-      const prevLosses = typeof prev === 'object' && prev ? prev.losses : 0;
-
-      const currentGains = diff >= 0 ? diff : 0;
-      const currentLosses = diff < 0 ? -diff : 0;
-
-      gains = (prevGains * (period - 1) + currentGains) / period;
-      losses = (prevLosses * (period - 1) + currentLosses) / period;
-
-      const rs = gains / (losses || 1);
-      const rsiValue = Number((100 - 100 / (1 + rs)).toFixed(2));
-
-      results.push({ value: rsiValue, gains, losses });
-    } else {
-      results.push(null);
-    }
-  }
-
-  return results.map((r) => (r != null && typeof r === 'object' ? r.value : r)) as NumericSeries;
+  return toNumericSeries(rawRsi(values, period), 2);
 }
 
 export function bollingerBands(
@@ -138,26 +88,8 @@ export function bollingerBands(
 
 // Exponential Moving Average
 export function ema(values: number[], period: number): NumericSeries {
-  const out: NumericSeries = [];
   if (period <= 1) return values.map((v) => (v != null ? Number(v.toFixed(2)) : null));
-  const k = 2 / (period + 1);
-  let prev: number | null = null;
-  for (let i = 0; i < values.length; i++) {
-    const v = values[i];
-    if (v == null || !Number.isFinite(v)) { out.push(null); continue; }
-    if (prev == null) {
-      // seed with simple average once we have period samples
-      if (i < period - 1) { out.push(null); continue; }
-      const avg = values.slice(i - period + 1, i + 1).reduce((s, x) => s + x, 0) / period;
-      prev = avg;
-      out.push(Number(avg.toFixed(2)));
-    } else {
-      const cur: number = v * k + (prev as number) * (1 - k);
-      prev = cur;
-      out.push(Number(cur.toFixed(2)));
-    }
-  }
-  return out;
+  return toNumericSeries(rawEma(values, period), 2);
 }
 
 export function macd(values: number[], fast = 12, slow = 26, signal = 9): { line: NumericSeries; signal: NumericSeries; hist: NumericSeries } {
