@@ -1,4 +1,4 @@
-import { dayjs } from '../../lib/datetime.js';
+import { dayjs } from './datetime.js';
 
 export interface PatternDiagramData {
   svg: string;
