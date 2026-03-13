@@ -38,7 +38,6 @@ npm run gen:types && npm run typecheck
 | `tools/` | 各ツール実装＋ `toolDef` エクスポート |
 | `src/handlers/` | 複雑なハンドラロジック（100行超のツール用） |
 | `lib/` | 共有ユーティリティ（`result.ts`, `validate.ts`, `http.ts`, `datetime.ts` 等） |
-| `docs/private-api-plan.md` | bitbank private API 連携の開発計画（Phase 方針・完了基準） |
 
 ## コードスタイル・規約
 

@@ -40,7 +40,6 @@ npm run gen:types && npm run typecheck
 | `lib/` | 共有ユーティリティ（`result.ts`, `validate.ts`, `http.ts`, `datetime.ts` 等） |
 | `tests/` | vitest テスト（`tests/lib/` にライブラリテスト含む） |
 | `scripts/` | CLI スクリプト・コード生成（`gen_types.ts`, `*_cli.ts` 等） |
-| `docs/private-api-plan.md` | bitbank private API 連携の開発計画（Phase 方針・完了基準） |
 
 ## コードスタイル・規約
 
