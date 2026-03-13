@@ -1,3 +1,4 @@
+// Hand-written type declarations for the corresponding .ts module.
 export function formatPair(pair: string): string;
 
 export function formatSummary(args?: {

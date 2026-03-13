@@ -36,14 +36,14 @@ import {
 import {
   generateSummary,
   generateContent,
-} from '../src/handlers/analyzeCandlePatternsViews.js';
+} from '../src/handlers/analyzeCandlePatternsHandler.js';
 import type {
   CandlePatternType,
   WindowCandle,
   HistoryStats,
   HistoryHorizonStats,
   DetectedCandlePattern,
-} from '../src/handlers/analyzeCandlePatternsViews.js';
+} from '../src/handlers/analyzeCandlePatternsHandler.js';
 
 // ----- パターンコンテキスト -----
 interface PatternContext {

@@ -2,7 +2,7 @@
  * Triple Top / Triple Bottom 検出（完成済み＋形成中）
  * detect_patterns.ts Section 6 / 6b から抽出
  */
-import { generatePatternDiagram } from '../../src/utils/pattern-diagrams.js';
+import { generatePatternDiagram } from '../../lib/pattern-diagrams.js';
 import { clamp01, relDev } from './regression.js';
 import { periodScoreDays, finalizeConf } from './helpers.js';
 import { MIN_CONFIDENCE } from '../patterns/config.js';

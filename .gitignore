@@ -8,3 +8,4 @@ cache/
 output/
 .cursor/
 .DS_Store
+src/types/schemas.generated.d.ts

@@ -9,7 +9,7 @@ import {
 	formatSummaryView,
 	formatFullView,
 	formatDetailedView,
-} from './detectPatternsViews.js';
+} from './detectPatternsViewsHandler.js';
 
 export const toolDef: ToolDefinition = {
 	name: 'detect_patterns',

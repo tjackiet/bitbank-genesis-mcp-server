@@ -2,7 +2,7 @@
  * Double Top / Double Bottom 検出（完成済み＋形成中）
  * detect_patterns.ts Section 2 から抽出
  */
-import { generatePatternDiagram } from '../../src/utils/pattern-diagrams.js';
+import { generatePatternDiagram } from '../../lib/pattern-diagrams.js';
 import { clamp01, relDev, marginFromRelDev } from './regression.js';
 import { periodScoreDays, finalizeConf, deduplicatePatterns } from './helpers.js';
 import { pushCand, type DetectContext, type DetectResult } from './types.js';

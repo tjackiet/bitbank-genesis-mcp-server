@@ -11,7 +11,7 @@
  * 4b) 回帰ベース（完成済みの主力検出）
  * 4d) 形成中ウェッジ検出（緩い条件）
  */
-import { generatePatternDiagram } from '../../src/utils/pattern-diagrams.js';
+import { generatePatternDiagram } from '../../lib/pattern-diagrams.js';
 import {
   generateWindows,
   determineWedgeType,

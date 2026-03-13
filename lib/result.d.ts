@@ -1,3 +1,4 @@
+// Hand-written type declarations for the corresponding .ts module.
 import type { OkResult, FailResult } from '../src/types/domain.d';
 
 export function ok<T = Record<string, unknown>, M = Record<string, unknown>>(
