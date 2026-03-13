@@ -71,8 +71,7 @@ npm run gen:types && npm run typecheck
 ## リポジトリルール
 
 - `main` ブランチ保護。PR 経由でマージ。
-- `CLAUDE.md` が正。編集後 `cp CLAUDE.md .cursorrules` で同期。
-- `AGENTS.md` は `CLAUDE.md` への symlink。
+- `CLAUDE.md` が正。`.cursorrules` / `AGENTS.md` はいずれも `CLAUDE.md` への symlink。
 
 ---
 
