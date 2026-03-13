@@ -3,7 +3,7 @@ import { defineConfig } from 'vitest/config';
 export default defineConfig({
   test: {
     // テストファイルのパターン
-    include: ['tools/tests/**/*.test.ts'],
+    include: ['tests/**/*.test.ts'],
     // タイムアウト（ネットワーク系テストがある場合を考慮）
     testTimeout: 10_000,
     // ESM 対応
