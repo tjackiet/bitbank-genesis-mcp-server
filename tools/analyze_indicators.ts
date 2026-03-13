@@ -9,6 +9,13 @@ import {
   sma as rawSma,
   ema as rawEma,
   rsi as rawRsi,
+  bollingerBands as rawBollingerBands,
+  macd as rawMacd,
+  ichimokuSeries as rawIchimokuSeries,
+  ichimokuSnapshot,
+  stochastic as rawStochastic,
+  stochRSI as rawStochRSI,
+  obv as rawObv,
   toNumericSeries,
 } from '../lib/indicators.js';
 import type {
@@ -60,30 +67,14 @@ export function rsi(values: number[], period: number = 14): NumericSeries {
 export function bollingerBands(
   values: number[],
   period: number = 20,
-  stdDev: number = 2
+  stdDev: number = 2,
 ): { upper: NumericSeries; middle: NumericSeries; lower: NumericSeries } {
-  const upper: NumericSeries = [];
-  const middle: NumericSeries = [];
-  const lower: NumericSeries = [];
-
-  for (let i = 0; i < values.length; i++) {
-    if (i < period - 1) {
-      upper.push(null);
-      middle.push(null);
-      lower.push(null);
-      continue;
-    }
-
-    const slice = values.slice(i - period + 1, i + 1);
-    const smaValue = slice.reduce((a, b) => a + b, 0) / period;
-    const variance = slice.reduce((sum, val) => sum + Math.pow(val - smaValue, 2), 0) / period;
-    const std = Math.sqrt(variance);
-
-    upper.push(Number((smaValue + stdDev * std).toFixed(2)));
-    middle.push(Number(smaValue.toFixed(2)));
-    lower.push(Number((smaValue - stdDev * std).toFixed(2)));
-  }
-  return { upper, middle, lower };
+  const raw = rawBollingerBands(values, period, stdDev);
+  return {
+    upper: toNumericSeries(raw.upper, 2),
+    middle: toNumericSeries(raw.middle, 2),
+    lower: toNumericSeries(raw.lower, 2),
+  };
 }
 
 // Exponential Moving Average
@@ -93,178 +84,52 @@ export function ema(values: number[], period: number): NumericSeries {
 }
 
 export function macd(values: number[], fast = 12, slow = 26, signal = 9): { line: NumericSeries; signal: NumericSeries; hist: NumericSeries } {
-  const emaFast = ema(values, fast);
-  const emaSlow = ema(values, slow);
-  const line: NumericSeries = [];
-  for (let i = 0; i < values.length; i++) {
-    const a = emaFast[i]; const b = emaSlow[i];
-    if (a == null || b == null) line.push(null);
-    else line.push(Number(((a as number) - (b as number)).toFixed(2)));
-  }
-  // signal EMA over MACD line — compute only from non-null MACD values
-  // to avoid zero-padding distortion in the signal EMA seed
-  const validStart = line.findIndex(v => v != null);
-  let signalSeries: NumericSeries;
-  if (validStart < 0) {
-    signalSeries = line.map(() => null);
-  } else {
-    const validLine = line.slice(validStart).map(v => v as number);
-    const sigFromValid = ema(validLine, signal);
-    signalSeries = [
-      ...new Array(validStart).fill(null) as null[],
-      ...sigFromValid,
-    ];
-  }
-  const hist: NumericSeries = line.map((v, i) => (v == null || signalSeries[i] == null ? null : Number(((v as number) - (signalSeries[i] as number)).toFixed(2))));
-  return { line, signal: signalSeries, hist };
+  const raw = rawMacd(values, fast, slow, signal);
+  return {
+    line: toNumericSeries(raw.line, 2),
+    signal: toNumericSeries(raw.signal, 2),
+    hist: toNumericSeries(raw.hist, 2),
+  };
 }
 
 export function ichimokuSeries(
   highs: number[],
   lows: number[],
-  closes: number[]
+  closes: number[],
 ): { tenkan: NumericSeries; kijun: NumericSeries; spanA: NumericSeries; spanB: NumericSeries; chikou: NumericSeries } {
-  const tenkanSen: NumericSeries = [];
-  const kijunSen: NumericSeries = [];
-  const rawSpanA: NumericSeries = [];
-  const rawSpanB: NumericSeries = [];
-
-  const tenkanPeriod = 9;
-  const kijunPeriod = 26;
-  const senkouBPeriod = 52;
-
-  for (let i = 0; i < highs.length; i++) {
-    if (i < tenkanPeriod - 1) {
-      tenkanSen.push(null);
-    } else {
-      const highSlice = highs.slice(i - tenkanPeriod + 1, i + 1);
-      const lowSlice = lows.slice(i - tenkanPeriod + 1, i + 1);
-      tenkanSen.push(Number(((Math.max(...highSlice) + Math.min(...lowSlice)) / 2).toFixed(2)));
-    }
-
-    if (i < kijunPeriod - 1) {
-      kijunSen.push(null);
-    } else {
-      const highSlice = highs.slice(i - kijunPeriod + 1, i + 1);
-      const lowSlice = lows.slice(i - kijunPeriod + 1, i + 1);
-      kijunSen.push(Number(((Math.max(...highSlice) + Math.min(...lowSlice)) / 2).toFixed(2)));
-    }
-
-    if (tenkanSen[i] != null && kijunSen[i] != null) {
-      const a = (tenkanSen[i] as number) + (kijunSen[i] as number);
-      rawSpanA.push(Number((a / 2).toFixed(2)));
-    } else {
-      rawSpanA.push(null);
-    }
-
-    if (i < senkouBPeriod - 1) {
-      rawSpanB.push(null);
-    } else {
-      const highSlice = highs.slice(i - senkouBPeriod + 1, i + 1);
-      const lowSlice = lows.slice(i - senkouBPeriod + 1, i + 1);
-      rawSpanB.push(Number(((Math.max(...highSlice) + Math.min(...lowSlice)) / 2).toFixed(2)));
-    }
-  }
-
-  const chikou = closes.map((v) => (v != null ? Number(v.toFixed(2)) : null));
-
+  const raw = rawIchimokuSeries(highs, lows, closes);
   return {
-    tenkan: tenkanSen,
-    kijun: kijunSen,
-    spanA: rawSpanA,
-    spanB: rawSpanB,
-    chikou,
+    tenkan: toNumericSeries(raw.tenkan, 2),
+    kijun: toNumericSeries(raw.kijun, 2),
+    spanA: toNumericSeries(raw.spanA, 2),
+    spanB: toNumericSeries(raw.spanB, 2),
+    chikou: toNumericSeries(raw.chikou, 2),
   };
 }
 
 /**
  * Stochastic RSI: RSI値にストキャスティクス計算を適用。
- * %K = (RSI - RSI_Low) / (RSI_High - RSI_Low) * 100
- * %D = SMA(%K, smoothD)
  */
 export function computeStochRSI(
   closes: number[],
   rsiPeriod = 14,
   stochPeriod = 14,
   smoothK = 3,
-  smoothD = 3
+  smoothD = 3,
 ): { k: number | null; d: number | null; prevK: number | null; prevD: number | null } {
-  const rsiSeries = rsi(closes, rsiPeriod);
-  // Extract numeric RSI values (skip leading nulls)
-  const rsiValues: (number | null)[] = rsiSeries;
-
-  // Need at least stochPeriod RSI values to compute
-  const validRsi = rsiValues.filter((v): v is number => v != null);
-  if (validRsi.length < stochPeriod + smoothK + smoothD) {
-    return { k: null, d: null, prevK: null, prevD: null };
-  }
-
-  // Compute raw %K for each RSI value where we have enough lookback
-  const rawK: (number | null)[] = [];
-  for (let i = 0; i < rsiValues.length; i++) {
-    const val = rsiValues[i];
-    if (val == null || i < stochPeriod - 1) {
-      rawK.push(null);
-      continue;
-    }
-    // Look back stochPeriod values in RSI
-    const window: number[] = [];
-    for (let j = i - stochPeriod + 1; j <= i; j++) {
-      if (rsiValues[j] != null) window.push(rsiValues[j] as number);
-    }
-    if (window.length < stochPeriod) {
-      rawK.push(null);
-      continue;
-    }
-    const lo = Math.min(...window);
-    const hi = Math.max(...window);
-    const range = hi - lo;
-    rawK.push(range === 0 ? 50 : Number((((val - lo) / range) * 100).toFixed(2)));
-  }
-
-  // Smooth rawK with SMA(smoothK) to get %K
-  const smoothedK: (number | null)[] = [];
-  for (let i = 0; i < rawK.length; i++) {
-    if (i < smoothK - 1 || rawK[i] == null) {
-      smoothedK.push(null);
-      continue;
-    }
-    let sum = 0;
-    let count = 0;
-    for (let j = i - smoothK + 1; j <= i; j++) {
-      if (rawK[j] != null) { sum += rawK[j] as number; count++; }
-    }
-    smoothedK.push(count === smoothK ? Number((sum / count).toFixed(2)) : null);
-  }
-
-  // %D = SMA(%K, smoothD)
-  const dSeries: (number | null)[] = [];
-  for (let i = 0; i < smoothedK.length; i++) {
-    if (i < smoothD - 1 || smoothedK[i] == null) {
-      dSeries.push(null);
-      continue;
-    }
-    let sum = 0;
-    let count = 0;
-    for (let j = i - smoothD + 1; j <= i; j++) {
-      if (smoothedK[j] != null) { sum += smoothedK[j] as number; count++; }
-    }
-    dSeries.push(count === smoothD ? Number((sum / count).toFixed(2)) : null);
-  }
-
-  const k = smoothedK.at(-1) ?? null;
-  const d = dSeries.at(-1) ?? null;
-  const prevK = smoothedK.at(-2) ?? null;
-  const prevD = dSeries.at(-2) ?? null;
-
-  return { k, d, prevK, prevD };
+  const raw = rawStochRSI(closes, rsiPeriod, stochPeriod, smoothK, smoothD);
+  const kNs = toNumericSeries(raw.kSeries, 2);
+  const dNs = toNumericSeries(raw.dSeries, 2);
+  return {
+    k: kNs.at(-1) ?? null,
+    d: dNs.at(-1) ?? null,
+    prevK: kNs.at(-2) ?? null,
+    prevD: dNs.at(-2) ?? null,
+  };
 }
 
 /**
  * Classic Stochastic Oscillator: 価格のレンジ内位置を測定。
- * %K_raw = (Close - Low_n) / (High_n - Low_n) * 100
- * %K = SMA(%K_raw, smoothK)
- * %D = SMA(%K, smoothD)
  */
 export function computeClassicStochastic(
   highs: number[],
@@ -272,85 +137,35 @@ export function computeClassicStochastic(
   closes: number[],
   kPeriod = 14,
   smoothK = 3,
-  smoothD = 3
+  smoothD = 3,
 ): { kSeries: (number | null)[]; dSeries: (number | null)[]; k: number | null; d: number | null; prevK: number | null; prevD: number | null } {
-  const n = Math.min(highs.length, lows.length, closes.length);
-  if (n < kPeriod + smoothK + smoothD - 2) {
-    const empty = new Array(n).fill(null);
-    return { kSeries: empty, dSeries: empty, k: null, d: null, prevK: null, prevD: null };
-  }
-
-  const rawK: (number | null)[] = [];
-  for (let i = 0; i < n; i++) {
-    if (i < kPeriod - 1) { rawK.push(null); continue; }
-    let hi = -Infinity;
-    let lo = Infinity;
-    for (let j = i - kPeriod + 1; j <= i; j++) {
-      if (highs[j] > hi) hi = highs[j];
-      if (lows[j] < lo) lo = lows[j];
-    }
-    const range = hi - lo;
-    rawK.push(range === 0 ? 50 : Number((((closes[i] - lo) / range) * 100).toFixed(2)));
-  }
-
-  const smoothedK: (number | null)[] = [];
-  for (let i = 0; i < rawK.length; i++) {
-    if (i < smoothK - 1 || rawK[i] == null) { smoothedK.push(null); continue; }
-    let sum = 0;
-    let cnt = 0;
-    for (let j = i - smoothK + 1; j <= i; j++) {
-      if (rawK[j] != null) { sum += rawK[j] as number; cnt++; }
-    }
-    smoothedK.push(cnt === smoothK ? Number((sum / cnt).toFixed(2)) : null);
-  }
-
-  const dSeriesArr: (number | null)[] = [];
-  for (let i = 0; i < smoothedK.length; i++) {
-    if (i < smoothD - 1 || smoothedK[i] == null) { dSeriesArr.push(null); continue; }
-    let sum = 0;
-    let cnt = 0;
-    for (let j = i - smoothD + 1; j <= i; j++) {
-      if (smoothedK[j] != null) { sum += smoothedK[j] as number; cnt++; }
-    }
-    dSeriesArr.push(cnt === smoothD ? Number((sum / cnt).toFixed(2)) : null);
-  }
-
+  const raw = rawStochastic(highs, lows, closes, kPeriod, smoothK, smoothD);
+  const kSeries = toNumericSeries(raw.kSeries, 2);
+  const dSeries = toNumericSeries(raw.dSeries, 2);
   return {
-    kSeries: smoothedK,
-    dSeries: dSeriesArr,
-    k: smoothedK.at(-1) ?? null,
-    d: dSeriesArr.at(-1) ?? null,
-    prevK: smoothedK.at(-2) ?? null,
-    prevD: dSeriesArr.at(-2) ?? null,
+    kSeries,
+    dSeries,
+    k: kSeries.at(-1) ?? null,
+    d: dSeries.at(-1) ?? null,
+    prevK: kSeries.at(-2) ?? null,
+    prevD: dSeries.at(-2) ?? null,
   };
 }
 
 /**
  * OBV (On-Balance Volume): 出来高を価格方向に応じて累積加算/減算。
- * close > prev_close → OBV += volume
- * close < prev_close → OBV -= volume
- * close == prev_close → OBV unchanged
  */
 export function computeOBV(
   candles: Candle[],
-  smaPeriod = 20
+  smaPeriod = 20,
 ): { obv: number | null; obvSma: number | null; prevObv: number | null; trend: 'rising' | 'falling' | 'flat' | null } {
   if (candles.length < 2) return { obv: null, obvSma: null, prevObv: null, trend: null };
 
-  const obvSeries: number[] = [0];
-  for (let i = 1; i < candles.length; i++) {
-    const prev = obvSeries[i - 1];
-    const vol = candles[i].volume ?? 0;
-    if (candles[i].close > candles[i - 1].close) {
-      obvSeries.push(prev + vol);
-    } else if (candles[i].close < candles[i - 1].close) {
-      obvSeries.push(prev - vol);
-    } else {
-      obvSeries.push(prev);
-    }
-  }
+  const closes = candles.map((c) => c.close);
+  const volumes = candles.map((c) => c.volume ?? 0);
+  const obvSeries = rawObv(closes, volumes);
 
-  const obv = obvSeries.at(-1) ?? null;
+  const obvVal = obvSeries.at(-1) ?? null;
   const prevObv = obvSeries.at(-2) ?? null;
 
   // SMA of OBV
@@ -362,32 +177,29 @@ export function computeOBV(
 
   // Trend: compare OBV to its SMA
   let trend: 'rising' | 'falling' | 'flat' | null = null;
-  if (obv != null && obvSma != null) {
-    const diff = obv - obvSma;
+  if (obvVal != null && obvSma != null) {
+    const diff = obvVal - obvSma;
     const threshold = Math.abs(obvSma) * 0.02; // 2% threshold
     if (diff > threshold) trend = 'rising';
     else if (diff < -threshold) trend = 'falling';
     else trend = 'flat';
   }
 
-  return { obv, obvSma, prevObv, trend };
+  return { obv: obvVal, obvSma, prevObv, trend };
 }
 
 function ichimoku(
   highs: number[],
   lows: number[],
-  closes: number[]
+  closes: number[],
 ): { conversion: number; base: number; spanA: number; spanB: number } | null {
-  if (highs.length < 52 || lows.length < 52) return null;
-  const conversion = (Math.max(...highs.slice(-9)) + Math.min(...lows.slice(-9))) / 2;
-  const base = (Math.max(...highs.slice(-26)) + Math.min(...lows.slice(-26))) / 2;
-  const spanA = (conversion + base) / 2;
-  const spanB = (Math.max(...highs.slice(-52)) + Math.min(...lows.slice(-52))) / 2;
+  const snap = ichimokuSnapshot(highs, lows, closes);
+  if (!snap) return null;
   return {
-    conversion: Number(conversion.toFixed(2)),
-    base: Number(base.toFixed(2)),
-    spanA: Number(spanA.toFixed(2)),
-    spanB: Number(spanB.toFixed(2)),
+    conversion: Number(snap.conversion.toFixed(2)),
+    base: Number(snap.base.toFixed(2)),
+    spanA: Number(snap.spanA.toFixed(2)),
+    spanB: Number(snap.spanB.toFixed(2)),
   };
 }
 

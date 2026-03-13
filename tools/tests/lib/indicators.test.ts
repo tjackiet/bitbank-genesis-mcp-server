@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { sma, ema, rsi, toNumericSeries } from '../../../lib/indicators.js';
+import {
+  sma, ema, rsi, toNumericSeries,
+  bollingerBands, macd, ichimokuSeries, ichimokuSnapshot,
+  stochastic, stochRSI, obv,
+} from '../../../lib/indicators.js';
 
 // --- SMA ---
 
@@ -158,5 +162,226 @@ describe('toNumericSeries', () => {
 
   it('空配列は空配列を返す', () => {
     expect(toNumericSeries([])).toEqual([]);
+  });
+});
+
+// --- Bollinger Bands ---
+
+describe('bollingerBands', () => {
+  it('基本的な BB を計算する', () => {
+    // period=3 の簡易テスト
+    const values = [10, 12, 11, 13, 12, 14];
+    const { upper, middle, lower } = bollingerBands(values, 3, 2);
+    expect(upper).toHaveLength(6);
+    expect(middle[0]).toBeNaN();
+    expect(middle[1]).toBeNaN();
+    // middle[2] = (10+12+11)/3 = 11
+    expect(middle[2]).toBeCloseTo(11, 10);
+    // upper > middle > lower
+    for (let i = 2; i < values.length; i++) {
+      expect(upper[i]).toBeGreaterThan(middle[i]);
+      expect(lower[i]).toBeLessThan(middle[i]);
+    }
+  });
+
+  it('period > データ長のとき全て NaN', () => {
+    const { upper, middle, lower } = bollingerBands([1, 2], 5);
+    upper.forEach((v) => expect(v).toBeNaN());
+    middle.forEach((v) => expect(v).toBeNaN());
+    lower.forEach((v) => expect(v).toBeNaN());
+  });
+
+  it('全て同一値なら upper = middle = lower', () => {
+    const values = [100, 100, 100, 100, 100];
+    const { upper, middle, lower } = bollingerBands(values, 3, 2);
+    for (let i = 2; i < values.length; i++) {
+      expect(upper[i]).toBeCloseTo(100, 10);
+      expect(middle[i]).toBeCloseTo(100, 10);
+      expect(lower[i]).toBeCloseTo(100, 10);
+    }
+  });
+
+  it('stdDev=0 なら upper = middle = lower', () => {
+    const values = [10, 12, 11, 13, 12];
+    const { upper, middle, lower } = bollingerBands(values, 3, 0);
+    for (let i = 2; i < values.length; i++) {
+      expect(upper[i]).toBeCloseTo(middle[i], 10);
+      expect(lower[i]).toBeCloseTo(middle[i], 10);
+    }
+  });
+});
+
+// --- MACD ---
+
+describe('macd', () => {
+  it('基本的な MACD を計算する', () => {
+    // 50 要素の上昇トレンド
+    const values = Array.from({ length: 50 }, (_, i) => 100 + i * 0.5);
+    const result = macd(values, 12, 26, 9);
+    expect(result.line).toHaveLength(50);
+    expect(result.signal).toHaveLength(50);
+    expect(result.hist).toHaveLength(50);
+    // 先頭は NaN（slow EMA が有効になるまで）
+    for (let i = 0; i < 25; i++) {
+      expect(result.line[i]).toBeNaN();
+    }
+    // 有効な値が存在する
+    const validLines = result.line.filter((v) => !isNaN(v));
+    expect(validLines.length).toBeGreaterThan(0);
+  });
+
+  it('データ不足のとき全て NaN', () => {
+    const result = macd([1, 2, 3], 12, 26, 9);
+    result.line.forEach((v) => expect(v).toBeNaN());
+    result.signal.forEach((v) => expect(v).toBeNaN());
+    result.hist.forEach((v) => expect(v).toBeNaN());
+  });
+
+  it('上昇トレンドで MACD line > 0', () => {
+    const values = Array.from({ length: 60 }, (_, i) => 100 + i * 2);
+    const result = macd(values, 12, 26, 9);
+    // 後半の有効な line は > 0（短期 > 長期）
+    const lastLine = result.line.at(-1);
+    expect(lastLine).not.toBeNaN();
+    expect(lastLine!).toBeGreaterThan(0);
+  });
+});
+
+// --- Ichimoku ---
+
+describe('ichimokuSeries', () => {
+  // 60 要素のテストデータ
+  const n = 60;
+  const highs = Array.from({ length: n }, (_, i) => 110 + i);
+  const lows = Array.from({ length: n }, (_, i) => 90 + i);
+  const closes = Array.from({ length: n }, (_, i) => 100 + i);
+
+  it('tenkan は index 8 から有効', () => {
+    const result = ichimokuSeries(highs, lows, closes);
+    for (let i = 0; i < 8; i++) expect(result.tenkan[i]).toBeNaN();
+    expect(result.tenkan[8]).not.toBeNaN();
+  });
+
+  it('kijun は index 25 から有効', () => {
+    const result = ichimokuSeries(highs, lows, closes);
+    for (let i = 0; i < 25; i++) expect(result.kijun[i]).toBeNaN();
+    expect(result.kijun[25]).not.toBeNaN();
+  });
+
+  it('spanB は index 51 から有効', () => {
+    const result = ichimokuSeries(highs, lows, closes);
+    for (let i = 0; i < 51; i++) expect(result.spanB[i]).toBeNaN();
+    expect(result.spanB[51]).not.toBeNaN();
+  });
+
+  it('chikou は closes のコピー', () => {
+    const result = ichimokuSeries(highs, lows, closes);
+    expect(result.chikou).toEqual(closes);
+  });
+});
+
+describe('ichimokuSnapshot', () => {
+  it('52 本以上あれば値を返す', () => {
+    const highs = Array.from({ length: 52 }, (_, i) => 110 + i);
+    const lows = Array.from({ length: 52 }, (_, i) => 90 + i);
+    const closes = Array.from({ length: 52 }, (_, i) => 100 + i);
+    const result = ichimokuSnapshot(highs, lows, closes);
+    expect(result).not.toBeNull();
+    expect(result!.conversion).toBeDefined();
+    expect(result!.base).toBeDefined();
+    expect(result!.spanA).toBeDefined();
+    expect(result!.spanB).toBeDefined();
+  });
+
+  it('52 本未満なら null', () => {
+    expect(ichimokuSnapshot([1], [1], [1])).toBeNull();
+    expect(ichimokuSnapshot(
+      Array.from({ length: 51 }, () => 100),
+      Array.from({ length: 51 }, () => 90),
+      Array.from({ length: 51 }, () => 95),
+    )).toBeNull();
+  });
+});
+
+// --- Stochastic ---
+
+describe('stochastic', () => {
+  it('基本的なストキャスティクスを計算する', () => {
+    // 30 要素のテストデータ
+    const n = 30;
+    const highs = Array.from({ length: n }, (_, i) => 110 + Math.sin(i) * 5);
+    const lows = Array.from({ length: n }, (_, i) => 90 + Math.sin(i) * 5);
+    const closes = Array.from({ length: n }, (_, i) => 100 + Math.sin(i) * 5);
+    const result = stochastic(highs, lows, closes, 14, 3, 3);
+    expect(result.kSeries).toHaveLength(n);
+    expect(result.dSeries).toHaveLength(n);
+    // 有効な値は 0-100 の範囲
+    result.kSeries.filter((v) => !isNaN(v)).forEach((v) => {
+      expect(v).toBeGreaterThanOrEqual(0);
+      expect(v).toBeLessThanOrEqual(100);
+    });
+  });
+
+  it('データ不足のとき全て NaN', () => {
+    const result = stochastic([1, 2], [1, 2], [1, 2], 14, 3, 3);
+    result.kSeries.forEach((v) => expect(v).toBeNaN());
+    result.dSeries.forEach((v) => expect(v).toBeNaN());
+  });
+});
+
+// --- Stochastic RSI ---
+
+describe('stochRSI', () => {
+  it('十分なデータで K/D を計算する', () => {
+    const closes = Array.from({ length: 60 }, (_, i) => 100 + Math.sin(i * 0.3) * 10);
+    const result = stochRSI(closes, 14, 14, 3, 3);
+    expect(result.kSeries).toHaveLength(60);
+    expect(result.dSeries).toHaveLength(60);
+    const validK = result.kSeries.filter((v) => !isNaN(v));
+    expect(validK.length).toBeGreaterThan(0);
+    validK.forEach((v) => {
+      expect(v).toBeGreaterThanOrEqual(0);
+      expect(v).toBeLessThanOrEqual(100);
+    });
+  });
+
+  it('データ不足のとき全て NaN', () => {
+    const result = stochRSI([100, 101, 102], 14, 14, 3, 3);
+    result.kSeries.forEach((v) => expect(v).toBeNaN());
+  });
+});
+
+// --- OBV ---
+
+describe('obv', () => {
+  it('基本的な OBV を計算する', () => {
+    const closes = [100, 102, 101, 103, 102];
+    const volumes = [1000, 1200, 800, 1500, 900];
+    const result = obv(closes, volumes);
+    expect(result).toHaveLength(5);
+    expect(result[0]).toBe(0);
+    // 102 > 100 → +1200
+    expect(result[1]).toBe(1200);
+    // 101 < 102 → -800
+    expect(result[2]).toBe(400);
+    // 103 > 101 → +1500
+    expect(result[3]).toBe(1900);
+    // 102 < 103 → -900
+    expect(result[4]).toBe(1000);
+  });
+
+  it('価格変化なしなら OBV 不変', () => {
+    const closes = [100, 100, 100];
+    const volumes = [1000, 2000, 3000];
+    const result = obv(closes, volumes);
+    expect(result).toEqual([0, 0, 0]);
+  });
+
+  it('空配列は空配列を返す', () => {
+    expect(obv([], [])).toEqual([]);
+  });
+
+  it('単一要素は [0]', () => {
+    expect(obv([100], [1000])).toEqual([0]);
   });
 });

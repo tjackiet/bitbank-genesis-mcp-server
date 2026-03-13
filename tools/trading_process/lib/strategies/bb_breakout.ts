@@ -7,7 +7,7 @@
 
 import type { Candle } from '../../types.js';
 import type { Strategy, Signal, Overlay, ParamValidationResult } from './types.js';
-import { calculateSMA } from '../sma.js';
+import { bollingerBands } from '../../../../lib/indicators.js';
 
 /**
  * BB戦略のデフォルトパラメータ
@@ -16,50 +16,6 @@ const DEFAULT_PARAMS = {
   period: 20,
   stddev: 2,
 };
-
-/**
- * 標準偏差を計算
- */
-function calculateStdDev(values: number[], period: number, sma: number[]): number[] {
-  const result: number[] = new Array(values.length).fill(NaN);
-
-  for (let i = period - 1; i < values.length; i++) {
-    const mean = sma[i];
-    if (isNaN(mean)) continue;
-
-    let sumSq = 0;
-    for (let j = i - period + 1; j <= i; j++) {
-      sumSq += Math.pow(values[j] - mean, 2);
-    }
-    result[i] = Math.sqrt(sumSq / period);
-  }
-
-  return result;
-}
-
-/**
- * ボリンジャーバンドを計算
- */
-function calculateBollingerBands(
-  closes: number[],
-  period: number,
-  stddevMultiplier: number
-): { middle: number[]; upper: number[]; lower: number[] } {
-  const middle = calculateSMA(closes, period);
-  const stddev = calculateStdDev(closes, period, middle);
-
-  const upper: number[] = new Array(closes.length).fill(NaN);
-  const lower: number[] = new Array(closes.length).fill(NaN);
-
-  for (let i = 0; i < closes.length; i++) {
-    if (!isNaN(middle[i]) && !isNaN(stddev[i])) {
-      upper[i] = middle[i] + stddevMultiplier * stddev[i];
-      lower[i] = middle[i] - stddevMultiplier * stddev[i];
-    }
-  }
-
-  return { middle, upper, lower };
-}
 
 /**
  * パラメータのバリデーション
@@ -94,7 +50,7 @@ export const bbBreakoutStrategy: Strategy = {
   generate(candles: Candle[], params: Record<string, number>): Signal[] {
     const { period, stddev } = { ...DEFAULT_PARAMS, ...params };
     const closes = candles.map(c => c.close);
-    const { middle, upper, lower } = calculateBollingerBands(closes, period, stddev);
+    const { middle, upper, lower } = bollingerBands(closes, period, stddev);
 
     const signals: Signal[] = [];
     const startIdx = period + 1;
@@ -156,7 +112,7 @@ export const bbBreakoutStrategy: Strategy = {
   getOverlays(candles: Candle[], params: Record<string, number>): Overlay[] {
     const { period, stddev } = { ...DEFAULT_PARAMS, ...params };
     const closes = candles.map(c => c.close);
-    const { middle, upper, lower } = calculateBollingerBands(closes, period, stddev);
+    const { middle, upper, lower } = bollingerBands(closes, period, stddev);
 
     return [
       {
