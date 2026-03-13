@@ -1418,10 +1418,20 @@ export default async function analyzeMyPortfolioHandler(args: {
 			lines.push('※ 出金元本は外部フローとして除外、出金手数料はコストとして performance に含む');
 		}
 		if (monthlyEquitySeries && monthlyEquitySeries.length > 0) {
-			lines.push(`月次資産推移: ${monthlyEquitySeries.length}点（日次）`);
+			lines.push(`月次資産推移（日次, ${monthlyEquitySeries.length}点）:`);
+			for (let i = 0; i < monthlyEquitySeries.length; i++) {
+				const p = monthlyEquitySeries[i];
+				const label = i === monthlyEquitySeries.length - 1 ? '（現在）' : '';
+				lines.push(`  ${p.timestamp}: ${formatPriceJPY(p.value_jpy)}${label}`);
+			}
 		}
 		if (yearlyEquitySeries && yearlyEquitySeries.length > 0) {
-			lines.push(`年次資産推移: ${yearlyEquitySeries.length}点（月次）`);
+			lines.push(`年次資産推移（月次, ${yearlyEquitySeries.length}点）:`);
+			for (let i = 0; i < yearlyEquitySeries.length; i++) {
+				const p = yearlyEquitySeries[i];
+				const label = i === yearlyEquitySeries.length - 1 ? '（現在）' : '';
+				lines.push(`  ${p.timestamp}: ${formatPriceJPY(p.value_jpy)}${label}`);
+			}
 		}
 
 		// 年次・月次の入出金サマリー
