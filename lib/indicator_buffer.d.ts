@@ -1,3 +1,4 @@
+// Hand-written type declarations for the corresponding .ts module.
 // Keys used in indicator buffer calculation
 export type IndicatorBufferKey =
 	| 'SMA_5'
