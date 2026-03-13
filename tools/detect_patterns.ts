@@ -1,4 +1,5 @@
 import analyzeIndicators from './analyze_indicators.js';
+import { dayjs } from '../lib/datetime.js';
 import { ok, fail, failFromError } from '../lib/result.js';
 import { DetectPatternsInputSchema, DetectPatternsOutputSchema, PatternTypeEnum } from '../src/schemas.js';
 import {
@@ -314,8 +315,8 @@ export default async function detectPatterns(
       const allStarts = patterns.map((p: any) => p.range?.start).filter(Boolean).map((s: string) => Date.parse(s)).filter(Number.isFinite);
       const allEnds = patterns.map((p: any) => p.range?.end).filter(Boolean).map((s: string) => Date.parse(s)).filter(Number.isFinite);
       if (allStarts.length && allEnds.length) {
-        const s = new Date(Math.min(...allStarts)).toISOString().slice(0, 10);
-        const e = new Date(Math.max(...allEnds)).toISOString().slice(0, 10);
+        const s = dayjs(Math.min(...allStarts)).toISOString().slice(0, 10);
+        const e = dayjs(Math.max(...allEnds)).toISOString().slice(0, 10);
         const days = Math.max(1, Math.round((Math.max(...allEnds) - Math.min(...allStarts)) / 86400000));
         detectionPeriodText = `\n検出対象期間: ${s} ~ ${e}（${days}日間）`;
       }
