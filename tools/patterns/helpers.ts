@@ -6,28 +6,28 @@
  */
 import type { CandleData } from './types.js';
 import { dayjs } from '../../lib/datetime.js';
+import { trueRange } from '../../lib/indicators.js';
 
 // ---------------------------------------------------------------------------
-// ATR 計算
+// ATR 計算（lib/indicators.ts の trueRange に委譲）
 // ---------------------------------------------------------------------------
 export function calcATR(candles: CandleData[], from: number, to: number, period: number = 14): number {
   const start = Math.max(1, from);
   const end = Math.max(start + 1, to);
-  const tr: number[] = [];
-  for (let i = start; i <= end; i++) {
-    const hi = Number(candles[i]?.high ?? NaN);
-    const lo = Number(candles[i]?.low ?? NaN);
-    const pc = Number(candles[i - 1]?.close ?? NaN);
-    if (!Number.isFinite(hi) || !Number.isFinite(lo) || !Number.isFinite(pc)) continue;
-    const r1 = hi - lo;
-    const r2 = Math.abs(hi - pc);
-    const r3 = Math.abs(lo - pc);
-    tr.push(Math.max(r1, r2, r3));
-  }
-  if (!tr.length) return 0;
-  const n = Math.min(period, tr.length);
-  const slice = tr.slice(-n);
-  return slice.reduce((s, v) => s + v, 0) / slice.length;
+  const slice = candles.slice(start - 1, end + 1); // prevClose 用に 1 つ前を含める
+  if (slice.length < 2) return 0;
+
+  const highs = slice.map(c => Number(c?.high ?? NaN));
+  const lows = slice.map(c => Number(c?.low ?? NaN));
+  const closes = slice.map(c => Number(c?.close ?? NaN));
+
+  const tr = trueRange(highs, lows, closes);
+  // tr[0] は NaN（prevClose がない）、有効値は tr[1..] — 直近 period 個を取る
+  const validTr = tr.filter(v => Number.isFinite(v));
+  if (!validTr.length) return 0;
+  const n = Math.min(period, validTr.length);
+  const tail = validTr.slice(-n);
+  return tail.reduce((s, v) => s + v, 0) / tail.length;
 }
 
 // ---------------------------------------------------------------------------

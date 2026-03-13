@@ -3,6 +3,7 @@ import {
   sma, ema, rsi, toNumericSeries,
   bollingerBands, macd, ichimokuSeries, ichimokuSnapshot,
   stochastic, stochRSI, obv,
+  trueRange, atr,
 } from '../../../lib/indicators.js';
 
 // --- SMA ---
@@ -383,5 +384,56 @@ describe('obv', () => {
 
   it('単一要素は [0]', () => {
     expect(obv([100], [1000])).toEqual([0]);
+  });
+});
+
+// --- True Range ---
+
+describe('trueRange', () => {
+  it('基本的な TR を計算する', () => {
+    const highs  = [110, 115, 112, 118];
+    const lows   = [100, 105, 108, 110];
+    const closes = [105, 110, 109, 115];
+    const result = trueRange(highs, lows, closes);
+    expect(result).toHaveLength(4);
+    expect(result[0]).toBeNaN(); // prevClose がない
+    // i=1: max(115-105, |115-105|, |105-105|) = 10
+    expect(result[1]).toBeCloseTo(10, 10);
+    // i=2: max(112-108, |112-110|, |108-110|) = max(4, 2, 2) = 4
+    expect(result[2]).toBeCloseTo(4, 10);
+    // i=3: max(118-110, |118-109|, |110-109|) = max(8, 9, 1) = 9
+    expect(result[3]).toBeCloseTo(9, 10);
+  });
+
+  it('データが1本以下のとき全て NaN', () => {
+    expect(trueRange([100], [90], [95])).toEqual([NaN]);
+    expect(trueRange([], [], [])).toEqual([]);
+  });
+});
+
+// --- ATR ---
+
+describe('atr', () => {
+  it('基本的な ATR を計算する（period=3）', () => {
+    // 5 本のキャンドル → TR は index 1-4 の 4 値
+    // ATR(3) = first valid at index 3 (SMA of TR[1..3])
+    const highs  = [110, 115, 112, 118, 120];
+    const lows   = [100, 105, 108, 110, 112];
+    const closes = [105, 110, 109, 115, 118];
+    const result = atr(highs, lows, closes, 3);
+    expect(result).toHaveLength(5);
+    expect(result[0]).toBeNaN();
+    expect(result[1]).toBeNaN();
+    expect(result[2]).toBeNaN();
+    // TR[1]=10, TR[2]=4, TR[3]=9 → ATR[3] = (10+4+9)/3 ≈ 7.667
+    expect(result[3]).toBeCloseTo(23 / 3, 10);
+    // TR[4] = max(120-112, |120-115|, |112-115|) = max(8, 5, 3) = 8
+    // ATR[4] = SMA(TR[2..4]) = (4+9+8)/3 = 7
+    expect(result[4]).toBeCloseTo(7, 10);
+  });
+
+  it('データ不足のとき全て NaN', () => {
+    const result = atr([110, 115], [100, 105], [105, 110], 14);
+    expect(result.every(v => isNaN(v))).toBe(true);
   });
 });
