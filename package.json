@@ -1,5 +1,5 @@
 {
-  "name": "bb-mcp-sandbox",
+  "name": "bitbank-genesis-mcp-server",
   "private": true,
   "type": "module",
   "scripts": {
