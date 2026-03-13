@@ -25,6 +25,14 @@ jobs:
       - name: Generate types from Zod schemas
         run: npm run gen:types
 
+      - name: Lint banned patterns
+        run: |
+          # new Date is banned in production code — use lib/datetime.ts instead
+          if grep -rn 'new Date' --include='*.ts' src/ tools/ lib/ scripts/ | grep -v '\.test\.ts'; then
+            echo "::error::Found 'new Date' in production code. Use dayjs from lib/datetime.ts instead."
+            exit 1
+          fi
+
       - name: Typecheck
         run: npm run typecheck
 

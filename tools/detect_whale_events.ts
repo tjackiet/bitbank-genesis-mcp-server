@@ -1,4 +1,4 @@
-import getDepth from './get_depth.js';
+import getDepth from '../lib/get-depth.js';
 import getCandles from './get_candles.js';
 import { ok, fail, failFromError, failFromValidation } from '../lib/result.js';
 import { ensurePair, createMeta } from '../lib/validate.js';

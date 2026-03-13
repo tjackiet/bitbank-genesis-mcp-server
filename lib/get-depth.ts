@@ -1,8 +1,8 @@
-import { ensurePair, createMeta } from '../lib/validate.js';
-import { fetchJson, BITBANK_API_BASE, DEFAULT_RETRIES } from '../lib/http.js';
-import { ok, fail, failFromError, failFromValidation } from '../lib/result.js';
-import { formatSummary, formatTimestampJST } from '../lib/formatter.js';
-import { estimateZones } from '../lib/depth-analysis.js';
+import { ensurePair, createMeta } from './validate.js';
+import { fetchJson, BITBANK_API_BASE, DEFAULT_RETRIES } from './http.js';
+import { ok, fail, failFromError, failFromValidation } from './result.js';
+import { formatSummary, formatTimestampJST } from './formatter.js';
+import { estimateZones } from './depth-analysis.js';
 import { GetDepthOutputSchema } from '../src/schemas.js';
 
 export interface GetDepthOptions { timeoutMs?: number; maxLevels?: number }

@@ -1,10 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-vi.mock('../tools/get_depth.js', () => ({
+vi.mock('../lib/get-depth.js', () => ({
   default: vi.fn(),
 }));
 
-import getDepth from '../tools/get_depth.js';
+import getDepth from '../lib/get-depth.js';
 import renderDepthSvg, { toolDef } from '../tools/render_depth_svg.js';
 
 function depthOk(overrides: Record<string, unknown> = {}) {

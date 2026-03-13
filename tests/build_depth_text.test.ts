@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildDepthText, type BuildDepthTextInput } from '../tools/get_depth.js';
+import { buildDepthText, type BuildDepthTextInput } from '../lib/get-depth.js';
 
 function makeInput(overrides?: Partial<BuildDepthTextInput>): BuildDepthTextInput {
   return {

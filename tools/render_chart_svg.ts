@@ -26,7 +26,7 @@
 import fs from 'fs/promises';
 import path from 'path';
 import analyzeIndicators from './analyze_indicators.js';
-import getDepth from './get_depth.js';
+import getDepth from '../lib/get-depth.js';
 import { ok, fail } from '../lib/result.js';
 import { formatPair } from '../lib/formatter.js';
 import { dayjs } from '../lib/datetime.js';

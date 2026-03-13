@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-vi.mock('../tools/get_depth.js', () => ({
+vi.mock('../lib/get-depth.js', () => ({
   default: vi.fn(),
 }));
 
@@ -8,7 +8,7 @@ vi.mock('../tools/get_candles.js', () => ({
   default: vi.fn(),
 }));
 
-import getDepth from '../tools/get_depth.js';
+import getDepth from '../lib/get-depth.js';
 import getCandles from '../tools/get_candles.js';
 import detectWhaleEvents, { toolDef } from '../tools/detect_whale_events.js';
 
