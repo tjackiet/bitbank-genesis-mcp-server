@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { fetchJson, BITBANK_API_BASE, DEFAULT_RETRIES } from './http.js';
+import { fetchJson, BITBANK_API_BASE, DEFAULT_RETRIES } from '../../../lib/http.js';
 
 describe('定数', () => {
   it('BITBANK_API_BASE が正しい', () => {

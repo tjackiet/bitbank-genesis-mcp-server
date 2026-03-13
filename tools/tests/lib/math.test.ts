@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { avg, median, stddev, slidingMean, slidingStddev } from './math.js';
+import { avg, median, stddev, slidingMean, slidingStddev } from '../../../lib/math.js';
 
 describe('avg', () => {
   it('平均値を計算する', () => {

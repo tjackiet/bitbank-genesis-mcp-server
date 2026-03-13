@@ -11,7 +11,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { sign, buildGetMessage, buildPostMessage } from '../../src/private/auth.js';
+import { sign, buildGetMessage, buildPostMessage } from '../../../src/private/auth.js';
 
 // テストベクタ: 固定の秘密鍵から手計算した署名
 // 検証方法: echo -n "<message>" | openssl dgst -sha256 -hmac "<secret>"

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { estimateZones } from './depth-analysis.js';
+import { estimateZones } from '../../../lib/depth-analysis.js';
 
 describe('estimateZones', () => {
   it('空配列は空配列を返す', () => {
