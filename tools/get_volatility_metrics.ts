@@ -5,6 +5,14 @@ import { formatSummary } from '../lib/formatter.js';
 import { stddev, slidingStddev, slidingMean } from '../lib/math.js';
 import { nowIso } from '../lib/datetime.js';
 import { GetVolMetricsOutputSchema } from '../src/schemas.js';
+import { trueRange } from '../lib/indicators.js';
+import {
+  logReturns,
+  parkinsonComponents,
+  garmanKlassComponents,
+  rogersSatchellComponents,
+  componentMeanToVol,
+} from '../lib/volatility.js';
 
 type Candle = { open: number; high: number; low: number; close: number; isoTime?: string | null };
 
@@ -86,11 +94,6 @@ function toMs(iso: string | null | undefined): number | null {
   return Number.isFinite(t) ? t : null;
 }
 
-function safeLog(x: number): number {
-  return Math.log(Math.max(x, 1e-12));
-}
-
-
 
 export default async function getVolatilityMetrics(
   pair: string,
@@ -117,49 +120,31 @@ export default async function getVolatilityMetrics(
 
     const ts: number[] = [];
     const close: number[] = [];
+    const open: number[] = [];
+    const high: number[] = [];
+    const low: number[] = [];
     for (const c of candles) {
       const t = toMs(c.isoTime ?? null);
       if (t != null) ts.push(t);
       else ts.push(ts.length > 0 ? ts[ts.length - 1] + baseIntervalMsOf(type) : Date.now());
+      open.push(Number(c.open));
+      high.push(Number(c.high));
+      low.push(Number(c.low));
       close.push(Number(c.close));
     }
 
-    const ret: number[] = [];
-    for (let i = 1; i < close.length; i++) {
-      const prev = close[i - 1];
-      const curr = close[i];
-      if (prev > 0 && curr > 0) {
-        ret.push(useLog ? safeLog(curr / prev) : (curr - prev) / prev);
-      } else {
-        ret.push(0);
-      }
-    }
+    const ret = logReturns(close, useLog);
     const rvInst = ret.map((r) => Math.abs(r));
 
-    // Per-candle components for OHLC-based estimators
-    const pkSeries: number[] = [];
-    const gkSeries: number[] = [];
-    const rsSeries: number[] = [];
-    const trSeries: number[] = [];
-    for (let i = 0; i < candles.length; i++) {
-      const c = candles[i];
-      const o = Number(c.open);
-      const h = Number(c.high);
-      const l = Number(c.low);
-      const cl = Number(c.close);
-      const logHL = safeLog(h / Math.max(l, 1e-12));
-      const logCO = safeLog(cl / Math.max(o, 1e-12));
-      const pk = logHL * logHL; // (ln(H/L))^2
-      const gk = 0.5 * pk - (2 * Math.log(2) - 1) * (logCO * logCO);
-      const rs = safeLog(h / Math.max(cl, 1e-12)) * safeLog(h / Math.max(o, 1e-12)) + safeLog(l / Math.max(cl, 1e-12)) * safeLog(l / Math.max(o, 1e-12));
-      pkSeries.push(pk);
-      gkSeries.push(gk);
-      rsSeries.push(rs);
-      // True Range
-      const prevClose = i > 0 ? Number(candles[i - 1].close) : cl;
-      const tr = Math.max(h - l, Math.abs(h - prevClose), Math.abs(l - prevClose));
-      trSeries.push(tr);
-    }
+    // Per-candle components for OHLC-based estimators（lib/volatility.ts に委譲）
+    const pkSeries = parkinsonComponents(high, low);
+    const gkSeries = garmanKlassComponents(open, high, low, close);
+    const rsSeries = rogersSatchellComponents(open, high, low, close);
+
+    // True Range（lib/indicators.ts に委譲）
+    const trRaw = trueRange(high, low, close);
+    // trRaw[0] は NaN なので、互換性のため先頭を h-l で埋める
+    const trSeries = trRaw.map((v, i) => Number.isFinite(v) ? v : Math.max(0, high[i] - low[i]));
 
     // Aggregates over whole sample (use returns length for rv)
     const rvStd = stddev(ret);
@@ -167,9 +152,9 @@ export default async function getVolatilityMetrics(
     const pkMean = pkSeries.reduce((s, v) => s + v, 0) / Math.max(1, pkSeries.length);
     const gkMean = gkSeries.reduce((s, v) => s + v, 0) / Math.max(1, gkSeries.length);
     const rsMean = rsSeries.reduce((s, v) => s + v, 0) / Math.max(1, rsSeries.length);
-    const parkinson = Math.sqrt(Math.max(0, pkMean / (4 * Math.log(2))));
-    const garmanKlass = Math.sqrt(Math.max(0, gkMean));
-    const rogersSatchell = Math.sqrt(Math.max(0, rsMean));
+    const parkinson = componentMeanToVol(pkMean, 'parkinson');
+    const garmanKlass = componentMeanToVol(gkMean, 'garmanKlass');
+    const rogersSatchell = componentMeanToVol(rsMean, 'rogersSatchell');
 
     // ATR aggregate: use first window (default 14) SMA on TR, take last
     const primaryWindow = Math.max(2, (windows && windows[0]) || 14);
@@ -191,9 +176,9 @@ export default async function getVolatilityMetrics(
       const gkRoll = slidingMean(gkSeries, w);
       const rsRoll = slidingMean(rsSeries, w);
       const atrRoll = slidingMean(trSeries, w);
-      const p = pkRoll.length ? Math.sqrt(Math.max(0, (pkRoll.at(-1) as number) / (4 * Math.log(2)))) : undefined;
-      const gk = gkRoll.length ? Math.sqrt(Math.max(0, gkRoll.at(-1) as number)) : undefined;
-      const rs = rsRoll.length ? Math.sqrt(Math.max(0, rsRoll.at(-1) as number)) : undefined;
+      const p = pkRoll.length ? componentMeanToVol(pkRoll.at(-1) as number, 'parkinson') : undefined;
+      const gk = gkRoll.length ? componentMeanToVol(gkRoll.at(-1) as number, 'garmanKlass') : undefined;
+      const rs = rsRoll.length ? componentMeanToVol(rsRoll.at(-1) as number, 'rogersSatchell') : undefined;
       const atr = atrRoll.length ? (atrRoll.at(-1) as number) : undefined;
       rollingOut.push({ window: w, rv_std: rvStdLatest, rv_std_ann: rvStdAnnLatest, atr, parkinson: p, garmanKlass: gk, rogersSatchell: rs });
     }

@@ -454,6 +454,79 @@ export function stochRSI(
 }
 
 // ============================================================
+// True Range / ATR
+// ============================================================
+
+/**
+ * True Range 系列
+ *
+ * TR = max(high - low, |high - prevClose|, |low - prevClose|)
+ *
+ * @param highs 高値配列（古い順）
+ * @param lows 安値配列（古い順）
+ * @param closes 終値配列（古い順）
+ * @returns TR 配列（先頭は NaN — prevClose が存在しない）
+ */
+export function trueRange(
+  highs: number[],
+  lows: number[],
+  closes: number[],
+): number[] {
+  const n = Math.min(highs.length, lows.length, closes.length);
+  if (n < 2) return new Array(n).fill(NaN);
+
+  const result: number[] = new Array(n).fill(NaN);
+  for (let i = 1; i < n; i++) {
+    const h = highs[i];
+    const l = lows[i];
+    const pc = closes[i - 1];
+    if (!Number.isFinite(h) || !Number.isFinite(l) || !Number.isFinite(pc)) continue;
+    result[i] = Math.max(h - l, Math.abs(h - pc), Math.abs(l - pc));
+  }
+  return result;
+}
+
+/**
+ * ATR (Average True Range) — TR の SMA
+ *
+ * @param highs 高値配列（古い順）
+ * @param lows 安値配列（古い順）
+ * @param closes 終値配列（古い順）
+ * @param period 期間（デフォルト 14）
+ * @returns ATR 配列（NaN 埋め、先頭 period 個は NaN）
+ */
+export function atr(
+  highs: number[],
+  lows: number[],
+  closes: number[],
+  period: number = 14,
+): number[] {
+  const tr = trueRange(highs, lows, closes);
+  const n = tr.length;
+  const result: number[] = new Array(n).fill(NaN);
+
+  if (n < period + 1) return result;
+
+  // TR[0] は NaN なので有効な TR は index 1 から
+  // 最初の ATR = SMA of TR[1..period]
+  let sum = 0;
+  for (let i = 1; i <= period; i++) {
+    if (isNaN(tr[i])) return result;
+    sum += tr[i];
+  }
+  result[period] = sum / period;
+
+  // 以降は SMA スライディングウィンドウ
+  for (let i = period + 1; i < n; i++) {
+    if (isNaN(tr[i])) continue;
+    sum = sum - tr[i - period] + tr[i];
+    result[i] = sum / period;
+  }
+
+  return result;
+}
+
+// ============================================================
 // OBV (On-Balance Volume)
 // ============================================================
 
