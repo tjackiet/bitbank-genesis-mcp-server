@@ -681,7 +681,9 @@ async function fetchCandlePriceData(
 				const open = Number(candle[0]);
 				if (!Number.isFinite(open) || open <= 0) continue;
 
-				priceByDate.set(ts, open);
+					// Normalize to JST midnight so keys match buildEquitySeries date lookups
+				const jstMidnight = dayjs(ts).tz('Asia/Tokyo').startOf('day').valueOf();
+				priceByDate.set(jstMidnight, open);
 
 				if (yearStartPrice == null && ts >= yearStartMs) {
 					yearStartPrice = open;
