@@ -8,6 +8,7 @@
     "dev": "LOG_LEVEL=debug tsx src/server.ts",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:e2e": "vitest run --config vitest.config.e2e.ts",
     "test:coverage": "vitest run --coverage",
     "stat": "tsx scripts/stat.ts",
     "report": "tsx scripts/report.ts",
