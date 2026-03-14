@@ -1,0 +1,24 @@
+pre-commit:
+  parallel: true
+  commands:
+    gen-types:
+      run: npm run gen:types
+    typecheck:
+      run: npm run typecheck
+    lint:
+      run: npx oxlint {staged_files}
+      glob: "*.ts"
+    format-check:
+      run: npx biome check --no-errors-on-unmatched {staged_files}
+      glob: "*.ts"
+    banned-patterns:
+      run: |
+        for f in {staged_files}; do
+          if grep -n 'new Date' "$f" 2>/dev/null | grep -v '// *allow-date' > /dev/null; then
+            echo "ERROR: 'new Date' found in $f. Use dayjs from lib/datetime.ts instead."
+            grep -n 'new Date' "$f"
+            exit 1
+          fi
+        done
+      glob: "*.ts"
+      exclude: "*.test.ts"

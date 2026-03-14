@@ -23,8 +23,12 @@ npm run gen:types           # Zod スキーマから型定義を生成
 npm run typecheck           # tsc --noEmit
 npm run build               # gen:types + typecheck
 npm test                    # vitest で全テスト実行
+npm run lint                # Oxlint でリント
+npm run lint:fix            # Oxlint で自動修正
+npm run format              # Biome でフォーマット
+npm run format:check        # Biome でフォーマットチェック
 
-# PR 前に必ず実行
+# PR 前に必ず実行（Lefthook pre-commit で自動実行される）
 npm run gen:types && npm run typecheck
 ```
 
@@ -43,10 +47,12 @@ npm run gen:types && npm run typecheck
 
 ## コードスタイル・規約
 
-- ESLint / Prettier 無し。TypeScript strict モードで型安全を担保。
+- **リンター**: Oxlint（Rust製高速リンター）+ **フォーマッター**: Biome（Rust製）
+- TypeScript strict モードで型安全を担保。
 - 全ツールは `Result<T, M>` パターン（`ok()` / `fail()`）で返す。
 - スキーマ変更は `src/schemas.ts` を起点（Zod が単一ソース）。
 - 日時処理は `lib/datetime.ts` を使用（`new Date` は避ける）。
+- `any` 型の使用は禁止。型が不明な場合は `unknown` を使い、型ガードで絞り込む。
 
 ## ツール追加・修正
 
@@ -66,7 +72,20 @@ npm run gen:types && npm run typecheck
 
 ## CI (GitHub Actions)
 
-`main` への push / PR → `npm ci` → `gen:types` → `typecheck`
+`main` への push / PR → `npm ci` → `gen:types` → banned patterns → Oxlint → Biome check → `typecheck` → `test`
+
+## 品質フィードバックループ
+
+3層の決定論的チェックでコード品質を強制:
+
+| レイヤー | ツール | タイミング |
+|---------|--------|-----------|
+| PostToolUse Hook (ms) | Biome format → Oxlint → tsc | ファイル書き込みのたび |
+| Pre-commit (s) | Lefthook → Oxlint + tsc + banned patterns | `git commit` 時 |
+| CI (min) | Oxlint + Biome check + tsc + vitest | push / PR 時 |
+
+- **設定ファイル保護**: `biome.json`, `tsconfig.json`, `lefthook.yml`, `.claude/settings.json` はエージェントによる編集がブロックされる。リンターエラーはコードを修正して解決すること。
+- **`--no-verify` 禁止**: `git commit --no-verify` はエージェントに対して禁止されている。
 
 ## リポジトリルール
 
