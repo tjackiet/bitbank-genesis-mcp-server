@@ -2,8 +2,8 @@
  * SVG to PNG conversion utility using sharp
  */
 
-import { existsSync, mkdirSync, writeFileSync } from 'fs';
-import { dirname } from 'path';
+import { existsSync, mkdirSync } from 'node:fs';
+import { dirname } from 'node:path';
 import sharp from 'sharp';
 import { dayjs } from '../../../lib/datetime.js';
 

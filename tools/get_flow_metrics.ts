@@ -155,14 +155,15 @@ export default async function getFlowMetrics(
 				const txRes = await getTransactions(chk.pair, Math.min(lim.value, 1000), date);
 				if (!txRes?.ok)
 					return GetFlowMetricsOutputSchema.parse(
-						fail(txRes?.summary || 'failed', (txRes?.meta as any)?.errorType || 'internal'),
+						fail(txRes?.summary || 'failed', txRes?.meta?.errorType || 'internal'),
 					);
 				txs = txRes.data.normalized as Tx[];
 			} else {
 				// 日付指定なし: latest で取得し、不足なら日付ベースで補完
 				const latestRes = await getTransactions(chk.pair, Math.min(lim.value, 1000));
-				const latestOk = !!(latestRes as any)?.ok;
-				const latestTxs = (latestOk ? (latestRes as any).data.normalized : []) as Tx[];
+				const latestR = latestRes as { ok?: boolean; data?: { normalized?: Tx[] } };
+				const latestOk = !!latestR?.ok;
+				const latestTxs: Tx[] = latestOk && Array.isArray(latestR.data?.normalized) ? latestR.data.normalized : [];
 
 				if (latestTxs.length >= lim.value) {
 					txs = latestTxs;
@@ -388,7 +389,7 @@ export default async function getFlowMetrics(
 			metaExtra.warning = dataWarning;
 		}
 		const meta = createMeta(chk.pair, metaExtra);
-		return GetFlowMetricsOutputSchema.parse(ok(summary, data as any, meta as any));
+		return GetFlowMetricsOutputSchema.parse(ok(summary, data, meta));
 	} catch (e: unknown) {
 		return failFromError(e, { schema: GetFlowMetricsOutputSchema });
 	}
@@ -424,10 +425,10 @@ export const toolDef: ToolDefinition = {
 		let text = `${String(pair).toUpperCase()} Flow Metrics (bucketMs=${res?.data?.params?.bucketMs ?? bucketMs})${rangeStr}\n`;
 		text += `Totals: trades=${agg.totalTrades} buyVol=${agg.buyVolume} sellVol=${agg.sellVolume} net=${agg.netVolume} buy%=${(agg.aggressorRatio * 100 || 0).toFixed(1)} CVD=${agg.finalCvd}${warnStr}`;
 		if (view === 'buckets') {
-			text += `\n\nRecent ${last.length} buckets:\n` + last.map(fmt).join('\n');
+			text += `\n\nRecent ${last.length} buckets:\n${last.map(fmt).join('\n')}`;
 			return { content: [{ type: 'text', text }], structuredContent: res as Record<string, unknown> };
 		}
-		text += `\n\nAll buckets:\n` + buckets.map(fmt).join('\n');
+		text += `\n\nAll buckets:\n${buckets.map(fmt).join('\n')}`;
 		return { content: [{ type: 'text', text }], structuredContent: res as Record<string, unknown> };
 	},
 };

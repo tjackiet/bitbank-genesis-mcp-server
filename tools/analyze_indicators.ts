@@ -1,6 +1,6 @@
 import { TtlCache } from '../lib/cache.js';
 import { formatSummary } from '../lib/formatter.js';
-import { getFetchCount } from '../lib/indicator_buffer.js';
+import { getFetchCount, type IndicatorBufferKey } from '../lib/indicator_buffer.js';
 import {
 	ichimokuSnapshot,
 	bollingerBands as rawBollingerBands,
@@ -323,7 +323,7 @@ export default async function analyzeIndicators(
 		'STOCH',
 		'ICHIMOKU',
 	] as const;
-	const fetchCount = getFetchCount(displayCount, indicatorKeys as unknown as any);
+	const fetchCount = getFetchCount(displayCount, indicatorKeys as unknown as IndicatorBufferKey[]);
 
 	// Check cache before fetching & computing
 	const cacheKey = `${chk.pair}:${type}`;
@@ -333,9 +333,8 @@ export default async function analyzeIndicators(
 	if (cached && cached.fetchCount >= fetchCount) {
 		computed = cached;
 	} else {
-		const candlesResult = await getCandles(chk.pair, type as any, undefined as any, fetchCount);
-		if (!candlesResult.ok)
-			return fail(candlesResult.summary.replace(/^Error: /, ''), candlesResult.meta.errorType as any);
+		const candlesResult = await getCandles(chk.pair, type, undefined, fetchCount);
+		if (!candlesResult.ok) return fail(candlesResult.summary.replace(/^Error: /, ''), candlesResult.meta.errorType);
 
 		const normalized = candlesResult.data.normalized;
 		const allHighs = normalized.map((c) => c.high);

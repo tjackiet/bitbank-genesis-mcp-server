@@ -61,8 +61,8 @@ export const toolDef: ToolDefinition = {
 		sortBy: z.enum(['change24h', 'volume', 'name']).optional().default('change24h'),
 		order: z.enum(['asc', 'desc']).optional().default('desc'),
 		limit: z.number().int().min(1).max(50).optional().default(5),
-	}) as any,
-	handler: async (args: any) => {
+	}),
+	handler: async (args: Record<string, unknown>) => {
 		const view = (args?.view ?? 'ranked') as 'items' | 'ranked';
 		const sortBy = (args?.sortBy ?? 'change24h') as 'change24h' | 'volume' | 'name';
 		const order = (args?.order ?? 'desc') as 'asc' | 'desc';
@@ -72,8 +72,8 @@ export const toolDef: ToolDefinition = {
 		const items: any[] = Array.isArray(res?.data) ? res.data : [];
 
 		// フォーマット関数
-		const formatVolume = formatVolumeJPY;
-		const fmtPrice = formatPrice;
+		const _formatVolume = formatVolumeJPY;
+		const _fmtPrice = formatPrice;
 
 		// normalize numeric fields（open/high/low 追加）
 		const norm = items.map((it: any) => {

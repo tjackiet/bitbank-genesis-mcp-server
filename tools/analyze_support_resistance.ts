@@ -283,7 +283,7 @@ function detectNewSupport(
 function detectRoleReversal(
 	brokenSupports: Map<number, { date: string; price: number }>,
 	brokenResistances: Map<number, { date: string; price: number }>,
-	candles: SrCandle[],
+	_candles: SrCandle[],
 	currentPrice: number,
 ): { newResistances: Map<number, string>; newSupports: Map<number, string> } {
 	const newResistances = new Map<number, string>();
@@ -313,7 +313,7 @@ function computeRecencyScore(touches: TouchEvent[], referenceDate: string, halfL
 	const ref = dayjs(referenceDate);
 	return touches.reduce((score, t) => {
 		const daysAgo = Math.max(0, ref.diff(dayjs(t.date), 'day'));
-		return score + Math.exp((-0.693 * daysAgo) / halfLifeDays);
+		return score + Math.exp((-Math.LN2 * daysAgo) / halfLifeDays);
 	}, 0);
 }
 
@@ -735,7 +735,7 @@ export default async function analyzeSupportResistance(
 			contentText += `  明確なサポートラインは検出されませんでした\n`;
 		} else {
 			topSupports.forEach((level) => {
-				contentText += formatLevel(level, 'support') + '\n';
+				contentText += `${formatLevel(level, 'support')}\n`;
 			});
 		}
 
@@ -744,7 +744,7 @@ export default async function analyzeSupportResistance(
 			contentText += `  明確なレジスタンスラインは検出されませんでした\n`;
 		} else {
 			topResistances.forEach((level) => {
-				contentText += formatLevel(level, 'resistance') + '\n';
+				contentText += `${formatLevel(level, 'resistance')}\n`;
 			});
 		}
 

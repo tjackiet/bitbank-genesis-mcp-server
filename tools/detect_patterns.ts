@@ -52,7 +52,7 @@ export default async function detectPatterns(
 	try {
 		// --- パラメータ解決（patterns/config.ts から） ---
 		const { swingDepth, tolerancePct, minBarsBetweenSwings: minDist, autoScaled } = resolveParams(type, opts);
-		const strictPivots = (opts as any)?.strictPivots !== false; // 既定: 厳格
+		const strictPivots = opts.strictPivots !== false; // 既定: 厳格
 		// 統合オプション
 		const includeForming = opts.includeForming ?? false;
 		const includeCompleted = opts.includeCompleted ?? true;
@@ -60,9 +60,9 @@ export default async function detectPatterns(
 		const want = new Set(opts.patterns || []);
 		// 'triangle' が指定された場合は3種を含む互換挙動
 		if (want.has('triangle')) {
-			want.add('triangle_ascending' as any);
-			want.add('triangle_descending' as any);
-			want.add('triangle_symmetrical' as any);
+			want.add('triangle_ascending');
+			want.add('triangle_descending');
+			want.add('triangle_symmetrical');
 		}
 
 		const res = await analyzeIndicators(pair, type, limit);
@@ -87,7 +87,7 @@ export default async function detectPatterns(
 			idx: p.idx,
 			price: p.price,
 			kind: p.kind,
-			isoTime: (candles[p.idx] as any)?.isoTime,
+			isoTime: candles[p.idx]?.isoTime,
 		}));
 		const debugCandidates: CandDebugEntry[] = [];
 
@@ -147,7 +147,7 @@ export default async function detectPatterns(
 				if (tf === '1week') return 21; // ~3 weeks
 				return 7; // default for daily and intraday
 			};
-			const maxAgeDays = Number.isFinite(opts.currentRelevanceDays as any)
+			const maxAgeDays = Number.isFinite(opts.currentRelevanceDays)
 				? Number(opts.currentRelevanceDays)
 				: defaultDaysByType(String(type));
 			if (requireCurrent && patterns.length) {
@@ -200,8 +200,8 @@ export default async function detectPatterns(
 
 		// 全パターンに timeframe / timeframeLabel を付与（LLM が個別パターンから時間足を即座に読み取れるようにする）
 		for (const p of patterns) {
-			(p as any).timeframe = String(type);
-			(p as any).timeframeLabel = tfLabel;
+			p.timeframe = String(type);
+			p.timeframeLabel = tfLabel;
 		}
 
 		// overlays: パターン範囲をそのまま帯描画できるように提供

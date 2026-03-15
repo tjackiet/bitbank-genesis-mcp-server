@@ -72,7 +72,13 @@ export const bbBreakoutStrategy: Strategy = {
 			const low = lower[i];
 			const prevLow = lower[i - 1];
 
-			if (isNaN(mid) || isNaN(up) || isNaN(low) || isNaN(prevMid) || isNaN(prevLow)) {
+			if (
+				Number.isNaN(mid) ||
+				Number.isNaN(up) ||
+				Number.isNaN(low) ||
+				Number.isNaN(prevMid) ||
+				Number.isNaN(prevLow)
+			) {
 				signals.push({ time: candles[i].time, action: 'hold' });
 				continue;
 			}

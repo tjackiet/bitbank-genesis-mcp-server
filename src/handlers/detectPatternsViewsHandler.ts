@@ -26,7 +26,7 @@ const fmtRound = (v: unknown): string => {
 
 const fmtPct = (v: unknown): string => {
 	const n = Number(v);
-	return Number.isFinite(n) ? (n * 100).toFixed(1) + '%' : 'n/a';
+	return Number.isFinite(n) ? `${(n * 100).toFixed(1)}%` : 'n/a';
 };
 
 const fmtInt = (v: unknown): string => {
@@ -153,7 +153,7 @@ function formatCandidateDetails(c: any): string {
 	return `\n   spread: ${spreadPart}${Number.isFinite(hi) || Number.isFinite(lo) ? `, slopes: hi=${fmtNum(hi)} lo=${fmtNum(lo)}` : ''}`;
 }
 
-export function formatDebugView(hdr: string, meta: any, pats: any[], res: any): any {
+export function formatDebugView(hdr: string, meta: any, _pats: any[], res: any): any {
 	const swings = Array.isArray(meta?.debug?.swings) ? meta.debug.swings : [];
 	const cands = Array.isArray(meta?.debug?.candidates) ? meta.debug.candidates : [];
 
@@ -413,7 +413,7 @@ export function formatSummaryView(
 	const in30 = within(30 * 86400000);
 	const in90 = within(90 * 86400000);
 	const formingHint = includeForming ? '' : '\n※形成中は includeForming=true を指定してください。';
-	const text = `${hdr}（${typeSummary || '分類なし'}、直近30日: ${in30}件、直近90日: ${in90}件）\n${periodLine ? periodLine + '\n' : ''}検討パターン: ${patterns && patterns.length ? patterns.join(', ') : '既定セット'}${formingHint}\n詳細は structuredContent.data.patterns を参照。`;
+	const text = `${hdr}（${typeSummary || '分類なし'}、直近30日: ${in30}件、直近90日: ${in90}件）\n${periodLine ? `${periodLine}\n` : ''}検討パターン: ${patterns?.length ? patterns.join(', ') : '既定セット'}${formingHint}\n詳細は structuredContent.data.patterns を参照。`;
 	return { content: [{ type: 'text', text }], structuredContent: res };
 }
 
@@ -433,7 +433,7 @@ export function formatFullView(
 		: '';
 	const trustNote =
 		'\n\nパターン整合度について（形状一致度・対称性・期間から算出）:\n  0.8以上 = 理想的な形状（教科書的パターン）\n  0.7-0.8 = 標準的な形状（他指標と併用推奨）\n  0.6-0.7 = やや不明瞭（慎重に判断）\n  0.6未満 = 形状不十分';
-	const text = `${hdr}（${typeSummary || '分類なし'}）\n${periodLine ? periodLine + '\n' : ''}\n【検出パターン（全件）】\n${body}${overlayNote}${trustNote}`;
+	const text = `${hdr}（${typeSummary || '分類なし'}）\n${periodLine ? `${periodLine}\n` : ''}\n【検出パターン（全件）】\n${body}${overlayNote}${trustNote}`;
 	return { content: [{ type: 'text', text }], structuredContent: res };
 }
 
@@ -459,7 +459,7 @@ export function formatDetailedView(
 			none = `\n${resSummary}`;
 		} else {
 			const effTol = meta?.effective_params?.tolerancePct ?? tolerancePct ?? 'default';
-			none = `\nパターンは検出されませんでした（tolerancePct=${effTol}）。\n・検討パターン: ${patterns && patterns.length ? patterns.join(', ') : '既定セット'}\n・必要に応じて tolerance を 0.03-0.06 に緩和してください`;
+			none = `\nパターンは検出されませんでした（tolerancePct=${effTol}）。\n・検討パターン: ${patterns?.length ? patterns.join(', ') : '既定セット'}\n・必要に応じて tolerance を 0.03-0.06 に緩和してください`;
 		}
 	}
 
@@ -469,7 +469,7 @@ export function formatDetailedView(
 	const trustNote =
 		'\n\nパターン整合度について（形状一致度・対称性・期間から算出）:\n  0.8以上 = 理想的な形状（教科書的パターン）\n  0.7-0.8 = 標準的な形状（他指標と併用推奨）\n  0.6-0.7 = やや不明瞭（慎重に判断）\n  0.6未満 = 形状不十分';
 	const usage = `\n\nusage_example:\n  step1: detect_patterns を実行\n  step2: structuredContent.data.overlays を取得\n  step3: render_chart_svg の overlays に渡す`;
-	const text = `${hdr}（${typeSummary || '分類なし'}）\n${periodLine ? periodLine + '\n' : ''}\n${top.length ? '【検出パターン】\n' + body : ''}${none}${overlayNote}${trustNote}${usage}`;
+	const text = `${hdr}（${typeSummary || '分類なし'}）\n${periodLine ? `${periodLine}\n` : ''}\n${top.length ? `【検出パターン】\n${body}` : ''}${none}${overlayNote}${trustNote}${usage}`;
 	return {
 		content: [{ type: 'text', text }],
 		structuredContent: {

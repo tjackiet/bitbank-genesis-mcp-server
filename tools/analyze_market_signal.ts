@@ -4,8 +4,8 @@ import { slidingMean } from '../lib/math.js';
 import { fail, failFromError, failFromValidation, ok } from '../lib/result.js';
 import { createMeta, ensurePair } from '../lib/validate.js';
 import {
-	AnalyzeMarketSignalDataSchemaOut,
-	AnalyzeMarketSignalMetaSchemaOut,
+	type AnalyzeMarketSignalDataSchemaOut,
+	type AnalyzeMarketSignalMetaSchemaOut,
 	AnalyzeMarketSignalOutputSchema,
 } from '../src/schemas.js';
 import analyzeIndicators from './analyze_indicators.js';
@@ -173,7 +173,7 @@ export function buildMarketSignalText(input: BuildMarketSignalTextInput): string
 				]
 			: []),
 		...(recentCross ? [`SMAクロス: ${recentCross.type} ${recentCross.pair} ${recentCross.barsAgo}bars前`] : []),
-		...(alerts.length ? ['alerts: ' + alerts.map((a) => `[${a.level}] ${a.message}`).join('; ')] : []),
+		...(alerts.length ? [`alerts: ${alerts.map((a) => `[${a.level}] ${a.message}`).join('; ')}`] : []),
 		'',
 		'---',
 		'📌 含まれるもの: 総合スコア・各要素の寄与度と生値・SMA配置・信頼度・推奨アクション',
@@ -203,7 +203,7 @@ export default async function analyzeMarketSignal(pair: string = 'btc_jpy', opts
 	const type = opts.type || '1day';
 	const flowLimit = Math.max(50, Math.min(opts.flowLimit ?? 300, 2000));
 	const bucketMs = Math.max(1_000, Math.min(opts.bucketMs ?? 60_000, 3_600_000));
-	const windows = (opts.windows && opts.windows.length ? opts.windows : [14, 20, 30]).slice(0, 3);
+	const windows = (opts.windows?.length ? opts.windows : [14, 20, 30]).slice(0, 3);
 	const horizon = Math.max(5, Math.min(opts.horizonBuckets ?? 10, 100));
 
 	try {
@@ -354,7 +354,7 @@ export default async function analyzeMarketSignal(pair: string = 'btc_jpy', opts
 			.join(', ');
 
 		// summary will be finalized after confidence/nextActions are computed
-		let summary = '';
+		let _summary = '';
 
 		function calculateConfidence(
 			contributions: { buyPressure: number; cvdTrend: number; momentum: number; volatility: number; smaTrend: number },
@@ -526,7 +526,7 @@ export default async function analyzeMarketSignal(pair: string = 'btc_jpy', opts
 
 		const nextActions = generateNextActions(breakdownData, score, confidence);
 
-		const confidenceEmoji = confidence.level === 'high' ? '✅' : confidence.level === 'medium' ? '⚠️' : '🔴';
+		const _confidenceEmoji = confidence.level === 'high' ? '✅' : confidence.level === 'medium' ? '⚠️' : '🔴';
 		const nextActionsText = nextActions
 			.slice(0, 2)
 			.map((action) => {
@@ -540,7 +540,7 @@ export default async function analyzeMarketSignal(pair: string = 'btc_jpy', opts
 			latest: indRes?.data?.normalized?.at(-1)?.close,
 			extra: `score=${score} rec=${recommendation} confidence=${confidence.level} (top: ${top2})${nextActions.length > 0 ? ` next=[${nextActionsText}]` : ''}`,
 		});
-		summary = summaryText;
+		_summary = summaryText;
 
 		const alerts = (() => {
 			const a: Array<{ level: 'info' | 'warning' | 'critical'; message: string }> = [];

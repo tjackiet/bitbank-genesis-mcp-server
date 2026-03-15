@@ -4,7 +4,7 @@ import { formatSummary } from '../lib/formatter.js';
 import { fail, failFromError, failFromValidation, ok } from '../lib/result.js';
 import { createMeta, ensurePair } from '../lib/validate.js';
 import {
-	AnalyzeBbSnapshotDataSchemaOut,
+	type AnalyzeBbSnapshotDataSchemaOut,
 	AnalyzeBbSnapshotInputSchema,
 	AnalyzeBbSnapshotOutputSchema,
 } from '../src/schemas.js';
@@ -68,7 +68,7 @@ export function buildBbDefaultText(input: BuildBbDefaultTextInput): string {
 				: []),
 			'',
 			'Signals:',
-			...(signals && signals.length ? signals.map((s) => `- ${s}`) : ['- None']),
+			...(signals?.length ? signals.map((s) => `- ${s}`) : ['- None']),
 			'',
 			'Next Steps:',
 			`- ${next_steps.if_need_detail}`,

@@ -112,7 +112,7 @@ export const smaCrossStrategy: Strategy = {
 			const currLong = smaLong[i];
 
 			// NaN チェック
-			if (isNaN(prevShort) || isNaN(prevLong) || isNaN(currShort) || isNaN(currLong)) {
+			if (Number.isNaN(prevShort) || Number.isNaN(prevLong) || Number.isNaN(currShort) || Number.isNaN(currLong)) {
 				signals.push({ time: candles[i].time, action: 'hold' });
 				continue;
 			}
@@ -123,12 +123,12 @@ export const smaCrossStrategy: Strategy = {
 				let filtered = false;
 
 				// SMAトレンドフィルター: 価格がSMA上の場合のみ
-				if (smaFilter && !isNaN(smaFilter[i]) && closes[i] < smaFilter[i]) {
+				if (smaFilter && !Number.isNaN(smaFilter[i]) && closes[i] < smaFilter[i]) {
 					filtered = true;
 				}
 
 				// RSIフィルター
-				if (rsi && !isNaN(rsi[i]) && rsi[i] >= p.rsi_filter_max) {
+				if (rsi && !Number.isNaN(rsi[i]) && rsi[i] >= p.rsi_filter_max) {
 					filtered = true;
 				}
 

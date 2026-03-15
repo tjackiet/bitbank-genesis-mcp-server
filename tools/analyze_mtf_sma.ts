@@ -2,9 +2,9 @@ import type { z } from 'zod';
 import { failFromError, failFromValidation, ok } from '../lib/result.js';
 import { createMeta, ensurePair } from '../lib/validate.js';
 import {
-	AnalyzeMtfSmaDataSchemaOut,
+	type AnalyzeMtfSmaDataSchemaOut,
 	AnalyzeMtfSmaInputSchema,
-	AnalyzeMtfSmaMetaSchemaOut,
+	type AnalyzeMtfSmaMetaSchemaOut,
 	AnalyzeMtfSmaOutputSchema,
 } from '../src/schemas.js';
 import type { ToolDefinition } from '../src/tool-definition.js';
@@ -80,7 +80,7 @@ export default async function analyzeMtfSma(
 			? `全時間軸が${dirLabel}方向で一致`
 			: `時間軸間で方向が分かれている（${timeframes.map((tf) => `${tf}:${tfEntry(tf)?.alignment}`).join(', ')})`;
 
-		const summaryText = timeframes.map((tf) => `${tf}: ${tfEntry(tf)?.alignment}`).join(' / ') + ` → ${summary}`;
+		const summaryText = `${timeframes.map((tf) => `${tf}: ${tfEntry(tf)?.alignment}`).join(' / ')} → ${summary}`;
 
 		const data: z.infer<typeof AnalyzeMtfSmaDataSchemaOut> = {
 			timeframes: byTimeframe as z.infer<typeof AnalyzeMtfSmaDataSchemaOut>['timeframes'],

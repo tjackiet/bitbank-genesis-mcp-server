@@ -4,7 +4,7 @@ import { formatSummary } from '../lib/formatter.js';
 import { fail, failFromError, failFromValidation, ok } from '../lib/result.js';
 import { createMeta, ensurePair } from '../lib/validate.js';
 import {
-	AnalyzeStochSnapshotDataSchemaOut,
+	type AnalyzeStochSnapshotDataSchemaOut,
 	AnalyzeStochSnapshotInputSchema,
 	AnalyzeStochSnapshotOutputSchema,
 } from '../src/schemas.js';

@@ -33,6 +33,13 @@ import { fail, ok } from '../lib/result.js';
 import type { CandleType, ChartPayload, Pair, RenderChartSvgOptions, Result } from '../src/schemas.js';
 import analyzeIndicators from './analyze_indicators.js';
 
+/** Internal options extending the public schema with undocumented/debug properties */
+type RenderChartSvgInternalOpts = RenderChartSvgOptions & {
+	debug?: boolean;
+	forceLayers?: boolean;
+	noAutoLighten?: boolean;
+};
+
 type RenderData = { svg?: string; filePath?: string; legend?: Record<string, string> };
 type RenderMeta = {
 	pair: Pair;
@@ -46,15 +53,16 @@ type RenderMeta = {
 	truncated?: boolean;
 	fallback?: string;
 	warnings?: string[];
+	debug?: Record<string, unknown>;
 };
 
 export default async function renderChartSvg(
-	args: RenderChartSvgOptions = {},
+	args: RenderChartSvgInternalOpts = {},
 ): Promise<Result<RenderData, RenderMeta>> {
 	// --- パラメータの解決（強制排他ルール） ---
-	const style = ((args as any).style === 'line' ? 'line' : 'candles') as 'candles' | 'line';
+	const style = (args.style === 'line' ? 'line' : 'candles') as 'candles' | 'line';
 	// depth は特別扱い（ローソクを描かない）
-	const isDepth = (args as any).style === 'depth';
+	const isDepth = args.style === 'depth';
 	let withIchimoku = args.withIchimoku ?? false;
 	const ichimokuOpt = args.ichimoku || {};
 	// モード正規化: light→default, full→extended（後方互換）
@@ -64,19 +72,19 @@ export default async function renderChartSvg(
 		if (s === 'light' || s === 'default') return 'default';
 		return 'default';
 	};
-	const ichimokuMode = normalizeIchimokuMode((ichimokuOpt as any).mode || (withIchimoku ? 'default' : 'default'));
-	const drawChikou = ichimokuMode === 'extended' || (ichimokuOpt as any).withChikou === true;
+	const ichimokuMode = normalizeIchimokuMode(ichimokuOpt.mode || (withIchimoku ? 'default' : 'default'));
+	const drawChikou = ichimokuMode === 'extended' || ichimokuOpt.withChikou === true;
 
 	// デフォルト: 明示されない限りSMAは描画しない
 	// 互換: 以前の仕様からの流入に備え、withIchimoku時は引き続きBB/SMAをオフ
 	let withSMA = args.withSMA ?? [];
-	let withEMA = (args as any).withEMA ?? [];
+	let withEMA = args.withEMA ?? [];
 	let withBB = args.withBB ?? false;
-	const svgPrecision = Math.max(0, Math.min(3, Number((args as any)?.svgPrecision ?? 1)));
+	const svgPrecision = Math.max(0, Math.min(3, Number(args.svgPrecision ?? 1)));
 	const effectivePrecision = Math.max(1, svgPrecision);
-	const svgMinify = (args as any)?.svgMinify !== false;
-	const simplifyTolerance = Math.max(0, Number((args as any)?.simplifyTolerance ?? 0.5));
-	const viewBoxTight = (args as any)?.viewBoxTight !== false;
+	const svgMinify = args.svgMinify !== false;
+	const simplifyTolerance = Math.max(0, Number(args.simplifyTolerance ?? 0.5));
+	const viewBoxTight = args.viewBoxTight !== false;
 	// BBモード正規化: light→default, full→extended（後方互換）
 	const normalizeBbMode = (m: unknown): 'default' | 'extended' => {
 		const s = String(m ?? '').toLowerCase();
@@ -99,13 +107,13 @@ export default async function renderChartSvg(
 		withLegend = true,
 		overlays,
 		tz = 'Asia/Tokyo',
-	} = args as any;
-	const debugEnabled = Boolean((args as any)?.debug);
-	const debugInfo: Record<string, any> = debugEnabled ? { notes: [] } : {};
-	const forceLayers = (args as any)?.forceLayers === true || (args as any)?.noAutoLighten === true;
+	} = args;
+	const debugEnabled = Boolean(args.debug);
+	const debugInfo: Record<string, unknown[]> = debugEnabled ? { notes: [] } : {};
+	const forceLayers = args.forceLayers === true || args.noAutoLighten === true;
 
 	// Sub-panel configuration
-	const subPanelTypes: Array<'macd' | 'rsi' | 'volume'> = (((args as any).subPanels || []) as string[]).filter(
+	const subPanelTypes: Array<'macd' | 'rsi' | 'volume'> = ((args.subPanels || []) as string[]).filter(
 		(t): t is 'macd' | 'rsi' | 'volume' => ['macd', 'rsi', 'volume'].includes(t),
 	);
 	const SUB_PANEL_HEIGHT = 120;
@@ -114,8 +122,8 @@ export default async function renderChartSvg(
 	// === Depth チャート（独立描画） ===
 	if (isDepth) {
 		try {
-			const depth = await getDepth(pair, { maxLevels: (args as any)?.depth?.levels ?? 200 });
-			if (!depth.ok) return fail(depth.summary.replace(/^Error: /, ''), (depth as any)?.meta?.errorType || 'internal');
+			const depth = await getDepth(pair, { maxLevels: args.depth?.levels ?? 200 });
+			if (!depth.ok) return fail(depth.summary.replace(/^Error: /, ''), depth.meta?.errorType || 'internal');
 			const asks: Array<[string, string]> = depth.data.asks || [];
 			const bids: Array<[string, string]> = depth.data.bids || [];
 			// 価格レンジ
@@ -214,7 +222,7 @@ export default async function renderChartSvg(
 			// Note: meta.type should reflect timeframe for schema compatibility (not 'depth')
 			const metaOut: RenderMeta = {
 				pair: pair as Pair,
-				type: String((args as any)?.type || '1day'),
+				type: String(args.type || '1day'),
 				bbMode: 'default',
 			};
 			return ok<RenderData, RenderMeta>(
@@ -245,7 +253,7 @@ export default async function renderChartSvg(
 				if (limit * (1 + (bbMode === 'extended' ? 3 : 1)) > 800) {
 					// fallback to candles only if still heavy
 					withIchimoku = false;
-					(args as any).withIchimoku = false;
+					args.withIchimoku = false;
 				}
 			}
 			summaryNotes.push('heavy chart detected → fallback to candles-only to avoid oversized SVG');
@@ -265,17 +273,20 @@ export default async function renderChartSvg(
 	}
 
 	const internalLimit = withIchimoku ? effectiveLimit + 26 : effectiveLimit;
-	const res = await analyzeIndicators(pair, type as any, internalLimit);
+	const res = await analyzeIndicators(pair, type, internalLimit);
 	if (!res?.ok) {
 		return fail(
 			res?.summary?.replace?.(/^Error: /, '') || 'failed to fetch indicators',
-			(res as any)?.meta?.errorType || 'internal',
+			res?.meta?.errorType || 'internal',
 		);
 	}
 
 	const chartData = res.data?.chart as ChartPayload;
 	const items = chartData?.candles || [];
-	const indicators = chartData?.indicators as Record<string, any>;
+	const indicators = chartData?.indicators;
+	/** Safe dynamic indicator access by key (for EMA_${p}, BB${n}_upper, etc.) */
+	const indicatorSeries = (key: string): Array<number | null> | undefined =>
+		(indicators as Record<string, unknown>)[key] as Array<number | null> | undefined;
 	const pastBuffer = chartData.meta?.pastBuffer ?? 0;
 	const forwardShiftMeta = chartData.meta?.shift ?? 0;
 	// 一目を描画しない場合は forwardShift を 0 にする（間隔が詰まるのを防ぐ）
@@ -350,7 +361,7 @@ export default async function renderChartSvg(
 	if (withBB) {
 		if (bbMode === 'extended') {
 			['BB1_upper', 'BB1_lower', 'BB2_upper', 'BB2_lower', 'BB3_upper', 'BB3_lower'].forEach((key) => {
-				const series = indicators[key]?.slice?.(pastBuffer) || [];
+				const series = indicatorSeries(key)?.slice(pastBuffer) || [];
 				allYValues.push(...series.filter((v: number | null) => v !== null));
 			});
 		} else {
@@ -394,7 +405,7 @@ export default async function renderChartSvg(
 				case 200:
 					return indicators.EMA_200 as number[] | undefined;
 				default:
-					return (indicators as any)[`EMA_${p}`] as number[] | undefined;
+					return indicatorSeries(`EMA_${p}`) as number[] | undefined;
 			}
 		};
 		withEMA.forEach((period: number) => {
@@ -405,7 +416,7 @@ export default async function renderChartSvg(
 
 	const dataYMin = Math.min(...allYValues);
 	const dataYMax = Math.max(...allYValues);
-	const yPad = Math.min(0.2, Math.max(0, Number((args as any)?.yPaddingPct ?? 0.06)));
+	const yPad = Math.min(0.2, Math.max(0, Number(args.yPaddingPct ?? 0.06)));
 	const yRange = dataYMax - dataYMin;
 	// クリップ回避用の安全ヘッドルーム（レンジの2%）
 	const autoHeadroom = yRange * 0.02;
@@ -450,7 +461,7 @@ export default async function renderChartSvg(
 	let legendLayers = '';
 
 	// 自動調整: 未指定時は本数に応じて隙間が過剰/不足にならないよう最適化
-	let barWidthRatio = Number((args as any)?.barWidthRatio);
+	let barWidthRatio = Number(args.barWidthRatio);
 	if (!Number.isFinite(barWidthRatio)) {
 		const n = xs.length;
 		if (n <= 30)
@@ -588,7 +599,7 @@ export default async function renderChartSvg(
 				case 3:
 					return { upper: indicators?.BB3_upper, middle: indicators?.BB3_middle, lower: indicators?.BB3_lower };
 				default:
-					return { upper: undefined, middle: undefined, lower: undefined } as any;
+					return { upper: undefined, middle: undefined, lower: undefined };
 			}
 		},
 	} as const;
@@ -633,7 +644,7 @@ export default async function renderChartSvg(
 				case 200:
 					return indicators.EMA_200 as number[] | undefined;
 				default:
-					return (indicators as any)[`EMA_${p}`] as number[] | undefined;
+					return indicatorSeries(`EMA_${p}`) as number[] | undefined;
 			}
 		};
 		for (const period of withEMA) {
@@ -1097,7 +1108,7 @@ export default async function renderChartSvg(
 					const cx = x(i);
 					const topY = py(vol);
 					const bottomY = py(0);
-					const up = (displayItems[i] as any).close >= (displayItems[i] as any).open;
+					const up = displayItems[i].close >= displayItems[i].open;
 					const color = up ? 'rgba(34,197,94,0.5)' : 'rgba(239,68,68,0.5)';
 					const vBarW = Math.max(1, barW * 0.7);
 					pc += `<rect x="${Number((cx - vBarW / 2).toFixed(1))}" y="${topY}" width="${Number(vBarW.toFixed(1))}" height="${Math.max(1, bottomY - topY)}" fill="${color}"/>`;
@@ -1262,7 +1273,7 @@ ${priceLine}
 		...(warnings.length > 0 ? { warnings } : {}),
 	};
 	if (debugEnabled) {
-		(metaBase as any).debug = {
+		metaBase.debug = {
 			x: { count: xs.length, totalSlots, padding, plotW },
 			y: { yMin, yMax, ticks: yTicks },
 			data: { withBB, withSMA, withEMA, withIchimoku, forwardShift, pastBuffer },

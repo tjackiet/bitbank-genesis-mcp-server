@@ -134,7 +134,7 @@ export const macdCrossStrategy: Strategy = {
 			const currMACD = macd[i];
 			const currSignal = signal[i];
 
-			if (isNaN(prevMACD) || isNaN(prevSignal) || isNaN(currMACD) || isNaN(currSignal)) {
+			if (Number.isNaN(prevMACD) || Number.isNaN(prevSignal) || Number.isNaN(currMACD) || Number.isNaN(currSignal)) {
 				signals.push({ time: candles[i].time, action: 'hold' });
 				continue;
 			}
@@ -146,7 +146,7 @@ export const macdCrossStrategy: Strategy = {
 				let filtered = false;
 
 				// SMAトレンドフィルター: 価格がSMA上の場合のみ
-				if (sma && !isNaN(sma[i]) && closes[i] < sma[i]) {
+				if (sma && !Number.isNaN(sma[i]) && closes[i] < sma[i]) {
 					filtered = true;
 					filterReasons.push(`price(${closes[i].toFixed(0)}) < SMA${p.sma_filter_period}(${sma[i].toFixed(0)})`);
 				}
@@ -161,7 +161,7 @@ export const macdCrossStrategy: Strategy = {
 				}
 
 				// RSIフィルター
-				if (rsi && !isNaN(rsi[i]) && rsi[i] >= p.rsi_filter_max) {
+				if (rsi && !Number.isNaN(rsi[i]) && rsi[i] >= p.rsi_filter_max) {
 					filtered = true;
 					filterReasons.push(`RSI(${rsi[i].toFixed(1)}) >= ${p.rsi_filter_max}`);
 				}

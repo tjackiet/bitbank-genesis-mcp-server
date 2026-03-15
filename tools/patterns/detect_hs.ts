@@ -5,12 +5,12 @@
 import { generatePatternDiagram } from '../../lib/pattern-diagrams.js';
 import { finalizeConf, periodScoreDays } from './helpers.js';
 import { clamp01, marginFromRelDev, relDev } from './regression.js';
-import { type CandDebugEntry, type DetectContext, type DetectResult, pushCand } from './types.js';
+import { type DetectContext, type DetectResult, pushCand } from './types.js';
 
 export function detectHeadAndShoulders(ctx: DetectContext): DetectResult {
 	const { candles, pivots, allPeaks, allValleys, tolerancePct, minDist, want, includeForming, near, debugCandidates } =
 		ctx;
-	const pcand = (arg: Parameters<typeof pushCand>[1]) => pushCand(ctx, arg);
+	const _pcand = (arg: Parameters<typeof pushCand>[1]) => pushCand(ctx, arg);
 	const push = (arr: any[], item: any) => {
 		arr.push(item);
 	};
@@ -269,7 +269,7 @@ export function detectHeadAndShoulders(ctx: DetectContext): DetectResult {
 					{ price: nlAvg },
 					{ start, end },
 				);
-				const hsRelNlAvg = (Number(p1.price) + Number(p3.price)) / 2;
+				const _hsRelNlAvg = (Number(p1.price) + Number(p3.price)) / 2;
 				const hsRelTarget = Math.round(nlY - (p2.price - nlY));
 				push(patterns, {
 					type: 'head_and_shoulders',

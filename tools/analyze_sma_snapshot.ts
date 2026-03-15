@@ -4,7 +4,7 @@ import { formatSummary } from '../lib/formatter.js';
 import { fail, failFromError, failFromValidation, ok } from '../lib/result.js';
 import { createMeta, ensurePair } from '../lib/validate.js';
 import {
-	AnalyzeSmaSnapshotDataSchemaOut,
+	type AnalyzeSmaSnapshotDataSchemaOut,
 	AnalyzeSmaSnapshotInputSchema,
 	AnalyzeSmaSnapshotOutputSchema,
 } from '../src/schemas.js';
@@ -101,7 +101,8 @@ export default async function analyzeSmaSnapshot(
 
 		const close = indRes.data.normalized.at(-1)?.close ?? null;
 		const map: Record<string, number | null> = {};
-		const get = (p: number) => (indRes.data.indicators as any)[`SMA_${p}`] ?? null;
+		const indRecord = indRes.data.indicators as Record<string, number[] | number | null>;
+		const get = (p: number) => (indRecord[`SMA_${p}`] as number | null) ?? null;
 		for (const p of periods) map[`SMA_${p}`] = get(p);
 
 		// Series for slopes/crosses (prefer chart.indicators for complete arrays)
@@ -111,7 +112,7 @@ export default async function analyzeSmaSnapshot(
 			: Array.isArray(indRes?.data?.normalized)
 				? indRes.data.normalized
 				: [];
-		const lastIdx = Math.max(0, candles.length - 1);
+		const _lastIdx = Math.max(0, candles.length - 1);
 
 		// Deduplicate periods for cross pair generation
 		const uniquePeriods = [...new Set(periods)];

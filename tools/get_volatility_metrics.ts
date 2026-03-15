@@ -1,4 +1,4 @@
-import { z } from 'zod';
+import type { z } from 'zod';
 import { nowIso } from '../lib/datetime.js';
 import { formatSummary } from '../lib/formatter.js';
 import { trueRange } from '../lib/indicators.js';
@@ -12,7 +12,11 @@ import {
 	parkinsonComponents,
 	rogersSatchellComponents,
 } from '../lib/volatility.js';
-import { GetVolMetricsDataSchemaOut, GetVolMetricsMetaSchemaOut, GetVolMetricsOutputSchema } from '../src/schemas.js';
+import {
+	type GetVolMetricsDataSchemaOut,
+	type GetVolMetricsMetaSchemaOut,
+	GetVolMetricsOutputSchema,
+} from '../src/schemas.js';
 import getCandles from './get_candles.js';
 
 type Candle = { open: number; high: number; low: number; close: number; isoTime?: string | null };
@@ -175,7 +179,7 @@ export default async function getVolatilityMetrics(
 		const rogersSatchell = componentMeanToVol(rsMean, 'rogersSatchell');
 
 		// ATR aggregate: use first window (default 14) SMA on TR, take last
-		const primaryWindow = Math.max(2, (windows && windows[0]) || 14);
+		const primaryWindow = Math.max(2, windows?.[0] || 14);
 		const atrSeries = slidingMean(trSeries, primaryWindow);
 		const atrAgg = atrSeries.length > 0 ? atrSeries[atrSeries.length - 1] : 0;
 
@@ -265,7 +269,7 @@ export default async function getVolatilityMetrics(
 			pair: chk.pair,
 			timeframe: String(type),
 			latest: close.at(-1),
-			extra: `rv=${(rvRefAnn).toFixed(3)}(ann)${tags.length ? ' ' + tags.join(',') : ''}`,
+			extra: `rv=${(rvRefAnn).toFixed(3)}(ann)${tags.length ? ` ${tags.join(',')}` : ''}`,
 		});
 		// テキスト summary にボラティリティ詳細を含める（LLM が structuredContent.data を読めない対策）
 		const summary = buildVolatilityMetricsText({

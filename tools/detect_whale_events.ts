@@ -14,7 +14,7 @@ const cache = new TtlCache<Result>({ ttlMs: 60_000 });
 
 function extractLargeOrders(levels: Array<[number, number]>, minSize: number) {
 	return (levels || [])
-		.filter(([p, s]) => Number(s) >= minSize)
+		.filter(([_p, s]) => Number(s) >= minSize)
 		.map(([p, s]) => ({ price: Number(p), size: Number(s) }));
 }
 
@@ -66,7 +66,9 @@ export default async function detectWhaleEvents(
 				(candlesRes?.meta as { errorType?: string })?.errorType || 'internal',
 			);
 		const candles: Array<{ close: number }> = candlesRes?.data?.normalized || [];
-		const validCloses = candles.map((c) => c.close).filter((v): v is number => typeof v === 'number' && isFinite(v));
+		const validCloses = candles
+			.map((c) => c.close)
+			.filter((v): v is number => typeof v === 'number' && Number.isFinite(v));
 		const priceChange =
 			validCloses.length >= 2 ? (validCloses[validCloses.length - 1] - validCloses[0]) / validCloses[0] : 0;
 
@@ -124,7 +126,7 @@ export default async function detectWhaleEvents(
 			'📋 主要な大口:',
 			...events.map(
 				(e) =>
-					`${e.side === 'buy' ? '🟢' : '🔴'} ${e.price.toLocaleString()}円に${e.size} BTC（${e.side === 'buy' ? '買い' : '売り'}）距離: ${e.distancePct != null ? (e.distancePct >= 0 ? '+' : '') + e.distancePct + '%' : 'n/a'}`,
+					`${e.side === 'buy' ? '🟢' : '🔴'} ${e.price.toLocaleString()}円に${e.size} BTC（${e.side === 'buy' ? '買い' : '売り'}）距離: ${e.distancePct != null ? `${(e.distancePct >= 0 ? '+' : '') + e.distancePct}%` : 'n/a'}`,
 			),
 			'',
 			`📈 過去${lookback}の価格変化: ${(priceChange * 100).toFixed(2)}%`,

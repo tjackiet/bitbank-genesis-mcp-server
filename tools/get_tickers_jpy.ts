@@ -1,5 +1,5 @@
-import fs from 'fs';
-import path from 'path';
+import fs from 'node:fs';
+import path from 'node:path';
 import { TtlCache } from '../lib/cache.js';
 import { nowIso } from '../lib/datetime.js';
 import { getErrorMessage } from '../lib/error.js';
@@ -66,10 +66,10 @@ async function fetchOfficialJpyPairs(timeoutMs: number, retries: number, retryWa
 			const res = await fetch(officialUrl, { signal: ctrl.signal });
 			clearTimeout(t);
 			if (!res.ok) throw new Error(`HTTP ${res.status}`);
-			const raw = (await res.json()) as any;
+			const raw = (await res.json()) as { success?: number; data?: Array<Record<string, unknown>> };
 			if (!raw || raw.success !== 1 || !Array.isArray(raw.data)) throw new Error('bad payload');
 			const set = new Set<string>();
-			for (const it of raw.data as any[]) {
+			for (const it of raw.data) {
 				const p = String(it?.pair || '').toLowerCase();
 				if (p.endsWith('_jpy')) set.add(p);
 			}
@@ -123,7 +123,7 @@ export default async function getTickersJpy(opts?: { bypassCache?: boolean }) {
 		const cached = tickerCache.get(CACHE_KEY);
 		if (cached) {
 			return GetTickersJpyOutputSchema.parse(
-				ok(buildTickerText('tickers_jpy (cache)', cached as any), cached, {
+				ok(buildTickerText('tickers_jpy (cache)', cached), cached, {
 					cache: { hit: true, key: CACHE_KEY },
 					ts: nowIso(),
 				}),
@@ -155,24 +155,21 @@ export default async function getTickersJpy(opts?: { bypassCache?: boolean }) {
 			const dataRaw: Item[] = raw.data as Item[];
 			const { data: filtered, filterInfo } = await filterByMode(dataRaw, timeoutMs, retries, retryWaitMs);
 			// 24h変動率を open/last から算出（%）
-			const data: Item[] = filtered.map((it) => {
+			const data = filtered.map((it) => {
 				const openN = Number(it.open);
 				const lastN = Number(it.last);
 				const change =
 					Number.isFinite(openN) && openN > 0 && Number.isFinite(lastN)
 						? Number((((lastN - openN) / openN) * 100).toFixed(2))
 						: null;
-				return { ...it, change24h: change as any, change24hPct: change as any } as Item & {
-					change24h?: number;
-					change24hPct?: number;
-				};
+				return { ...it, change24h: change, change24hPct: change };
 			});
 			tickerCache.set(CACHE_KEY, data);
 			const ms = Date.now() - t0;
 			const payloadBytes = Buffer.byteLength(JSON.stringify(dataRaw));
 			const summaryText = buildTickerText(
 				`tickers_jpy fetched in ${ms}ms (${data.length}/${dataRaw.length} items after filter, ${payloadBytes} bytes raw, mode=${filterInfo.mode}/${filterInfo.source})`,
-				data as any,
+				data,
 			);
 			return GetTickersJpyOutputSchema.parse(
 				ok(summaryText, data, { cache: { hit: false, key: 'tickers_jpy' }, ts: nowIso(), latencyMs: ms, payloadBytes }),
@@ -203,17 +200,14 @@ export default async function getTickersJpy(opts?: { bypassCache?: boolean }) {
 		}
 		const dataRaw: Item[] = raw.data as Item[];
 		const { data: filtered, filterInfo } = await filterByMode(dataRaw, timeoutMs, retries, retryWaitMs);
-		const data: Item[] = filtered.map((it) => {
+		const data = filtered.map((it) => {
 			const openN = Number(it.open);
 			const lastN = Number(it.last);
 			const change =
 				Number.isFinite(openN) && openN > 0 && Number.isFinite(lastN)
 					? Number((((lastN - openN) / openN) * 100).toFixed(2))
 					: null;
-			return { ...it, change24h: change as any, change24hPct: change as any } as Item & {
-				change24h?: number;
-				change24hPct?: number;
-			};
+			return { ...it, change24h: change, change24hPct: change };
 		});
 		tickerCache.set(CACHE_KEY, data);
 		const ms = Date.now() - t0;
@@ -221,7 +215,7 @@ export default async function getTickersJpy(opts?: { bypassCache?: boolean }) {
 		// ロギングはサーバ側集約。ここではsummaryに最小指標を含める
 		const summaryTextHttp = buildTickerText(
 			`tickers_jpy fetched in ${ms}ms (${data.length}/${dataRaw.length} items after filter, ${payloadBytes} bytes raw, mode=${filterInfo.mode}/${filterInfo.source})`,
-			data as any,
+			data,
 		);
 		return GetTickersJpyOutputSchema.parse(
 			ok(summaryTextHttp, data, {

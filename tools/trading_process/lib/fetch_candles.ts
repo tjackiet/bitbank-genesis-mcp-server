@@ -49,12 +49,17 @@ function isValidCandle(candle: Candle): boolean {
 
 	// time が有効な日付であること
 	const timestamp = dayjs(candle.time).valueOf();
-	if (isNaN(timestamp)) {
+	if (Number.isNaN(timestamp)) {
 		return false;
 	}
 
 	// 数値が NaN でないこと
-	if (isNaN(candle.open) || isNaN(candle.high) || isNaN(candle.low) || isNaN(candle.close)) {
+	if (
+		Number.isNaN(candle.open) ||
+		Number.isNaN(candle.high) ||
+		Number.isNaN(candle.low) ||
+		Number.isNaN(candle.close)
+	) {
 		return false;
 	}
 

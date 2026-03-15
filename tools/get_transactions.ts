@@ -1,13 +1,13 @@
-import { z } from 'zod';
+import type { z } from 'zod';
 import { dayjs, toIsoMs } from '../lib/datetime.js';
 import { formatPair, formatPrice } from '../lib/formatter.js';
 import { BITBANK_API_BASE, DEFAULT_RETRIES, fetchJson } from '../lib/http.js';
-import { fail, failFromError, failFromValidation, ok } from '../lib/result.js';
+import { failFromError, failFromValidation, ok } from '../lib/result.js';
 import { createMeta, ensurePair, validateLimit } from '../lib/validate.js';
 import {
-	GetTransactionsDataSchemaOut,
+	type GetTransactionsDataSchemaOut,
 	GetTransactionsInputSchema,
-	GetTransactionsMetaSchemaOut,
+	type GetTransactionsMetaSchemaOut,
 	GetTransactionsOutputSchema,
 } from '../src/schemas.js';
 import type { ToolDefinition } from '../src/tool-definition.js';
@@ -37,7 +37,7 @@ type NormalizedTxn = { price: number; amount: number; side: 'buy' | 'sell'; time
  */
 function formatTransactionsSummary(pair: string, transactions: NormalizedTxn[], buys: number, sells: number): string {
 	const pairDisplay = formatPair(pair);
-	const isJpy = pair.toLowerCase().includes('jpy');
+	const _isJpy = pair.toLowerCase().includes('jpy');
 	const baseCurrency = pair.split('_')[0]?.toUpperCase() ?? '';
 	const lines: string[] = [];
 

@@ -1,9 +1,9 @@
 import { z } from 'zod';
 import { dayjs } from '../lib/datetime.js';
-import { getErrorMessage } from '../lib/error.js';
 import { formatSummary } from '../lib/formatter.js';
 import { fail, failFromError, ok } from '../lib/result.js';
 import { ALLOWED_PAIRS } from '../lib/validate.js';
+import type { Pair } from '../src/schemas.js';
 import type { ToolDefinition } from '../src/tool-definition.js';
 import analyzeIndicators from './analyze_indicators.js';
 
@@ -48,12 +48,37 @@ export function buildMacdScreenText(input: BuildMacdScreenTextInput): string {
 	);
 }
 
+interface FormingStatus {
+	status: string;
+	estimatedCrossDays?: number | null;
+	completion?: number | null;
+	currentHistogram?: number | null;
+	histogramTrend?: unknown[];
+	currentMACD?: number | null;
+	currentSignal?: number | null;
+	lastCrossDate?: string | null;
+	lastCrossBarsAgo?: number | null;
+	lastCrossType?: string | null;
+}
+
+interface CrossStats {
+	totalSamples: number;
+	avgDay5Return?: number | null;
+	worstCase?: number | null;
+	bestCase?: number | null;
+}
+
+interface CrossHistory {
+	goldenCrosses: CrossPerf[];
+	deadCrosses: CrossPerf[];
+}
+
 export interface BuildMacdSingleTextInput {
 	pair: string;
 	lastClose: number | null;
-	forming: Record<string, unknown> | null;
-	statistics: Record<string, unknown> | null;
-	history: Record<string, unknown> | null;
+	forming: FormingStatus | null;
+	statistics: { golden: CrossStats; dead: CrossStats } | null;
+	history: CrossHistory | null;
 	historyDays: number;
 	includeForming: boolean;
 	includeStats: boolean;
@@ -66,7 +91,7 @@ export function buildMacdSingleText(input: BuildMacdSingleTextInput): string {
 	lines.push(lastClose != null ? `${pairStr} close=${Number(lastClose).toLocaleString()}円` : pairStr);
 
 	if (forming) {
-		const f = forming as any;
+		const f = forming;
 		if (f.status === 'forming_golden' || f.status === 'forming_dead') {
 			const days =
 				f.estimatedCrossDays != null
@@ -76,7 +101,7 @@ export function buildMacdSingleText(input: BuildMacdSingleTextInput): string {
 					: '不明';
 			const compStr = f.completion != null ? `${Math.round((f.completion || 0) * 100)}%` : 'n/a';
 			const crossType = f.status === 'forming_golden' ? 'ゴールデン' : 'デッド';
-			const fmt = (v: any, d = 2) => (v == null ? 'n/a' : Number(v).toFixed(d));
+			const fmt = (v: unknown, d = 2) => (v == null ? 'n/a' : Number(v).toFixed(d));
 			const estDate = (() => {
 				if (f.estimatedCrossDays == null) return '不明';
 				try {
@@ -89,7 +114,7 @@ export function buildMacdSingleText(input: BuildMacdSingleTextInput): string {
 			})();
 			lines.push(`${crossType}クロス形成中: 完成度${compStr}、推定クロス日 ${estDate}（あと${days}）`);
 			lines.push(
-				`- ヒストグラム: ${fmt(f.currentHistogram, 2)} (直近5本: [${(f.histogramTrend || []).map((v: any) => (v == null ? 'n/a' : String(v))).join(', ')}])`,
+				`- ヒストグラム: ${fmt(f.currentHistogram, 2)} (直近5本: [${(Array.isArray(f.histogramTrend) ? f.histogramTrend : []).map((v: unknown) => (v == null ? 'n/a' : String(v))).join(', ')}])`,
 			);
 			lines.push(`- MACD: ${fmt(f.currentMACD, 2)} / Signal: ${fmt(f.currentSignal, 2)}`);
 		} else if (f.status === 'crossed_recently') {
@@ -103,10 +128,10 @@ export function buildMacdSingleText(input: BuildMacdSingleTextInput): string {
 	}
 
 	if (statistics && history) {
-		const gStats = (statistics as any).golden;
-		const dStats = (statistics as any).dead;
-		const goldenCrosses = (history as any).goldenCrosses as CrossPerf[];
-		const deadCrosses = (history as any).deadCrosses as CrossPerf[];
+		const gStats = statistics.golden;
+		const dStats = statistics.dead;
+		const goldenCrosses = history.goldenCrosses;
+		const deadCrosses = history.deadCrosses;
 		if (gStats.totalSamples > 0) {
 			const avgStr =
 				gStats.avgDay5Return != null ? `${gStats.avgDay5Return >= 0 ? '+' : ''}${gStats.avgDay5Return}%` : 'n/a';
@@ -162,7 +187,7 @@ type CrossDetailed = {
 	returnSinceCrossPct: number | null;
 };
 
-function diffAt(line: number[], signal: number[], i: number): number | null {
+function diffAt(line: (number | null)[], signal: (number | null)[], i: number): number | null {
 	return (line[i] ?? null) != null && (signal[i] ?? null) != null ? (line[i] as number) - (signal[i] as number) : null;
 }
 
@@ -247,10 +272,9 @@ async function screenMode(
 	view: 'summary' | 'detailed',
 	screen: ScreenOpts | undefined,
 ) {
-	const universe =
-		pairs && pairs.length
-			? pairs.filter((p) => ALLOWED_PAIRS.has(p as any))
-			: Array.from(ALLOWED_PAIRS.values()).filter((p) => (market === 'jpy' ? p.endsWith('_jpy') : true));
+	const universe = pairs?.length
+		? pairs.filter((p) => ALLOWED_PAIRS.has(p as Pair))
+		: Array.from(ALLOWED_PAIRS.values()).filter((p) => (market === 'jpy' ? p.endsWith('_jpy') : true));
 
 	const allDetailed: CrossDetailed[] = [];
 	const failedPairs: string[] = [];
@@ -323,7 +347,7 @@ async function screenMode(
 	}));
 	const brief = resultsScreened
 		.slice(0, 6)
-		.map((r) => `${r.pair}:${r.type}${r.isoTime ? '@' + String(r.isoTime).slice(0, 10) : ''}`)
+		.map((r) => `${r.pair}:${r.type}${r.isoTime ? `@${String(r.isoTime).slice(0, 10)}` : ''}`)
 		.join(', ');
 	const conds: string[] = [];
 	if (crossType !== 'both') conds.push(crossType);
@@ -337,7 +361,7 @@ async function screenMode(
 	const baseSummary = formatSummary({
 		pair: 'multi',
 		latest: undefined,
-		extra: `crosses=${resultsScreened.length}${condStr}${failedInfo}${brief ? ' [' + brief + ']' : ''}`,
+		extra: `crosses=${resultsScreened.length}${condStr}${failedInfo}${brief ? ` [${brief}]` : ''}`,
 	});
 	const screenCrosses: MacdScreenCross[] = filtered.map((r) => ({
 		pair: r.pair,
@@ -388,13 +412,13 @@ async function singlePairMode(
 	minHistogramForForming: number,
 ) {
 	const limit = Math.max(120, historyDays + 40);
-	const ind: any = await analyzeIndicators(pair, '1day', limit);
-	if (!ind?.ok) return fail(ind?.summary || 'indicators failed', (ind?.meta as any)?.errorType || 'internal');
+	const ind = await analyzeIndicators(pair, '1day', limit);
+	if (!ind?.ok) return fail(ind?.summary || 'indicators failed', ind?.meta?.errorType || 'internal');
 
 	const macd = ind?.data?.indicators?.macd_series?.line || [];
 	const signal = ind?.data?.indicators?.macd_series?.signal || [];
 	const hist = ind?.data?.indicators?.macd_series?.hist || [];
-	const candles: Array<{ isoTime?: string; close?: number }> = Array.isArray(ind?.data?.normalized)
+	const candles: Array<{ isoTime?: string | null; close?: number }> = Array.isArray(ind?.data?.normalized)
 		? ind.data.normalized
 		: [];
 	const n = Math.min(macd.length, signal.length, hist.length, candles.length);
@@ -404,7 +428,7 @@ async function singlePairMode(
 	const lastClose = candles[nowIdx]?.close ?? null;
 
 	// forming detection
-	let forming: Record<string, unknown> | null = null;
+	let forming: FormingStatus | null = null;
 	if (includeForming) {
 		const win = Math.min(5, n - 1);
 		const hNow = hist[nowIdx] as number | null;
@@ -467,8 +491,8 @@ async function singlePairMode(
 	}
 
 	// history + statistics
-	let history: Record<string, unknown> | null = null;
-	let statistics: Record<string, unknown> | null = null;
+	let history: CrossHistory | null = null;
+	let statistics: { golden: CrossStats; dead: CrossStats } | null = null;
 	if (includeStats) {
 		const msCut = dayjs().subtract(historyDays, 'day').valueOf();
 		const crosses: Array<{
@@ -502,7 +526,7 @@ async function singlePairMode(
 			for (const w of performanceWindows) {
 				const j = Math.min(n - 1, idx + w);
 				const priceW = candles[j]?.close ?? null;
-				perf['day' + String(w)] =
+				perf[`day${String(w)}`] =
 					basePrice != null && priceW != null ? Number((((priceW - basePrice) / basePrice) * 100).toFixed(2)) : null;
 			}
 			return perf;
@@ -523,7 +547,7 @@ async function singlePairMode(
 
 		const statsOf = (list: CrossPerf[]) => {
 			const w = performanceWindows.includes(5) ? 5 : performanceWindows[performanceWindows.length - 1];
-			const pick = (it: CrossPerf) => it.performance['day' + String(w)];
+			const pick = (it: CrossPerf) => it.performance[`day${String(w)}`];
 			const vals = list.map(pick).filter((v): v is number => v != null);
 			const avg = vals.length ? Number((vals.reduce((a, b) => a + b, 0) / vals.length).toFixed(2)) : null;
 			const successRate = list.length
@@ -579,10 +603,7 @@ screen（スクリーニング用）:
 		includeForming: z.boolean().optional().default(true).describe('単一ペア: forming検出'),
 		includeStats: z.boolean().optional().default(true).describe('単一ペア: 過去統計'),
 		historyDays: z.number().int().min(10).max(365).optional().default(90).describe('単一ペア: 統計対象期間'),
-		performanceWindows: z
-			.array(z.number().int().min(1).max(30))
-			.optional()
-			.default([1, 3, 5, 10] as any),
+		performanceWindows: z.array(z.number().int().min(1).max(30)).optional().default([1, 3, 5, 10]),
 		minHistogramForForming: z.number().min(0).optional().default(0.3),
 		screen: z
 			.object({

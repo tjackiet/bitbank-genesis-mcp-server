@@ -6,7 +6,7 @@
  * 5日間のローソク足を並べて表示する構成です。
  */
 
-import { fail, failFromError, ok } from '../lib/result.js';
+import { failFromError } from '../lib/result.js';
 import { RenderCandlePatternDiagramInputSchema, RenderCandlePatternDiagramOutputSchema } from '../src/schemas.js';
 import type { ToolDefinition } from '../src/tool-definition.js';
 
@@ -203,7 +203,7 @@ export default async function renderCandlePatternDiagram(opts: {
 			const fill = candle.type === 'bullish' ? colors.bullish : colors.bearish;
 
 			// ハイライト判定
-			const isHighlighted = pattern && pattern.involvedIndices.includes(i);
+			const isHighlighted = pattern?.involvedIndices.includes(i);
 			const strokeAttr = isHighlighted ? `stroke="${colors.highlight}" stroke-width="3"` : '';
 
 			parts.push(

@@ -9,7 +9,7 @@ import { fail, failFromError, ok } from '../lib/result.js';
 import type { FailResult, OkResult, Pair } from '../src/schemas.js';
 import type { ToolDefinition } from '../src/tool-definition.js';
 
-type RenderData = { svg?: string; filePath?: string; summary?: Record<string, any> };
+type RenderData = { svg?: string; filePath?: string; summary?: Record<string, unknown> };
 type RenderMeta = {
 	pair: Pair;
 	type: string;
@@ -32,7 +32,7 @@ export default async function renderDepthSvg(
 		const levels = Math.max(10, Number(args?.depth?.levels ?? 200));
 
 		const depth = await getDepth(pair, { maxLevels: levels });
-		if (!depth.ok) return fail(depth.summary.replace(/^Error: /, ''), (depth as any)?.meta?.errorType || 'internal');
+		if (!depth.ok) return fail(depth.summary.replace(/^Error: /, ''), depth.meta?.errorType || 'internal');
 		const asks: Array<[string, string]> = depth.data.asks || [];
 		const bids: Array<[string, string]> = depth.data.bids || [];
 
@@ -190,8 +190,8 @@ export default async function renderDepthSvg(
 
 		const finalSvg = svg.replace(/\s{2,}/g, ' ').replace(/>\s+</g, '><');
 		const sizeBytes = Buffer.byteLength(finalSvg, 'utf8');
-		const preferFile = Boolean((args as any)?.preferFile);
-		const autoSave = Boolean((args as any)?.autoSave);
+		const preferFile = Boolean(args.preferFile);
+		const autoSave = Boolean(args.autoSave);
 
 		const meta: RenderMeta = { pair, type, bbMode: 'default', sizeBytes };
 
@@ -245,16 +245,22 @@ export const toolDef: ToolDefinition = {
 		preferFile: z.boolean().optional(),
 		autoSave: z.boolean().optional(),
 	}),
-	handler: async ({ pair, type, depth, preferFile, autoSave }: any) => {
-		const res: any = await renderDepthSvg({ pair, type, depth, preferFile, autoSave });
+	handler: async ({ pair, type, depth, preferFile, autoSave }: Record<string, unknown>) => {
+		const res = await renderDepthSvg({
+			pair: pair as Pair | undefined,
+			type: type as string | undefined,
+			depth: depth as { levels?: number } | undefined,
+			preferFile: preferFile as boolean | undefined,
+			autoSave: autoSave as boolean | undefined,
+		});
 		if (!res?.ok) return res;
-		const data: any = (res as any).data || {};
+		const data = res.data || {};
 		const header = `${String(pair).toUpperCase()} Depth chart`;
-		if (data?.filePath) {
+		if (data.filePath) {
 			const text = `${header}\nSaved: computer://${data.filePath}`;
-			return { content: [{ type: 'text', text }], structuredContent: res as any };
+			return { content: [{ type: 'text', text }], structuredContent: { ...res } as Record<string, unknown> };
 		}
-		if (data?.svg) {
+		if (data.svg) {
 			const text = [
 				header,
 				'',
@@ -265,8 +271,8 @@ export const toolDef: ToolDefinition = {
 				'',
 				String(data.svg),
 			].join('\n');
-			return { content: [{ type: 'text', text }], structuredContent: res as any };
+			return { content: [{ type: 'text', text }], structuredContent: { ...res } as Record<string, unknown> };
 		}
-		return { content: [{ type: 'text', text: header }], structuredContent: res as any };
+		return { content: [{ type: 'text', text: header }], structuredContent: { ...res } as Record<string, unknown> };
 	},
 };

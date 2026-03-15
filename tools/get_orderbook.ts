@@ -130,7 +130,7 @@ function buildPressure(pair: string, bidsRaw: RawLevel[], asksRaw: RawLevel[], b
 
 	const eps = 1e-9;
 	const bands = bandsPct.map((w) => {
-		if (!Number.isFinite(baseMid as any)) {
+		if (baseMid == null || !Number.isFinite(baseMid)) {
 			return {
 				widthPct: w,
 				baseMid: null,
@@ -484,7 +484,7 @@ export default async function getOrderbook(params: GetOrderbookParams | string =
 		const bidsNum: NumLevel[] = rawBids.map(([p, s]) => [Number(p), Number(s)]);
 		const asksNum: NumLevel[] = rawAsks.map(([p, s]) => [Number(p), Number(s)]);
 
-		let result: { text: string; data: any; mid: number | null };
+		let result: { text: string; data: Record<string, unknown>; mid: number | null };
 
 		switch (mode) {
 			case 'pressure':
@@ -508,7 +508,7 @@ export default async function getOrderbook(params: GetOrderbookParams | string =
 		result.text += boundary;
 
 		const meta = createMeta(chk.pair, { mode, topN });
-		return ok(result.text, result.data as any, meta as any);
+		return ok(result.text, result.data, meta);
 	} catch (err: unknown) {
 		return failFromError(err, { timeoutMs, defaultType: 'network', defaultMessage: 'ネットワークエラー' });
 	}

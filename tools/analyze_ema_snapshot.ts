@@ -4,7 +4,7 @@ import { formatSummary } from '../lib/formatter.js';
 import { fail, failFromError, failFromValidation, ok } from '../lib/result.js';
 import { createMeta, ensurePair } from '../lib/validate.js';
 import {
-	AnalyzeEmaSnapshotDataSchemaOut,
+	type AnalyzeEmaSnapshotDataSchemaOut,
 	AnalyzeEmaSnapshotInputSchema,
 	AnalyzeEmaSnapshotOutputSchema,
 } from '../src/schemas.js';
@@ -140,16 +140,17 @@ export default async function analyzeEmaSnapshot(
 					: [];
 			normalizedLen = indRes.data.normalized.length;
 
+			const indRecord = indRes.data.indicators as Record<string, number[] | number | null>;
 			for (const p of periods) {
 				const key = `EMA_${p}`;
-				map[key] = (indRes.data.indicators as any)[key] ?? null;
+				map[key] = (indRecord[key] as number | null) ?? null;
 				if (!chartInd[key]) {
-					chartInd[key] = (indRes.data.indicators as any)[`ema_${p}_series`] ?? [];
+					chartInd[key] = indRecord[`ema_${p}_series`] ?? [];
 				}
 			}
 		}
 
-		const lastIdx = Math.max(0, candles.length - 1);
+		const _lastIdx = Math.max(0, candles.length - 1);
 
 		const crosses: Array<{ a: string; b: string; type: 'golden' | 'dead'; delta: number }> = [];
 		const crossPairs: Array<[number, number]> = [];

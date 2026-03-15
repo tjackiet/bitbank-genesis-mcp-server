@@ -9,16 +9,15 @@
  * 3. Trade Size Distribution (約定サイズ別の分類 + 大口偏り)
  */
 
-import { z } from 'zod';
+import type { z } from 'zod';
 import { dayjs, toDisplayTime, toIsoWithTz } from '../lib/datetime.js';
 import { formatPair, formatPercent, formatPrice } from '../lib/formatter.js';
-import { median } from '../lib/math.js';
 import { fail, failFromError, failFromValidation, ok } from '../lib/result.js';
-import { createMeta, ensurePair, validateLimit } from '../lib/validate.js';
+import { createMeta, ensurePair } from '../lib/validate.js';
 import {
-	AnalyzeVolumeProfileDataSchemaOut,
+	type AnalyzeVolumeProfileDataSchemaOut,
 	AnalyzeVolumeProfileInputSchema,
-	AnalyzeVolumeProfileMetaSchemaOut,
+	type AnalyzeVolumeProfileMetaSchemaOut,
 	AnalyzeVolumeProfileOutputSchema,
 } from '../src/schemas.js';
 import type { ToolDefinition } from '../src/tool-definition.js';
@@ -107,7 +106,8 @@ async function fetchTransactions(pair: string, hours?: number, limit?: number): 
 	// Count-based
 	const lim = limit ?? 500;
 	const latestRes = await getTransactions(pair, Math.min(lim, 1000));
-	const latestTxs = ((latestRes as any)?.ok ? (latestRes as any).data.normalized : []) as Tx[];
+	const latestR = latestRes as { ok?: boolean; data?: { normalized?: Tx[] } };
+	const latestTxs: Tx[] = latestR?.ok && Array.isArray(latestR.data?.normalized) ? latestR.data.normalized : [];
 	if (latestTxs.length === 0) {
 		const upstreamErr = extractUpstreamError([latestRes]);
 		if (upstreamErr) return { ok: false, ...upstreamErr };
@@ -287,7 +287,7 @@ function calcVolumeProfile(txs: Tx[], bins: number, valueAreaPct: number) {
 	};
 
 	return {
-		bins: profileBins.map((b, i) => ({
+		bins: profileBins.map((b, _i) => ({
 			low: Number(b.low.toFixed(2)),
 			high: Number(b.high.toFixed(2)),
 			label: fmtBin(b),

@@ -108,7 +108,6 @@ function formatDateBySpan(isoTime: string, format: 'full' | 'month-day' | 'year-
 			return d.format('MM/DD');
 		case 'full':
 			return d.format('YYYY-MM-DD');
-		case 'year-month':
 		default:
 			return d.format('YYYY-MM');
 	}
@@ -293,7 +292,7 @@ function renderMinimalChart(data: GenericBacktestChartData): string {
 		}
 		const lastX = xScale(drawdown_curve.length - 1).toFixed(0);
 		const firstX = xScale(0).toFixed(0);
-		const fillPath = ddPoints.join(' ') + ` L${lastX},${ddTop} L${firstX},${ddTop} Z`;
+		const fillPath = `${ddPoints.join(' ')} L${lastX},${ddTop} L${firstX},${ddTop} Z`;
 		svg.push(`<path d="${fillPath}" fill="${COLORS.drawdownFill}"/>`);
 		svg.push(`<path d="${ddPoints.join(' ')}" fill="none" stroke="${COLORS.drawdown}" stroke-width="1"/>`);
 	}
@@ -379,10 +378,10 @@ function renderFullChart(data: GenericBacktestChartData): string {
 
 	for (const overlay of priceOverlays) {
 		if (overlay.type === 'line') {
-			allPrices.push(...overlay.data.filter((v) => !isNaN(v)));
+			allPrices.push(...overlay.data.filter((v) => !Number.isNaN(v)));
 		} else if (overlay.type === 'band') {
-			allPrices.push(...overlay.data.upper.filter((v) => !isNaN(v)));
-			allPrices.push(...overlay.data.lower.filter((v) => !isNaN(v)));
+			allPrices.push(...overlay.data.upper.filter((v) => !Number.isNaN(v)));
+			allPrices.push(...overlay.data.lower.filter((v) => !Number.isNaN(v)));
 		}
 	}
 
@@ -456,7 +455,7 @@ function renderFullChart(data: GenericBacktestChartData): string {
 			const pathParts: string[] = [];
 			for (let i = 0; i < overlay.data.length; i++) {
 				const v = overlay.data[i];
-				if (isNaN(v)) {
+				if (Number.isNaN(v)) {
 					started = false;
 					continue;
 				}
@@ -477,7 +476,7 @@ function renderFullChart(data: GenericBacktestChartData): string {
 			for (let i = 0; i < overlay.data.upper.length; i++) {
 				const upper = overlay.data.upper[i];
 				const lower = overlay.data.lower[i];
-				if (isNaN(upper) || isNaN(lower)) {
+				if (Number.isNaN(upper) || Number.isNaN(lower)) {
 					started = false;
 					continue;
 				}
@@ -535,7 +534,7 @@ function renderFullChart(data: GenericBacktestChartData): string {
 		const allIndValues: number[] = [];
 		for (const overlay of indicatorOverlays) {
 			if (overlay.type === 'line' || overlay.type === 'histogram') {
-				allIndValues.push(...overlay.data.filter((v) => !isNaN(v)));
+				allIndValues.push(...overlay.data.filter((v) => !Number.isNaN(v)));
 			}
 		}
 		// ゼロを含む対称的なスケール（ヒストグラムのため）
@@ -583,7 +582,7 @@ function renderFullChart(data: GenericBacktestChartData): string {
 				const barW = Math.max((plotWidth / candles.length) * 0.6, 1);
 				for (let i = 0; i < overlay.data.length; i++) {
 					const v = overlay.data[i];
-					if (isNaN(v)) continue;
+					if (Number.isNaN(v)) continue;
 					const x = xScale(i) - barW / 2;
 					const yVal = indYScale(v);
 					const yZero = indYScale(0);
@@ -604,7 +603,7 @@ function renderFullChart(data: GenericBacktestChartData): string {
 				const pathParts: string[] = [];
 				for (let i = 0; i < overlay.data.length; i++) {
 					const v = overlay.data[i];
-					if (isNaN(v)) {
+					if (Number.isNaN(v)) {
 						started = false;
 						continue;
 					}
@@ -671,7 +670,7 @@ function renderFullChart(data: GenericBacktestChartData): string {
 			.join(' ');
 		const lastX = xScale(drawdown_curve.length - 1).toFixed(1);
 		const firstX = xScale(0).toFixed(1);
-		const fillPath = ddPathPoints + ` L${lastX},${ddTop} L${firstX},${ddTop} Z`;
+		const fillPath = `${ddPathPoints} L${lastX},${ddTop} L${firstX},${ddTop} Z`;
 		svg.push(`<path d="${fillPath}" fill="${COLORS.drawdownFill}"/>`);
 		svg.push(`<path d="${ddPathPoints}" fill="none" stroke="${COLORS.drawdown}" stroke-width="1.5"/>`);
 	}

@@ -163,7 +163,7 @@ export function buildMarketSignalHandlerText(input: BuildMarketSignalHandlerText
 		lines.push('');
 		lines.push('【内訳（raw×weight=寄与）】');
 		for (const b of breakdownArray) {
-			const w = (Number(b.weight || 0) * 100).toFixed(0) + '%';
+			const w = `${(Number(b.weight || 0) * 100).toFixed(0)}%`;
 			const raw = Number(b.rawScore || 0).toFixed(2);
 			const contrib = Number(b.contribution || 0).toFixed(2);
 			const interp = String(b.interpretation || 'neutral');
@@ -237,7 +237,7 @@ export const toolDef: ToolDefinition = {
 			});
 			return {
 				content: [{ type: 'text', text }],
-				structuredContent: AnalyzeMarketSignalOutputSchema.parse(res) as any,
+				structuredContent: AnalyzeMarketSignalOutputSchema.parse(res) as Record<string, unknown>,
 			};
 		} catch {
 			return AnalyzeMarketSignalOutputSchema.parse(res);

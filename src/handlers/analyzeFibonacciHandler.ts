@@ -1,7 +1,10 @@
+import type { z } from 'zod';
 import { formatPair, timeframeLabel } from '../../lib/formatter.js';
 import analyzeFibonacci from '../../tools/analyze_fibonacci.js';
 import { AnalyzeFibonacciInputSchema, AnalyzeFibonacciOutputSchema } from '../schemas.js';
 import type { ToolDefinition } from '../tool-definition.js';
+
+type FibOutput = z.infer<typeof AnalyzeFibonacciOutputSchema>;
 
 export const toolDef: ToolDefinition = {
 	name: 'analyze_fibonacci',
@@ -9,19 +12,19 @@ export const toolDef: ToolDefinition = {
 
 複数タイムフレーム分析には analyze_mtf_fibonacci を使用。`,
 	inputSchema: AnalyzeFibonacciInputSchema,
-	handler: async (args: any) => {
+	handler: async (args: Record<string, unknown>) => {
 		const result = await analyzeFibonacci(args);
-		const res = AnalyzeFibonacciOutputSchema.parse(result as any);
-		if (!res?.ok) return res as any;
+		const res: FibOutput = AnalyzeFibonacciOutputSchema.parse(result);
+		if (!res.ok) return res;
 
-		const data: any = (res as any)?.data ?? {};
-		const meta: any = (res as any)?.meta ?? {};
-		const pair = String(data.pair || args?.pair || 'btc_jpy');
-		const tfLabel = timeframeLabel(String(data.timeframe || '1day'));
+		const data = res.data;
+		const meta = res.meta;
+		const pair = String(data.pair || (args as Record<string, unknown>).pair || 'btc_jpy');
+		const _tfLabel = timeframeLabel(String(data.timeframe || '1day'));
 		const pairLabel = formatPair(pair);
 
 		// Build text content for LLM
-		const contentArr: any[] = (res as any)?.content ?? [];
+		const contentArr = res.content ?? [];
 		const existingText = contentArr.length > 0 ? contentArr[0].text : '';
 
 		// Return with structuredContent for tool chaining / visualization
@@ -30,7 +33,7 @@ export const toolDef: ToolDefinition = {
 			structuredContent: {
 				ok: true,
 				type: 'fibonacci',
-				summary: (res as any)?.summary ?? `${pairLabel} フィボナッチ分析`,
+				summary: res.summary ?? `${pairLabel} フィボナッチ分析`,
 				data: {
 					pair: data.pair,
 					timeframe: data.timeframe,

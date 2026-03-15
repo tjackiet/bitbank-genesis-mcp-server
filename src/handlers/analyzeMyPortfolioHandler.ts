@@ -105,7 +105,7 @@ async function paginateDeposits(
 		const params = { ...baseParams, count: '1000', ...(since ? { since } : {}) };
 		const result = await tryGet<{ deposits: RawDeposit[] }>(client, '/v1/user/deposit_history', params);
 		if (!result.ok) {
-			return { deposits: all, complete: all.length === 0 ? false : true, error: result.error };
+			return { deposits: all, complete: all.length !== 0, error: result.error };
 		}
 		const batch = result.data.deposits || [];
 		all.push(...batch);
@@ -131,7 +131,7 @@ async function paginateWithdrawals(
 		const params = { ...baseParams, count: '1000', ...(since ? { since } : {}) };
 		const result = await tryGet<{ withdrawals: RawWithdrawal[] }>(client, '/v1/user/withdrawal_history', params);
 		if (!result.ok) {
-			return { withdrawals: all, complete: all.length === 0 ? false : true, error: result.error };
+			return { withdrawals: all, complete: all.length !== 0, error: result.error };
 		}
 		const batch = result.data.withdrawals || [];
 		all.push(...batch);
@@ -942,11 +942,11 @@ async function fetchTechnical(pairs: string[]): Promise<TechnicalSummary[]> {
 		try {
 			const res = await analyzeIndicators(pair, '1day', 60);
 			if (!res?.ok) return null;
-			const data = res.data as any;
-			const indicators = data?.indicators || {};
+			const data = res.data;
+			const indicators = data.indicators;
 			const rsi14 = indicators.RSI_14 != null ? Number(indicators.RSI_14) : undefined;
 			const sma25 = indicators.SMA_25 != null ? Number(indicators.SMA_25) : undefined;
-			const lastClose = data?.normalized?.at?.(-1)?.close;
+			const lastClose = data.normalized?.at?.(-1)?.close;
 
 			let smaDeviation: number | undefined;
 			if (sma25 && lastClose && Number.isFinite(sma25) && Number.isFinite(lastClose)) {
@@ -954,7 +954,7 @@ async function fetchTechnical(pairs: string[]): Promise<TechnicalSummary[]> {
 			}
 
 			// trend は analyzeIndicators の data に含まれる
-			const trend = data?.trend;
+			const trend = data.trend;
 
 			// シグナル判定
 			// analyzeIndicators の trend は uptrend/strong_uptrend/downtrend/strong_downtrend/sideways
@@ -1049,9 +1049,9 @@ export default async function analyzeMyPortfolioHandler(args: {
 
 		// 3. 各保有通貨の損益算出
 		let totalJpyValue = 0;
-		let totalCostBasis = 0;
+		let _totalCostBasis = 0;
 		let totalRealizedPnl = 0;
-		let hasCostData = false;
+		let _hasCostData = false;
 
 		const holdings = nonZeroAssets.map((a) => {
 			const amount = a.onhand_amount;
@@ -1086,8 +1086,8 @@ export default async function analyzeMyPortfolioHandler(args: {
 			const pnl = include_pnl ? calcPnl(allTrades, a.asset, dwData?.withdrawals) : undefined;
 
 			if (pnl?.cost_basis != null) {
-				totalCostBasis += pnl.cost_basis;
-				hasCostData = true;
+				_totalCostBasis += pnl.cost_basis;
+				_hasCostData = true;
 			}
 			if (pnl) {
 				totalRealizedPnl += pnl.realized_pnl;

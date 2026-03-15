@@ -4,9 +4,9 @@ import { avg } from '../lib/math.js';
 import { fail, failFromError, failFromValidation, ok } from '../lib/result.js';
 import { createMeta, ensurePair } from '../lib/validate.js';
 import {
-	AnalyzeIchimokuSnapshotDataSchemaOut,
+	type AnalyzeIchimokuSnapshotDataSchemaOut,
 	AnalyzeIchimokuSnapshotInputSchema,
-	AnalyzeIchimokuSnapshotMetaSchemaOut,
+	type AnalyzeIchimokuSnapshotMetaSchemaOut,
 	AnalyzeIchimokuSnapshotOutputSchema,
 } from '../src/schemas.js';
 import type { ToolDefinition } from '../src/tool-definition.js';
@@ -361,7 +361,7 @@ export default async function analyzeIchimokuSnapshot(
 		if (cloudSlope === 'rising') tags.push('cloud_rising');
 		if (cloudSlope === 'falling') tags.push('cloud_falling');
 
-		const summary = formatSummary({
+		const _summary = formatSummary({
 			pair: chk.pair,
 			latest: close ?? undefined,
 			extra: `pos=${pricePosition} tk=${tenkanKijun} cloud=${cloudSlope}`,

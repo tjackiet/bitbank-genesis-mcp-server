@@ -158,7 +158,7 @@ export function buildIndicatorsText(input: BuildIndicatorsTextInput): string {
 	lines.push(`  トレンド: ${trendText}`);
 	lines.push(`  勢い: RSI=${rsi ?? 'n/a'} → ${rsiHint}`);
 	lines.push(
-		`  リスク: BB幅=${bandWidthPct != null ? bandWidthPct + '%' : 'n/a'} → ${bwState}${bwTrend ? `（${bwTrend}）` : ''}`,
+		`  リスク: BB幅=${bandWidthPct != null ? `${bandWidthPct}%` : 'n/a'} → ${bwState}${bwTrend ? `（${bwTrend}）` : ''}`,
 	);
 	lines.push('');
 	// Momentum
@@ -198,7 +198,7 @@ export function buildIndicatorsText(input: BuildIndicatorsTextInput): string {
 		`  lower:  ${fmtJPY(bbLo)} (${vsCurPct(bbLo)})${bbLo != null && close != null && Number(bbLo) < Number(close) ? '' : ' ← 現在価格に近い'}`,
 	);
 	if (bandWidthPct != null) lines.push(`  バンド幅: ${bandWidthPct}% → ${bwTrend ?? '—'}`);
-	if (sigmaHistory && sigmaHistory[0] && sigmaHistory[1]) {
+	if (sigmaHistory?.[0] && sigmaHistory[1]) {
 		const ago5 = sigmaHistory[0]?.z;
 		const curZ = sigmaHistory[1]?.z;
 		lines.push('  過去推移:');

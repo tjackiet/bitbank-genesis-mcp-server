@@ -389,13 +389,13 @@ export function detectTriangles(ctx: DetectContext): DetectResult {
 			// Whipsaw / false-breakout detection: if the breakout occurred but the
 			// latest candle's close is back inside the triangle boundaries, treat
 			// the breakout as a whipsaw and consider the pattern still forming.
-			let isWhipsaw = false;
+			let _isWhipsaw = false;
 			if (hasBreakout && lastIdx > breakoutIdx) {
 				const latestClose = candles[lastIdx].close;
 				const uLatest = upperLine.valueAt(lastIdx);
 				const lLatest = lowerLine.valueAt(lastIdx);
 				if (latestClose > lLatest && latestClose < uLatest) {
-					isWhipsaw = true;
+					_isWhipsaw = true;
 					hasBreakout = false;
 					breakoutIdx = -1;
 					breakoutDirection = null;
@@ -468,7 +468,7 @@ export function detectTriangles(ctx: DetectContext): DetectResult {
 			const baseScore = fitScore * 0.25 + convScore * 0.25 + touchScore * 0.3 + symScore * 0.2;
 			const confidence = finalizeConf(baseScore, triangleType);
 
-			const outcome = hasBreakout ? (isExpectedBreakout ? 'success' : 'failure') : undefined;
+			const _outcome = hasBreakout ? (isExpectedBreakout ? 'success' : 'failure') : undefined;
 
 			// Pivot points for aftermath target calculation
 			const allPivots = [

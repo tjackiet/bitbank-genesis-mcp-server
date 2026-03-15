@@ -121,7 +121,8 @@ export default async function getMyAssets(args: { include_jpy_valuation?: boolea
 		if (include_jpy_valuation && totalJpyValue > 0) {
 			for (const asset of assets) {
 				if (asset.jpy_value != null) {
-					(asset as any).allocation_pct = Math.round((asset.jpy_value / totalJpyValue) * 10000) / 100;
+					(asset as { allocation_pct?: number }).allocation_pct =
+						Math.round((asset.jpy_value / totalJpyValue) * 10000) / 100;
 				}
 			}
 		}
@@ -142,8 +143,9 @@ export default async function getMyAssets(args: { include_jpy_valuation?: boolea
 			let line = `${assetUpper}: ${a.amount}`;
 			if (a.jpy_value != null) {
 				line += ` (${formatPrice(a.jpy_value, 'btc_jpy')}`;
-				if ((a as any).allocation_pct != null) {
-					line += `, ${(a as any).allocation_pct}%`;
+				const pct = (a as { allocation_pct?: number }).allocation_pct;
+				if (pct != null) {
+					line += `, ${pct}%`;
 				}
 				line += ')';
 			}
@@ -177,8 +179,8 @@ export default async function getMyAssets(args: { include_jpy_valuation?: boolea
 
 		// ticker 一部失敗の場合は partial_data_warning を付与
 		if (tickerError) {
-			(result.meta as any).warning = 'partial_data_warning';
-			(result.meta as any).warningDetail = tickerError;
+			(result.meta as Record<string, unknown>).warning = 'partial_data_warning';
+			(result.meta as Record<string, unknown>).warningDetail = tickerError;
 		}
 
 		return GetMyAssetsOutputSchema.parse(result);
@@ -198,5 +200,5 @@ export const toolDef: ToolDefinition = {
 	description:
 		'[My Assets / Balance / Wallet] 自分の保有資産・残高一覧（my assets / balance / wallet / holdings）を取得。全通貨の数量・円評価額・構成比を返す。Private API。',
 	inputSchema: GetMyAssetsInputSchema,
-	handler: async (args: any) => getMyAssets(args ?? {}),
+	handler: async (args: Record<string, unknown>) => getMyAssets(args as { include_jpy_valuation?: boolean }),
 };

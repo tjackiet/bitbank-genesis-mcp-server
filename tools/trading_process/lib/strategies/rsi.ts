@@ -82,7 +82,7 @@ export const rsiStrategy: Strategy = {
 			const prevRSI = rsi[i - 1];
 			const currRSI = rsi[i];
 
-			if (isNaN(prevRSI) || isNaN(currRSI)) {
+			if (Number.isNaN(prevRSI) || Number.isNaN(currRSI)) {
 				signals.push({ time: candles[i].time, action: 'hold' });
 				continue;
 			}

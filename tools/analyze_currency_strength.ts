@@ -3,9 +3,9 @@ import { nowIso } from '../lib/datetime.js';
 import { formatPercent, formatPriceJPY, formatVolumeJPY } from '../lib/formatter.js';
 import { fail, failFromError, ok } from '../lib/result.js';
 import {
-	AnalyzeCurrencyStrengthDataSchemaOut,
+	type AnalyzeCurrencyStrengthDataSchemaOut,
 	AnalyzeCurrencyStrengthInputSchema,
-	AnalyzeCurrencyStrengthMetaSchemaOut,
+	type AnalyzeCurrencyStrengthMetaSchemaOut,
 	AnalyzeCurrencyStrengthOutputSchema,
 } from '../src/schemas.js';
 import type { ToolDefinition } from '../src/tool-definition.js';

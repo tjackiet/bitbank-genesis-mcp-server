@@ -87,7 +87,7 @@ export function detectTriples(ctx: DetectContext): DetectResult {
 							{ price: nlAvg },
 							{ start, end },
 						);
-						if (confidence >= (MIN_CONFIDENCE['triple_top'] ?? 0)) {
+						if (confidence >= (MIN_CONFIDENCE.triple_top ?? 0)) {
 							// --- ターゲット価格計算（neckline_projection 方式） ---
 							const ttAvgPeak = (a.price + b.price + c.price) / 3;
 							const ttTarget = nlAvg != null ? Math.round(nlAvg - (ttAvgPeak - nlAvg)) : undefined;
@@ -198,7 +198,7 @@ export function detectTriples(ctx: DetectContext): DetectResult {
 							{ price: nlAvg },
 							{ start, end },
 						);
-						if (confidence >= (MIN_CONFIDENCE['triple_bottom'] ?? 0)) {
+						if (confidence >= (MIN_CONFIDENCE.triple_bottom ?? 0)) {
 							// --- ターゲット価格計算（neckline_projection 方式） ---
 							const tbAvgValley = (a.price + b.price + c.price) / 3;
 							const tbTarget = nlAvg != null ? Math.round(nlAvg + (nlAvg - tbAvgValley)) : undefined;
@@ -319,7 +319,7 @@ export function detectTriples(ctx: DetectContext): DetectResult {
 								{ start, end },
 							);
 						}
-						if (confidence >= (MIN_CONFIDENCE['triple_top'] ?? 0)) {
+						if (confidence >= (MIN_CONFIDENCE.triple_top ?? 0)) {
 							const ttRelAvgPeak = (a.price + b.price + c.price) / 3;
 							const ttRelTarget = nlAvg != null ? Math.round(nlAvg - (ttRelAvgPeak - nlAvg)) : undefined;
 							push(patterns, {
@@ -425,7 +425,7 @@ export function detectTriples(ctx: DetectContext): DetectResult {
 								{ start, end },
 							);
 						}
-						if (confidence >= (MIN_CONFIDENCE['triple_bottom'] ?? 0)) {
+						if (confidence >= (MIN_CONFIDENCE.triple_bottom ?? 0)) {
 							const tbRelAvgValley = (a.price + b.price + c.price) / 3;
 							const tbRelTarget = nlAvg != null ? Math.round(nlAvg + (nlAvg - tbRelAvgValley)) : undefined;
 							push(patterns, {

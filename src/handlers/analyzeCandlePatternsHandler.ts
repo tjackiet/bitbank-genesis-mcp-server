@@ -100,7 +100,7 @@ export function generateSummary(patterns: DetectedCandlePattern[], windowCandles
 					: '方向感の迷いを示すサイン';
 
 		let statsPart = '';
-		if (p.history_stats && p.history_stats.horizons['1']) {
+		if (p.history_stats?.horizons['1']) {
 			const h1 = p.history_stats.horizons['1'];
 			statsPart = `過去${p.history_stats.lookback_days}日間で同様のパターンが${p.history_stats.occurrences}回出現し、翌日の勝率は${(h1.win_rate * 100).toFixed(0)}%でした。`;
 		}

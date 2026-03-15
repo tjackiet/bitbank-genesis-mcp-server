@@ -1,5 +1,3 @@
-// MCP Prompts 定義（既存の server 側プロンプトを集約）
-import type { PromptMessage } from '@modelcontextprotocol/sdk/types.js';
 import { isPrivateApiEnabled } from './private/config.js';
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
