@@ -1,8 +1,8 @@
+import { nowIso, toDisplayTime } from '../../lib/datetime.js';
+import { formatPercent, formatPriceJPY } from '../../lib/formatter.js';
 import analyzeIndicators from '../../tools/analyze_indicators.js';
 import { GetIndicatorsInputSchema } from '../schemas.js';
 import type { ToolDefinition } from '../tool-definition.js';
-import { formatPriceJPY, formatPercent } from '../../lib/formatter.js';
-import { toDisplayTime, nowIso } from '../../lib/datetime.js';
 
 // ── テキスト組み立て: 純粋エクスポート関数 ──
 
@@ -70,16 +70,58 @@ export interface BuildIndicatorsTextInput {
 
 export function buildIndicatorsText(input: BuildIndicatorsTextInput): string {
 	const {
-		pair, type, nowJst, close, prev, deltaPrev, deltaLabel, trend,
-		rsi, recentRsiFormatted, rsiUnitLabel,
-		macdHist, lastMacdCross, divergence,
-		sma25, sma75, sma200, s25Slope, s75Slope, s200Slope, arrangement, crossInfo,
-		bbMid, bbUp, bbLo, sigmaZ, bandWidthPct, bwTrend, sigmaHistory,
-		tenkan, kijun, spanA, spanB, cloudTop: _cloudTop, cloudBot: _cloudBot, cloudPos,
-		cloudThickness, cloudThicknessPct, chikouBull, threeSignals, toCloudDistance,
-		ichimokuConvSlope, ichimokuBaseSlope,
-		stochK, stochD, stochPrevK, stochPrevD,
-		obvVal, obvSma20, obvTrend, obvPrev, obvUnit,
+		pair,
+		type,
+		nowJst,
+		close,
+		prev,
+		deltaPrev,
+		deltaLabel,
+		trend,
+		rsi,
+		recentRsiFormatted,
+		rsiUnitLabel,
+		macdHist,
+		lastMacdCross,
+		divergence,
+		sma25,
+		sma75,
+		sma200,
+		s25Slope,
+		s75Slope,
+		s200Slope,
+		arrangement,
+		crossInfo,
+		bbMid,
+		bbUp,
+		bbLo,
+		sigmaZ,
+		bandWidthPct,
+		bwTrend,
+		sigmaHistory,
+		tenkan,
+		kijun,
+		spanA,
+		spanB,
+		cloudTop: _cloudTop,
+		cloudBot: _cloudBot,
+		cloudPos,
+		cloudThickness,
+		cloudThicknessPct,
+		chikouBull,
+		threeSignals,
+		toCloudDistance,
+		ichimokuConvSlope,
+		ichimokuBaseSlope,
+		stochK,
+		stochD,
+		stochPrevK,
+		stochPrevD,
+		obvVal,
+		obvSma20,
+		obvTrend,
+		obvPrev,
+		obvUnit,
 	} = input;
 
 	const fmtJPY = formatPriceJPY;
@@ -90,7 +132,7 @@ export function buildIndicatorsText(input: BuildIndicatorsTextInput): string {
 		const dir = ref >= close ? '上方' : '下方';
 		return `${fmtPct(pct, 1)} ${dir}`;
 	};
-	const slopeSym = (s: number | null | undefined) => (s == null ? '➡️' : (s > 0 ? '📈' : (s < 0 ? '📉' : '➡️')));
+	const slopeSym = (s: number | null | undefined) => (s == null ? '➡️' : s > 0 ? '📈' : s < 0 ? '📉' : '➡️');
 	const rsiInterp = (val: number | null) => {
 		if (val == null) return '—';
 		if (val < 30) return '売られすぎ圏（反発の可能性）';
@@ -108,12 +150,16 @@ export function buildIndicatorsText(input: BuildIndicatorsTextInput): string {
 	lines.push('');
 	// 総合判定（簡潔）
 	lines.push('【総合判定】');
-	const trendText = trend === 'strong_downtrend' ? '強い下降トレンド ⚠️' : (trend === 'uptrend' ? '上昇トレンド' : '中立/レンジ');
-	const rsiHint = (rsi == null) ? '—' : (Number(rsi) < 30 ? '売られすぎ' : (Number(rsi) > 70 ? '買われすぎ' : '中立圏'));
-	const bwState = bandWidthPct == null ? '—' : (bandWidthPct < 8 ? 'スクイーズ' : (bandWidthPct > 20 ? 'エクスパンション' : '標準'));
+	const trendText =
+		trend === 'strong_downtrend' ? '強い下降トレンド ⚠️' : trend === 'uptrend' ? '上昇トレンド' : '中立/レンジ';
+	const rsiHint = rsi == null ? '—' : Number(rsi) < 30 ? '売られすぎ' : Number(rsi) > 70 ? '買われすぎ' : '中立圏';
+	const bwState =
+		bandWidthPct == null ? '—' : bandWidthPct < 8 ? 'スクイーズ' : bandWidthPct > 20 ? 'エクスパンション' : '標準';
 	lines.push(`  トレンド: ${trendText}`);
 	lines.push(`  勢い: RSI=${rsi ?? 'n/a'} → ${rsiHint}`);
-	lines.push(`  リスク: BB幅=${bandWidthPct != null ? bandWidthPct + '%' : 'n/a'} → ${bwState}${bwTrend ? `（${bwTrend}）` : ''}`);
+	lines.push(
+		`  リスク: BB幅=${bandWidthPct != null ? bandWidthPct + '%' : 'n/a'} → ${bwState}${bwTrend ? `（${bwTrend}）` : ''}`,
+	);
 	lines.push('');
 	// Momentum
 	lines.push('【モメンタム】');
@@ -124,9 +170,12 @@ export function buildIndicatorsText(input: BuildIndicatorsTextInput): string {
 		lines.push(`    ${recentRsiFormatted.join(' → ')}`);
 	}
 	const macdHistFmt = macdHist == null ? 'n/a' : `${Math.round(Number(macdHist)).toLocaleString()}`;
-	const macdHint = (macdHist == null) ? '—' : (Number(macdHist) >= 0 ? '強気継続（プラス＝上昇圧力）' : '弱気継続（マイナス＝下落圧力）');
+	const macdHint =
+		macdHist == null ? '—' : Number(macdHist) >= 0 ? '強気継続（プラス＝上昇圧力）' : '弱気継続（マイナス＝下落圧力）';
 	lines.push(`  MACD: hist=${macdHistFmt} → ${macdHint}`);
-	const crossStr = lastMacdCross ? `${lastMacdCross.type === 'golden' ? 'ゴールデン' : 'デッド'}クロス: ${lastMacdCross.barsAgo}本前` : '直近クロス: なし';
+	const crossStr = lastMacdCross
+		? `${lastMacdCross.type === 'golden' ? 'ゴールデン' : 'デッド'}クロス: ${lastMacdCross.barsAgo}本前`
+		: '直近クロス: なし';
 	lines.push(`    ・${crossStr}`);
 	lines.push(`    ・ダイバージェンス: ${divergence ?? 'なし'}`);
 	lines.push('');
@@ -140,13 +189,18 @@ export function buildIndicatorsText(input: BuildIndicatorsTextInput): string {
 	lines.push('');
 	// Volatility (BB)
 	lines.push('【ボラティリティ（ボリンジャーバンド±2σ）】');
-	lines.push(`  現在位置: ${sigmaZ != null ? `${sigmaZ}σ` : 'n/a'} → ${sigmaZ != null ? (sigmaZ <= -1 ? '売られすぎ' : (sigmaZ >= 1 ? '買われすぎ' : '中立')) : '—'}`);
+	lines.push(
+		`  現在位置: ${sigmaZ != null ? `${sigmaZ}σ` : 'n/a'} → ${sigmaZ != null ? (sigmaZ <= -1 ? '売られすぎ' : sigmaZ >= 1 ? '買われすぎ' : '中立') : '—'}`,
+	);
 	lines.push(`  middle: ${fmtJPY(bbMid)} (${vsCurPct(bbMid)})`);
 	lines.push(`  upper:  ${fmtJPY(bbUp)} (${vsCurPct(bbUp)})`);
-	lines.push(`  lower:  ${fmtJPY(bbLo)} (${vsCurPct(bbLo)})${(bbLo != null && close != null && Number(bbLo) < Number(close)) ? '' : ' ← 現在価格に近い'}`);
+	lines.push(
+		`  lower:  ${fmtJPY(bbLo)} (${vsCurPct(bbLo)})${bbLo != null && close != null && Number(bbLo) < Number(close) ? '' : ' ← 現在価格に近い'}`,
+	);
 	if (bandWidthPct != null) lines.push(`  バンド幅: ${bandWidthPct}% → ${bwTrend ?? '—'}`);
 	if (sigmaHistory && sigmaHistory[0] && sigmaHistory[1]) {
-		const ago5 = sigmaHistory[0]?.z; const curZ = sigmaHistory[1]?.z;
+		const ago5 = sigmaHistory[0]?.z;
+		const curZ = sigmaHistory[1]?.z;
 		lines.push('  過去推移:');
 		if (ago5 != null) lines.push(`    ・5日前: ${ago5}σ`);
 		if (curZ != null) lines.push(`    ・現在: ${curZ}σ`);
@@ -154,12 +208,17 @@ export function buildIndicatorsText(input: BuildIndicatorsTextInput): string {
 	lines.push('');
 	// Ichimoku
 	lines.push('【一目均衡表】');
-	lines.push(`  現在位置: ${cloudPos === 'below_cloud' ? '雲の下 → 弱気' : (cloudPos === 'above_cloud' ? '雲の上 → 強気' : '雲の中 → 中立')}`);
+	lines.push(
+		`  現在位置: ${cloudPos === 'below_cloud' ? '雲の下 → 弱気' : cloudPos === 'above_cloud' ? '雲の上 → 強気' : '雲の中 → 中立'}`,
+	);
 	lines.push(`  転換線: ${fmtJPY(tenkan)} (${vsCurPct(tenkan)}) ${slopeSym(ichimokuConvSlope)}`);
 	lines.push(`  基準線: ${fmtJPY(kijun)} (${vsCurPct(kijun)}) ${slopeSym(ichimokuBaseSlope)}`);
 	lines.push(`  先行スパンA: ${fmtJPY(spanA)} (${vsCurPct(spanA)})`);
 	lines.push(`  先行スパンB: ${fmtJPY(spanB)} (${vsCurPct(spanB)})`);
-	if (cloudThickness != null) lines.push(`  雲の厚さ: ${Math.round(cloudThickness).toLocaleString()}円（${cloudThicknessPct != null ? `${cloudThicknessPct.toFixed(1)}%` : 'n/a'}）`);
+	if (cloudThickness != null)
+		lines.push(
+			`  雲の厚さ: ${Math.round(cloudThickness).toLocaleString()}円（${cloudThicknessPct != null ? `${cloudThicknessPct.toFixed(1)}%` : 'n/a'}）`,
+		);
 	if (chikouBull != null) lines.push(`  遅行スパン: ${chikouBull ? '価格より上 → 強気' : '価格より下 → 弱気'}`);
 	if (threeSignals) lines.push(`  三役判定: ${threeSignals.judge}`);
 	if (toCloudDistance != null && cloudPos === 'below_cloud') lines.push(`  雲突入まで: ${toCloudDistance.toFixed(1)}%`);
@@ -168,8 +227,9 @@ export function buildIndicatorsText(input: BuildIndicatorsTextInput): string {
 	lines.push('【ストキャスティクスRSI】');
 	if (stochK != null && stochD != null) {
 		lines.push(`  %K: ${Number(stochK).toFixed(1)}  %D: ${Number(stochD).toFixed(1)}`);
-		const stochZone = Number(stochK) <= 20 ? '売られすぎゾーン' : (Number(stochK) >= 80 ? '買われすぎゾーン' : '中立圏');
-		const stochStrength = Number(stochK) <= 10 ? '（強い売られすぎ）' : (Number(stochK) >= 90 ? '（強い買われすぎ）' : '');
+		const stochZone = Number(stochK) <= 20 ? '売られすぎゾーン' : Number(stochK) >= 80 ? '買われすぎゾーン' : '中立圏';
+		const stochStrength =
+			Number(stochK) <= 10 ? '（強い売られすぎ）' : Number(stochK) >= 90 ? '（強い買われすぎ）' : '';
 		lines.push(`  判定: ${stochZone}${stochStrength}`);
 		if (stochPrevK != null && stochPrevD != null) {
 			const prevBelow = Number(stochPrevK) < Number(stochPrevD);
@@ -192,9 +252,17 @@ export function buildIndicatorsText(input: BuildIndicatorsTextInput): string {
 	lines.push('【OBV (On-Balance Volume)】');
 	if (obvVal != null) {
 		lines.push(`  現在値: ${Number(obvVal).toLocaleString(undefined, { maximumFractionDigits: 2 })} ${obvUnit}`.trim());
-		if (obvSma20 != null) lines.push(`  SMA(20): ${Number(obvSma20).toLocaleString(undefined, { maximumFractionDigits: 2 })} ${obvUnit}`.trim());
+		if (obvSma20 != null)
+			lines.push(
+				`  SMA(20): ${Number(obvSma20).toLocaleString(undefined, { maximumFractionDigits: 2 })} ${obvUnit}`.trim(),
+			);
 		if (obvTrend != null) {
-			const obvTrendLabel = obvTrend === 'rising' ? 'OBV > SMA → 出来高が上昇を支持' : (obvTrend === 'falling' ? 'OBV < SMA → 出来高が下落を支持' : 'OBV ≈ SMA → 出来高中立');
+			const obvTrendLabel =
+				obvTrend === 'rising'
+					? 'OBV > SMA → 出来高が上昇を支持'
+					: obvTrend === 'falling'
+						? 'OBV < SMA → 出来高が下落を支持'
+						: 'OBV ≈ SMA → 出来高中立';
 			lines.push(`  トレンド: ${obvTrendLabel}`);
 		}
 		// Divergence check: price direction vs OBV direction over recent bars
@@ -225,7 +293,8 @@ export function buildIndicatorsText(input: BuildIndicatorsTextInput): string {
 
 export const toolDef: ToolDefinition = {
 	name: 'analyze_indicators',
-	description: '[Technical Indicators / RSI / MACD / SMA] テクニカル指標の総合分析（indicators / RSI / MACD / SMA / BB / Ichimoku / Stochastic RSI）。十分な limit を指定（例: 日足200本）。\n\n【重要】バックテストには run_backtest を使用。',
+	description:
+		'[Technical Indicators / RSI / MACD / SMA] テクニカル指標の総合分析（indicators / RSI / MACD / SMA / BB / Ichimoku / Stochastic RSI）。十分な limit を指定（例: 日足200本）。\n\n【重要】バックテストには run_backtest を使用。',
 	inputSchema: GetIndicatorsInputSchema,
 	handler: async ({ pair, type, limit }: any) => {
 		const res: any = await analyzeIndicators(pair, type, limit);
@@ -259,7 +328,7 @@ export const toolDef: ToolDefinition = {
 				return Number.isFinite(num) ? num : null;
 			});
 		})();
-		const recentRsiFormatted = recentRsiRaw.map(v => (v == null ? 'n/a' : Number(v).toFixed(1)));
+		const recentRsiFormatted = recentRsiRaw.map((v) => (v == null ? 'n/a' : Number(v).toFixed(1)));
 		const rsiUnitLabel = (() => {
 			const t = String(type ?? '').toLowerCase();
 			if (t.includes('day')) return '日';
@@ -275,26 +344,33 @@ export const toolDef: ToolDefinition = {
 		const bbMid = ind.BB_middle ?? ind.BB2_middle ?? null;
 		const bbUp = ind.BB_upper ?? ind.BB2_upper ?? null;
 		const bbLo = ind.BB_lower ?? ind.BB2_lower ?? null;
-		const sigmaZ = (close != null && bbMid != null && bbUp != null && (bbUp - bbMid) !== 0)
-			? Number((2 * (close - bbMid) / (bbUp - bbMid)).toFixed(2))
-			: null;
-		const bandWidthPct = (bbUp != null && bbLo != null && bbMid)
-			? Number((((bbUp - bbLo) / bbMid) * 100).toFixed(2))
-			: null;
+		const sigmaZ =
+			close != null && bbMid != null && bbUp != null && bbUp - bbMid !== 0
+				? Number(((2 * (close - bbMid)) / (bbUp - bbMid)).toFixed(2))
+				: null;
+		const bandWidthPct =
+			bbUp != null && bbLo != null && bbMid ? Number((((bbUp - bbLo) / bbMid) * 100).toFixed(2)) : null;
 		const macdHist = ind.MACD_hist ?? null;
 		const spanA = ind.ICHIMOKU_spanA ?? null;
 		const spanB = ind.ICHIMOKU_spanB ?? null;
 		const tenkan = ind.ICHIMOKU_conversion ?? null;
 		const kijun = ind.ICHIMOKU_base ?? null;
-		const cloudTop = (spanA != null && spanB != null) ? Math.max(spanA, spanB) : null;
-		const cloudBot = (spanA != null && spanB != null) ? Math.min(spanA, spanB) : null;
-		const cloudPos = (close != null && cloudTop != null && cloudBot != null)
-			? (close > cloudTop ? 'above_cloud' : (close < cloudBot ? 'below_cloud' : 'in_cloud'))
-			: 'unknown';
+		const cloudTop = spanA != null && spanB != null ? Math.max(spanA, spanB) : null;
+		const cloudBot = spanA != null && spanB != null ? Math.min(spanA, spanB) : null;
+		const cloudPos =
+			close != null && cloudTop != null && cloudBot != null
+				? close > cloudTop
+					? 'above_cloud'
+					: close < cloudBot
+						? 'below_cloud'
+						: 'in_cloud'
+				: 'unknown';
 		const trend = res?.data?.trend ?? 'unknown';
 		// Helpers: slope and last cross
 		const slopeOf = (seriesKey: string, n = 5): number | null => {
-			const arr = Array.isArray(res?.data?.indicators?.series?.[seriesKey]) ? res.data.indicators.series[seriesKey] : null;
+			const arr = Array.isArray(res?.data?.indicators?.series?.[seriesKey])
+				? res.data.indicators.series[seriesKey]
+				: null;
 			if (!arr || arr.length < 2) return null;
 			const len = Math.min(n, arr.length);
 			const a = Number(arr.at(-len) ?? NaN);
@@ -303,16 +379,22 @@ export const toolDef: ToolDefinition = {
 			return (b - a) / (len - 1);
 		};
 		const lastMacdCross = (() => {
-			const macdArr = Array.isArray(res?.data?.indicators?.series?.MACD_line) ? res.data.indicators.series.MACD_line : null;
-			const sigArr = Array.isArray(res?.data?.indicators?.series?.MACD_signal) ? res.data.indicators.series.MACD_signal : null;
+			const macdArr = Array.isArray(res?.data?.indicators?.series?.MACD_line)
+				? res.data.indicators.series.MACD_line
+				: null;
+			const sigArr = Array.isArray(res?.data?.indicators?.series?.MACD_signal)
+				? res.data.indicators.series.MACD_signal
+				: null;
 			if (!macdArr || !sigArr) return null;
 			const L = Math.min(macdArr.length, sigArr.length);
 			let lastIdx: number | null = null;
 			let lastType: 'golden' | 'dead' | null = null;
 			for (let i = L - 2; i >= 0; i--) {
-				const a0 = Number(macdArr[i]), b0 = Number(sigArr[i]);
-				const a1 = Number(macdArr[i + 1]), b1 = Number(sigArr[i + 1]);
-				if ([a0, b0, a1, b1].some(v => !Number.isFinite(v))) continue;
+				const a0 = Number(macdArr[i]),
+					b0 = Number(sigArr[i]);
+				const a1 = Number(macdArr[i + 1]),
+					b1 = Number(sigArr[i + 1]);
+				if ([a0, b0, a1, b1].some((v) => !Number.isFinite(v))) continue;
 				const prevDiff = a0 - b0;
 				const nextDiff = a1 - b1;
 				if (prevDiff === 0) continue;
@@ -323,27 +405,35 @@ export const toolDef: ToolDefinition = {
 				}
 			}
 			if (lastIdx == null) return null;
-			const barsAgo = (L - 1) - lastIdx;
+			const barsAgo = L - 1 - lastIdx;
 			return { type: lastType as 'golden' | 'dead', barsAgo };
 		})();
 		const divergence = (() => {
 			// simple divergence check over last 14 bars using linear slope
 			const N = Math.min(14, candles.length);
 			if (N < 5) return null;
-			const pxA = Number(candles.at(-N)?.close ?? NaN), pxB = Number(candles.at(-1)?.close ?? NaN);
-			const histSeries = Array.isArray(res?.data?.indicators?.series?.MACD_hist) ? res.data.indicators.series.MACD_hist : null;
+			const pxA = Number(candles.at(-N)?.close ?? NaN),
+				pxB = Number(candles.at(-1)?.close ?? NaN);
+			const histSeries = Array.isArray(res?.data?.indicators?.series?.MACD_hist)
+				? res.data.indicators.series.MACD_hist
+				: null;
 			if (!Number.isFinite(pxA) || !Number.isFinite(pxB) || !histSeries || histSeries.length < N) return null;
-			const hA = Number(histSeries.at(-N) ?? NaN), hB = Number(histSeries.at(-1) ?? NaN);
+			const hA = Number(histSeries.at(-N) ?? NaN),
+				hB = Number(histSeries.at(-1) ?? NaN);
 			if (!Number.isFinite(hA) || !Number.isFinite(hB)) return null;
-			const pxSlopeUp = pxB > pxA, pxSlopeDn = pxB < pxA;
-			const histSlopeUp = hB > hA, histSlopeDn = hB < hA;
+			const pxSlopeUp = pxB > pxA,
+				pxSlopeDn = pxB < pxA;
+			const histSlopeUp = hB > hA,
+				histSlopeDn = hB < hA;
 			if (pxSlopeUp && histSlopeDn) return 'ベアリッシュ（価格↑・モメンタム↓）';
 			if (pxSlopeDn && histSlopeUp) return 'ブルリッシュ（価格↓・モメンタム↑）';
 			return 'なし';
 		})();
 		// SMA arrangement and deviations
 		const curNum = Number(close ?? NaN);
-		const s25n = Number(sma25 ?? NaN), s75n = Number(sma75 ?? NaN), s200n = Number(sma200 ?? NaN);
+		const s25n = Number(sma25 ?? NaN),
+			s75n = Number(sma75 ?? NaN),
+			s200n = Number(sma200 ?? NaN);
 		const arrangement = (() => {
 			const pts: Array<{ label: string; v: number }> = [];
 			if (Number.isFinite(curNum)) pts.push({ label: '価格', v: curNum });
@@ -352,17 +442,28 @@ export const toolDef: ToolDefinition = {
 			if (Number.isFinite(s200n)) pts.push({ label: '200日', v: s200n });
 			if (pts.length < 3) return 'n/a';
 			pts.sort((a, b) => a.v - b.v);
-			return pts.map(p => p.label).join(' < ');
+			return pts.map((p) => p.label).join(' < ');
 		})();
-		const s25Slope = slopeOf('SMA_25', 5), s75Slope = slopeOf('SMA_75', 5), s200Slope = slopeOf('SMA_200', 7);
+		const s25Slope = slopeOf('SMA_25', 5),
+			s75Slope = slopeOf('SMA_75', 5),
+			s200Slope = slopeOf('SMA_200', 7);
 		// BB width trend and sigma history (last 5-7 bars)
 		const bbSeries = {
-			upper: Array.isArray(res?.data?.indicators?.series?.BB_upper) ? res.data.indicators.series.BB_upper
-				: (Array.isArray(res?.data?.indicators?.series?.BB2_upper) ? res.data.indicators.series.BB2_upper : null),
-			lower: Array.isArray(res?.data?.indicators?.series?.BB_lower) ? res.data.indicators.series.BB_lower
-				: (Array.isArray(res?.data?.indicators?.series?.BB2_lower) ? res.data.indicators.series.BB2_lower : null),
-			middle: Array.isArray(res?.data?.indicators?.series?.BB_middle) ? res.data.indicators.series.BB_middle
-				: (Array.isArray(res?.data?.indicators?.series?.BB2_middle) ? res.data.indicators.series.BB2_middle : null),
+			upper: Array.isArray(res?.data?.indicators?.series?.BB_upper)
+				? res.data.indicators.series.BB_upper
+				: Array.isArray(res?.data?.indicators?.series?.BB2_upper)
+					? res.data.indicators.series.BB2_upper
+					: null,
+			lower: Array.isArray(res?.data?.indicators?.series?.BB_lower)
+				? res.data.indicators.series.BB_lower
+				: Array.isArray(res?.data?.indicators?.series?.BB2_lower)
+					? res.data.indicators.series.BB2_lower
+					: null,
+			middle: Array.isArray(res?.data?.indicators?.series?.BB_middle)
+				? res.data.indicators.series.BB_middle
+				: Array.isArray(res?.data?.indicators?.series?.BB2_middle)
+					? res.data.indicators.series.BB2_middle
+					: null,
 		};
 		const bwTrend = (() => {
 			try {
@@ -372,8 +473,10 @@ export const toolDef: ToolDefinition = {
 				const cur = (bbSeries.upper.at(-1) - bbSeries.lower.at(-1)) / Math.max(1e-12, bbSeries.middle.at(-1));
 				const prev5 = (bbSeries.upper.at(-6) - bbSeries.lower.at(-6)) / Math.max(1e-12, bbSeries.middle.at(-6));
 				if (!Number.isFinite(cur) || !Number.isFinite(prev5)) return null;
-				return cur > prev5 ? '拡大中' : (cur < prev5 ? '収縮中' : '不変');
-			} catch { return null; }
+				return cur > prev5 ? '拡大中' : cur < prev5 ? '収縮中' : '不変';
+			} catch {
+				return null;
+			}
 		})();
 		const sigmaHistory = (() => {
 			try {
@@ -381,20 +484,25 @@ export const toolDef: ToolDefinition = {
 				const L = Math.min(candles.length, bbSeries.upper.length, bbSeries.middle.length);
 				if (L < 6) return null;
 				const idxs = [-6, -1];
-				const vals = idxs.map(off => {
+				const vals = idxs.map((off) => {
 					const c = Number(candles.at(off)?.close ?? NaN);
 					const m = Number(bbSeries.middle.at(off) ?? NaN);
 					const u = Number(bbSeries.upper.at(off) ?? NaN);
 					if (![c, m, u].every(Number.isFinite)) return null;
-					const z = Number((2 * (c - m) / Math.max(1e-12, u - m)).toFixed(2));
+					const z = Number(((2 * (c - m)) / Math.max(1e-12, u - m)).toFixed(2));
 					return { off, z };
 				});
 				return vals;
-			} catch { return null; }
+			} catch {
+				return null;
+			}
 		})();
 		// Ichimoku extras: cloud thickness, chikou proxy, three signals, distance to cloud
-		const cloudThickness = (cloudTop != null && cloudBot != null) ? (cloudTop - cloudBot) : null;
-		const cloudThicknessPct = (cloudThickness != null && close != null && Number.isFinite(close)) ? (cloudThickness / Math.max(1e-12, Number(close))) * 100 : null;
+		const cloudThickness = cloudTop != null && cloudBot != null ? cloudTop - cloudBot : null;
+		const cloudThicknessPct =
+			cloudThickness != null && close != null && Number.isFinite(close)
+				? (cloudThickness / Math.max(1e-12, Number(close))) * 100
+				: null;
 		const chikouBull = (() => {
 			if (candles.length < 27 || close == null) return null;
 			const past = Number(candles.at(-27)?.close ?? NaN);
@@ -403,7 +511,7 @@ export const toolDef: ToolDefinition = {
 		})();
 		const threeSignals = (() => {
 			const aboveCloud = cloudPos === 'above_cloud';
-			const convAboveBase = (tenkan != null && kijun != null) ? (Number(tenkan) >= Number(kijun)) : null;
+			const convAboveBase = tenkan != null && kijun != null ? Number(tenkan) >= Number(kijun) : null;
 			const chikouAbove = chikouBull;
 			let judge: '三役好転' | '三役逆転' | '混在' = '混在';
 			if (aboveCloud && convAboveBase === true && chikouAbove === true) judge = '三役好転';
@@ -428,15 +536,20 @@ export const toolDef: ToolDefinition = {
 			const s75 = Array.isArray(res?.data?.indicators?.series?.SMA_75) ? res.data.indicators.series.SMA_75 : null;
 			if (!s25 || !s75) return null;
 			const L = Math.min(s25.length, s75.length);
-			let lastIdx: number | null = null; let t: 'golden' | 'dead' | null = null;
+			let lastIdx: number | null = null;
+			let t: 'golden' | 'dead' | null = null;
 			for (let i = L - 2; i >= 0; i--) {
 				const d0 = Number(s25[i]) - Number(s75[i]);
 				const d1 = Number(s25[i + 1]) - Number(s75[i + 1]);
 				if (![d0, d1].every(Number.isFinite)) continue;
-				if ((d0 < 0 && d1 > 0) || (d0 > 0 && d1 < 0)) { lastIdx = i + 1; t = d1 > 0 ? 'golden' : 'dead'; break; }
+				if ((d0 < 0 && d1 > 0) || (d0 > 0 && d1 < 0)) {
+					lastIdx = i + 1;
+					t = d1 > 0 ? 'golden' : 'dead';
+					break;
+				}
 			}
 			if (lastIdx == null) return '直近クロス: なし';
-			return `直近クロス: ${t === 'golden' ? 'ゴールデン' : 'デッド'}（${(L - 1 - lastIdx)}本前）`;
+			return `直近クロス: ${t === 'golden' ? 'ゴールデン' : 'デッド'}（${L - 1 - lastIdx}本前）`;
 		})();
 		// Stochastic RSI and OBV values
 		const stochK = ind.STOCH_RSI_K ?? null;
@@ -449,17 +562,57 @@ export const toolDef: ToolDefinition = {
 		const obvPrev = ind.OBV_prevObv ?? null;
 
 		const text = buildIndicatorsText({
-			pair, type, nowJst, close, prev, deltaPrev, deltaLabel, trend,
-			rsi, recentRsiFormatted, rsiUnitLabel,
-			macdHist, lastMacdCross, divergence,
-			sma25, sma75, sma200, s25Slope, s75Slope, s200Slope, arrangement, crossInfo,
-			bbMid, bbUp, bbLo, sigmaZ, bandWidthPct, bwTrend, sigmaHistory,
-			tenkan, kijun, spanA, spanB, cloudTop, cloudBot, cloudPos,
-			cloudThickness, cloudThicknessPct, chikouBull, threeSignals, toCloudDistance,
+			pair,
+			type,
+			nowJst,
+			close,
+			prev,
+			deltaPrev,
+			deltaLabel,
+			trend,
+			rsi,
+			recentRsiFormatted,
+			rsiUnitLabel,
+			macdHist,
+			lastMacdCross,
+			divergence,
+			sma25,
+			sma75,
+			sma200,
+			s25Slope,
+			s75Slope,
+			s200Slope,
+			arrangement,
+			crossInfo,
+			bbMid,
+			bbUp,
+			bbLo,
+			sigmaZ,
+			bandWidthPct,
+			bwTrend,
+			sigmaHistory,
+			tenkan,
+			kijun,
+			spanA,
+			spanB,
+			cloudTop,
+			cloudBot,
+			cloudPos,
+			cloudThickness,
+			cloudThicknessPct,
+			chikouBull,
+			threeSignals,
+			toCloudDistance,
 			ichimokuConvSlope: slopeOf('ICHIMOKU_conversion', 5),
 			ichimokuBaseSlope: slopeOf('ICHIMOKU_base', 5),
-			stochK, stochD, stochPrevK, stochPrevD,
-			obvVal, obvSma20, obvTrend, obvPrev,
+			stochK,
+			stochD,
+			stochPrevK,
+			stochPrevD,
+			obvVal,
+			obvSma20,
+			obvTrend,
+			obvPrev,
 			obvUnit: String(pair).toLowerCase().includes('btc') ? 'BTC' : '',
 		});
 		return { content: [{ type: 'text', text }], structuredContent: res as Record<string, unknown> };

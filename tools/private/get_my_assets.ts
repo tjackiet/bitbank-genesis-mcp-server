@@ -5,9 +5,9 @@
  * ticker 連携で円評価額・構成比を自動算出する。
  */
 
-import { ok, fail } from '../../lib/result.js';
 import { nowIso } from '../../lib/datetime.js';
 import { formatPrice } from '../../lib/formatter.js';
+import { fail, ok } from '../../lib/result.js';
 import { getDefaultClient, PrivateApiError } from '../../src/private/client.js';
 import { GetMyAssetsInputSchema, GetMyAssetsOutputSchema } from '../../src/private/schemas.js';
 import type { ToolDefinition } from '../../src/tool-definition.js';
@@ -113,9 +113,7 @@ export default async function getMyAssets(args: { include_jpy_valuation?: boolea
 				amount,
 				available_amount: available,
 				locked_amount: locked,
-				jpy_value: jpyValue != null && Number.isFinite(jpyValue)
-					? Math.round(jpyValue)
-					: undefined,
+				jpy_value: jpyValue != null && Number.isFinite(jpyValue) ? Math.round(jpyValue) : undefined,
 			};
 		});
 
@@ -186,15 +184,10 @@ export default async function getMyAssets(args: { include_jpy_valuation?: boolea
 		return GetMyAssetsOutputSchema.parse(result);
 	} catch (err) {
 		if (err instanceof PrivateApiError) {
-			return GetMyAssetsOutputSchema.parse(
-				fail(err.message, err.errorType),
-			);
+			return GetMyAssetsOutputSchema.parse(fail(err.message, err.errorType));
 		}
 		return GetMyAssetsOutputSchema.parse(
-			fail(
-				err instanceof Error ? err.message : 'asset 取得中に予期しないエラーが発生しました',
-				'upstream_error',
-			),
+			fail(err instanceof Error ? err.message : 'asset 取得中に予期しないエラーが発生しました', 'upstream_error'),
 		);
 	}
 }
@@ -202,7 +195,8 @@ export default async function getMyAssets(args: { include_jpy_valuation?: boolea
 // ── MCP ツール定義（tool-registry から自動収集） ──
 export const toolDef: ToolDefinition = {
 	name: 'get_my_assets',
-	description: '[My Assets / Balance / Wallet] 自分の保有資産・残高一覧（my assets / balance / wallet / holdings）を取得。全通貨の数量・円評価額・構成比を返す。Private API。',
+	description:
+		'[My Assets / Balance / Wallet] 自分の保有資産・残高一覧（my assets / balance / wallet / holdings）を取得。全通貨の数量・円評価額・構成比を返す。Private API。',
 	inputSchema: GetMyAssetsInputSchema,
 	handler: async (args: any) => getMyAssets(args ?? {}),
 };

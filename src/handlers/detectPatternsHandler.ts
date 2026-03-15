@@ -1,22 +1,47 @@
+import { timeframeLabel } from '../../lib/formatter.js';
 import detectPatterns from '../../tools/detect_patterns.js';
 import { DetectPatternsInputSchema, DetectPatternsOutputSchema } from '../schemas.js';
 import type { ToolDefinition } from '../tool-definition.js';
-import { timeframeLabel } from '../../lib/formatter.js';
 import {
 	buildPeriodLine,
 	buildTypeSummary,
 	formatDebugView,
-	formatSummaryView,
-	formatFullView,
 	formatDetailedView,
+	formatFullView,
+	formatSummaryView,
 } from './detectPatternsViewsHandler.js';
 
 export const toolDef: ToolDefinition = {
 	name: 'detect_patterns',
-	description: '[Chart Patterns / Double Top / Head and Shoulders / Triangle] チャートパターン検出（chart patterns / double top / double bottom / head and shoulders / triangle / wedge / flag）。形成中+完成済みを統合検出。\n\n視覚確認: 結果の overlays を render_chart_svg に渡して描画可能。',
+	description:
+		'[Chart Patterns / Double Top / Head and Shoulders / Triangle] チャートパターン検出（chart patterns / double top / double bottom / head and shoulders / triangle / wedge / flag）。形成中+完成済みを統合検出。\n\n視覚確認: 結果の overlays を render_chart_svg に渡して描画可能。',
 	inputSchema: DetectPatternsInputSchema,
-	handler: async ({ pair, type, limit, patterns, swingDepth, tolerancePct, minBarsBetweenSwings, view, requireCurrentInPattern, currentRelevanceDays, includeForming, includeCompleted, includeInvalid }: any) => {
-		const out = await detectPatterns(pair, type, limit, { patterns, swingDepth, tolerancePct, minBarsBetweenSwings, requireCurrentInPattern, currentRelevanceDays, includeForming, includeCompleted, includeInvalid });
+	handler: async ({
+		pair,
+		type,
+		limit,
+		patterns,
+		swingDepth,
+		tolerancePct,
+		minBarsBetweenSwings,
+		view,
+		requireCurrentInPattern,
+		currentRelevanceDays,
+		includeForming,
+		includeCompleted,
+		includeInvalid,
+	}: any) => {
+		const out = await detectPatterns(pair, type, limit, {
+			patterns,
+			swingDepth,
+			tolerancePct,
+			minBarsBetweenSwings,
+			requireCurrentInPattern,
+			currentRelevanceDays,
+			includeForming,
+			includeCompleted,
+			includeInvalid,
+		});
 		const res = DetectPatternsOutputSchema.parse(out as any);
 		if (!res?.ok) return res as any;
 		const pats: any[] = Array.isArray((res as any)?.data?.patterns) ? (res as any).data.patterns : [];

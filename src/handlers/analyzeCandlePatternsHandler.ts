@@ -2,9 +2,10 @@
  * analyzeCandlePatterns のビュー（表示）ロジック
  * generateSummary / generateContent + 共有型定義
  */
-import { formatPrice as fmtPrice } from '../../lib/formatter.js';
+
 import { dayjs } from '../../lib/datetime.js';
-import { CandlePatternTypeEnum } from '../schemas.js';
+import { formatPrice as fmtPrice } from '../../lib/formatter.js';
+import type { CandlePatternTypeEnum } from '../schemas.js';
 
 // ── 共有型定義 ──
 
@@ -70,27 +71,33 @@ function formatDateWithDay(isoDate: string): string {
 
 // ── サマリー生成 ──
 
-export function generateSummary(
-	patterns: DetectedCandlePattern[],
-	windowCandles: WindowCandle[],
-): string {
+export function generateSummary(patterns: DetectedCandlePattern[], windowCandles: WindowCandle[]): string {
 	if (patterns.length === 0) {
-		const trend = windowCandles.length >= 3
-			? (windowCandles[windowCandles.length - 1].close > windowCandles[0].close ? '上昇' : '下落')
-			: '横ばい';
+		const trend =
+			windowCandles.length >= 3
+				? windowCandles[windowCandles.length - 1].close > windowCandles[0].close
+					? '上昇'
+					: '下落'
+				: '横ばい';
 		return `直近${windowCandles.length}日間で${trend}傾向ですが、特徴的なローソク足パターンは検出されませんでした。`;
 	}
 
 	const parts: string[] = [];
 
 	for (const p of patterns) {
-		const trendText = p.local_context.trend_before === 'down' ? '下落傾向' : p.local_context.trend_before === 'up' ? '上昇傾向' : '横ばい';
+		const trendText =
+			p.local_context.trend_before === 'down'
+				? '下落傾向'
+				: p.local_context.trend_before === 'up'
+					? '上昇傾向'
+					: '横ばい';
 		const statusText = p.status === 'forming' ? '形成中（未確定）' : '確定';
-		const directionText = p.direction === 'bullish'
-			? '上昇転換のサイン'
-			: p.direction === 'bearish'
-				? '下落転換のサイン'
-				: '方向感の迷いを示すサイン';
+		const directionText =
+			p.direction === 'bullish'
+				? '上昇転換のサイン'
+				: p.direction === 'bearish'
+					? '下落転換のサイン'
+					: '方向感の迷いを示すサイン';
 
 		let statsPart = '';
 		if (p.history_stats && p.history_stats.horizons['1']) {
@@ -99,7 +106,7 @@ export function generateSummary(
 		}
 
 		parts.push(
-			`${trendText}の中で「${p.pattern_jp}」（${statusText}）が検出されました。これは${directionText}とされます。${statsPart}`
+			`${trendText}の中で「${p.pattern_jp}」（${statusText}）が検出されました。これは${directionText}とされます。${statsPart}`,
 		);
 
 		if (p.uses_partial_candle) {
@@ -119,8 +126,12 @@ function format1CandleDetail(p: DetectedCandlePattern, c: WindowCandle, dateStr:
 	const candleType = body >= 0 ? '陽線' : '陰線';
 
 	lines.push(`  📍 ${dateStr} に${p.pattern_jp}を検出${statusMark}`);
-	lines.push(`    ${dateStr}: ${candleType} 始値${formatPrice(c.open)} → 終値${formatPrice(c.close)} (実体 ${body >= 0 ? '+' : '-'}${formatPrice(Math.abs(body)).replace('¥', '')}円)`);
-	lines.push(`    高値${formatPrice(c.high)} 安値${formatPrice(c.low)} (レンジ ${formatPrice(c.high - c.low).replace('¥', '')}円)`);
+	lines.push(
+		`    ${dateStr}: ${candleType} 始値${formatPrice(c.open)} → 終値${formatPrice(c.close)} (実体 ${body >= 0 ? '+' : '-'}${formatPrice(Math.abs(body)).replace('¥', '')}円)`,
+	);
+	lines.push(
+		`    高値${formatPrice(c.high)} 安値${formatPrice(c.low)} (レンジ ${formatPrice(c.high - c.low).replace('¥', '')}円)`,
+	);
 
 	if (p.pattern === 'hammer') {
 		const lower = Math.min(c.open, c.close) - c.low;
@@ -131,7 +142,12 @@ function format1CandleDetail(p: DetectedCandlePattern, c: WindowCandle, dateStr:
 	} else if (p.pattern === 'doji') {
 		const upper = c.high - Math.max(c.open, c.close);
 		const lower = Math.min(c.open, c.close) - c.low;
-		const variant = upper > lower * 1.5 ? 'トウバ型（上ヒゲ優勢）' : lower > upper * 1.5 ? 'トンボ型（下ヒゲ優勢）' : '通常型（上下均等）';
+		const variant =
+			upper > lower * 1.5
+				? 'トウバ型（上ヒゲ優勢）'
+				: lower > upper * 1.5
+					? 'トンボ型（下ヒゲ優勢）'
+					: '通常型（上下均等）';
 		lines.push(`    判定: 始値≒終値で売り買い拮抗 → ${variant}`);
 	}
 	lines.push('');
@@ -139,7 +155,12 @@ function format1CandleDetail(p: DetectedCandlePattern, c: WindowCandle, dateStr:
 }
 
 /** 2本足パターンの詳細行 */
-function format2CandleDetail(p: DetectedCandlePattern, c1: WindowCandle, c2: WindowCandle, statusMark: string): string[] {
+function format2CandleDetail(
+	p: DetectedCandlePattern,
+	c1: WindowCandle,
+	c2: WindowCandle,
+	statusMark: string,
+): string[] {
 	const lines: string[] = [];
 	const date1 = formatDateWithDay(c1.timestamp);
 	const date2 = formatDateWithDay(c2.timestamp);
@@ -149,8 +170,12 @@ function format2CandleDetail(p: DetectedCandlePattern, c1: WindowCandle, c2: Win
 	const type2 = body2 >= 0 ? '陽線' : '陰線';
 
 	lines.push(`  📍 ${date2} に${p.pattern_jp}を検出${statusMark}（${date1}-${date2}で形成）`);
-	lines.push(`    ${date1}(前日): ${type1} 始値${formatPrice(c1.open)} → 終値${formatPrice(c1.close)} (実体 ${body1 >= 0 ? '+' : '-'}${formatPrice(Math.abs(body1)).replace('¥', '')}円)`);
-	lines.push(`    ${date2}(確定日): ${type2} 始値${formatPrice(c2.open)} → 終値${formatPrice(c2.close)} (実体 ${body2 >= 0 ? '+' : '-'}${formatPrice(Math.abs(body2)).replace('¥', '')}円) ← パターン確定`);
+	lines.push(
+		`    ${date1}(前日): ${type1} 始値${formatPrice(c1.open)} → 終値${formatPrice(c1.close)} (実体 ${body1 >= 0 ? '+' : '-'}${formatPrice(Math.abs(body1)).replace('¥', '')}円)`,
+	);
+	lines.push(
+		`    ${date2}(確定日): ${type2} 始値${formatPrice(c2.open)} → 終値${formatPrice(c2.close)} (実体 ${body2 >= 0 ? '+' : '-'}${formatPrice(Math.abs(body2)).replace('¥', '')}円) ← パターン確定`,
+	);
 
 	if (p.pattern === 'bullish_engulfing') {
 		lines.push(`    判定: 当日の陽線が前日の陰線を完全に包む（始値が前日終値以下、終値が前日始値以上）`);
@@ -163,7 +188,9 @@ function format2CandleDetail(p: DetectedCandlePattern, c1: WindowCandle, c2: Win
 	} else if (p.pattern === 'tweezer_top') {
 		const highDiff = Math.abs(c1.high - c2.high);
 		const matchPct = (1 - highDiff / ((c1.high + c2.high) / 2)) * 100;
-		lines.push(`    判定: 2日連続で高値がほぼ同じ（誤差${highDiff.toLocaleString()}円, 一致率${matchPct.toFixed(1)}%）`);
+		lines.push(
+			`    判定: 2日連続で高値がほぼ同じ（誤差${highDiff.toLocaleString()}円, 一致率${matchPct.toFixed(1)}%）`,
+		);
 		lines.push(`    高値: ${formatPrice(c1.high)} → ${formatPrice(c2.high)}`);
 	} else if (p.pattern === 'tweezer_bottom') {
 		const lowDiff = Math.abs(c1.low - c2.low);
@@ -184,7 +211,13 @@ function format2CandleDetail(p: DetectedCandlePattern, c1: WindowCandle, c2: Win
 }
 
 /** 3本足パターンの詳細行 */
-function format3CandleDetail(p: DetectedCandlePattern, c1: WindowCandle, c2: WindowCandle, c3: WindowCandle, statusMark: string): string[] {
+function format3CandleDetail(
+	p: DetectedCandlePattern,
+	c1: WindowCandle,
+	c2: WindowCandle,
+	c3: WindowCandle,
+	statusMark: string,
+): string[] {
 	const lines: string[] = [];
 	const date1 = formatDateWithDay(c1.timestamp);
 	const date2 = formatDateWithDay(c2.timestamp);
@@ -198,7 +231,9 @@ function format3CandleDetail(p: DetectedCandlePattern, c1: WindowCandle, c2: Win
 	] as const) {
 		const body = c.close - c.open;
 		const ct = body >= 0 ? '陽線' : '陰線';
-		lines.push(`    ${dateStr}(${label}): ${ct} 始値${formatPrice(c.open)} → 終値${formatPrice(c.close)} (実体 ${body >= 0 ? '+' : '-'}${formatPrice(Math.abs(body)).replace('¥', '')}円)`);
+		lines.push(
+			`    ${dateStr}(${label}): ${ct} 始値${formatPrice(c.open)} → 終値${formatPrice(c.close)} (実体 ${body >= 0 ? '+' : '-'}${formatPrice(Math.abs(body)).replace('¥', '')}円)`,
+		);
 	}
 
 	if (p.pattern === 'morning_star') {
@@ -226,7 +261,9 @@ function formatHistoryStats(p: DetectedCandlePattern): string[] {
 		for (const [horizon, stats] of Object.entries(hs.horizons)) {
 			const wins = Math.round(stats.win_rate * stats.sample);
 			const losses = stats.sample - wins;
-			lines.push(`    ${horizon}日後: 勝率${(stats.win_rate * 100).toFixed(1)}% (${wins}勝${losses}敗), 平均リターン ${stats.avg_return >= 0 ? '+' : ''}${stats.avg_return.toFixed(2)}%`);
+			lines.push(
+				`    ${horizon}日後: 勝率${(stats.win_rate * 100).toFixed(1)}% (${wins}勝${losses}敗), 平均リターン ${stats.avg_return >= 0 ? '+' : ''}${stats.avg_return.toFixed(2)}%`,
+			);
 		}
 		lines.push('');
 	} else {
@@ -269,7 +306,9 @@ export function generateContent(
 
 	lines.push('【ローソク足パターン分析結果】');
 	lines.push('');
-	lines.push(`分析期間: ${windowCandles[0]?.timestamp?.split('T')[0] || '?'} 〜 ${windowCandles[windowCandles.length - 1]?.timestamp?.split('T')[0] || '?'}`);
+	lines.push(
+		`分析期間: ${windowCandles[0]?.timestamp?.split('T')[0] || '?'} 〜 ${windowCandles[windowCandles.length - 1]?.timestamp?.split('T')[0] || '?'}`,
+	);
 	lines.push('');
 
 	// === 1. ローソク足データ ===
@@ -281,7 +320,7 @@ export function generateContent(
 		const candleType = change >= 0 ? '陽線' : '陰線';
 		const partialMark = c.is_partial ? ' ⚠未確定' : '';
 		lines.push(
-			`${dateStr}: 始値${formatPrice(c.open)} 高値${formatPrice(c.high)} 安値${formatPrice(c.low)} 終値${formatPrice(c.close)} [${candleType} ${changeSign}${formatPrice(Math.abs(change)).replace('¥', '')}円]${partialMark}`
+			`${dateStr}: 始値${formatPrice(c.open)} 高値${formatPrice(c.high)} 安値${formatPrice(c.low)} 終値${formatPrice(c.close)} [${candleType} ${changeSign}${formatPrice(Math.abs(change)).replace('¥', '')}円]${partialMark}`,
 		);
 	}
 	lines.push('');
@@ -296,11 +335,18 @@ export function generateContent(
 	} else {
 		for (const p of patterns) {
 			lines.push(`■ ${p.pattern_jp}（${p.pattern}）`);
-			const dirLabel = p.direction === 'bullish' ? '強気（上昇転換シグナル）' : p.direction === 'bearish' ? '弱気（下落転換シグナル）' : '中立（方向性の迷い）';
+			const dirLabel =
+				p.direction === 'bullish'
+					? '強気（上昇転換シグナル）'
+					: p.direction === 'bearish'
+						? '弱気（下落転換シグナル）'
+						: '中立（方向性の迷い）';
 			lines.push(`  方向性: ${dirLabel}`);
 			lines.push(`  状態: ${p.status === 'forming' ? '形成中（終値未確定）' : '確定'}`);
 			lines.push(`  強度: ${(p.strength * 100).toFixed(0)}%`);
-			lines.push(`  直前トレンド: ${p.local_context.trend_before === 'up' ? '上昇' : p.local_context.trend_before === 'down' ? '下落' : '中立'}`);
+			lines.push(
+				`  直前トレンド: ${p.local_context.trend_before === 'up' ? '上昇' : p.local_context.trend_before === 'down' ? '下落' : '中立'}`,
+			);
 			lines.push('');
 
 			// === 3. パターン該当箇所の詳細 ===
@@ -312,11 +358,26 @@ export function generateContent(
 				lines.push('  === 検出パターンの詳細 ===');
 
 				if (spanSize === 1) {
-					lines.push(...format1CandleDetail(p, windowCandles[idxStart], formatDateWithDay(windowCandles[idxStart].timestamp), statusMark));
+					lines.push(
+						...format1CandleDetail(
+							p,
+							windowCandles[idxStart],
+							formatDateWithDay(windowCandles[idxStart].timestamp),
+							statusMark,
+						),
+					);
 				} else if (spanSize === 2) {
 					lines.push(...format2CandleDetail(p, windowCandles[idxStart], windowCandles[idxEnd], statusMark));
 				} else if (spanSize === 3) {
-					lines.push(...format3CandleDetail(p, windowCandles[idxStart], windowCandles[idxStart + 1], windowCandles[idxEnd], statusMark));
+					lines.push(
+						...format3CandleDetail(
+							p,
+							windowCandles[idxStart],
+							windowCandles[idxStart + 1],
+							windowCandles[idxEnd],
+							statusMark,
+						),
+					);
 				}
 			}
 

@@ -1,13 +1,14 @@
-import analyzeFibonacci from './analyze_fibonacci.js';
-import { ok, failFromError, failFromValidation } from '../lib/result.js';
-import { createMeta, ensurePair } from '../lib/validate.js';
-import { formatPrice, formatPair, formatPercent } from '../lib/formatter.js';
 import { z } from 'zod';
+import { formatPair, formatPercent, formatPrice } from '../lib/formatter.js';
+import { failFromError, failFromValidation, ok } from '../lib/result.js';
+import { createMeta, ensurePair } from '../lib/validate.js';
 import { AnalyzeMtfFibonacciInputSchema as _BaseInputSchema, AnalyzeMtfFibonacciOutputSchema } from '../src/schemas.js';
+import analyzeFibonacci from './analyze_fibonacci.js';
 
 const AnalyzeMtfFibonacciInputSchema = _BaseInputSchema.extend({
 	lookbackDays: z.array(z.number().int().min(14).max(365)).nonempty().optional().default([30, 90, 180]),
 });
+
 import type { ToolDefinition } from '../src/tool-definition.js';
 import type { Pair } from '../src/types/domain.d.ts';
 
@@ -36,7 +37,7 @@ interface ConfluenceZone {
 function detectConfluence(
 	periodResults: Array<{ lookbackDays: number; levels: FibLevel[] }>,
 	currentPrice: number,
-	tolerancePct: number = 1.0
+	tolerancePct: number = 1.0,
 ): ConfluenceZone[] {
 	// Collect all levels from all periods
 	const allLevels: Array<{ lookbackDays: number; ratio: number; price: number }> = [];
@@ -72,7 +73,7 @@ function detectConfluence(
 			if (used.has(j)) continue;
 
 			const avgPrice = cluster.reduce((s, c) => s + c.price, 0) / cluster.length;
-			const pctDiff = Math.abs(sorted[j].price - avgPrice) / avgPrice * 100;
+			const pctDiff = (Math.abs(sorted[j].price - avgPrice) / avgPrice) * 100;
 
 			if (pctDiff <= tolerancePct) {
 				cluster.push(sorted[j]);
@@ -113,7 +114,7 @@ function generateMtfContent(
 	pair: string,
 	currentPrice: number,
 	periodResults: Array<{ lookbackDays: number; data: any }>,
-	confluence: ConfluenceZone[]
+	confluence: ConfluenceZone[],
 ): Array<{ type: 'text'; text: string }> {
 	const lines: string[] = [];
 	const pairLabel = formatPair(pair);
@@ -135,7 +136,7 @@ function generateMtfContent(
 		for (const kl of allLevels) {
 			const nearest = kl.isNearest ? ' ← 最寄り' : '';
 			lines.push(
-				`  ${(kl.ratio * 100).toFixed(1)}%: ${formatPrice(kl.price, pair)} (${formatPercent(kl.distancePct, { sign: true })})${nearest}`
+				`  ${(kl.ratio * 100).toFixed(1)}%: ${formatPrice(kl.price, pair)} (${formatPercent(kl.distancePct, { sign: true })})${nearest}`,
 			);
 		}
 		lines.push('');
@@ -147,12 +148,10 @@ function generateMtfContent(
 		for (const zone of confluence) {
 			const strengthJa = zone.strength === 'strong' ? '強' : zone.strength === 'moderate' ? '中' : '弱';
 			lines.push(
-				`  ${formatPrice(zone.priceZone[0], pair)} 〜 ${formatPrice(zone.priceZone[1], pair)} (${formatPercent(zone.distancePct, { sign: true })}) [信頼度: ${strengthJa}]`
+				`  ${formatPrice(zone.priceZone[0], pair)} 〜 ${formatPrice(zone.priceZone[1], pair)} (${formatPercent(zone.distancePct, { sign: true })}) [信頼度: ${strengthJa}]`,
 			);
 			for (const ml of zone.matchedLevels) {
-				lines.push(
-					`    - ${ml.lookbackDays}日: ${(ml.ratio * 100).toFixed(1)}% = ${formatPrice(ml.price, pair)}`
-				);
+				lines.push(`    - ${ml.lookbackDays}日: ${(ml.ratio * 100).toFixed(1)}% = ${formatPrice(ml.price, pair)}`);
 			}
 		}
 		lines.push('');
@@ -171,10 +170,7 @@ function generateMtfContent(
 
 // ── Main Handler ──
 
-export default async function analyzeMtfFibonacci(
-	pair: string = 'btc_jpy',
-	lookbackDays: number[] = [30, 90, 180]
-) {
+export default async function analyzeMtfFibonacci(pair: string = 'btc_jpy', lookbackDays: number[] = [30, 90, 180]) {
 	const chk = ensurePair(pair);
 	if (!chk.ok) return failFromValidation(chk, AnalyzeMtfFibonacciOutputSchema) as any;
 
@@ -193,7 +189,7 @@ export default async function analyzeMtfFibonacci(
 					historyLookbackDays: days,
 				});
 				return { lookbackDays: days, result: res as any };
-			})
+			}),
 		);
 
 		// Build per-period data
@@ -236,9 +232,10 @@ export default async function analyzeMtfFibonacci(
 
 		const confluenceCount = confluence.length;
 		const strongCount = confluence.filter((z) => z.strength === 'strong').length;
-		const summaryText = confluenceCount > 0
-			? `${formatPair(chk.pair)} MTFフィボナッチ: ${confluenceCount}個の合流ゾーン検出（強: ${strongCount}個）`
-			: `${formatPair(chk.pair)} MTFフィボナッチ: 合流ゾーンなし（各期間の水準が分散）`;
+		const summaryText =
+			confluenceCount > 0
+				? `${formatPair(chk.pair)} MTFフィボナッチ: ${confluenceCount}個の合流ゾーン検出（強: ${strongCount}個）`
+				: `${formatPair(chk.pair)} MTFフィボナッチ: 合流ゾーンなし（各期間の水準が分散）`;
 
 		const data = {
 			pair: chk.pair,
@@ -266,6 +263,5 @@ export const toolDef: ToolDefinition = {
 	name: 'analyze_mtf_fibonacci',
 	description: `[Multi-Timeframe Fibonacci / Confluence] 複数期間フィボナッチ一括分析（MTF fibonacci / confluence zone）。複数ルックバック期間の水準を並列計算し、コンフルエンス（合流）ゾーンを自動検出。analyze_fibonacci を個別に呼ぶ必要なし。`,
 	inputSchema: AnalyzeMtfFibonacciInputSchema,
-	handler: async ({ pair, lookbackDays }: any) =>
-		analyzeMtfFibonacci(pair, lookbackDays),
+	handler: async ({ pair, lookbackDays }: any) => analyzeMtfFibonacci(pair, lookbackDays),
 };

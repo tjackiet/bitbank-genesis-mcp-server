@@ -1,4 +1,4 @@
-import { z } from 'zod';
+import type { z } from 'zod';
 
 /**
  * MCP ツール定義。各ツールファイル（または src/handlers/）で `toolDef` として export する。

@@ -6,8 +6,8 @@
  * 入出金データがあれば口座全体のリターンを概算する。
  */
 
-import { AnalyzeMyPortfolioInputSchema } from '../../src/private/schemas.js';
 import analyzeMyPortfolioHandler from '../../src/handlers/analyzeMyPortfolioHandler.js';
+import { AnalyzeMyPortfolioInputSchema } from '../../src/private/schemas.js';
 import type { ToolDefinition } from '../../src/tool-definition.js';
 
 // ── MCP ツール定義（tool-registry から自動収集） ──

@@ -11,43 +11,41 @@
  * 4. npm run gen:types && npm run typecheck
  */
 
-import type { ToolDefinition } from './tool-definition.js';
-import { isPrivateApiEnabled } from './private/config.js';
 import { log } from '../lib/logger.js';
-
-// ── Simple tools（toolDef はツールファイル内） ──
-import { toolDef as getTicker } from '../tools/get_ticker.js';
-import { toolDef as getOrderbook } from '../tools/get_orderbook.js';
-import { toolDef as analyzeIchimokuSnapshot } from '../tools/analyze_ichimoku_snapshot.js';
 import { toolDef as analyzeBbSnapshot } from '../tools/analyze_bb_snapshot.js';
-import { toolDef as analyzeSmaSnapshot } from '../tools/analyze_sma_snapshot.js';
-import { toolDef as analyzeEmaSnapshot } from '../tools/analyze_ema_snapshot.js';
-import { toolDef as analyzeStochSnapshot } from '../tools/analyze_stoch_snapshot.js';
-import { toolDef as analyzeMtfSma } from '../tools/analyze_mtf_sma.js';
-import { toolDef as analyzeSupportResistance } from '../tools/analyze_support_resistance.js';
 import { toolDef as analyzeCandlePatterns } from '../tools/analyze_candle_patterns.js';
+import { toolDef as analyzeCurrencyStrength } from '../tools/analyze_currency_strength.js';
+import { toolDef as analyzeEmaSnapshot } from '../tools/analyze_ema_snapshot.js';
+import { toolDef as analyzeIchimokuSnapshot } from '../tools/analyze_ichimoku_snapshot.js';
+import { toolDef as analyzeMtfFibonacci } from '../tools/analyze_mtf_fibonacci.js';
+import { toolDef as analyzeMtfSma } from '../tools/analyze_mtf_sma.js';
+import { toolDef as analyzeSmaSnapshot } from '../tools/analyze_sma_snapshot.js';
+import { toolDef as analyzeStochSnapshot } from '../tools/analyze_stoch_snapshot.js';
+import { toolDef as analyzeSupportResistance } from '../tools/analyze_support_resistance.js';
+import { toolDef as analyzeVolumeProfile } from '../tools/analyze_volume_profile.js';
+import { toolDef as detectMacdCross } from '../tools/detect_macd_cross.js';
 import { toolDef as detectWhaleEvents } from '../tools/detect_whale_events.js';
 
 // ── Medium tools（toolDef + inline handler はツールファイル内） ──
 import { toolDef as getCandles } from '../tools/get_candles.js';
-import { toolDef as getTransactions } from '../tools/get_transactions.js';
 import { toolDef as getFlowMetrics } from '../tools/get_flow_metrics.js';
-import { toolDef as renderDepthSvg } from '../tools/render_depth_svg.js';
+import { toolDef as getOrderbook } from '../tools/get_orderbook.js';
+// ── Simple tools（toolDef はツールファイル内） ──
+import { toolDef as getTicker } from '../tools/get_ticker.js';
+import { toolDef as getTransactions } from '../tools/get_transactions.js';
 import { toolDef as renderCandlePatternDiagram } from '../tools/render_candle_pattern_diagram.js';
-import { toolDef as detectMacdCross } from '../tools/detect_macd_cross.js';
-import { toolDef as analyzeVolumeProfile } from '../tools/analyze_volume_profile.js';
-import { toolDef as analyzeCurrencyStrength } from '../tools/analyze_currency_strength.js';
-import { toolDef as analyzeMtfFibonacci } from '../tools/analyze_mtf_fibonacci.js';
-
+import { toolDef as renderDepthSvg } from '../tools/render_depth_svg.js';
+import { toolDef as analyzeFibonacci } from './handlers/analyzeFibonacciHandler.js';
 // ── Complex tools（toolDef + handler は src/handlers/ に分離） ──
 import { toolDef as analyzeIndicators } from './handlers/analyzeIndicatorsHandler.js';
+import { toolDef as analyzeMarketSignal } from './handlers/analyzeMarketSignalHandler.js';
+import { toolDef as detectPatterns } from './handlers/detectPatternsHandler.js';
+import { toolDef as getTickersJpy } from './handlers/getTickersJpyHandler.js';
 import { toolDef as getVolatilityMetrics } from './handlers/getVolatilityMetricsHandler.js';
 import { toolDef as renderChartSvg } from './handlers/renderChartSvgHandler.js';
-import { toolDef as detectPatterns } from './handlers/detectPatternsHandler.js';
-import { toolDef as analyzeMarketSignal } from './handlers/analyzeMarketSignalHandler.js';
-import { toolDef as getTickersJpy } from './handlers/getTickersJpyHandler.js';
 import { toolDef as runBacktest } from './handlers/runBacktestHandler.js';
-import { toolDef as analyzeFibonacci } from './handlers/analyzeFibonacciHandler.js';
+import { isPrivateApiEnabled } from './private/config.js';
+import type { ToolDefinition } from './tool-definition.js';
 
 /**
  * 全 MCP ツール定義の配列。
@@ -105,7 +103,17 @@ if (isPrivateApiEnabled()) {
 	const { toolDef: analyzeMyPortfolio } = await import('../tools/private/analyze_my_portfolio.js');
 	const { toolDef: getMyDepositWithdrawal } = await import('../tools/private/get_my_deposit_withdrawal.js');
 	allToolDefs.push(getMyAssets, getMyTradeHistory, getMyOrders, analyzeMyPortfolio, getMyDepositWithdrawal);
-	log('info', { type: 'private_api', message: 'Private API tools enabled', tools: ['get_my_assets', 'get_my_trade_history', 'get_my_orders', 'analyze_my_portfolio', 'get_my_deposit_withdrawal'] });
+	log('info', {
+		type: 'private_api',
+		message: 'Private API tools enabled',
+		tools: [
+			'get_my_assets',
+			'get_my_trade_history',
+			'get_my_orders',
+			'analyze_my_portfolio',
+			'get_my_deposit_withdrawal',
+		],
+	});
 } else {
 	log('info', { type: 'private_api', message: 'Private API tools disabled (no API key configured)' });
 }

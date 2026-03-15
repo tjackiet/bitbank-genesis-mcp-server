@@ -11,14 +11,12 @@
  * 入出金 API が失敗/データなしの場合は従来の約定ベース分析にフォールバック。
  */
 
-import { ok, fail } from '../../lib/result.js';
-import { nowIso, dayjs } from '../../lib/datetime.js';
-import { formatPrice, formatPair, formatPercent, formatPriceJPY } from '../../lib/formatter.js';
-import { getDefaultClient, PrivateApiError, BitbankPrivateClient } from '../private/client.js';
-import {
-	AnalyzeMyPortfolioOutputSchema,
-} from '../private/schemas.js';
+import { dayjs, nowIso } from '../../lib/datetime.js';
+import { formatPair, formatPercent, formatPrice, formatPriceJPY } from '../../lib/formatter.js';
+import { fail, ok } from '../../lib/result.js';
 import analyzeIndicators from '../../tools/analyze_indicators.js';
+import { type BitbankPrivateClient, getDefaultClient, PrivateApiError } from '../private/client.js';
+import { AnalyzeMyPortfolioOutputSchema } from '../private/schemas.js';
 
 // ── Private API レスポンス型 ──
 
@@ -79,7 +77,11 @@ interface DepositWithdrawalData {
 /** 個別 API リクエストの結果をラップ */
 type FetchResult<T> = { ok: true; data: T } | { ok: false; error: string };
 
-async function tryGet<T>(client: BitbankPrivateClient, path: string, params?: Record<string, string>): Promise<FetchResult<T>> {
+async function tryGet<T>(
+	client: BitbankPrivateClient,
+	path: string,
+	params?: Record<string, string>,
+): Promise<FetchResult<T>> {
 	try {
 		const data = await client.get<T>(path, params);
 		return { ok: true, data };
@@ -144,10 +146,7 @@ async function paginateWithdrawals(
 }
 
 /** ページネーション付きで約定履歴を取得（最大 MAX_PAGES ページ、古い順） */
-async function paginateTrades(
-	client: BitbankPrivateClient,
-	sinceMs?: number,
-): Promise<RawTrade[]> {
+async function paginateTrades(client: BitbankPrivateClient, sinceMs?: number): Promise<RawTrade[]> {
 	const all: RawTrade[] = [];
 	let since: string | undefined = sinceMs != null ? String(sinceMs) : undefined;
 	for (let page = 0; page < MAX_PAGES; page++) {
@@ -171,7 +170,10 @@ async function paginateTrades(
  * sinceMs を指定すると、その日時以降のデータのみ取得する。
  * 全リクエスト失敗時は null を返す。一部失敗時は warnings 付きで返す。
  */
-async function fetchDepositWithdrawal(client: BitbankPrivateClient, sinceMs?: number): Promise<DepositWithdrawalData | null> {
+async function fetchDepositWithdrawal(
+	client: BitbankPrivateClient,
+	sinceMs?: number,
+): Promise<DepositWithdrawalData | null> {
 	try {
 		const [cryptoDepResult, jpyDepResult, cryptoWdResult, jpyWdResult] = await Promise.all([
 			paginateDeposits(client, {}, sinceMs),
@@ -194,8 +196,11 @@ async function fetchDepositWithdrawal(client: BitbankPrivateClient, sinceMs?: nu
 		}
 
 		// 全チャネルでデータゼロかつエラーあり = 全失敗
-		const totalItems = cryptoDepResult.deposits.length + jpyDepResult.deposits.length
-			+ cryptoWdResult.withdrawals.length + jpyWdResult.withdrawals.length;
+		const totalItems =
+			cryptoDepResult.deposits.length +
+			jpyDepResult.deposits.length +
+			cryptoWdResult.withdrawals.length +
+			jpyWdResult.withdrawals.length;
 		if (totalItems === 0 && warnings.length === 4) {
 			return { deposits: [], withdrawals: [], warnings, allFailed: true, isComplete: false };
 		}
@@ -219,8 +224,8 @@ async function fetchDepositWithdrawal(client: BitbankPrivateClient, sinceMs?: nu
 			return true;
 		});
 
-		const isComplete = cryptoDepResult.complete && jpyDepResult.complete
-			&& cryptoWdResult.complete && jpyWdResult.complete;
+		const isComplete =
+			cryptoDepResult.complete && jpyDepResult.complete && cryptoWdResult.complete && jpyWdResult.complete;
 
 		return { deposits: allDeposits, withdrawals: allWithdrawals, warnings, allFailed: false, isComplete };
 	} catch {
@@ -331,12 +336,8 @@ function calcPeriodDWSummary(
 	periodEndIso: string,
 	prices: Map<string, number>,
 ): PeriodDWSummary {
-	const completedDeposits = dw.deposits.filter(
-		(d) => d.status === 'DONE' && d.confirmed_at >= sinceMs,
-	);
-	const completedWithdrawals = dw.withdrawals.filter(
-		(w) => w.status === 'DONE' && w.requested_at >= sinceMs,
-	);
+	const completedDeposits = dw.deposits.filter((d) => d.status === 'DONE' && d.confirmed_at >= sinceMs);
+	const completedWithdrawals = dw.withdrawals.filter((w) => w.status === 'DONE' && w.requested_at >= sinceMs);
 
 	// JPY
 	const jpyDep = completedDeposits.filter((d) => d.asset === 'jpy');
@@ -399,7 +400,9 @@ async function fetchTickerPrices(): Promise<Map<string, number>> {
 			const last = Number(item.last);
 			if (Number.isFinite(last) && last > 0) prices.set(asset, last);
 		}
-	} catch { /* ticker 失敗は非致命的 */ }
+	} catch {
+		/* ticker 失敗は非致命的 */
+	}
 	return prices;
 }
 
@@ -425,13 +428,10 @@ interface PnlResult {
 function calcPnl(trades: RawTrade[], asset: string, withdrawals?: RawWithdrawal[]): PnlResult {
 	// この通貨に関する約定を古い順にソート
 	const pair = `${asset}_jpy`;
-	const relevantTrades = trades
-		.filter((t) => t.pair === pair)
-		.sort((a, b) => a.executed_at - b.executed_at);
+	const relevantTrades = trades.filter((t) => t.pair === pair).sort((a, b) => a.executed_at - b.executed_at);
 
 	// この通貨に関する完了済み暗号資産出庫
-	const relevantWithdrawals = (withdrawals ?? [])
-		.filter((w) => w.asset === asset && w.status === 'DONE');
+	const relevantWithdrawals = (withdrawals ?? []).filter((w) => w.asset === asset && w.status === 'DONE');
 
 	if (relevantTrades.length === 0 && relevantWithdrawals.length === 0) {
 		return { avg_buy_price: undefined, cost_basis: undefined, realized_pnl: 0, trade_count: 0 };
@@ -444,11 +444,13 @@ function calcPnl(trades: RawTrade[], asset: string, withdrawals?: RawWithdrawal[
 
 	const events: Event[] = [
 		...relevantTrades.map((t): TradeEvent => ({ type: 'trade', ts: t.executed_at, trade: t })),
-		...relevantWithdrawals.map((w): WithdrawalEvent => ({
-			type: 'withdrawal',
-			ts: w.requested_at,
-			amount: Number(w.amount) + (Number(w.fee) || 0), // 出庫量 + 出庫手数料 = 口座から減った総量
-		})),
+		...relevantWithdrawals.map(
+			(w): WithdrawalEvent => ({
+				type: 'withdrawal',
+				ts: w.requested_at,
+				amount: Number(w.amount) + (Number(w.fee) || 0), // 出庫量 + 出庫手数料 = 口座から減った総量
+			}),
+		),
 	].sort((a, b) => a.ts - b.ts);
 
 	let holdingQty = 0;
@@ -577,7 +579,10 @@ function calcPeriodRealizedPnl(
 				sellRealized = sellRevenue - sellCost;
 				h.cost -= sellCost;
 				h.qty -= qty;
-				if (h.qty < 1e-12) { h.qty = 0; h.cost = 0; }
+				if (h.qty < 1e-12) {
+					h.qty = 0;
+					h.cost = 0;
+				}
 			} else {
 				sellRealized = qty * price - feeQuote;
 			}
@@ -681,7 +686,7 @@ async function fetchCandlePriceData(
 				const open = Number(candle[0]);
 				if (!Number.isFinite(open) || open <= 0) continue;
 
-					// Normalize to JST midnight so keys match buildEquitySeries date lookups
+				// Normalize to JST midnight so keys match buildEquitySeries date lookups
 				const jstMidnight = dayjs(ts).tz('Asia/Tokyo').startOf('day').valueOf();
 				priceByDate.set(jstMidnight, open);
 
@@ -725,9 +730,7 @@ function reconstructHoldingsAtDate(
 	}
 
 	// Reverse trades since sinceMs (newest first)
-	const recentTrades = trades
-		.filter((t) => t.executed_at >= sinceMs)
-		.sort((a, b) => b.executed_at - a.executed_at);
+	const recentTrades = trades.filter((t) => t.executed_at >= sinceMs).sort((a, b) => b.executed_at - a.executed_at);
 
 	for (const t of recentTrades) {
 		const asset = t.pair.replace('_jpy', '');
@@ -757,12 +760,8 @@ function reconstructHoldingsAtDate(
 
 	// Reverse deposits/withdrawals since sinceMs
 	if (dw) {
-		const completedDeposits = dw.deposits.filter(
-			(d) => d.status === 'DONE' && d.confirmed_at >= sinceMs,
-		);
-		const completedWithdrawals = dw.withdrawals.filter(
-			(w) => w.status === 'DONE' && w.requested_at >= sinceMs,
-		);
+		const completedDeposits = dw.deposits.filter((d) => d.status === 'DONE' && d.confirmed_at >= sinceMs);
+		const completedWithdrawals = dw.withdrawals.filter((w) => w.status === 'DONE' && w.requested_at >= sinceMs);
 
 		for (const d of completedDeposits) {
 			const current = holdings.get(d.asset) ?? 0;
@@ -792,10 +791,7 @@ function reconstructHoldingsAtDate(
 /**
  * 復元された保有情報と価格マップから口座評価額を算出する。
  */
-function calcPortfolioValue(
-	holdings: Map<string, number>,
-	priceMap: Map<string, number>,
-): number {
+function calcPortfolioValue(holdings: Map<string, number>, priceMap: Map<string, number>): number {
 	let total = 0;
 	for (const [asset, amount] of holdings) {
 		if (asset === 'jpy') {
@@ -885,12 +881,8 @@ function calcPeriodNetFlow(
 ): PeriodNetFlowResult {
 	if (!dw) return { net_flow_jpy: 0, withdrawal_fee_jpy: 0 };
 
-	const completedDeposits = dw.deposits.filter(
-		(d) => d.status === 'DONE' && d.confirmed_at >= sinceMs,
-	);
-	const completedWithdrawals = dw.withdrawals.filter(
-		(w) => w.status === 'DONE' && w.requested_at >= sinceMs,
-	);
+	const completedDeposits = dw.deposits.filter((d) => d.status === 'DONE' && d.confirmed_at >= sinceMs);
+	const completedWithdrawals = dw.withdrawals.filter((w) => w.status === 'DONE' && w.requested_at >= sinceMs);
 
 	let netFlow = 0;
 	let withdrawalFee = 0;
@@ -1045,7 +1037,12 @@ export default async function analyzeMyPortfolioHandler(args: {
 			}
 		}
 		const candlePricePromise = include_pnl
-			? fetchCandlePriceData([...allRelevantPairs], boundaries.yearStartMs, boundaries.monthStartMs, boundaries.dayStartMs)
+			? fetchCandlePriceData(
+					[...allRelevantPairs],
+					boundaries.yearStartMs,
+					boundaries.monthStartMs,
+					boundaries.dayStartMs,
+				)
 			: Promise.resolve({ boundaryPrices: new Map(), dailyPrices: new Map() } as CandlePriceData);
 
 		const timestamp = nowIso();
@@ -1062,9 +1059,7 @@ export default async function analyzeMyPortfolioHandler(args: {
 
 			// JPY はそのまま評価額 = 保有量
 			const currentPrice = isJpy ? 1 : prices.get(a.asset);
-			const jpyValue = isJpy
-				? Number(amount)
-				: (currentPrice ? Number(amount) * currentPrice : undefined);
+			const jpyValue = isJpy ? Number(amount) : currentPrice ? Number(amount) * currentPrice : undefined;
 
 			if (jpyValue != null && Number.isFinite(jpyValue)) {
 				totalJpyValue += jpyValue;
@@ -1098,12 +1093,12 @@ export default async function analyzeMyPortfolioHandler(args: {
 				totalRealizedPnl += pnl.realized_pnl;
 			}
 
-			const unrealizedPnl = (jpyValue != null && pnl?.cost_basis != null)
-				? Math.round(jpyValue - pnl.cost_basis)
-				: undefined;
-			const unrealizedPnlPct = (unrealizedPnl != null && pnl?.cost_basis != null && pnl.cost_basis > 0)
-				? Math.round((unrealizedPnl / pnl.cost_basis) * 10000) / 100
-				: undefined;
+			const unrealizedPnl =
+				jpyValue != null && pnl?.cost_basis != null ? Math.round(jpyValue - pnl.cost_basis) : undefined;
+			const unrealizedPnlPct =
+				unrealizedPnl != null && pnl?.cost_basis != null && pnl.cost_basis > 0
+					? Math.round((unrealizedPnl / pnl.cost_basis) * 10000) / 100
+					: undefined;
 
 			return {
 				asset: a.asset,
@@ -1123,11 +1118,7 @@ export default async function analyzeMyPortfolioHandler(args: {
 		// 売り切り銘柄の実現損益を集計（現在保有ゼロだが約定履歴がある通貨）
 		if (include_pnl && allTrades.length > 0) {
 			const heldAssets = new Set(nonZeroAssets.map((a) => a.asset));
-			const tradedAssets = new Set(
-				allTrades
-					.map((t) => t.pair.replace('_jpy', ''))
-					.filter((a) => a !== 'jpy'),
-			);
+			const tradedAssets = new Set(allTrades.map((t) => t.pair.replace('_jpy', '')).filter((a) => a !== 'jpy'));
 			for (const asset of tradedAssets) {
 				if (!heldAssets.has(asset)) {
 					const pnl = calcPnl(allTrades, asset, dwData?.withdrawals);
@@ -1143,10 +1134,16 @@ export default async function analyzeMyPortfolioHandler(args: {
 		let monthlyRealizedPnl: PeriodRealizedPnl | undefined;
 		if (include_pnl && allTrades.length > 0) {
 			yearlyRealizedPnl = calcPeriodRealizedPnl(
-				allTrades, boundaries.yearStartMs, boundaries.yearStartIso, boundaries.nowIso,
+				allTrades,
+				boundaries.yearStartMs,
+				boundaries.yearStartIso,
+				boundaries.nowIso,
 			);
 			monthlyRealizedPnl = calcPeriodRealizedPnl(
-				allTrades, boundaries.monthStartMs, boundaries.monthStartIso, boundaries.nowIso,
+				allTrades,
+				boundaries.monthStartMs,
+				boundaries.monthStartIso,
+				boundaries.nowIso,
 			);
 		}
 
@@ -1160,12 +1157,15 @@ export default async function analyzeMyPortfolioHandler(args: {
 			const candlePriceData = await candlePricePromise;
 			const periodPrices = candlePriceData.boundaryPrices;
 			const currentJpyValueRounded = Math.round(totalJpyValue);
-			const performanceNote = '期初評価額は現在の保有状態から約定・入出金を逆算して復元し、期初時点の始値（1day candle open）で評価。暗号資産の入出庫は現在価格で仮評価。純入出金は元本移動のみ（出金手数料を含まない）。調整後増減 = 単純増減 - 純入出金（市場変動 + 出金手数料コスト）。';
+			const performanceNote =
+				'期初評価額は現在の保有状態から約定・入出金を逆算して復元し、期初時点の始値（1day candle open）で評価。暗号資産の入出庫は現在価格で仮評価。純入出金は元本移動のみ（出金手数料を含まない）。調整後増減 = 単純増減 - 純入出金（市場変動 + 出金手数料コスト）。';
 
 			// 年初比パフォーマンス
 			const yearStartHoldings = reconstructHoldingsAtDate(
 				nonZeroAssets.map((a) => ({ asset: a.asset, amount: a.onhand_amount })),
-				allTrades, boundaries.yearStartMs, dwData,
+				allTrades,
+				boundaries.yearStartMs,
+				dwData,
 			);
 			const yearStartPriceMap = new Map<string, number>();
 			for (const [asset, pp] of periodPrices) {
@@ -1192,7 +1192,9 @@ export default async function analyzeMyPortfolioHandler(args: {
 			// 月初比パフォーマンス
 			const monthStartHoldings = reconstructHoldingsAtDate(
 				nonZeroAssets.map((a) => ({ asset: a.asset, amount: a.onhand_amount })),
-				allTrades, boundaries.monthStartMs, dwData,
+				allTrades,
+				boundaries.monthStartMs,
+				dwData,
 			);
 			const monthStartPriceMap = new Map<string, number>();
 			for (const [asset, pp] of periodPrices) {
@@ -1210,7 +1212,8 @@ export default async function analyzeMyPortfolioHandler(args: {
 				net_flow_jpy: monthFlow.net_flow_jpy,
 				withdrawal_fee_jpy: monthFlow.withdrawal_fee_jpy,
 				adjusted_change_jpy: monthAdjusted,
-				adjusted_change_pct: monthStartValue > 0 ? Math.round((monthAdjusted / monthStartValue) * 10000) / 100 : undefined,
+				adjusted_change_pct:
+					monthStartValue > 0 ? Math.round((monthAdjusted / monthStartValue) * 10000) / 100 : undefined,
 				period_start: boundaries.monthStartIso,
 				period_end: boundaries.nowIso,
 				note: performanceNote,
@@ -1219,7 +1222,9 @@ export default async function analyzeMyPortfolioHandler(args: {
 			// 前日比（当日 00:00 JST）パフォーマンス
 			const dayStartHoldings = reconstructHoldingsAtDate(
 				nonZeroAssets.map((a) => ({ asset: a.asset, amount: a.onhand_amount })),
-				allTrades, boundaries.dayStartMs, dwData,
+				allTrades,
+				boundaries.dayStartMs,
+				dwData,
 			);
 			const dayStartPriceMap = new Map<string, number>();
 			for (const [asset, pp] of periodPrices) {
@@ -1257,8 +1262,13 @@ export default async function analyzeMyPortfolioHandler(args: {
 					d = d.add(1, 'day');
 				}
 				monthlyEquitySeries = buildEquitySeries(
-					monthDates, holdingsForReconstruction, allTrades, dwData,
-					candlePriceData.dailyPrices, currentJpyValueRounded, boundaries.nowIso,
+					monthDates,
+					holdingsForReconstruction,
+					allTrades,
+					dwData,
+					candlePriceData.dailyPrices,
+					currentJpyValueRounded,
+					boundaries.nowIso,
 				);
 
 				// Yearly: monthly points from year start through current month start, + current
@@ -1270,8 +1280,13 @@ export default async function analyzeMyPortfolioHandler(args: {
 					m = m.add(1, 'month');
 				}
 				yearlyEquitySeries = buildEquitySeries(
-					yearDates, holdingsForReconstruction, allTrades, dwData,
-					candlePriceData.dailyPrices, currentJpyValueRounded, boundaries.nowIso,
+					yearDates,
+					holdingsForReconstruction,
+					allTrades,
+					dwData,
+					candlePriceData.dailyPrices,
+					currentJpyValueRounded,
+					boundaries.nowIso,
 				);
 			}
 		}
@@ -1296,9 +1311,10 @@ export default async function analyzeMyPortfolioHandler(args: {
 		}
 		const hasValidCostData = validCostBasis > 0;
 		const totalUnrealizedPnl = hasValidCostData ? Math.round(validJpyValue - validCostBasis) : undefined;
-		const totalUnrealizedPnlPct = (totalUnrealizedPnl != null && validCostBasis > 0)
-			? Math.round((totalUnrealizedPnl / validCostBasis) * 10000) / 100
-			: undefined;
+		const totalUnrealizedPnlPct =
+			totalUnrealizedPnl != null && validCostBasis > 0
+				? Math.round((totalUnrealizedPnl / validCostBasis) * 10000) / 100
+				: undefined;
 
 		// ticker 未取得の銘柄がある場合は警告
 		const missingPriceAssets = cryptoHoldings
@@ -1323,10 +1339,18 @@ export default async function analyzeMyPortfolioHandler(args: {
 					dwSummary = calcDepositWithdrawalSummary(dwData, totalJpyValue, prices);
 					// 年次・月次の入出金サマリー
 					yearlyDWSummary = calcPeriodDWSummary(
-						dwData, boundaries.yearStartMs, boundaries.yearStartIso, boundaries.nowIso, prices,
+						dwData,
+						boundaries.yearStartMs,
+						boundaries.yearStartIso,
+						boundaries.nowIso,
+						prices,
 					);
 					monthlyDWSummary = calcPeriodDWSummary(
-						dwData, boundaries.monthStartMs, boundaries.monthStartIso, boundaries.nowIso, prices,
+						dwData,
+						boundaries.monthStartMs,
+						boundaries.monthStartIso,
+						boundaries.nowIso,
+						prices,
 					);
 				}
 			}
@@ -1335,9 +1359,7 @@ export default async function analyzeMyPortfolioHandler(args: {
 		// 5. テクニカル分析（オプション、暗号資産のみ）
 		let technical: TechnicalSummary[] | undefined;
 		if (include_technical && cryptoHoldings.length > 0) {
-			const jpyPairs = cryptoHoldings
-				.filter((h) => h.jpy_value != null)
-				.map((h) => h.pair);
+			const jpyPairs = cryptoHoldings.filter((h) => h.jpy_value != null).map((h) => h.pair);
 			technical = await fetchTechnical(jpyPairs);
 		}
 
@@ -1352,11 +1374,11 @@ export default async function analyzeMyPortfolioHandler(args: {
 		} else if (dwSummary != null) {
 			depositWithdrawalStatus = 'available';
 		} else if (
-			dwData
-			&& !dwData.allFailed
-			&& dwData.warnings.length === 0
-			&& dwData.deposits.length === 0
-			&& dwData.withdrawals.length === 0
+			dwData &&
+			!dwData.allFailed &&
+			dwData.warnings.length === 0 &&
+			dwData.deposits.length === 0 &&
+			dwData.withdrawals.length === 0
 		) {
 			depositWithdrawalStatus = 'no_history';
 		} else {
@@ -1368,17 +1390,25 @@ export default async function analyzeMyPortfolioHandler(args: {
 		lines.push(`ポートフォリオ分析: 暗号資産 ${cryptoHoldings.length}銘柄${jpyHolding ? ' + JPY' : ''}`);
 		lines.push(`取得時刻: ${timestamp}`);
 		if (totalJpyValue > 0) {
-			lines.push(`口座合計: ${formatPrice(Math.round(totalJpyValue))}${jpyHolding ? ` (うち JPY: ${formatPriceJPY(jpyHolding.jpy_value ?? 0)})` : ''}`);
+			lines.push(
+				`口座合計: ${formatPrice(Math.round(totalJpyValue))}${jpyHolding ? ` (うち JPY: ${formatPriceJPY(jpyHolding.jpy_value ?? 0)})` : ''}`,
+			);
 		}
 
 		// 主指標: 前日比・年初比・月初比の口座評価額増減
 		if (dailyPerformance) {
 			const dSign = dailyPerformance.change_jpy >= 0 ? '+' : '';
-			lines.push(`前日比: ${formatPriceJPY(dailyPerformance.start_value_jpy)} → ${formatPriceJPY(dailyPerformance.current_value_jpy)}`);
-			lines.push(`  増減: ${dSign}${formatPriceJPY(dailyPerformance.change_jpy)}${dailyPerformance.change_pct != null ? ` (${formatPercent(dailyPerformance.change_pct, { sign: true })})` : ''}`);
+			lines.push(
+				`前日比: ${formatPriceJPY(dailyPerformance.start_value_jpy)} → ${formatPriceJPY(dailyPerformance.current_value_jpy)}`,
+			);
+			lines.push(
+				`  増減: ${dSign}${formatPriceJPY(dailyPerformance.change_jpy)}${dailyPerformance.change_pct != null ? ` (${formatPercent(dailyPerformance.change_pct, { sign: true })})` : ''}`,
+			);
 			if (dailyPerformance.net_flow_jpy !== 0 || dailyPerformance.withdrawal_fee_jpy > 0) {
 				const adjSign = dailyPerformance.adjusted_change_jpy >= 0 ? '+' : '';
-				lines.push(`  入出金調整後: ${adjSign}${formatPriceJPY(dailyPerformance.adjusted_change_jpy)}${dailyPerformance.adjusted_change_pct != null ? ` (${formatPercent(dailyPerformance.adjusted_change_pct, { sign: true })})` : ''}`);
+				lines.push(
+					`  入出金調整後: ${adjSign}${formatPriceJPY(dailyPerformance.adjusted_change_jpy)}${dailyPerformance.adjusted_change_pct != null ? ` (${formatPercent(dailyPerformance.adjusted_change_pct, { sign: true })})` : ''}`,
+				);
 				const flowSign = dailyPerformance.net_flow_jpy >= 0 ? '+' : '';
 				lines.push(`  純入出金（元本）: ${flowSign}${formatPriceJPY(dailyPerformance.net_flow_jpy)}`);
 				if (dailyPerformance.withdrawal_fee_jpy > 0) {
@@ -1388,11 +1418,17 @@ export default async function analyzeMyPortfolioHandler(args: {
 		}
 		if (yearlyPerformance) {
 			const ySign = yearlyPerformance.change_jpy >= 0 ? '+' : '';
-			lines.push(`年初比: ${formatPriceJPY(yearlyPerformance.start_value_jpy)} → ${formatPriceJPY(yearlyPerformance.current_value_jpy)}`);
-			lines.push(`  増減: ${ySign}${formatPriceJPY(yearlyPerformance.change_jpy)}${yearlyPerformance.change_pct != null ? ` (${formatPercent(yearlyPerformance.change_pct, { sign: true })})` : ''}`);
+			lines.push(
+				`年初比: ${formatPriceJPY(yearlyPerformance.start_value_jpy)} → ${formatPriceJPY(yearlyPerformance.current_value_jpy)}`,
+			);
+			lines.push(
+				`  増減: ${ySign}${formatPriceJPY(yearlyPerformance.change_jpy)}${yearlyPerformance.change_pct != null ? ` (${formatPercent(yearlyPerformance.change_pct, { sign: true })})` : ''}`,
+			);
 			if (yearlyPerformance.net_flow_jpy !== 0 || yearlyPerformance.withdrawal_fee_jpy > 0) {
 				const adjSign = yearlyPerformance.adjusted_change_jpy >= 0 ? '+' : '';
-				lines.push(`  入出金調整後: ${adjSign}${formatPriceJPY(yearlyPerformance.adjusted_change_jpy)}${yearlyPerformance.adjusted_change_pct != null ? ` (${formatPercent(yearlyPerformance.adjusted_change_pct, { sign: true })})` : ''}`);
+				lines.push(
+					`  入出金調整後: ${adjSign}${formatPriceJPY(yearlyPerformance.adjusted_change_jpy)}${yearlyPerformance.adjusted_change_pct != null ? ` (${formatPercent(yearlyPerformance.adjusted_change_pct, { sign: true })})` : ''}`,
+				);
 				const flowSign = yearlyPerformance.net_flow_jpy >= 0 ? '+' : '';
 				lines.push(`  純入出金（元本）: ${flowSign}${formatPriceJPY(yearlyPerformance.net_flow_jpy)}`);
 				if (yearlyPerformance.withdrawal_fee_jpy > 0) {
@@ -1402,11 +1438,17 @@ export default async function analyzeMyPortfolioHandler(args: {
 		}
 		if (monthlyPerformance) {
 			const mSign = monthlyPerformance.change_jpy >= 0 ? '+' : '';
-			lines.push(`月初比: ${formatPriceJPY(monthlyPerformance.start_value_jpy)} → ${formatPriceJPY(monthlyPerformance.current_value_jpy)}`);
-			lines.push(`  増減: ${mSign}${formatPriceJPY(monthlyPerformance.change_jpy)}${monthlyPerformance.change_pct != null ? ` (${formatPercent(monthlyPerformance.change_pct, { sign: true })})` : ''}`);
+			lines.push(
+				`月初比: ${formatPriceJPY(monthlyPerformance.start_value_jpy)} → ${formatPriceJPY(monthlyPerformance.current_value_jpy)}`,
+			);
+			lines.push(
+				`  増減: ${mSign}${formatPriceJPY(monthlyPerformance.change_jpy)}${monthlyPerformance.change_pct != null ? ` (${formatPercent(monthlyPerformance.change_pct, { sign: true })})` : ''}`,
+			);
 			if (monthlyPerformance.net_flow_jpy !== 0 || monthlyPerformance.withdrawal_fee_jpy > 0) {
 				const adjSign = monthlyPerformance.adjusted_change_jpy >= 0 ? '+' : '';
-				lines.push(`  入出金調整後: ${adjSign}${formatPriceJPY(monthlyPerformance.adjusted_change_jpy)}${monthlyPerformance.adjusted_change_pct != null ? ` (${formatPercent(monthlyPerformance.adjusted_change_pct, { sign: true })})` : ''}`);
+				lines.push(
+					`  入出金調整後: ${adjSign}${formatPriceJPY(monthlyPerformance.adjusted_change_jpy)}${monthlyPerformance.adjusted_change_pct != null ? ` (${formatPercent(monthlyPerformance.adjusted_change_pct, { sign: true })})` : ''}`,
+				);
 				const flowSign = monthlyPerformance.net_flow_jpy >= 0 ? '+' : '';
 				lines.push(`  純入出金（元本）: ${flowSign}${formatPriceJPY(monthlyPerformance.net_flow_jpy)}`);
 				if (monthlyPerformance.withdrawal_fee_jpy > 0) {
@@ -1439,16 +1481,32 @@ export default async function analyzeMyPortfolioHandler(args: {
 		// 年次・月次の入出金サマリー
 		if (yearlyDWSummary) {
 			const y = yearlyDWSummary;
-			const parts = [`年初来入出金: JPY入金 ${formatPriceJPY(y.jpy_deposited)} / JPY出金 ${formatPriceJPY(y.jpy_withdrawn)} / 純入出金 ${formatPriceJPY(y.net_jpy)}`];
-			if (y.crypto_deposit_count > 0) parts.push(`暗号資産入庫 ${y.crypto_deposit_count}件${y.crypto_deposit_estimated_jpy ? `（概算 ${formatPriceJPY(y.crypto_deposit_estimated_jpy)}）` : ''}`);
-			if (y.crypto_withdrawal_count > 0) parts.push(`暗号資産出庫 ${y.crypto_withdrawal_count}件${y.crypto_withdrawal_estimated_jpy ? `（概算 ${formatPriceJPY(y.crypto_withdrawal_estimated_jpy)}）` : ''}`);
+			const parts = [
+				`年初来入出金: JPY入金 ${formatPriceJPY(y.jpy_deposited)} / JPY出金 ${formatPriceJPY(y.jpy_withdrawn)} / 純入出金 ${formatPriceJPY(y.net_jpy)}`,
+			];
+			if (y.crypto_deposit_count > 0)
+				parts.push(
+					`暗号資産入庫 ${y.crypto_deposit_count}件${y.crypto_deposit_estimated_jpy ? `（概算 ${formatPriceJPY(y.crypto_deposit_estimated_jpy)}）` : ''}`,
+				);
+			if (y.crypto_withdrawal_count > 0)
+				parts.push(
+					`暗号資産出庫 ${y.crypto_withdrawal_count}件${y.crypto_withdrawal_estimated_jpy ? `（概算 ${formatPriceJPY(y.crypto_withdrawal_estimated_jpy)}）` : ''}`,
+				);
 			lines.push(parts.join(' / '));
 		}
 		if (monthlyDWSummary) {
 			const m = monthlyDWSummary;
-			const parts = [`月初来入出金: JPY入金 ${formatPriceJPY(m.jpy_deposited)} / JPY出金 ${formatPriceJPY(m.jpy_withdrawn)} / 純入出金 ${formatPriceJPY(m.net_jpy)}`];
-			if (m.crypto_deposit_count > 0) parts.push(`暗号資産入庫 ${m.crypto_deposit_count}件${m.crypto_deposit_estimated_jpy ? `（概算 ${formatPriceJPY(m.crypto_deposit_estimated_jpy)}）` : ''}`);
-			if (m.crypto_withdrawal_count > 0) parts.push(`暗号資産出庫 ${m.crypto_withdrawal_count}件${m.crypto_withdrawal_estimated_jpy ? `（概算 ${formatPriceJPY(m.crypto_withdrawal_estimated_jpy)}）` : ''}`);
+			const parts = [
+				`月初来入出金: JPY入金 ${formatPriceJPY(m.jpy_deposited)} / JPY出金 ${formatPriceJPY(m.jpy_withdrawn)} / 純入出金 ${formatPriceJPY(m.net_jpy)}`,
+			];
+			if (m.crypto_deposit_count > 0)
+				parts.push(
+					`暗号資産入庫 ${m.crypto_deposit_count}件${m.crypto_deposit_estimated_jpy ? `（概算 ${formatPriceJPY(m.crypto_deposit_estimated_jpy)}）` : ''}`,
+				);
+			if (m.crypto_withdrawal_count > 0)
+				parts.push(
+					`暗号資産出庫 ${m.crypto_withdrawal_count}件${m.crypto_withdrawal_estimated_jpy ? `（概算 ${formatPriceJPY(m.crypto_withdrawal_estimated_jpy)}）` : ''}`,
+				);
 			lines.push(parts.join(' / '));
 		}
 
@@ -1479,7 +1537,9 @@ export default async function analyzeMyPortfolioHandler(args: {
 		if (dwSummary && dwSummary.account_return_jpy != null) {
 			const sign = dwSummary.account_return_jpy >= 0 ? '+' : '';
 			const approxLabel = dwSummary.is_complete ? '' : '（概算）';
-			lines.push(`口座全体リターン${approxLabel}: ${sign}${formatPriceJPY(dwSummary.account_return_jpy)} (${formatPercent(dwSummary.account_return_pct, { sign: true })})`);
+			lines.push(
+				`口座全体リターン${approxLabel}: ${sign}${formatPriceJPY(dwSummary.account_return_jpy)} (${formatPercent(dwSummary.account_return_pct, { sign: true })})`,
+			);
 			// 内訳を式追跡しやすい形で表示
 			lines.push(`  JPY入金合計: ${formatPriceJPY(dwSummary.total_jpy_deposited)}`);
 			if (dwSummary.total_jpy_withdrawn > 0) {
@@ -1488,9 +1548,13 @@ export default async function analyzeMyPortfolioHandler(args: {
 			const netJpyDeposit = dwSummary.total_jpy_deposited - dwSummary.total_jpy_withdrawn;
 			lines.push(`  JPY純入金: ${formatPriceJPY(Math.round(netJpyDeposit))}`);
 			if (dwSummary.crypto_deposit_estimated_jpy) {
-				lines.push(`  暗号資産入庫の仮評価: ${formatPriceJPY(dwSummary.crypto_deposit_estimated_jpy)}（${dwSummary.crypto_deposit_count}件、現在価格ベース）`);
+				lines.push(
+					`  暗号資産入庫の仮評価: ${formatPriceJPY(dwSummary.crypto_deposit_estimated_jpy)}（${dwSummary.crypto_deposit_count}件、現在価格ベース）`,
+				);
 			}
-			lines.push(`  純投入額: ${formatPriceJPY(dwSummary.net_jpy_invested)}${dwSummary.crypto_deposit_estimated_jpy ? '（JPY純入金 + 暗号資産入庫の仮評価）' : ''}`);
+			lines.push(
+				`  純投入額: ${formatPriceJPY(dwSummary.net_jpy_invested)}${dwSummary.crypto_deposit_estimated_jpy ? '（JPY純入金 + 暗号資産入庫の仮評価）' : ''}`,
+			);
 			if (!dwSummary.is_complete) {
 				lines.push('  ※ 入出金履歴が多く全件取得できなかったため、概算値です');
 			}
@@ -1511,7 +1575,9 @@ export default async function analyzeMyPortfolioHandler(args: {
 
 		if (totalUnrealizedPnl != null) {
 			const sign = totalUnrealizedPnl >= 0 ? '+' : '';
-			lines.push(`合計評価損益（当年約定ベース、参考値）: ${sign}${formatPriceJPY(totalUnrealizedPnl)} (${formatPercent(totalUnrealizedPnlPct, { sign: true })})`);
+			lines.push(
+				`合計評価損益（当年約定ベース、参考値）: ${sign}${formatPriceJPY(totalUnrealizedPnl)} (${formatPercent(totalUnrealizedPnlPct, { sign: true })})`,
+			);
 		}
 		lines.push('※ 評価損益は当年（1/1〜）の約定ベース。年初以前の取得原価は含みません');
 		lines.push('');
@@ -1576,11 +1642,12 @@ export default async function analyzeMyPortfolioHandler(args: {
 			analysis_basis: 'trade_only' as const,
 		};
 
-		const depositWithdrawalSummary = depositWithdrawalStatus === 'available'
-			? dwSummary
-			: depositWithdrawalStatus === 'fallback'
-				? fallbackPlaceholder
-				: undefined;
+		const depositWithdrawalSummary =
+			depositWithdrawalStatus === 'available'
+				? dwSummary
+				: depositWithdrawalStatus === 'fallback'
+					? fallbackPlaceholder
+					: undefined;
 
 		const data = {
 			holdings,
@@ -1594,18 +1661,22 @@ export default async function analyzeMyPortfolioHandler(args: {
 			monthly_performance: monthlyPerformance,
 			monthly_equity_series: monthlyEquitySeries,
 			yearly_equity_series: yearlyEquitySeries,
-			yearly_realized_pnl: yearlyRealizedPnl ? {
-				realized_pnl: yearlyRealizedPnl.realized_pnl,
-				sell_count: yearlyRealizedPnl.sell_count,
-				period_start: yearlyRealizedPnl.period_start,
-				period_end: yearlyRealizedPnl.period_end,
-			} : undefined,
-			monthly_realized_pnl: monthlyRealizedPnl ? {
-				realized_pnl: monthlyRealizedPnl.realized_pnl,
-				sell_count: monthlyRealizedPnl.sell_count,
-				period_start: monthlyRealizedPnl.period_start,
-				period_end: monthlyRealizedPnl.period_end,
-			} : undefined,
+			yearly_realized_pnl: yearlyRealizedPnl
+				? {
+						realized_pnl: yearlyRealizedPnl.realized_pnl,
+						sell_count: yearlyRealizedPnl.sell_count,
+						period_start: yearlyRealizedPnl.period_start,
+						period_end: yearlyRealizedPnl.period_end,
+					}
+				: undefined,
+			monthly_realized_pnl: monthlyRealizedPnl
+				? {
+						realized_pnl: monthlyRealizedPnl.realized_pnl,
+						sell_count: monthlyRealizedPnl.sell_count,
+						period_start: monthlyRealizedPnl.period_start,
+						period_end: monthlyRealizedPnl.period_end,
+					}
+				: undefined,
 			deposit_withdrawal_summary: depositWithdrawalSummary,
 			yearly_dw_summary: yearlyDWSummary,
 			monthly_dw_summary: monthlyDWSummary,
@@ -1625,9 +1696,7 @@ export default async function analyzeMyPortfolioHandler(args: {
 		return AnalyzeMyPortfolioOutputSchema.parse(ok(summary, data, meta));
 	} catch (err) {
 		if (err instanceof PrivateApiError) {
-			return AnalyzeMyPortfolioOutputSchema.parse(
-				fail(err.message, err.errorType),
-			);
+			return AnalyzeMyPortfolioOutputSchema.parse(fail(err.message, err.errorType));
 		}
 		return AnalyzeMyPortfolioOutputSchema.parse(
 			fail(

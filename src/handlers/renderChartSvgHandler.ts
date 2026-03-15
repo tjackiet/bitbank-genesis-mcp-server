@@ -4,7 +4,8 @@ import type { ToolDefinition } from '../tool-definition.js';
 
 export const toolDef: ToolDefinition = {
 	name: 'render_chart_svg',
-	description: '[Chart / SVG / Candlestick Chart / Visualization] ローソク足・ラインチャートをSVG生成（chart / SVG / candlestick chart / visualization / BB / Ichimoku / SMA）。\n\nユーザーが描画・可視化を明示した場合のみ使用。自発的呼び出し禁止。\ndetect_patterns の overlays を渡してパターン描画可能。data.svg をHTMLに埋め込んで表示。',
+	description:
+		'[Chart / SVG / Candlestick Chart / Visualization] ローソク足・ラインチャートをSVG生成（chart / SVG / candlestick chart / visualization / BB / Ichimoku / SMA）。\n\nユーザーが描画・可視化を明示した場合のみ使用。自発的呼び出し禁止。\ndetect_patterns の overlays を渡してパターン描画可能。data.svg をHTMLに埋め込んで表示。',
 	inputSchema: RenderChartSvgInputSchema,
 	handler: async (args: any) => {
 		const raw = await renderChartSvg(args as any);
@@ -24,17 +25,15 @@ export const toolDef: ToolDefinition = {
 		const id = String(meta?.identifier || `${pair}-${type}-${Date.now()}`);
 		const ttl = String(meta?.title || `${pair} ${type} chart`);
 		const rangeLine = meta?.range ? `Period: ${meta.range.start} \u2013 ${meta.range.end}` : '';
-		const indLine = Array.isArray(meta?.indicators) && meta.indicators.length
-			? `Indicators: ${meta.indicators.join(', ')}` : '';
+		const indLine =
+			Array.isArray(meta?.indicators) && meta.indicators.length ? `Indicators: ${meta.indicators.join(', ')}` : '';
 		const legendLines = data?.legend
-			? Object.entries(data.legend).map(([k, v]: any[]) => `${k}: ${String(v)}`).join(' / ') : '';
+			? Object.entries(data.legend)
+					.map(([k, v]: any[]) => `${k}: ${String(v)}`)
+					.join(' / ')
+			: '';
 
-		const summary = [
-			`${pair} ${type} chart`,
-			rangeLine,
-			indLine,
-			legendLines,
-		].filter(Boolean).join(' | ');
+		const summary = [`${pair} ${type} chart`, rangeLine, indLine, legendLines].filter(Boolean).join(' | ');
 
 		const svgBlock = [
 			'',

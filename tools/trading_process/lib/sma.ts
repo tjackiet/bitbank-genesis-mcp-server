@@ -35,7 +35,7 @@ import { sma } from '../../../lib/indicators.js';
  * // sma3[4] = (104 + 103 + 105) / 3 = 104
  */
 export function calculateSMA(prices: number[], period: number): number[] {
-  return sma(prices, period);
+	return sma(prices, period);
 }
 
 /**
@@ -45,7 +45,7 @@ export function calculateSMA(prices: number[], period: number): number[] {
  * @returns 最初の有効インデックス（= period - 1）
  */
 export function getFirstValidIndex(period: number): number {
-  return period - 1;
+	return period - 1;
 }
 
 /**
@@ -58,5 +58,5 @@ export function getFirstValidIndex(period: number): number {
  * @returns 売買ループの開始インデックス（= period）
  */
 export function getSafeStartIndex(period: number): number {
-  return period;
+	return period;
 }

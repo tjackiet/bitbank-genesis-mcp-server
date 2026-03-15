@@ -9,14 +9,14 @@
  * 3. Trade Size Distribution (約定サイズ別の分類 + 大口偏り)
  */
 
-import getTransactions from './get_transactions.js';
-import { ok, fail, failFromError, failFromValidation } from '../lib/result.js';
-import { createMeta, ensurePair, validateLimit } from '../lib/validate.js';
-import { formatPair, formatPrice, formatPercent } from '../lib/formatter.js';
-import { toIsoWithTz, toDisplayTime, dayjs } from '../lib/datetime.js';
+import { dayjs, toDisplayTime, toIsoWithTz } from '../lib/datetime.js';
+import { formatPair, formatPercent, formatPrice } from '../lib/formatter.js';
 import { median } from '../lib/math.js';
+import { fail, failFromError, failFromValidation, ok } from '../lib/result.js';
+import { createMeta, ensurePair, validateLimit } from '../lib/validate.js';
 import { AnalyzeVolumeProfileInputSchema, AnalyzeVolumeProfileOutputSchema } from '../src/schemas.js';
 import type { ToolDefinition } from '../src/tool-definition.js';
+import getTransactions from './get_transactions.js';
 
 type Tx = { price: number; amount: number; side: 'buy' | 'sell'; timestampMs: number; isoTime: string };
 
@@ -66,7 +66,7 @@ async function fetchTransactions(pair: string, hours?: number, limit?: number): 
 			d = d.add(1, 'day');
 		}
 
-		const fetches: Promise<unknown>[] = dates.map(ds => getTransactions(pair, 1000, ds));
+		const fetches: Promise<unknown>[] = dates.map((ds) => getTransactions(pair, 1000, ds));
 		fetches.push(getTransactions(pair, 1000));
 		const results = await Promise.all(fetches);
 		const merged = mergeTxResults(results);
@@ -77,7 +77,7 @@ async function fetchTransactions(pair: string, hours?: number, limit?: number): 
 		return {
 			ok: true,
 			txs: merged
-				.filter(t => t.timestampMs >= sinceMs && t.timestampMs <= nowMs)
+				.filter((t) => t.timestampMs >= sinceMs && t.timestampMs <= nowMs)
 				.sort((a, b) => a.timestampMs - b.timestampMs),
 		};
 	}
@@ -98,9 +98,7 @@ async function fetchTransactions(pair: string, hours?: number, limit?: number): 
 		getTransactions(pair, 1000, todayJst.subtract(1, 'day').format('YYYYMMDD')),
 	];
 	if (lim > 500) {
-		supplementFetches.push(
-			getTransactions(pair, 1000, todayJst.subtract(2, 'day').format('YYYYMMDD'))
-		);
+		supplementFetches.push(getTransactions(pair, 1000, todayJst.subtract(2, 'day').format('YYYYMMDD')));
 	}
 	const supplementResults = await Promise.all(supplementFetches);
 	const merged = mergeTxResults([latestRes, ...supplementResults]);
@@ -110,9 +108,7 @@ async function fetchTransactions(pair: string, hours?: number, limit?: number): 
 	}
 	return {
 		ok: true,
-		txs: merged
-			.sort((a, b) => a.timestampMs - b.timestampMs)
-			.slice(-lim),
+		txs: merged.sort((a, b) => a.timestampMs - b.timestampMs).slice(-lim),
 	};
 }
 
@@ -140,7 +136,7 @@ function calcVwap(txs: Tx[]) {
 // ── Volume Profile Calculation ──
 
 function calcVolumeProfile(txs: Tx[], bins: number, valueAreaPct: number) {
-	const prices = txs.map(t => t.price);
+	const prices = txs.map((t) => t.price);
 	const priceLow = Math.min(...prices);
 	const priceHigh = Math.max(...prices);
 	const range = priceHigh - priceLow;
@@ -168,9 +164,12 @@ function calcVolumeProfile(txs: Tx[], bins: number, valueAreaPct: number) {
 			sellVolume: Number(singleBin.sellVolume.toFixed(8)),
 			totalVolume: Number(singleBin.totalVolume.toFixed(8)),
 			pct: 100,
-			dominant: singleBin.buyVolume > singleBin.sellVolume * 1.2 ? 'buy' as const
-				: singleBin.sellVolume > singleBin.buyVolume * 1.2 ? 'sell' as const
-				: 'balanced' as const,
+			dominant:
+				singleBin.buyVolume > singleBin.sellVolume * 1.2
+					? ('buy' as const)
+					: singleBin.sellVolume > singleBin.buyVolume * 1.2
+						? ('sell' as const)
+						: ('balanced' as const),
 		};
 		return {
 			bins: [binResult],
@@ -191,13 +190,19 @@ function calcVolumeProfile(txs: Tx[], bins: number, valueAreaPct: number) {
 	const adjustedLow = priceLow;
 
 	const profileBins: Array<{
-		low: number; high: number; buyVolume: number; sellVolume: number; totalVolume: number;
+		low: number;
+		high: number;
+		buyVolume: number;
+		sellVolume: number;
+		totalVolume: number;
 	}> = [];
 	for (let i = 0; i < bins; i++) {
 		profileBins.push({
 			low: adjustedLow + i * step,
 			high: adjustedLow + (i + 1) * step,
-			buyVolume: 0, sellVolume: 0, totalVolume: 0,
+			buyVolume: 0,
+			sellVolume: 0,
+			totalVolume: 0,
 		});
 	}
 
@@ -244,7 +249,7 @@ function calcVolumeProfile(txs: Tx[], bins: number, valueAreaPct: number) {
 	}
 
 	const isJpy = true; // This tool always operates on JPY pairs primarily
-	const fmtBin = (b: typeof profileBins[0]) => {
+	const fmtBin = (b: (typeof profileBins)[0]) => {
 		const lo = isJpy ? Math.round(b.low).toLocaleString() : b.low.toFixed(2);
 		const hi = isJpy ? Math.round(b.high).toLocaleString() : b.high.toFixed(2);
 		return `${lo}〜${hi}`;
@@ -259,9 +264,12 @@ function calcVolumeProfile(txs: Tx[], bins: number, valueAreaPct: number) {
 			sellVolume: Number(b.sellVolume.toFixed(8)),
 			totalVolume: Number(b.totalVolume.toFixed(8)),
 			pct: totalVolume > 0 ? Number(((b.totalVolume / totalVolume) * 100).toFixed(1)) : 0,
-			dominant: b.buyVolume > b.sellVolume * 1.2 ? 'buy' as const
-				: b.sellVolume > b.buyVolume * 1.2 ? 'sell' as const
-				: 'balanced' as const,
+			dominant:
+				b.buyVolume > b.sellVolume * 1.2
+					? ('buy' as const)
+					: b.sellVolume > b.buyVolume * 1.2
+						? ('sell' as const)
+						: ('balanced' as const),
 		})),
 		poc: {
 			price: Number(pocPrice.toFixed(2)),
@@ -280,7 +288,7 @@ function calcVolumeProfile(txs: Tx[], bins: number, valueAreaPct: number) {
 // ── Trade Size Distribution ──
 
 function calcTradeSizeDistribution(txs: Tx[]) {
-	const amounts = txs.map(t => t.amount).sort((a, b) => a - b);
+	const amounts = txs.map((t) => t.amount).sort((a, b) => a - b);
 	const p25 = amounts[Math.floor(amounts.length * 0.25)] ?? 0;
 	const p75 = amounts[Math.floor(amounts.length * 0.75)] ?? 0;
 	const p95 = amounts[Math.floor(amounts.length * 0.95)] ?? 0;
@@ -294,11 +302,11 @@ function calcTradeSizeDistribution(txs: Tx[]) {
 
 	const totalVolume = txs.reduce((s, t) => s + t.amount, 0);
 
-	const result = categories.map(c => {
-		const matching = txs.filter(t => c.filter(t.amount));
+	const result = categories.map((c) => {
+		const matching = txs.filter((t) => c.filter(t.amount));
 		const vol = matching.reduce((s, t) => s + t.amount, 0);
-		const buyVol = matching.filter(t => t.side === 'buy').reduce((s, t) => s + t.amount, 0);
-		const sellVol = matching.filter(t => t.side === 'sell').reduce((s, t) => s + t.amount, 0);
+		const buyVol = matching.filter((t) => t.side === 'buy').reduce((s, t) => s + t.amount, 0);
+		const sellVol = matching.filter((t) => t.side === 'sell').reduce((s, t) => s + t.amount, 0);
 		return {
 			label: c.label,
 			minSize: Number(c.minSize.toFixed(8)),
@@ -312,15 +320,20 @@ function calcTradeSizeDistribution(txs: Tx[]) {
 	});
 
 	// Large trade bias (大口 + 特大口)
-	const largeTxs = txs.filter(t => t.amount > p75);
-	const largeBuyVol = largeTxs.filter(t => t.side === 'buy').reduce((s, t) => s + t.amount, 0);
-	const largeSellVol = largeTxs.filter(t => t.side === 'sell').reduce((s, t) => s + t.amount, 0);
-	const ratio = largeSellVol > 0 ? Number((largeBuyVol / largeSellVol).toFixed(2)) : (largeBuyVol > 0 ? null : null);
-	const interpretation = ratio == null
-		? (largeBuyVol > 0 ? '大口は買い一色' : '大口取引なし')
-		: ratio > 1.3 ? '大口は買い優勢（蓄積の可能性）'
-		: ratio < 0.7 ? '大口は売り優勢（分配の可能性）'
-		: '大口は買い売り均衡';
+	const largeTxs = txs.filter((t) => t.amount > p75);
+	const largeBuyVol = largeTxs.filter((t) => t.side === 'buy').reduce((s, t) => s + t.amount, 0);
+	const largeSellVol = largeTxs.filter((t) => t.side === 'sell').reduce((s, t) => s + t.amount, 0);
+	const ratio = largeSellVol > 0 ? Number((largeBuyVol / largeSellVol).toFixed(2)) : largeBuyVol > 0 ? null : null;
+	const interpretation =
+		ratio == null
+			? largeBuyVol > 0
+				? '大口は買い一色'
+				: '大口取引なし'
+			: ratio > 1.3
+				? '大口は買い優勢（蓄積の可能性）'
+				: ratio < 0.7
+					? '大口は売り優勢（分配の可能性）'
+					: '大口は買い売り均衡';
 
 	return {
 		categories: result,
@@ -341,7 +354,7 @@ export default async function analyzeVolumeProfile(
 	hours?: number,
 	limit: number = 500,
 	bins: number = 20,
-	valueAreaPct: number = 0.70,
+	valueAreaPct: number = 0.7,
 	tz: string = 'Asia/Tokyo',
 ) {
 	const chk = ensurePair(pair);
@@ -350,15 +363,11 @@ export default async function analyzeVolumeProfile(
 	try {
 		const fetchResult = await fetchTransactions(chk.pair, hours, limit);
 		if (!fetchResult.ok) {
-			return AnalyzeVolumeProfileOutputSchema.parse(
-				fail(fetchResult.summary, fetchResult.errorType)
-			) as any;
+			return AnalyzeVolumeProfileOutputSchema.parse(fail(fetchResult.summary, fetchResult.errorType)) as any;
 		}
 		const txs = fetchResult.txs;
 		if (txs.length < 10) {
-			return AnalyzeVolumeProfileOutputSchema.parse(
-				fail('約定データが不足しています（10件未満）', 'user')
-			) as any;
+			return AnalyzeVolumeProfileOutputSchema.parse(fail('約定データが不足しています（10件未満）', 'user')) as any;
 		}
 
 		const currentPrice = txs[txs.length - 1].price;
@@ -370,11 +379,15 @@ export default async function analyzeVolumeProfile(
 		const dev = currentPrice - vwap;
 		const deviationPct = vwap > 0 ? Number(((dev / vwap) * 100).toFixed(2)) : 0;
 		const position =
-			dev > 2 * stdDev ? 'above_2sigma' as const :
-			dev > stdDev ? 'above_1sigma' as const :
-			dev < -2 * stdDev ? 'below_2sigma' as const :
-			dev < -stdDev ? 'below_1sigma' as const :
-			'at_vwap' as const;
+			dev > 2 * stdDev
+				? ('above_2sigma' as const)
+				: dev > stdDev
+					? ('above_1sigma' as const)
+					: dev < -2 * stdDev
+						? ('below_2sigma' as const)
+						: dev < -stdDev
+							? ('below_1sigma' as const)
+							: ('at_vwap' as const);
 
 		const positionLabel: Record<string, string> = {
 			above_2sigma: '大幅に割高（+2σ超）→ 短期反落リスク高',
@@ -389,8 +402,8 @@ export default async function analyzeVolumeProfile(
 		const endMs = txs[txs.length - 1].timestampMs;
 		const durationMin = Math.round((endMs - startMs) / 60_000);
 		const totalVolume = txs.reduce((s, t) => s + t.amount, 0);
-		const priceHigh = Math.max(...txs.map(t => t.price));
-		const priceLow = Math.min(...txs.map(t => t.price));
+		const priceHigh = Math.max(...txs.map((t) => t.price));
+		const priceLow = Math.min(...txs.map((t) => t.price));
 
 		const data = {
 			vwap: {
@@ -429,10 +442,12 @@ export default async function analyzeVolumeProfile(
 		const rangeStr = `${toDisplayTime(startMs, tz) ?? '?'}〜${toDisplayTime(endMs, tz) ?? '?'}`;
 
 		const topBins = [...profile.bins].sort((a, b) => b.totalVolume - a.totalVolume).slice(0, 5);
-		const profileText = topBins.map((b, i) => {
-			const bar = '█'.repeat(Math.max(1, Math.round(b.pct / 3)));
-			return `  ${i + 1}. ${b.label}円: ${bar} ${b.pct}% (買${b.buyVolume.toFixed(4)}/売${b.sellVolume.toFixed(4)}) [${b.dominant}]`;
-		}).join('\n');
+		const profileText = topBins
+			.map((b, i) => {
+				const bar = '█'.repeat(Math.max(1, Math.round(b.pct / 3)));
+				return `  ${i + 1}. ${b.label}円: ${bar} ${b.pct}% (買${b.buyVolume.toFixed(4)}/売${b.sellVolume.toFixed(4)}) [${b.dominant}]`;
+			})
+			.join('\n');
 
 		const summary = [
 			`${pairDisplay} Volume Profile & VWAP (${txs.length}件, ${durationMin}分間)`,
@@ -451,8 +466,9 @@ export default async function analyzeVolumeProfile(
 			'',
 			`💰 約定サイズ分布 (閾値: P25=${tradeSizes.thresholds.p25}, P75=${tradeSizes.thresholds.p75}, P95=${tradeSizes.thresholds.p95}):`,
 			`  分類基準: 小口≤P25, 中口P25–P75, 大口P75–P95, 特大口>P95`,
-			...tradeSizes.categories.map(c =>
-				`  ${c.label}: ${c.count}件 ${c.volume.toFixed(4)} (${c.pct}%) 買${c.buyVolume.toFixed(4)}/売${c.sellVolume.toFixed(4)}`
+			...tradeSizes.categories.map(
+				(c) =>
+					`  ${c.label}: ${c.count}件 ${c.volume.toFixed(4)} (${c.pct}%) 買${c.buyVolume.toFixed(4)}/売${c.sellVolume.toFixed(4)}`,
 			),
 			`  大口偏り: ${tradeSizes.largeTradeBias.interpretation}`,
 			'',
@@ -479,7 +495,10 @@ export const toolDef: ToolDefinition = {
 		return analyzeVolumeProfile(
 			parsed.pair,
 			'hours' in rawInput ? parsed.hours : undefined,
-			parsed.limit, parsed.bins, parsed.valueAreaPct, parsed.tz,
+			parsed.limit,
+			parsed.bins,
+			parsed.valueAreaPct,
+			parsed.tz,
 		);
 	},
 };

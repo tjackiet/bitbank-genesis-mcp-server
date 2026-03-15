@@ -5,14 +5,11 @@
  * LLM が分析しやすい形に整形して返す。
  */
 
-import { ok, fail } from '../../lib/result.js';
-import { nowIso, toIsoMs, parseIso8601 } from '../../lib/datetime.js';
+import { nowIso, parseIso8601, toIsoMs } from '../../lib/datetime.js';
 import { formatPair, formatPrice } from '../../lib/formatter.js';
+import { fail, ok } from '../../lib/result.js';
 import { getDefaultClient, PrivateApiError } from '../../src/private/client.js';
-import {
-	GetMyOrdersInputSchema,
-	GetMyOrdersOutputSchema,
-} from '../../src/private/schemas.js';
+import { GetMyOrdersInputSchema, GetMyOrdersOutputSchema } from '../../src/private/schemas.js';
 import type { ToolDefinition } from '../../src/tool-definition.js';
 
 /** bitbank /v1/user/spot/active_orders のレスポンス型 */
@@ -36,12 +33,7 @@ interface RawOrder {
 	status: string;
 }
 
-export default async function getMyOrders(args: {
-	pair?: string;
-	count?: number;
-	since?: string;
-	end?: string;
-}) {
+export default async function getMyOrders(args: { pair?: string; count?: number; since?: string; end?: string }) {
 	const { pair, count = 100, since, end } = args;
 	const client = getDefaultClient();
 
@@ -55,18 +47,14 @@ export default async function getMyOrders(args: {
 		if (since) {
 			const parsed = parseIso8601(since);
 			if (!parsed) {
-				return GetMyOrdersOutputSchema.parse(
-					fail(`since の日時形式が不正です: ${since}`, 'validation_error'),
-				);
+				return GetMyOrdersOutputSchema.parse(fail(`since の日時形式が不正です: ${since}`, 'validation_error'));
 			}
 			params.since = String(parsed.valueOf());
 		}
 		if (end) {
 			const parsed = parseIso8601(end);
 			if (!parsed) {
-				return GetMyOrdersOutputSchema.parse(
-					fail(`end の日時形式が不正です: ${end}`, 'validation_error'),
-				);
+				return GetMyOrdersOutputSchema.parse(fail(`end の日時形式が不正です: ${end}`, 'validation_error'));
 			}
 			params.end = String(parsed.valueOf());
 		}
@@ -105,9 +93,7 @@ export default async function getMyOrders(args: {
 			for (const o of orders) {
 				const sideLabel = o.side === 'buy' ? '買' : '売';
 				const isJpy = o.pair.includes('jpy');
-				const price = o.price
-					? (isJpy ? formatPrice(Number(o.price)) : o.price)
-					: '成行';
+				const price = o.price ? (isJpy ? formatPrice(Number(o.price)) : o.price) : '成行';
 				const remaining = o.remaining_amount ?? '?';
 				lines.push(
 					`${formatPair(o.pair)} ${sideLabel}${o.type} ${remaining} @ ${price} [${o.status}] (${o.ordered_at})`,
@@ -139,15 +125,10 @@ export default async function getMyOrders(args: {
 		return GetMyOrdersOutputSchema.parse(ok(summary, data, meta));
 	} catch (err) {
 		if (err instanceof PrivateApiError) {
-			return GetMyOrdersOutputSchema.parse(
-				fail(err.message, err.errorType),
-			);
+			return GetMyOrdersOutputSchema.parse(fail(err.message, err.errorType));
 		}
 		return GetMyOrdersOutputSchema.parse(
-			fail(
-				err instanceof Error ? err.message : '注文情報取得中に予期しないエラーが発生しました',
-				'upstream_error',
-			),
+			fail(err instanceof Error ? err.message : '注文情報取得中に予期しないエラーが発生しました', 'upstream_error'),
 		);
 	}
 }
@@ -155,7 +136,8 @@ export default async function getMyOrders(args: {
 // ── MCP ツール定義（tool-registry から自動収集） ──
 export const toolDef: ToolDefinition = {
 	name: 'get_my_orders',
-	description: '[My Orders / Open Orders / Active Orders] 自分の未約定注文一覧（my orders / open orders / active orders / pending）を取得。通貨ペア・期間でフィルタ可能。Private API。',
+	description:
+		'[My Orders / Open Orders / Active Orders] 自分の未約定注文一覧（my orders / open orders / active orders / pending）を取得。通貨ペア・期間でフィルタ可能。Private API。',
 	inputSchema: GetMyOrdersInputSchema,
 	handler: async (args: any) => getMyOrders(args ?? {}),
 };

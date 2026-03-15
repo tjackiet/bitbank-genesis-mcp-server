@@ -1,59 +1,66 @@
-import analyzeIndicators, { computeClassicStochastic } from './analyze_indicators.js';
-import getCandles from './get_candles.js';
-import { ok, fail, failFromError, failFromValidation } from '../lib/result.js';
-import { createMeta, ensurePair } from '../lib/validate.js';
-import { formatSummary } from '../lib/formatter.js';
 import { today } from '../lib/datetime.js';
+import { formatSummary } from '../lib/formatter.js';
+import { fail, failFromError, failFromValidation, ok } from '../lib/result.js';
+import { createMeta, ensurePair } from '../lib/validate.js';
 import { AnalyzeStochSnapshotInputSchema, AnalyzeStochSnapshotOutputSchema } from '../src/schemas.js';
 import type { ToolDefinition } from '../src/tool-definition.js';
+import analyzeIndicators, { computeClassicStochastic } from './analyze_indicators.js';
+import getCandles from './get_candles.js';
 
 const DEFAULT_K_PERIOD = 14;
 const DEFAULT_SMOOTH_K = 3;
 const DEFAULT_SMOOTH_D = 3;
 
 export interface BuildStochSnapshotTextInput {
-  baseSummary: string;
-  kStr: string;
-  dStr: string;
-  zoneJp: string;
-  kPeriod: number;
-  smoothK: number;
-  smoothD: number;
-  crossDesc: string;
-  divType: 'bullish' | 'bearish' | 'none';
-  divDesc: string;
-  recentCrosses: Array<{
-    type: 'bullish_cross' | 'bearish_cross';
-    barsAgo: number;
-    date: string;
-    zone: 'overbought' | 'oversold' | 'neutral';
-  }>;
+	baseSummary: string;
+	kStr: string;
+	dStr: string;
+	zoneJp: string;
+	kPeriod: number;
+	smoothK: number;
+	smoothD: number;
+	crossDesc: string;
+	divType: 'bullish' | 'bearish' | 'none';
+	divDesc: string;
+	recentCrosses: Array<{
+		type: 'bullish_cross' | 'bearish_cross';
+		barsAgo: number;
+		date: string;
+		zone: 'overbought' | 'oversold' | 'neutral';
+	}>;
 }
 
 /** テキスト組み立て（Stochスナップショット）— テスト可能な純粋関数 */
 export function buildStochSnapshotText(input: BuildStochSnapshotTextInput): string {
-  const { baseSummary, kStr, dStr, zoneJp, kPeriod, smoothK, smoothD, crossDesc, divType, divDesc, recentCrosses } = input;
-  const recentLines = recentCrosses.slice(-5).reverse().map(rc => {
-    const zJp = rc.zone === 'overbought' ? '買われすぎ圏' : rc.zone === 'oversold' ? '売られすぎ圏' : 'ニュートラル圏';
-    return `${rc.type === 'bullish_cross' ? '↑' : '↓'} ${rc.type} - ${rc.barsAgo} bars ago (${rc.date}) [${zJp}]`;
-  });
-  return [
-    baseSummary,
-    '',
-    `%K: ${kStr}`,
-    `%D: ${dStr}`,
-    `ゾーン: ${zoneJp}`,
-    `パラメータ: (${kPeriod}, ${smoothK}, ${smoothD})`,
-    '',
-    `クロス: ${crossDesc}`,
-    ...(divType !== 'none' ? [`ダイバージェンス: ${divDesc}`] : []),
-    ...(recentLines.length ? ['', 'Recent Crosses:', ...recentLines] : []),
-    '',
-    '---',
-    '📌 含まれるもの: %K・%D の値、ゾーン判定、クロスオーバー、ダイバージェンス',
-    '📌 含まれないもの: RSI・SMA・EMA・MACD・BB・一目均衡表、出来高フロー',
-    '📌 補完ツール: analyze_indicators（他指標）, analyze_rsi_snapshot（RSI）, analyze_ema_snapshot（EMA）',
-  ].filter(Boolean).join('\n');
+	const { baseSummary, kStr, dStr, zoneJp, kPeriod, smoothK, smoothD, crossDesc, divType, divDesc, recentCrosses } =
+		input;
+	const recentLines = recentCrosses
+		.slice(-5)
+		.reverse()
+		.map((rc) => {
+			const zJp =
+				rc.zone === 'overbought' ? '買われすぎ圏' : rc.zone === 'oversold' ? '売られすぎ圏' : 'ニュートラル圏';
+			return `${rc.type === 'bullish_cross' ? '↑' : '↓'} ${rc.type} - ${rc.barsAgo} bars ago (${rc.date}) [${zJp}]`;
+		});
+	return [
+		baseSummary,
+		'',
+		`%K: ${kStr}`,
+		`%D: ${dStr}`,
+		`ゾーン: ${zoneJp}`,
+		`パラメータ: (${kPeriod}, ${smoothK}, ${smoothD})`,
+		'',
+		`クロス: ${crossDesc}`,
+		...(divType !== 'none' ? [`ダイバージェンス: ${divDesc}`] : []),
+		...(recentLines.length ? ['', 'Recent Crosses:', ...recentLines] : []),
+		'',
+		'---',
+		'📌 含まれるもの: %K・%D の値、ゾーン判定、クロスオーバー、ダイバージェンス',
+		'📌 含まれないもの: RSI・SMA・EMA・MACD・BB・一目均衡表、出来高フロー',
+		'📌 補完ツール: analyze_indicators（他指標）, analyze_rsi_snapshot（RSI）, analyze_ema_snapshot（EMA）',
+	]
+		.filter(Boolean)
+		.join('\n');
 }
 
 function zoneOf(k: number | null): 'overbought' | 'oversold' | 'neutral' {
@@ -69,7 +76,7 @@ export default async function analyzeStochSnapshot(
 	limit: number = 120,
 	kPeriod: number = DEFAULT_K_PERIOD,
 	smoothK: number = DEFAULT_SMOOTH_K,
-	smoothD: number = DEFAULT_SMOOTH_D
+	smoothD: number = DEFAULT_SMOOTH_D,
 ) {
 	const chk = ensurePair(pair);
 	if (!chk.ok) return failFromValidation(chk, AnalyzeStochSnapshotOutputSchema) as any;
@@ -88,7 +95,10 @@ export default async function analyzeStochSnapshot(
 
 		if (isDefault) {
 			const indRes: any = await analyzeIndicators(chk.pair, type as any, limit);
-			if (!indRes?.ok) return AnalyzeStochSnapshotOutputSchema.parse(fail(indRes?.summary || 'indicators failed', (indRes?.meta as any)?.errorType || 'internal')) as any;
+			if (!indRes?.ok)
+				return AnalyzeStochSnapshotOutputSchema.parse(
+					fail(indRes?.summary || 'indicators failed', (indRes?.meta as any)?.errorType || 'internal'),
+				) as any;
 			const ind = indRes.data.indicators;
 			close = indRes.data.normalized.at(-1)?.close ?? null;
 			stochK = ind.STOCH_K ?? null;
@@ -97,11 +107,18 @@ export default async function analyzeStochSnapshot(
 			prevD = ind.STOCH_prevD ?? null;
 			kSeries = Array.isArray(ind.stoch_k_series) ? ind.stoch_k_series : [];
 			dSeries = Array.isArray(ind.stoch_d_series) ? ind.stoch_d_series : [];
-			candles = Array.isArray(indRes?.data?.chart?.candles) ? indRes.data.chart.candles : (Array.isArray(indRes?.data?.normalized) ? indRes.data.normalized : []);
+			candles = Array.isArray(indRes?.data?.chart?.candles)
+				? indRes.data.chart.candles
+				: Array.isArray(indRes?.data?.normalized)
+					? indRes.data.normalized
+					: [];
 			normalizedLen = indRes.data.normalized.length;
 		} else {
 			const candlesResult = await getCandles(chk.pair, type as any, undefined as any, limit);
-			if (!candlesResult.ok) return AnalyzeStochSnapshotOutputSchema.parse(fail(candlesResult.summary || 'candles failed', (candlesResult.meta as any)?.errorType || 'internal')) as any;
+			if (!candlesResult.ok)
+				return AnalyzeStochSnapshotOutputSchema.parse(
+					fail(candlesResult.summary || 'candles failed', (candlesResult.meta as any)?.errorType || 'internal'),
+				) as any;
 			const normalized = candlesResult.data.normalized;
 			const highs = normalized.map((c: any) => c.high);
 			const lows = normalized.map((c: any) => c.low);
@@ -125,7 +142,8 @@ export default async function analyzeStochSnapshot(
 		if (stochK != null && stochD != null && prevK != null && prevD != null) {
 			const prevDiff = prevK - prevD;
 			const currDiff = stochK - stochD;
-			const zoneLabel = zone === 'overbought' ? '買われすぎ圏' : zone === 'oversold' ? '売られすぎ圏' : 'ニュートラル圏';
+			const zoneLabel =
+				zone === 'overbought' ? '買われすぎ圏' : zone === 'oversold' ? '売られすぎ圏' : 'ニュートラル圏';
 			if (prevDiff <= 0 && currDiff > 0) {
 				crossType = 'bullish_cross';
 				crossDesc = `%K が %D を上抜け（${zone === 'oversold' ? '売られすぎ圏からの反転 → 強いシグナル' : zoneLabel}）`;
@@ -136,7 +154,12 @@ export default async function analyzeStochSnapshot(
 		}
 
 		const lookback = 30;
-		type RecentCross = { type: 'bullish_cross' | 'bearish_cross'; barsAgo: number; date: string; zone: 'overbought' | 'oversold' | 'neutral' };
+		type RecentCross = {
+			type: 'bullish_cross' | 'bearish_cross';
+			barsAgo: number;
+			date: string;
+			zone: 'overbought' | 'oversold' | 'neutral';
+		};
 		const recentCrosses: RecentCross[] = [];
 		const n = Math.min(kSeries.length, dSeries.length, candles.length);
 		if (n >= 2) {
@@ -151,7 +174,7 @@ export default async function analyzeStochSnapshot(
 				const curr = cK - cD;
 				if ((prev <= 0 && curr > 0) || (prev >= 0 && curr < 0)) {
 					const ct = curr > 0 ? 'bullish_cross' : 'bearish_cross';
-					const barsAgo = (n - 1) - i;
+					const barsAgo = n - 1 - i;
 					const date = String(candles[i]?.isoTime || '').slice(0, 10) || today('YYYY-MM-DD');
 					recentCrosses.push({ type: ct, barsAgo, date, zone: zoneOf(cK) });
 				}
@@ -162,7 +185,7 @@ export default async function analyzeStochSnapshot(
 		let divDesc = 'ダイバージェンスなし';
 		const divWindow = 14;
 		if (n >= divWindow && close != null) {
-			const recentCloses = candles.slice(-divWindow).map(c => c.close);
+			const recentCloses = candles.slice(-divWindow).map((c) => c.close);
 			const recentK = kSeries.slice(-divWindow).filter((v): v is number => v != null);
 			if (recentCloses.length >= 2 && recentK.length >= 2) {
 				const priceSlope = recentCloses[recentCloses.length - 1] - recentCloses[0];
@@ -189,9 +212,14 @@ export default async function analyzeStochSnapshot(
 
 		const kStr = stochK != null ? stochK.toFixed(2) : 'n/a';
 		const dStr = stochD != null ? stochD.toFixed(2) : 'n/a';
-		const zoneJp = zone === 'overbought' ? '買われすぎ (>80)' : zone === 'oversold' ? '売られすぎ (<20)' : 'ニュートラル';
+		const zoneJp =
+			zone === 'overbought' ? '買われすぎ (>80)' : zone === 'oversold' ? '売られすぎ (<20)' : 'ニュートラル';
 		const summaryText = buildStochSnapshotText({
-			baseSummary: formatSummary({ pair: chk.pair, latest: close ?? undefined, extra: `Stoch(%K/${kStr}, %D/${dStr}) zone=${zone}` }),
+			baseSummary: formatSummary({
+				pair: chk.pair,
+				latest: close ?? undefined,
+				extra: `Stoch(%K/${kStr}, %D/${dStr}) zone=${zone}`,
+			}),
 			kStr,
 			dStr,
 			zoneJp,
@@ -222,7 +250,9 @@ export default async function analyzeStochSnapshot(
 
 export const toolDef: ToolDefinition = {
 	name: 'analyze_stoch_snapshot',
-	description: '[Stochastic / Overbought / Oversold] Stochastic（stochastic / %K / %D / overbought / oversold / divergence）の最新状態。ゾーン・クロス・ダイバージェンスを判定。',
+	description:
+		'[Stochastic / Overbought / Oversold] Stochastic（stochastic / %K / %D / overbought / oversold / divergence）の最新状態。ゾーン・クロス・ダイバージェンスを判定。',
 	inputSchema: AnalyzeStochSnapshotInputSchema,
-	handler: async ({ pair, type, limit, kPeriod, smoothK, smoothD }: any) => analyzeStochSnapshot(pair, type, limit, kPeriod, smoothK, smoothD),
+	handler: async ({ pair, type, limit, kPeriod, smoothK, smoothD }: any) =>
+		analyzeStochSnapshot(pair, type, limit, kPeriod, smoothK, smoothD),
 };

@@ -1,10 +1,10 @@
-import type { OkResult, FailResult } from '../src/types/domain.d.ts';
+import type { FailResult, OkResult } from '../src/types/domain.d.ts';
 import { getErrorMessage, isAbortError } from './error.js';
 
 export function ok<T = Record<string, unknown>, M = Record<string, unknown>>(
 	summary: string,
 	data: T = {} as T,
-	meta: M = {} as M
+	meta: M = {} as M,
 ): OkResult<T, M> {
 	return {
 		ok: true,
@@ -17,7 +17,7 @@ export function ok<T = Record<string, unknown>, M = Record<string, unknown>>(
 export function fail<M = Record<string, unknown>>(
 	message: string,
 	type: string = 'user',
-	meta: M = {} as M
+	meta: M = {} as M,
 ): FailResult<M> {
 	return {
 		ok: false,
@@ -46,12 +46,7 @@ export interface FailFromErrorOptions {
  * - schema 指定時は schema.parse() でラップ
  */
 export function failFromError(err: unknown, opts: FailFromErrorOptions = {}): ReturnType<typeof fail> {
-	const {
-		schema,
-		timeoutMs,
-		defaultType = 'internal',
-		defaultMessage = 'internal error',
-	} = opts;
+	const { schema, timeoutMs, defaultType = 'internal', defaultMessage = 'internal error' } = opts;
 
 	let message: string;
 	let errorType: string;
@@ -81,5 +76,3 @@ export function failFromValidation(
 	const f = fail(result.error.message, result.error.type);
 	return (schema ? schema.parse(f) : f) as FailResult;
 }
-
-

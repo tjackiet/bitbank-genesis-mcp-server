@@ -10,14 +10,11 @@
  * - ページネーション対応: 100件上限を超えるデータも自動取得（最大10ページ=1000件/チャネル）
  */
 
-import { ok, fail } from '../../lib/result.js';
-import { nowIso, toIsoMs, parseIso8601 } from '../../lib/datetime.js';
+import { nowIso, parseIso8601, toIsoMs } from '../../lib/datetime.js';
 import { formatPrice } from '../../lib/formatter.js';
-import { getDefaultClient, PrivateApiError, BitbankPrivateClient } from '../../src/private/client.js';
-import {
-	GetMyDepositWithdrawalInputSchema,
-	GetMyDepositWithdrawalOutputSchema,
-} from '../../src/private/schemas.js';
+import { fail, ok } from '../../lib/result.js';
+import { type BitbankPrivateClient, getDefaultClient, PrivateApiError } from '../../src/private/client.js';
+import { GetMyDepositWithdrawalInputSchema, GetMyDepositWithdrawalOutputSchema } from '../../src/private/schemas.js';
 import type { ToolDefinition } from '../../src/tool-definition.js';
 
 // ── API レスポンス型 ──
@@ -25,7 +22,11 @@ import type { ToolDefinition } from '../../src/tool-definition.js';
 /** 個別 API リクエストの結果をラップ */
 type FetchResult<T> = { ok: true; data: T } | { ok: false; error: string };
 
-async function tryGet<T>(client: BitbankPrivateClient, path: string, params?: Record<string, string>): Promise<FetchResult<T>> {
+async function tryGet<T>(
+	client: BitbankPrivateClient,
+	path: string,
+	params?: Record<string, string>,
+): Promise<FetchResult<T>> {
 	try {
 		const data = await client.get<T>(path, params);
 		return { ok: true, data };
@@ -72,8 +73,16 @@ interface RawWithdrawal {
 
 const MAX_PAGES = 10;
 
-interface PaginatedDeposits { deposits: RawDeposit[]; complete: boolean; error?: string }
-interface PaginatedWithdrawals { withdrawals: RawWithdrawal[]; complete: boolean; error?: string }
+interface PaginatedDeposits {
+	deposits: RawDeposit[];
+	complete: boolean;
+	error?: string;
+}
+interface PaginatedWithdrawals {
+	withdrawals: RawWithdrawal[];
+	complete: boolean;
+	error?: string;
+}
 
 async function paginateDeposits(
 	client: BitbankPrivateClient,
@@ -179,9 +188,7 @@ export default async function getMyDepositWithdrawal(args: {
 		if (end) {
 			const parsed = parseIso8601(end);
 			if (!parsed) {
-				return GetMyDepositWithdrawalOutputSchema.parse(
-					fail(`end の日時形式が不正です: ${end}`, 'validation_error'),
-				);
+				return GetMyDepositWithdrawalOutputSchema.parse(fail(`end の日時形式が不正です: ${end}`, 'validation_error'));
 			}
 			baseParams.end = String(parsed.valueOf());
 		}
@@ -207,10 +214,14 @@ export default async function getMyDepositWithdrawal(args: {
 
 			const [depResult, wdResult] = await Promise.all([
 				fetchDeposits
-					? (hasSinceEnd ? singleFetchDeposits(client, params) : paginateDeposits(client, { asset }))
+					? hasSinceEnd
+						? singleFetchDeposits(client, params)
+						: paginateDeposits(client, { asset })
 					: Promise.resolve({ deposits: [] as RawDeposit[], complete: true } as PaginatedDeposits),
 				fetchWithdrawals
-					? (hasSinceEnd ? singleFetchWithdrawals(client, params) : paginateWithdrawals(client, { asset }))
+					? hasSinceEnd
+						? singleFetchWithdrawals(client, params)
+						: paginateWithdrawals(client, { asset })
 					: Promise.resolve({ withdrawals: [] as RawWithdrawal[], complete: true } as PaginatedWithdrawals),
 			]);
 
@@ -227,25 +238,67 @@ export default async function getMyDepositWithdrawal(args: {
 				const jpyParams = { ...baseParams, asset: 'jpy', count: String(count) };
 
 				const [cryptoDepResult, jpyDepResult, cryptoWdResult, jpyWdResult] = await Promise.all([
-					fetchDeposits ? singleFetchDeposits(client, cryptoParams) : Promise.resolve({ deposits: [], complete: true } as PaginatedDeposits),
-					fetchDeposits ? singleFetchDeposits(client, jpyParams) : Promise.resolve({ deposits: [], complete: true } as PaginatedDeposits),
-					fetchWithdrawals ? singleFetchWithdrawals(client, cryptoParams) : Promise.resolve({ withdrawals: [], complete: true } as PaginatedWithdrawals),
-					fetchWithdrawals ? singleFetchWithdrawals(client, jpyParams) : Promise.resolve({ withdrawals: [], complete: true } as PaginatedWithdrawals),
+					fetchDeposits
+						? singleFetchDeposits(client, cryptoParams)
+						: Promise.resolve({ deposits: [], complete: true } as PaginatedDeposits),
+					fetchDeposits
+						? singleFetchDeposits(client, jpyParams)
+						: Promise.resolve({ deposits: [], complete: true } as PaginatedDeposits),
+					fetchWithdrawals
+						? singleFetchWithdrawals(client, cryptoParams)
+						: Promise.resolve({ withdrawals: [], complete: true } as PaginatedWithdrawals),
+					fetchWithdrawals
+						? singleFetchWithdrawals(client, jpyParams)
+						: Promise.resolve({ withdrawals: [], complete: true } as PaginatedWithdrawals),
 				]);
 
-				collectResults(cryptoDepResult, jpyDepResult, cryptoWdResult, jpyWdResult, warnings, (d) => { allDeposits = d; }, (w) => { allWithdrawals = w; });
-				isComplete = cryptoDepResult.complete && jpyDepResult.complete && cryptoWdResult.complete && jpyWdResult.complete;
+				collectResults(
+					cryptoDepResult,
+					jpyDepResult,
+					cryptoWdResult,
+					jpyWdResult,
+					warnings,
+					(d) => {
+						allDeposits = d;
+					},
+					(w) => {
+						allWithdrawals = w;
+					},
+				);
+				isComplete =
+					cryptoDepResult.complete && jpyDepResult.complete && cryptoWdResult.complete && jpyWdResult.complete;
 			} else {
 				// since/end 未指定: ページネーションで全件取得
 				const [cryptoDepResult, jpyDepResult, cryptoWdResult, jpyWdResult] = await Promise.all([
-					fetchDeposits ? paginateDeposits(client, {}) : Promise.resolve({ deposits: [], complete: true } as PaginatedDeposits),
-					fetchDeposits ? paginateDeposits(client, { asset: 'jpy' }) : Promise.resolve({ deposits: [], complete: true } as PaginatedDeposits),
-					fetchWithdrawals ? paginateWithdrawals(client, {}) : Promise.resolve({ withdrawals: [], complete: true } as PaginatedWithdrawals),
-					fetchWithdrawals ? paginateWithdrawals(client, { asset: 'jpy' }) : Promise.resolve({ withdrawals: [], complete: true } as PaginatedWithdrawals),
+					fetchDeposits
+						? paginateDeposits(client, {})
+						: Promise.resolve({ deposits: [], complete: true } as PaginatedDeposits),
+					fetchDeposits
+						? paginateDeposits(client, { asset: 'jpy' })
+						: Promise.resolve({ deposits: [], complete: true } as PaginatedDeposits),
+					fetchWithdrawals
+						? paginateWithdrawals(client, {})
+						: Promise.resolve({ withdrawals: [], complete: true } as PaginatedWithdrawals),
+					fetchWithdrawals
+						? paginateWithdrawals(client, { asset: 'jpy' })
+						: Promise.resolve({ withdrawals: [], complete: true } as PaginatedWithdrawals),
 				]);
 
-				collectResults(cryptoDepResult, jpyDepResult, cryptoWdResult, jpyWdResult, warnings, (d) => { allDeposits = d; }, (w) => { allWithdrawals = w; });
-				isComplete = cryptoDepResult.complete && jpyDepResult.complete && cryptoWdResult.complete && jpyWdResult.complete;
+				collectResults(
+					cryptoDepResult,
+					jpyDepResult,
+					cryptoWdResult,
+					jpyWdResult,
+					warnings,
+					(d) => {
+						allDeposits = d;
+					},
+					(w) => {
+						allWithdrawals = w;
+					},
+				);
+				isComplete =
+					cryptoDepResult.complete && jpyDepResult.complete && cryptoWdResult.complete && jpyWdResult.complete;
 			}
 		}
 
@@ -306,7 +359,9 @@ export default async function getMyDepositWithdrawal(args: {
 				const totalJpy = jpyDeposits.reduce((sum, d) => sum + Number(d.amount), 0);
 				lines.push(`  JPY 入金: ${jpyDeposits.length}件 合計 ${formatPrice(Math.round(totalJpy))}`);
 				for (const d of jpyDeposits.slice(0, 5)) {
-					lines.push(`    JPY ${formatPrice(Math.round(Number(d.amount)))} (${d.status})${d.found_at ? ` ${d.found_at}` : ''}`);
+					lines.push(
+						`    JPY ${formatPrice(Math.round(Number(d.amount)))} (${d.status})${d.found_at ? ` ${d.found_at}` : ''}`,
+					);
 				}
 				if (jpyDeposits.length > 5) lines.push(`    ... 他 ${jpyDeposits.length - 5}件`);
 			}
@@ -332,14 +387,18 @@ export default async function getMyDepositWithdrawal(args: {
 				const totalJpy = jpyWithdrawals.reduce((sum, w) => sum + Number(w.amount), 0);
 				lines.push(`  JPY 出金: ${jpyWithdrawals.length}件 合計 ${formatPrice(Math.round(totalJpy))}`);
 				for (const w of jpyWithdrawals.slice(0, 5)) {
-					lines.push(`    JPY ${formatPrice(Math.round(Number(w.amount)))} (${w.status})${w.requested_at ? ` ${w.requested_at}` : ''}`);
+					lines.push(
+						`    JPY ${formatPrice(Math.round(Number(w.amount)))} (${w.status})${w.requested_at ? ` ${w.requested_at}` : ''}`,
+					);
 				}
 				if (jpyWithdrawals.length > 5) lines.push(`    ... 他 ${jpyWithdrawals.length - 5}件`);
 			}
 			if (cryptoWithdrawals.length > 0) {
 				lines.push(`  暗号資産出庫: ${cryptoWithdrawals.length}件（明細表示は先頭5件のみ）`);
 				for (const w of cryptoWithdrawals.slice(0, 5)) {
-					lines.push(`    ${w.asset.toUpperCase()} ${w.amount} (${w.status})${w.requested_at ? ` ${w.requested_at}` : ''}`);
+					lines.push(
+						`    ${w.asset.toUpperCase()} ${w.amount} (${w.status})${w.requested_at ? ` ${w.requested_at}` : ''}`,
+					);
 				}
 				if (cryptoWithdrawals.length > 5) lines.push(`    ... 他 ${cryptoWithdrawals.length - 5}件`);
 			}
@@ -376,15 +435,10 @@ export default async function getMyDepositWithdrawal(args: {
 		return GetMyDepositWithdrawalOutputSchema.parse(ok(summary, data, meta));
 	} catch (err) {
 		if (err instanceof PrivateApiError) {
-			return GetMyDepositWithdrawalOutputSchema.parse(
-				fail(err.message, err.errorType),
-			);
+			return GetMyDepositWithdrawalOutputSchema.parse(fail(err.message, err.errorType));
 		}
 		return GetMyDepositWithdrawalOutputSchema.parse(
-			fail(
-				err instanceof Error ? err.message : '入出金履歴取得中に予期しないエラーが発生しました',
-				'upstream_error',
-			),
+			fail(err instanceof Error ? err.message : '入出金履歴取得中に予期しないエラーが発生しました', 'upstream_error'),
 		);
 	}
 }
@@ -430,7 +484,8 @@ function deduplicateByUuid<T extends { uuid: string }>(items: T[]): T[] {
 // ── MCP ツール定義（tool-registry から自動収集） ──
 export const toolDef: ToolDefinition = {
 	name: 'get_my_deposit_withdrawal',
-	description: '[Deposit / Withdrawal / Transfer History] 入出金・入出庫の履歴（deposit / withdrawal / transfer / funding history）を取得。JPY入出金+暗号資産入出庫に対応。全件取得可能。Private API。',
+	description:
+		'[Deposit / Withdrawal / Transfer History] 入出金・入出庫の履歴（deposit / withdrawal / transfer / funding history）を取得。JPY入出金+暗号資産入出庫に対応。全件取得可能。Private API。',
 	inputSchema: GetMyDepositWithdrawalInputSchema,
 	handler: async (args: any) => getMyDepositWithdrawal(args ?? {}),
 };

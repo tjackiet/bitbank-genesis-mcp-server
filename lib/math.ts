@@ -68,10 +68,12 @@ export function slidingStddev(values: number[], window: number): number[] {
 	let sumsq = 0;
 	for (let i = 0; i < values.length; i++) {
 		const v = values[i];
-		sum += v; sumsq += v * v;
+		sum += v;
+		sumsq += v * v;
 		if (i >= window) {
 			const old = values[i - window];
-			sum -= old; sumsq -= old * old;
+			sum -= old;
+			sumsq -= old * old;
 		}
 		if (i >= window - 1) {
 			const n = window;

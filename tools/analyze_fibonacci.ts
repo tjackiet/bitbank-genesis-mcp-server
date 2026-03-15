@@ -1,11 +1,11 @@
-import getCandles from './get_candles.js';
-import { ok, fail, failFromError, failFromValidation } from '../lib/result.js';
-import { createMeta, ensurePair } from '../lib/validate.js';
-import { formatPrice, formatPercent, formatPair, timeframeLabel } from '../lib/formatter.js';
 import { nowIso } from '../lib/datetime.js';
+import { formatPair, formatPercent, formatPrice, timeframeLabel } from '../lib/formatter.js';
+import { fail, failFromError, failFromValidation, ok } from '../lib/result.js';
+import { createMeta, ensurePair } from '../lib/validate.js';
 import { AnalyzeFibonacciInputSchema, AnalyzeFibonacciOutputSchema } from '../src/schemas.js';
 import type { ToolDefinition } from '../src/tool-definition.js';
 import type { Pair } from '../src/types/domain.d.ts';
+import getCandles from './get_candles.js';
 
 // ── Constants ──
 
@@ -56,9 +56,11 @@ interface LevelStat {
  * Uses a simple approach: find the highest high and lowest low, then determine trend
  * based on which came first.
  */
-function detectSignificantSwings(
-	candles: NormalizedCandle[]
-): { swingHigh: SwingPoint; swingLow: SwingPoint; trend: 'up' | 'down' } {
+function detectSignificantSwings(candles: NormalizedCandle[]): {
+	swingHigh: SwingPoint;
+	swingLow: SwingPoint;
+	trend: 'up' | 'down';
+} {
 	let highestIdx = 0;
 	let lowestIdx = 0;
 
@@ -94,17 +96,14 @@ function calculateLevels(
 	swingLow: SwingPoint,
 	trend: 'up' | 'down',
 	currentPrice: number,
-	ratios: number[]
+	ratios: number[],
 ): FibLevel[] {
 	const range = swingHigh.price - swingLow.price;
 
 	return ratios.map((ratio) => {
 		// In downtrend: retracement goes up from low
 		// In uptrend: retracement goes down from high
-		const price =
-			trend === 'down'
-				? swingLow.price + range * ratio
-				: swingHigh.price - range * ratio;
+		const price = trend === 'down' ? swingLow.price + range * ratio : swingHigh.price - range * ratio;
 
 		const distancePct = ((price - currentPrice) / currentPrice) * 100;
 
@@ -117,7 +116,7 @@ function calculateExtensions(
 	swingLow: SwingPoint,
 	trend: 'up' | 'down',
 	currentPrice: number,
-	ratios: number[]
+	ratios: number[],
 ): FibLevel[] {
 	const range = swingHigh.price - swingLow.price;
 
@@ -125,10 +124,7 @@ function calculateExtensions(
 		// Extensions project beyond the swing points
 		// Uptrend: project above swingHigh  → swingLow + range * ratio
 		// Downtrend: project below swingLow → swingHigh - range * ratio
-		const price =
-			trend === 'up'
-				? swingLow.price + range * ratio
-				: swingHigh.price - range * ratio;
+		const price = trend === 'up' ? swingLow.price + range * ratio : swingHigh.price - range * ratio;
 
 		const distancePct = ((price - currentPrice) / currentPrice) * 100;
 
@@ -155,7 +151,7 @@ function markNearest(levels: FibLevel[], currentPrice: number): FibLevel[] {
 
 function findPosition(
 	levels: FibLevel[],
-	currentPrice: number
+	currentPrice: number,
 ): { aboveLevel: FibLevel | null; belowLevel: FibLevel | null; nearestLevel: FibLevel | null } {
 	const sorted = [...levels].sort((a, b) => a.price - b.price);
 
@@ -177,11 +173,7 @@ function findPosition(
  * Analyze how price has historically reacted at each Fibonacci level.
  * Uses past candle data to count bounces vs breakthroughs at each level zone.
  */
-function calculateLevelStats(
-	candles: NormalizedCandle[],
-	levels: FibLevel[],
-	tolerancePct: number = 0.5
-): LevelStat[] {
+function calculateLevelStats(candles: NormalizedCandle[], levels: FibLevel[], tolerancePct: number = 0.5): LevelStat[] {
 	return levels.map((level) => {
 		const zone = level.price * (tolerancePct / 100);
 		const zoneMin = level.price - zone;
@@ -189,9 +181,9 @@ function calculateLevelStats(
 
 		let samplesCount = 0;
 		let bounceCount = 0;
-		let bounceReturns: number[] = [];
-		let breakthroughReturns: number[] = [];
-		let dwellBars: number[] = [];
+		const bounceReturns: number[] = [];
+		const breakthroughReturns: number[] = [];
+		const dwellBars: number[] = [];
 
 		for (let i = 0; i < candles.length; i++) {
 			const candle = candles[i];
@@ -239,23 +231,15 @@ function calculateLevelStats(
 
 		const bounceRate = samplesCount > 0 ? bounceCount / samplesCount : 0;
 		const avgBounceReturnPct =
-			bounceReturns.length > 0
-				? bounceReturns.reduce((a, b) => a + b, 0) / bounceReturns.length
-				: 0;
+			bounceReturns.length > 0 ? bounceReturns.reduce((a, b) => a + b, 0) / bounceReturns.length : 0;
 		const avgBreakthroughReturnPct =
-			breakthroughReturns.length > 0
-				? breakthroughReturns.reduce((a, b) => a + b, 0) / breakthroughReturns.length
-				: 0;
+			breakthroughReturns.length > 0 ? breakthroughReturns.reduce((a, b) => a + b, 0) / breakthroughReturns.length : 0;
 
 		// Median dwell bars
 		const sortedDwell = [...dwellBars].sort((a, b) => a - b);
-		const medianDwellBars =
-			sortedDwell.length > 0
-				? sortedDwell[Math.floor(sortedDwell.length / 2)]
-				: 0;
+		const medianDwellBars = sortedDwell.length > 0 ? sortedDwell[Math.floor(sortedDwell.length / 2)] : 0;
 
-		const confidence: 'high' | 'medium' | 'low' =
-			samplesCount >= 8 ? 'high' : samplesCount >= 4 ? 'medium' : 'low';
+		const confidence: 'high' | 'medium' | 'low' = samplesCount >= 8 ? 'high' : samplesCount >= 4 ? 'medium' : 'low';
 
 		return {
 			ratio: level.ratio,
@@ -284,7 +268,7 @@ function generateContent(
 	position: { aboveLevel: FibLevel | null; belowLevel: FibLevel | null; nearestLevel: FibLevel | null },
 	levelStats: LevelStat[],
 	mode: string,
-	lookbackDays: number
+	lookbackDays: number,
 ): Array<{ type: 'text'; text: string }> {
 	const lines: string[] = [];
 	const pairLabel = formatPair(pair);
@@ -302,10 +286,16 @@ function generateContent(
 
 	// Current position
 	if (position.nearestLevel) {
-		lines.push(`現在位置: ${(position.nearestLevel.ratio * 100).toFixed(1)}% 水準付近（距離 ${formatPercent(position.nearestLevel.distancePct, { sign: true })}）`);
+		lines.push(
+			`現在位置: ${(position.nearestLevel.ratio * 100).toFixed(1)}% 水準付近（距離 ${formatPercent(position.nearestLevel.distancePct, { sign: true })}）`,
+		);
 		if (position.belowLevel && position.aboveLevel) {
-			lines.push(`  下: ${(position.belowLevel.ratio * 100).toFixed(1)}% = ${formatPrice(position.belowLevel.price, pair)}`);
-			lines.push(`  上: ${(position.aboveLevel.ratio * 100).toFixed(1)}% = ${formatPrice(position.aboveLevel.price, pair)}`);
+			lines.push(
+				`  下: ${(position.belowLevel.ratio * 100).toFixed(1)}% = ${formatPrice(position.belowLevel.price, pair)}`,
+			);
+			lines.push(
+				`  上: ${(position.aboveLevel.ratio * 100).toFixed(1)}% = ${formatPrice(position.aboveLevel.price, pair)}`,
+			);
 		}
 	}
 	lines.push('');
@@ -316,7 +306,7 @@ function generateContent(
 		for (const level of levels) {
 			const nearest = level.isNearest ? ' ← 最寄り' : '';
 			lines.push(
-				`  ${(level.ratio * 100).toFixed(1)}%: ${formatPrice(level.price, pair)} (${formatPercent(level.distancePct, { sign: true })})${nearest}`
+				`  ${(level.ratio * 100).toFixed(1)}%: ${formatPrice(level.price, pair)} (${formatPercent(level.distancePct, { sign: true })})${nearest}`,
 			);
 		}
 		lines.push('');
@@ -327,7 +317,7 @@ function generateContent(
 		lines.push('【エクステンション水準】');
 		for (const ext of extensions) {
 			lines.push(
-				`  ${(ext.ratio * 100).toFixed(1)}%: ${formatPrice(ext.price, pair)} (${formatPercent(ext.distancePct, { sign: true })})`
+				`  ${(ext.ratio * 100).toFixed(1)}%: ${formatPrice(ext.price, pair)} (${formatPercent(ext.distancePct, { sign: true })})`,
 			);
 		}
 		lines.push('');
@@ -344,7 +334,9 @@ function generateContent(
 				continue;
 			}
 			const bounceRatePct = (stat.bounceRate * 100).toFixed(0);
-			lines.push(`  ${ratioLabel}: 反発率 ${bounceRatePct}%（${stat.samplesCount}回中${Math.round(stat.bounceRate * stat.samplesCount)}回反発）`);
+			lines.push(
+				`  ${ratioLabel}: 反発率 ${bounceRatePct}%（${stat.samplesCount}回中${Math.round(stat.bounceRate * stat.samplesCount)}回反発）`,
+			);
 			lines.push(`    - 反発後の平均リターン: ${formatPercent(stat.avgBounceReturnPct, { sign: true })}`);
 			lines.push(`    - ブレイク後の平均リターン: ${formatPercent(stat.avgBreakthroughReturnPct, { sign: true })}`);
 			lines.push(`    - 水準付近の滞在足数（中央値）: ${stat.medianDwellBars}本`);
@@ -353,9 +345,13 @@ function generateContent(
 		lines.push('');
 
 		// Highlight best bounce
-		const bestBounce = [...meaningfulStats].filter(s => s.samplesCount >= 2).sort((a, b) => b.bounceRate - a.bounceRate)[0];
+		const bestBounce = [...meaningfulStats]
+			.filter((s) => s.samplesCount >= 2)
+			.sort((a, b) => b.bounceRate - a.bounceRate)[0];
 		if (bestBounce) {
-			lines.push(`注目: ${(bestBounce.ratio * 100).toFixed(1)}% 水準が最も反発率が高い（${(bestBounce.bounceRate * 100).toFixed(0)}%、${bestBounce.samplesCount}回中）`);
+			lines.push(
+				`注目: ${(bestBounce.ratio * 100).toFixed(1)}% 水準が最も反発率が高い（${(bestBounce.bounceRate * 100).toFixed(0)}%、${bestBounce.samplesCount}回中）`,
+			);
 			lines.push('');
 		}
 	} else {
@@ -390,14 +386,14 @@ export default async function analyzeFibonacci(opts: Record<string, unknown> = {
 		const candlesRes: any = await getCandles(chk.pair, timeframe, undefined as any, lookbackDays + 10);
 		if (!candlesRes?.ok) {
 			return AnalyzeFibonacciOutputSchema.parse(
-				fail(candlesRes?.summary || 'candles failed', (candlesRes?.meta as any)?.errorType || 'internal')
+				fail(candlesRes?.summary || 'candles failed', (candlesRes?.meta as any)?.errorType || 'internal'),
 			) as any;
 		}
 
 		const candles: NormalizedCandle[] = candlesRes.data.normalized || [];
 		if (candles.length < 10) {
 			return AnalyzeFibonacciOutputSchema.parse(
-				fail('ローソク足データが不足しています（最低10本必要）', 'data')
+				fail('ローソク足データが不足しています（最低10本必要）', 'data'),
 			) as any;
 		}
 
@@ -408,9 +404,7 @@ export default async function analyzeFibonacci(opts: Record<string, unknown> = {
 		const range = swingHigh.price - swingLow.price;
 
 		if (range <= 0) {
-			return AnalyzeFibonacciOutputSchema.parse(
-				fail('スイングハイとスイングローの差が検出できません', 'data')
-			) as any;
+			return AnalyzeFibonacciOutputSchema.parse(fail('スイングハイとスイングローの差が検出できません', 'data')) as any;
 		}
 
 		// Calculate levels
@@ -449,15 +443,22 @@ export default async function analyzeFibonacci(opts: Record<string, unknown> = {
 
 		// Generate content
 		const content = generateContent(
-			chk.pair, timeframe, currentPrice, trend,
-			swingHigh, swingLow, range,
-			levels, extensions, position, levelStats,
-			mode, lookbackDays
+			chk.pair,
+			timeframe,
+			currentPrice,
+			trend,
+			swingHigh,
+			swingLow,
+			range,
+			levels,
+			extensions,
+			position,
+			levelStats,
+			mode,
+			lookbackDays,
 		);
 
-		const nearestLabel = position.nearestLevel
-			? `${(position.nearestLevel.ratio * 100).toFixed(1)}%水準付近`
-			: '';
+		const nearestLabel = position.nearestLevel ? `${(position.nearestLevel.ratio * 100).toFixed(1)}%水準付近` : '';
 		const summaryText = `${formatPair(chk.pair)} フィボナッチ分析: ${trend === 'up' ? '上昇' : '下降'}トレンド、${nearestLabel}（${formatPrice(currentPrice, chk.pair)}）`;
 
 		const data = {
@@ -489,7 +490,10 @@ export default async function analyzeFibonacci(opts: Record<string, unknown> = {
 			meta,
 		}) as any;
 	} catch (err: unknown) {
-		return failFromError(err, { schema: AnalyzeFibonacciOutputSchema, defaultMessage: 'Fibonacci analysis error' }) as any;
+		return failFromError(err, {
+			schema: AnalyzeFibonacciOutputSchema,
+			defaultMessage: 'Fibonacci analysis error',
+		}) as any;
 	}
 }
 

@@ -188,26 +188,19 @@ export class BitbankPrivateClient {
 
 				// AbortError = timeout
 				if (err instanceof Error && err.name === 'AbortError') {
-					lastErr = new PrivateApiError(
-						`タイムアウト (${this.timeoutMs}ms)`,
-						'upstream_error',
-					);
+					lastErr = new PrivateApiError(`タイムアウト (${this.timeoutMs}ms)`, 'upstream_error');
 				} else {
 					lastErr = err;
 				}
 
 				if (attempt < this.maxRetries) {
 					await new Promise((r) => setTimeout(r, 200 * 2 ** attempt));
-					continue;
 				}
 			}
 		}
 
 		if (lastErr instanceof PrivateApiError) throw lastErr;
-		throw new PrivateApiError(
-			lastErr instanceof Error ? lastErr.message : 'ネットワークエラー',
-			'upstream_error',
-		);
+		throw new PrivateApiError(lastErr instanceof Error ? lastErr.message : 'ネットワークエラー', 'upstream_error');
 	}
 
 	/** bitbank エラーレスポンスからエラーコードを抽出 */
@@ -242,12 +235,7 @@ export class BitbankPrivateClient {
 				20004: 'ACCESS-NONCE / ACCESS-REQUEST-TIME が未指定です',
 				20005: '署名が無効です。API シークレットを確認してください',
 			};
-			return new PrivateApiError(
-				details[errorCode] ?? 'API 認証エラー',
-				'authentication_error',
-				httpStatus,
-				errorCode,
-			);
+			return new PrivateApiError(details[errorCode] ?? 'API 認証エラー', 'authentication_error', httpStatus, errorCode);
 		}
 
 		// レート制限

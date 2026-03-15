@@ -31,7 +31,7 @@ export function validateLimit(
 	limit: unknown,
 	min?: number,
 	max?: number,
-	paramName?: string
+	paramName?: string,
 ): ValidateNumberOk | ValidateNumberErr;
 
 export interface ValidateDateOk {
@@ -46,7 +46,10 @@ export interface ValidateDateErr {
 
 export function validateDate(date: string, type?: string | null): ValidateDateOk | ValidateDateErr;
 
-export function createMeta(pair: Pair, additional?: Record<string, unknown>): {
+export function createMeta(
+	pair: Pair,
+	additional?: Record<string, unknown>,
+): {
 	pair: Pair;
 	fetchedAt: string;
 } & Record<string, unknown>;

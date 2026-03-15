@@ -5,14 +5,11 @@
  * LLM が分析しやすい形に整形して返す。
  */
 
-import { ok, fail } from '../../lib/result.js';
-import { nowIso, toIsoMs, parseIso8601 } from '../../lib/datetime.js';
+import { nowIso, parseIso8601, toIsoMs } from '../../lib/datetime.js';
 import { formatPair, formatPrice } from '../../lib/formatter.js';
+import { fail, ok } from '../../lib/result.js';
 import { getDefaultClient, PrivateApiError } from '../../src/private/client.js';
-import {
-	GetMyTradeHistoryInputSchema,
-	GetMyTradeHistoryOutputSchema,
-} from '../../src/private/schemas.js';
+import { GetMyTradeHistoryInputSchema, GetMyTradeHistoryOutputSchema } from '../../src/private/schemas.js';
 import type { ToolDefinition } from '../../src/tool-definition.js';
 
 /** bitbank /v1/user/spot/trade_history のレスポンス型 */
@@ -54,18 +51,14 @@ export default async function getMyTradeHistory(args: {
 		if (since) {
 			const parsed = parseIso8601(since);
 			if (!parsed) {
-				return GetMyTradeHistoryOutputSchema.parse(
-					fail(`since の日時形式が不正です: ${since}`, 'validation_error'),
-				);
+				return GetMyTradeHistoryOutputSchema.parse(fail(`since の日時形式が不正です: ${since}`, 'validation_error'));
 			}
 			params.since = String(parsed.valueOf());
 		}
 		if (end) {
 			const parsed = parseIso8601(end);
 			if (!parsed) {
-				return GetMyTradeHistoryOutputSchema.parse(
-					fail(`end の日時形式が不正です: ${end}`, 'validation_error'),
-				);
+				return GetMyTradeHistoryOutputSchema.parse(fail(`end の日時形式が不正です: ${end}`, 'validation_error'));
 			}
 			params.end = String(parsed.valueOf());
 		}
@@ -103,16 +96,12 @@ export default async function getMyTradeHistory(args: {
 			// サマリーに表示する約定（最大10件）
 			// desc（デフォルト）: 先頭が直近なのでそのまま slice
 			// asc: 末尾が直近なので末尾10件を取得
-			const displayTrades = order === 'asc'
-				? trades.slice(-10)
-				: trades.slice(0, 10);
+			const displayTrades = order === 'asc' ? trades.slice(-10) : trades.slice(0, 10);
 			for (const t of displayTrades) {
 				const sideLabel = t.side === 'buy' ? '買' : '売';
 				const isJpy = t.pair.includes('jpy');
 				const price = isJpy ? formatPrice(Number(t.price)) : t.price;
-				lines.push(
-					`${t.executed_at} ${formatPair(t.pair)} ${sideLabel} ${t.amount} @ ${price} (${t.maker_taker})`,
-				);
+				lines.push(`${t.executed_at} ${formatPair(t.pair)} ${sideLabel} ${t.amount} @ ${price} (${t.maker_taker})`);
 			}
 
 			if (trades.length > 10) {
@@ -142,15 +131,10 @@ export default async function getMyTradeHistory(args: {
 		return GetMyTradeHistoryOutputSchema.parse(ok(summary, data, meta));
 	} catch (err) {
 		if (err instanceof PrivateApiError) {
-			return GetMyTradeHistoryOutputSchema.parse(
-				fail(err.message, err.errorType),
-			);
+			return GetMyTradeHistoryOutputSchema.parse(fail(err.message, err.errorType));
 		}
 		return GetMyTradeHistoryOutputSchema.parse(
-			fail(
-				err instanceof Error ? err.message : '約定履歴取得中に予期しないエラーが発生しました',
-				'upstream_error',
-			),
+			fail(err instanceof Error ? err.message : '約定履歴取得中に予期しないエラーが発生しました', 'upstream_error'),
 		);
 	}
 }
@@ -158,7 +142,8 @@ export default async function getMyTradeHistory(args: {
 // ── MCP ツール定義（tool-registry から自動収集） ──
 export const toolDef: ToolDefinition = {
 	name: 'get_my_trade_history',
-	description: '[My Trades / Trade History / Fills] 自分の約定履歴（my trades / trade history / fills / executions）を取得。通貨ペア・期間・件数でフィルタ可能。Private API。',
+	description:
+		'[My Trades / Trade History / Fills] 自分の約定履歴（my trades / trade history / fills / executions）を取得。通貨ペア・期間・件数でフィルタ可能。Private API。',
 	inputSchema: GetMyTradeHistoryInputSchema,
 	handler: async (args: any) => getMyTradeHistory(args ?? {}),
 };

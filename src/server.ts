@@ -1,13 +1,13 @@
 import 'dotenv/config';
+import { randomUUID } from 'node:crypto';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
-import { z } from 'zod';
-import { randomUUID } from 'node:crypto';
-import { logToolRun, logError } from '../lib/logger.js';
-import { allToolDefs } from './tool-registry.js';
+import type { z } from 'zod';
+import { logError, logToolRun } from '../lib/logger.js';
 import { prompts as promptDefs } from './prompts.js';
 import { SYSTEM_PROMPT } from './system-prompt.js';
+import { allToolDefs } from './tool-registry.js';
 
 const server = new McpServer({ name: 'bitbank-mcp', version: '0.4.2' });
 // Explicit registries for tools/prompts to improve STDIO inspector compatibility
@@ -43,10 +43,14 @@ const respond = (result: unknown): ToolReturn => {
 	// それでも空の場合は安全な短縮JSONにフォールバック
 	if (!text) {
 		try {
-			const json = JSON.stringify(result, (_key, value) => {
-				if (typeof value === 'string' && value.length > 2000) return `…omitted (${value.length} chars)`;
-				return value;
-			}, 2);
+			const json = JSON.stringify(
+				result,
+				(_key, value) => {
+					if (typeof value === 'string' && value.length > 2000) return `…omitted (${value.length} chars)`;
+					return value;
+				},
+				2,
+			);
 			text = json.length > 4000 ? json.slice(0, 4000) + '\n…(truncated)…' : json;
 		} catch {
 			text = String(result);
@@ -61,7 +65,7 @@ const respond = (result: unknown): ToolReturn => {
 function registerToolWithLog<S extends z.ZodTypeAny, R = unknown>(
 	name: string,
 	schema: { description: string; inputSchema: S },
-	handler: (input: z.infer<S>) => Promise<R>
+	handler: (input: z.infer<S>) => Promise<R>,
 ) {
 	// Convert Zod schema → JSON Schema (subset) for MCP inspector
 	const unwrapZod = (s: any): any => {
@@ -69,8 +73,14 @@ function registerToolWithLog<S extends z.ZodTypeAny, R = unknown>(
 		for (let i = 0; i < 6; i++) {
 			const def = cur?._def;
 			if (!def) break;
-			if (def?.schema) { cur = def.schema; continue; }
-			if (def?.innerType) { cur = def.innerType; continue; }
+			if (def?.schema) {
+				cur = def.schema;
+				continue;
+			}
+			if (def?.innerType) {
+				cur = def.innerType;
+				continue;
+			}
 			break;
 		}
 		return cur;
@@ -95,33 +105,50 @@ function registerToolWithLog<S extends z.ZodTypeAny, R = unknown>(
 				if (Number.isFinite(max)) out.maximum = max;
 				return out;
 			}
-			case 'ZodBoolean': return { type: 'boolean' };
-			case 'ZodEnum': return { type: 'string', enum: [...(s?._def?.values || [])] };
-			case 'ZodArray': return { type: 'array', items: toJsonSchema(s?._def?.type) };
+			case 'ZodBoolean':
+				return { type: 'boolean' };
+			case 'ZodEnum':
+				return { type: 'string', enum: [...(s?._def?.values || [])] };
+			case 'ZodArray':
+				return { type: 'array', items: toJsonSchema(s?._def?.type) };
 			case 'ZodTuple': {
 				const items = (s?._def?.items || []).map((it: any) => toJsonSchema(it));
 				return { type: 'array', items, minItems: items.length, maxItems: items.length };
 			}
-			case 'ZodRecord': return { type: 'object', additionalProperties: toJsonSchema(s?._def?.valueType) };
+			case 'ZodRecord':
+				return { type: 'object', additionalProperties: toJsonSchema(s?._def?.valueType) };
 			case 'ZodObject': {
 				const shape = (s as any).shape || (typeof s?._def?.shape === 'function' ? s._def.shape() : undefined) || {};
 				const properties: Record<string, any> = {};
 				const required: string[] = [];
 				for (const [key, zodProp] of Object.entries(shape)) {
 					// detect defaults and optional
-					let defVal: any = undefined;
+					let defVal: any;
 					let isOptional = false;
 					let cur: any = zodProp as any;
 					for (let i = 0; i < 6; i++) {
 						const def = cur?._def;
 						if (!def) break;
 						if (def.typeName === 'ZodDefault') {
-							try { defVal = typeof def.defaultValue === 'function' ? def.defaultValue() : def.defaultValue; } catch { }
-							cur = def.innerType; continue;
+							try {
+								defVal = typeof def.defaultValue === 'function' ? def.defaultValue() : def.defaultValue;
+							} catch {}
+							cur = def.innerType;
+							continue;
 						}
-						if (def.typeName === 'ZodOptional') { isOptional = true; cur = def.innerType; continue; }
-						if (def?.schema) { cur = def.schema; continue; }
-						if (def?.innerType) { cur = def.innerType; continue; }
+						if (def.typeName === 'ZodOptional') {
+							isOptional = true;
+							cur = def.innerType;
+							continue;
+						}
+						if (def?.schema) {
+							cur = def.schema;
+							continue;
+						}
+						if (def?.innerType) {
+							cur = def.innerType;
+							continue;
+						}
 						break;
 					}
 					properties[key] = toJsonSchema(cur);
@@ -132,7 +159,8 @@ function registerToolWithLog<S extends z.ZodTypeAny, R = unknown>(
 				if (required.length) obj.required = required;
 				return obj;
 			}
-			default: return {};
+			default:
+				return {};
 		}
 	};
 
@@ -147,44 +175,50 @@ function registerToolWithLog<S extends z.ZodTypeAny, R = unknown>(
 			if (cur?.shape) break;
 			const def = cur?._def;
 			if (!def) break;
-			if (def?.schema) { cur = def.schema; continue; }
-			if (def?.innerType) { cur = def.innerType; continue; }
+			if (def?.schema) {
+				cur = def.schema;
+				continue;
+			}
+			if (def?.innerType) {
+				cur = def.innerType;
+				continue;
+			}
 			break;
 		}
 		if (cur?.shape) return cur.shape as z.ZodRawShape;
 		throw new Error('inputSchema must be or wrap a ZodObject');
 	};
 
-	server.registerTool(name, { description: schema.description, inputSchema: getRawShape(schema.inputSchema) } as any, async (input: any) => {
-		const t0 = Date.now();
-		try {
-			const result = await handler(input as z.infer<S>);
-			const ms = Date.now() - t0;
-			logToolRun({ tool: name, input, result, ms });
-			return respond(result);
-		} catch (err: unknown) {
-			const ms = Date.now() - t0;
-			logError(name, err, input);
-			const message = err instanceof Error ? err.message : String(err);
-			return {
-				content: [{ type: 'text', text: `internal error: ${message || 'unknown error'}` }],
-				structuredContent: {
-					ok: false,
-					summary: `internal error: ${message || 'unknown error'}`,
-					meta: { ms, errorType: 'internal' },
-				},
-			};
-		}
-	});
+	server.registerTool(
+		name,
+		{ description: schema.description, inputSchema: getRawShape(schema.inputSchema) } as any,
+		async (input: any) => {
+			const t0 = Date.now();
+			try {
+				const result = await handler(input as z.infer<S>);
+				const ms = Date.now() - t0;
+				logToolRun({ tool: name, input, result, ms });
+				return respond(result);
+			} catch (err: unknown) {
+				const ms = Date.now() - t0;
+				logError(name, err, input);
+				const message = err instanceof Error ? err.message : String(err);
+				return {
+					content: [{ type: 'text', text: `internal error: ${message || 'unknown error'}` }],
+					structuredContent: {
+						ok: false,
+						summary: `internal error: ${message || 'unknown error'}`,
+						meta: { ms, errorType: 'internal' },
+					},
+				};
+			}
+		},
+	);
 }
 
 // === Auto-register all tools from registry ===
 for (const def of allToolDefs) {
-	registerToolWithLog(
-		def.name,
-		{ description: def.description, inputSchema: def.inputSchema },
-		def.handler as any
-	);
+	registerToolWithLog(def.name, { description: def.description, inputSchema: def.inputSchema }, def.handler as any);
 }
 
 // === Register prompts (SDK 形式に寄せた最小導入) ===
@@ -210,18 +244,17 @@ function registerPromptSafe(name: string, def: { description: string; messages: 
 				return { role: msg.role === 'assistant' ? 'assistant' : 'user', content: { type: 'text', text } };
 			});
 		registeredPrompts.push({ name, description: def.description });
-		s.registerPrompt(
-			name,
-			{ description: def.description },
-			() => ({ description: def.description, messages: toSdkMessages(def.messages) })
-		);
+		s.registerPrompt(name, { description: def.description }, () => ({
+			description: def.description,
+			messages: toSdkMessages(def.messages),
+		}));
 	} else {
 		// no-op if SDK doesn't support prompts in this version
 	}
 }
 
 // === Register prompts from src/prompts.ts ===
-for (const p of (promptDefs as any[])) {
+for (const p of promptDefs as any[]) {
 	registerPromptSafe(p.name, { description: p.description, messages: p.messages });
 }
 
@@ -258,7 +291,7 @@ try {
 			const messages = ((promptDef as any).messages ?? []).map((msg: any) => {
 				const blocks = Array.isArray(msg.content) ? msg.content : [msg.content];
 				const text = blocks
-					.map((b: any) => (b?.type === 'text' && typeof b.text === 'string') ? b.text : '')
+					.map((b: any) => (b?.type === 'text' && typeof b.text === 'string' ? b.text : ''))
 					.filter(Boolean)
 					.join('\n');
 				return {
@@ -276,10 +309,14 @@ try {
 			throw error;
 		}
 	});
-} catch { }
+} catch {}
 
 function safeJson(v: unknown) {
-	try { return JSON.stringify(v); } catch { return '[unserializable]'; }
+	try {
+		return JSON.stringify(v);
+	} catch {
+		return '[unserializable]';
+	}
 }
 
 // Resources: provide system-level prompt as MCP resource
@@ -298,14 +335,12 @@ try {
 		const uri = request?.params?.uri;
 		if (uri === 'prompt://system') {
 			return {
-				contents: [
-					{ uri: 'prompt://system', mimeType: 'text/plain', text: SYSTEM_PROMPT },
-				],
+				contents: [{ uri: 'prompt://system', mimeType: 'text/plain', text: SYSTEM_PROMPT }],
 			};
 		}
 		throw new Error(`Resource not found: ${uri}`);
 	});
-} catch { }
+} catch {}
 
 // Optional HTTP transport (/mcp) when PORT is provided
 try {
@@ -316,8 +351,14 @@ try {
 		const { default: express } = await import('express');
 		const app = express();
 		app.use(express.json());
-		const allowedHosts = (process.env.ALLOWED_HOSTS || '127.0.0.1,localhost').split(',').map(s => s.trim()).filter(Boolean);
-		const allowedOrigins = (process.env.ALLOWED_ORIGINS || '').split(',').map(s => s.trim()).filter(Boolean);
+		const allowedHosts = (process.env.ALLOWED_HOSTS || '127.0.0.1,localhost')
+			.split(',')
+			.map((s) => s.trim())
+			.filter(Boolean);
+		const allowedOrigins = (process.env.ALLOWED_ORIGINS || '')
+			.split(',')
+			.map((s) => s.trim())
+			.filter(Boolean);
 		const httpTransport: any = new (StreamableHTTPServerTransport as any)({
 			path: '/mcp', // some SDKs use 'path' instead of 'endpoint'
 			sessionIdGenerator: () => randomUUID(),
@@ -326,9 +367,10 @@ try {
 			...(allowedOrigins.length ? { allowedOrigins } : {}),
 		} as any);
 		await server.connect(httpTransport as any);
-		const mw = typeof httpTransport.expressMiddleware === 'function'
-			? httpTransport.expressMiddleware()
-			: (req: any, res: any, next: any) => next();
+		const mw =
+			typeof httpTransport.expressMiddleware === 'function'
+				? httpTransport.expressMiddleware()
+				: (req: any, res: any, next: any) => next();
 		app.use(mw);
 		app.listen(port, () => {
 			// no stdout/stderr output to avoid STDIO transport contamination

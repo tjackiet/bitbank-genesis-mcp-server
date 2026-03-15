@@ -26,22 +26,47 @@ export type BuildMarketSignalHandlerTextInput = {
 		ichimokuSpanB: number | null;
 		macdHist: number | null;
 	};
-	breakdownArray: Array<{ factor: string; weight: number; rawScore: number; contribution: number; interpretation: string }>;
+	breakdownArray: Array<{
+		factor: string;
+		weight: number;
+		rawScore: number;
+		contribution: number;
+		interpretation: string;
+	}>;
 	contributions: Record<string, number> | null;
 	weights: Record<string, number> | null;
 	nextActions: Array<{ priority: string; tool: string; reason: string }>;
 };
 
 export function buildMarketSignalHandlerText(input: BuildMarketSignalHandlerTextInput): string {
-	const { pair, type, score, recommendation, confidence, confidenceReason, scoreRange, topContributors, sma, supplementary, breakdownArray, contributions, weights, nextActions } = input;
+	const {
+		pair,
+		type,
+		score,
+		recommendation,
+		confidence,
+		confidenceReason,
+		scoreRange,
+		topContributors,
+		sma,
+		supplementary,
+		breakdownArray,
+		contributions,
+		weights,
+		nextActions,
+	} = input;
 
 	const score100 = Math.round(score * 100);
 	const range = scoreRange?.displayMin != null ? `${scoreRange.displayMin}〜${scoreRange.displayMax}` : '-100〜+100';
-	const neutralLine = scoreRange?.neutralBandDisplay ? `${scoreRange.neutralBandDisplay.min}〜${scoreRange.neutralBandDisplay.max}` : '-10〜+10';
+	const neutralLine = scoreRange?.neutralBandDisplay
+		? `${scoreRange.neutralBandDisplay.min}〜${scoreRange.neutralBandDisplay.max}`
+		: '-10〜+10';
 
 	const lines: string[] = [];
 	lines.push(`${String(pair).toUpperCase()} [${String(type || '1day')}]`);
-	lines.push(`総合スコア: ${score100}（範囲: ${range}、中立域: ${neutralLine}） → 判定: ${recommendation}（信頼度: ${confidence}${confidenceReason ? `: ${confidenceReason}` : ''}）`);
+	lines.push(
+		`総合スコア: ${score100}（範囲: ${range}、中立域: ${neutralLine}） → 判定: ${recommendation}（信頼度: ${confidence}${confidenceReason ? `: ${confidenceReason}` : ''}）`,
+	);
 	if (topContributors.length) lines.push(`主要因: ${topContributors.join(', ')}`);
 
 	// SMA詳細
@@ -55,7 +80,7 @@ export function buildMarketSignalHandlerText(input: BuildMarketSignalHandlerText
 			lines.push('【SMA（移動平均線）詳細】');
 			if (curPx) lines.push(`現在価格: ${curPx}円`);
 			const fmtVs = (x: number | null) => (x == null ? 'n/a' : `${x >= 0 ? '+' : ''}${x.toFixed(2)}%`);
-			const dir = (x: number | null) => (x == null ? '' : (x >= 0 ? '上' : '下'));
+			const dir = (x: number | null) => (x == null ? '' : x >= 0 ? '上' : '下');
 			const s25 = Number.isFinite(v.sma25) ? Math.round(v.sma25!).toLocaleString() : 'n/a';
 			const s75 = Number.isFinite(v.sma75) ? Math.round(v.sma75!).toLocaleString() : 'n/a';
 			const s200 = Number.isFinite(v.sma200) ? Math.round(v.sma200!).toLocaleString() : 'n/a';
@@ -73,7 +98,10 @@ export function buildMarketSignalHandlerText(input: BuildMarketSignalHandlerText
 			if (v75 != null) pts.push({ label: '75日', value: v75 });
 			if (v200 != null) pts.push({ label: '200日', value: v200 });
 			if (pts.length >= 3) {
-				const order = [...pts].sort((a, b) => b.value - a.value).map(p => p.label).join(' > ');
+				const order = [...pts]
+					.sort((a, b) => b.value - a.value)
+					.map((p) => p.label)
+					.join(' > ');
 				const arrLabel = arr === 'bullish' ? '上昇順' : arr === 'bearish' ? '下降順' : '混在';
 				const struct = arr === 'bullish' ? '上昇トレンド構造' : arr === 'bearish' ? '下落トレンド構造' : '方向感が弱い';
 				lines.push(`配置: ${order}（${arrLabel} → ${struct}）`);
@@ -114,10 +142,10 @@ export function buildMarketSignalHandlerText(input: BuildMarketSignalHandlerText
 			let distancePct = 'n/a';
 			if (curPx > cloudTop) {
 				positionLabel = '雲の上';
-				distancePct = `+${((curPx - cloudTop) / curPx * 100).toFixed(1)}%`;
+				distancePct = `+${(((curPx - cloudTop) / curPx) * 100).toFixed(1)}%`;
 			} else if (curPx < cloudBottom) {
 				positionLabel = '雲の下';
-				distancePct = `+${((cloudBottom - curPx) / curPx * 100).toFixed(1)}%`;
+				distancePct = `+${(((cloudBottom - curPx) / curPx) * 100).toFixed(1)}%`;
 			} else {
 				distancePct = '0%';
 			}
@@ -169,7 +197,8 @@ export function buildMarketSignalHandlerText(input: BuildMarketSignalHandlerText
 
 export const toolDef: ToolDefinition = {
 	name: 'analyze_market_signal',
-	description: '[Market Signal / Score / Triage] 市場の総合シグナル（market signal / composite score / bull-bear / triage）。5要素（板圧力・CVD・モメンタム・ボラティリティ・SMAトレンド）を-100〜+100の単一スコアで瞬時評価。分析の起点・スクリーニングに最適。\n\n詳細分析には専門ツールを併用: get_flow_metrics / get_volatility_metrics / analyze_indicators / get_orderbook / detect_patterns。',
+	description:
+		'[Market Signal / Score / Triage] 市場の総合シグナル（market signal / composite score / bull-bear / triage）。5要素（板圧力・CVD・モメンタム・ボラティリティ・SMAトレンド）を-100〜+100の単一スコアで瞬時評価。分析の起点・スクリーニングに最適。\n\n詳細分析には専門ツールを併用: get_flow_metrics / get_volatility_metrics / analyze_indicators / get_orderbook / detect_patterns。',
 	inputSchema: AnalyzeMarketSignalInputSchema,
 	handler: async ({ pair, type, flowLimit, bucketMs, windows }: any) => {
 		const res: any = await analyzeMarketSignal(pair, { type, flowLimit, bucketMs, windows });
@@ -186,13 +215,15 @@ export const toolDef: ToolDefinition = {
 				confidenceReason: String(d?.confidenceReason || ''),
 				scoreRange: d?.scoreRange || null,
 				topContributors: Array.isArray(d?.topContributors) ? d.topContributors.slice(0, 2) : [],
-				sma: d?.sma ? {
-					current: Number.isFinite(d.sma.current) ? d.sma.current : null,
-					values: d.sma.values || { sma25: null, sma75: null, sma200: null },
-					deviations: d.sma.deviations || { vs25: null, vs75: null, vs200: null },
-					arrangement: String(d.sma.arrangement || ''),
-					recentCross: d.sma.recentCross || null,
-				} : null,
+				sma: d?.sma
+					? {
+							current: Number.isFinite(d.sma.current) ? d.sma.current : null,
+							values: d.sma.values || { sma25: null, sma75: null, sma200: null },
+							deviations: d.sma.deviations || { vs25: null, vs75: null, vs200: null },
+							arrangement: String(d.sma.arrangement || ''),
+							recentCross: d.sma.recentCross || null,
+						}
+					: null,
 				supplementary: {
 					rsi: refs?.RSI_14 ?? null,
 					ichimokuSpanA: refs?.ICHIMOKU_spanA ?? null,
@@ -204,7 +235,10 @@ export const toolDef: ToolDefinition = {
 				weights: d?.weights || null,
 				nextActions: Array.isArray(d?.nextActions) ? d.nextActions : [],
 			});
-			return { content: [{ type: 'text', text }], structuredContent: AnalyzeMarketSignalOutputSchema.parse(res) as any };
+			return {
+				content: [{ type: 'text', text }],
+				structuredContent: AnalyzeMarketSignalOutputSchema.parse(res) as any,
+			};
 		} catch {
 			return AnalyzeMarketSignalOutputSchema.parse(res);
 		}

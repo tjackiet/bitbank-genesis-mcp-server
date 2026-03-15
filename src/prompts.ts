@@ -6,147 +6,158 @@ import { isPrivateApiEnabled } from './private/config.js';
 // 型定義
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 export enum PromptLevel {
-  BEGINNER = 'beginner',
-  INTERMEDIATE = 'intermediate',
-  ADVANCED = 'advanced',
+	BEGINNER = 'beginner',
+	INTERMEDIATE = 'intermediate',
+	ADVANCED = 'advanced',
 }
 
 export enum PromptCategory {
-  ANALYSIS = 'analysis',
-  VISUALIZATION = 'visualization',
-  EDUCATION = 'education',
-  WORKFLOW = 'workflow',
+	ANALYSIS = 'analysis',
+	VISUALIZATION = 'visualization',
+	EDUCATION = 'education',
+	WORKFLOW = 'workflow',
 }
 
 export interface PromptMetadata {
-  level: PromptLevel;
-  category: PromptCategory;
-  estimatedTime?: string;
-  prerequisites?: string[];
-  tags?: string[];
+	level: PromptLevel;
+	category: PromptCategory;
+	estimatedTime?: string;
+	prerequisites?: string[];
+	tags?: string[];
 }
 
 export interface PromptDef {
-  name: string;
-  description: string;
-  /** true の場合、Private API キーが設定されている環境でのみ公開される */
-  requiresPrivateApi?: boolean;
-  // server 側 register 用: 既存 messages をそのまま移行
-  messages: Array<{
-    role: 'system' | 'assistant' | 'user';
-    content: any[];
-  }>;
-  // 表示用の引数メタ（存在しない既存もあるため任意）
-  arguments?: Array<{ name: string; description?: string; required?: boolean }>;
-  metadata?: PromptMetadata;
+	name: string;
+	description: string;
+	/** true の場合、Private API キーが設定されている環境でのみ公開される */
+	requiresPrivateApi?: boolean;
+	// server 側 register 用: 既存 messages をそのまま移行
+	messages: Array<{
+		role: 'system' | 'assistant' | 'user';
+		content: any[];
+	}>;
+	// 表示用の引数メタ（存在しない既存もあるため任意）
+	arguments?: Array<{ name: string; description?: string; required?: boolean }>;
+	metadata?: PromptMetadata;
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // 用語解説データベース（Phase 1 要求分のみ）
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 export interface TermExplanation {
-  shortDef: string;
-  analogy: string;
-  ranges: Record<string, string>;
-  usage: string;
-  warning: string;
-  related: string[];
+	shortDef: string;
+	analogy: string;
+	ranges: Record<string, string>;
+	usage: string;
+	warning: string;
+	related: string[];
 }
 
 export const termExplanations: Record<string, TermExplanation> = {
-  RSI: {
-    shortDef: '買われすぎ・売られすぎを数値化した指標',
-    analogy: 'お店の人気度メーター',
-    ranges: { '70': '買われすぎ（そろそろ下がるかも）', '30': '売られすぎ（そろそろ上がるかも）', default: '中立（どちらでもない）' },
-    usage: '70以上で売り検討、30以下で買い検討',
-    warning: '強いトレンドでは70以上・30以下が続くことがあります',
-    related: ['MACD', 'ストキャスティクス'],
-  },
-  MACD: {
-    shortDef: 'トレンドの勢いと転換点を見る指標',
-    analogy: '自動車の加速・減速メーター',
-    ranges: { goldenCross: 'ゴールデンクロス（買いシグナル）', deadCross: 'デッドクロス（売りシグナル）' },
-    usage: '線が交差するタイミングで売買を検討',
-    warning: 'ダマシも多いため他指標と併用',
-    related: ['RSI', '移動平均線'],
-  },
-  ボリンジャーバンド: {
-    shortDef: '価格が動く範囲を帯で示したもの',
-    analogy: '道路の車線のようなもの',
-    ranges: { upper: '上の帯（買われすぎの可能性）', lower: '下の帯（売られすぎの可能性）', middle: '中央線（平均価格）' },
-    usage: '帯の外に出たら中央へ戻る可能性を考える',
-    warning: '強いトレンドでは帯に沿って動き続けることがあります',
-    related: ['移動平均線', 'ATR'],
-  },
-  板: {
-    shortDef: '今出されている買い注文と売り注文のリスト',
-    analogy: 'スーパーの値札と在庫数',
-    ranges: { bid: '買い注文（買いたい人の希望価格と量）', ask: '売り注文（売りたい人の希望価格と量）' },
-    usage: '厚い板の価格帯は突破しにくい「壁」になりやすい',
-    warning: '板は一瞬で変わるため、スナップショットと捉える',
-    related: ['スプレッド', '出来高'],
-  },
-  スプレッド: {
-    shortDef: '買える最安値と売れる最高値の差',
-    analogy: '店の買取価格と販売価格の差',
-    ranges: { narrow: '狭い（100円以下）: 取引しやすい', wide: '広い（500円以上）: 価格が飛びやすい' },
-    usage: 'スプレッドが狭い時の方が有利',
-    warning: '流動性が低い時間帯は広がりやすい',
-    related: ['板', '流動性'],
-  },
-  出来高: {
-    shortDef: '一定期間に取引された数量',
-    analogy: 'お店の来客数やレジ通過数',
-    ranges: { high: '多い＝活発（注目度高い）', low: '少ない＝静か（値動き出にくい）', default: '平均的' },
-    usage: '急増は注目イベントの可能性、トレンドの信頼性確認に併用',
-    warning: '価格変動と併せて判断（出来高単独は誤認の恐れ）',
-    related: ['トレンド', 'ボラティリティ'],
-  },
-  ローソク足: {
-    shortDef: '一定期間の値動きを1本で表すチャート要素',
-    analogy: '1日の天気をアイコンで表すイメージ',
-    ranges: { long: '長い＝大きな値動き', short: '短い＝小さな値動き', default: '中程度' },
-    usage: '実体とヒゲで勢い・拒否・反転の手がかり',
-    warning: '1本だけで結論にせず、連続性や出来高も参照',
-    related: ['トレンド', '出来高'],
-  },
-  移動平均線: {
-    shortDef: '一定期間の平均価格をつないだ線',
-    analogy: '道の傾き（上り坂/下り坂）',
-    ranges: { bullish: '価格＞線＝強気傾向', bearish: '価格＜線＝弱気傾向', cross: '交差＝転換の兆し' },
-    usage: '25/75/200などを組み合わせて方向性・支持抵抗を確認',
-    warning: '遅行性があるため急変には鈍い',
-    related: ['トレンド', 'ボラティリティ'],
-  },
-  トレンド: {
-    shortDef: '価格が続いて動く方向性',
-    analogy: '川の流れ（上流→下流）',
-    ranges: { up: '上昇', down: '下降', range: '横ばい' },
-    usage: '上昇は押し目買い、下降は戻り売りなど方針の基礎',
-    warning: '時間軸で異なる方向が出るため軸の統一が必要',
-    related: ['移動平均線', '出来高'],
-  },
-  ボラティリティ: {
-    shortDef: '価格変動の大きさ',
-    analogy: '波の高さ（荒波/凪）',
-    ranges: { high: '高い＝大きく動く', low: '低い＝小さく動く', default: '平均的' },
-    usage: 'リスク管理・ポジションサイズの目安、指標はATRやRVなど',
-    warning: '高ボラは機会とリスクが同時に増える',
-    related: ['出来高', '移動平均線'],
-  },
+	RSI: {
+		shortDef: '買われすぎ・売られすぎを数値化した指標',
+		analogy: 'お店の人気度メーター',
+		ranges: {
+			'70': '買われすぎ（そろそろ下がるかも）',
+			'30': '売られすぎ（そろそろ上がるかも）',
+			default: '中立（どちらでもない）',
+		},
+		usage: '70以上で売り検討、30以下で買い検討',
+		warning: '強いトレンドでは70以上・30以下が続くことがあります',
+		related: ['MACD', 'ストキャスティクス'],
+	},
+	MACD: {
+		shortDef: 'トレンドの勢いと転換点を見る指標',
+		analogy: '自動車の加速・減速メーター',
+		ranges: { goldenCross: 'ゴールデンクロス（買いシグナル）', deadCross: 'デッドクロス（売りシグナル）' },
+		usage: '線が交差するタイミングで売買を検討',
+		warning: 'ダマシも多いため他指標と併用',
+		related: ['RSI', '移動平均線'],
+	},
+	ボリンジャーバンド: {
+		shortDef: '価格が動く範囲を帯で示したもの',
+		analogy: '道路の車線のようなもの',
+		ranges: {
+			upper: '上の帯（買われすぎの可能性）',
+			lower: '下の帯（売られすぎの可能性）',
+			middle: '中央線（平均価格）',
+		},
+		usage: '帯の外に出たら中央へ戻る可能性を考える',
+		warning: '強いトレンドでは帯に沿って動き続けることがあります',
+		related: ['移動平均線', 'ATR'],
+	},
+	板: {
+		shortDef: '今出されている買い注文と売り注文のリスト',
+		analogy: 'スーパーの値札と在庫数',
+		ranges: { bid: '買い注文（買いたい人の希望価格と量）', ask: '売り注文（売りたい人の希望価格と量）' },
+		usage: '厚い板の価格帯は突破しにくい「壁」になりやすい',
+		warning: '板は一瞬で変わるため、スナップショットと捉える',
+		related: ['スプレッド', '出来高'],
+	},
+	スプレッド: {
+		shortDef: '買える最安値と売れる最高値の差',
+		analogy: '店の買取価格と販売価格の差',
+		ranges: { narrow: '狭い（100円以下）: 取引しやすい', wide: '広い（500円以上）: 価格が飛びやすい' },
+		usage: 'スプレッドが狭い時の方が有利',
+		warning: '流動性が低い時間帯は広がりやすい',
+		related: ['板', '流動性'],
+	},
+	出来高: {
+		shortDef: '一定期間に取引された数量',
+		analogy: 'お店の来客数やレジ通過数',
+		ranges: { high: '多い＝活発（注目度高い）', low: '少ない＝静か（値動き出にくい）', default: '平均的' },
+		usage: '急増は注目イベントの可能性、トレンドの信頼性確認に併用',
+		warning: '価格変動と併せて判断（出来高単独は誤認の恐れ）',
+		related: ['トレンド', 'ボラティリティ'],
+	},
+	ローソク足: {
+		shortDef: '一定期間の値動きを1本で表すチャート要素',
+		analogy: '1日の天気をアイコンで表すイメージ',
+		ranges: { long: '長い＝大きな値動き', short: '短い＝小さな値動き', default: '中程度' },
+		usage: '実体とヒゲで勢い・拒否・反転の手がかり',
+		warning: '1本だけで結論にせず、連続性や出来高も参照',
+		related: ['トレンド', '出来高'],
+	},
+	移動平均線: {
+		shortDef: '一定期間の平均価格をつないだ線',
+		analogy: '道の傾き（上り坂/下り坂）',
+		ranges: { bullish: '価格＞線＝強気傾向', bearish: '価格＜線＝弱気傾向', cross: '交差＝転換の兆し' },
+		usage: '25/75/200などを組み合わせて方向性・支持抵抗を確認',
+		warning: '遅行性があるため急変には鈍い',
+		related: ['トレンド', 'ボラティリティ'],
+	},
+	トレンド: {
+		shortDef: '価格が続いて動く方向性',
+		analogy: '川の流れ（上流→下流）',
+		ranges: { up: '上昇', down: '下降', range: '横ばい' },
+		usage: '上昇は押し目買い、下降は戻り売りなど方針の基礎',
+		warning: '時間軸で異なる方向が出るため軸の統一が必要',
+		related: ['移動平均線', '出来高'],
+	},
+	ボラティリティ: {
+		shortDef: '価格変動の大きさ',
+		analogy: '波の高さ（荒波/凪）',
+		ranges: { high: '高い＝大きく動く', low: '低い＝小さく動く', default: '平均的' },
+		usage: 'リスク管理・ポジションサイズの目安、指標はATRやRVなど',
+		warning: '高ボラは機会とリスクが同時に増える',
+		related: ['出来高', '移動平均線'],
+	},
 };
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // 公開プロンプト（docs/prompts-table.md に掲載）
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 const promptsAll: PromptDef[] = [
-  {
-    name: '🔰 BTCの価格を分析して',
-    description: 'ビットコインの最近の価格動向とトレンドを初心者向けに分析',
-    messages: [
-      {
-        role: 'user', content: [{
-          type: 'text', text: `最近のBTCの動きを初級者向けに分析してください。
+	{
+		name: '🔰 BTCの価格を分析して',
+		description: 'ビットコインの最近の価格動向とトレンドを初心者向けに分析',
+		messages: [
+			{
+				role: 'user',
+				content: [
+					{
+						type: 'text',
+						text: `最近のBTCの動きを初級者向けに分析してください。
 
 【表現ルール】
 1. 専門用語は「わかりやすい言葉（正式名称）」で併記
@@ -363,23 +374,28 @@ const promptsAll: PromptDef[] = [
 
 板情報は秒単位で変動するため、実際のトレード前には最新状況を再確認してください。
 
-投資判断はご自身の責任でお願いします。` }]
-      }
-    ],
-    metadata: {
-      level: PromptLevel.BEGINNER,
-      category: PromptCategory.ANALYSIS,
-      estimatedTime: '30秒',
-      tags: ['beginner', 'btc', 'trend', 'price']
-    }
-  },
-  {
-    name: '🔰 ETHの価格を分析して',
-    description: 'イーサリアムの最近の価格動向とトレンドを初心者向けに分析',
-    messages: [
-      {
-        role: 'user', content: [{
-          type: 'text', text: `最近のETHの動きを初級者向けに分析してください。
+投資判断はご自身の責任でお願いします。`,
+					},
+				],
+			},
+		],
+		metadata: {
+			level: PromptLevel.BEGINNER,
+			category: PromptCategory.ANALYSIS,
+			estimatedTime: '30秒',
+			tags: ['beginner', 'btc', 'trend', 'price'],
+		},
+	},
+	{
+		name: '🔰 ETHの価格を分析して',
+		description: 'イーサリアムの最近の価格動向とトレンドを初心者向けに分析',
+		messages: [
+			{
+				role: 'user',
+				content: [
+					{
+						type: 'text',
+						text: `最近のETHの動きを初級者向けに分析してください。
 
 【表現ルール】
 1. 専門用語は「わかりやすい言葉（正式名称）」で併記
@@ -596,27 +612,30 @@ const promptsAll: PromptDef[] = [
 
 板情報は秒単位で変動するため、実際のトレード前には最新状況を再確認してください。
 
-投資判断はご自身の責任でお願いします。` }]
-      }
-    ],
-    metadata: {
-      level: PromptLevel.BEGINNER,
-      category: PromptCategory.ANALYSIS,
-      estimatedTime: '30秒',
-      tags: ['beginner', 'eth', 'trend', 'price']
-    }
-  },
+投資判断はご自身の責任でお願いします。`,
+					},
+				],
+			},
+		],
+		metadata: {
+			level: PromptLevel.BEGINNER,
+			category: PromptCategory.ANALYSIS,
+			estimatedTime: '30秒',
+			tags: ['beginner', 'eth', 'trend', 'price'],
+		},
+	},
 
-  // === Intermediate prompts (new) ===
-  {
-    name: '中級：主要指標でBTCを分析して',
-    description: '中級者向け：RSI/MACD/ボリンジャーバンド/一目均衡表/移動平均線を一括取得して総合的に分析',
-    messages: [
-      {
-        role: 'user',
-        content: [{
-          type: 'text',
-          text: `代表的な指標を使ってBTCを分析して
+	// === Intermediate prompts (new) ===
+	{
+		name: '中級：主要指標でBTCを分析して',
+		description: '中級者向け：RSI/MACD/ボリンジャーバンド/一目均衡表/移動平均線を一括取得して総合的に分析',
+		messages: [
+			{
+				role: 'user',
+				content: [
+					{
+						type: 'text',
+						text: `代表的な指標を使ってBTCを分析して
 
 【使用ツール】
 analyze_indicators (pair=btc_jpy, type=1day, limit=200)
@@ -922,26 +941,28 @@ MACD（中央が0、左が弱気・右が強気）:
 
 板情報は秒単位で変動するため、実際のトレード前には最新状況を再確認してください。
 
-投資判断はご自身の責任でお願いします。`
-        }]
-      }
-    ],
-    metadata: {
-      level: PromptLevel.INTERMEDIATE,
-      category: PromptCategory.ANALYSIS,
-      estimatedTime: '1分',
-      tags: ['intermediate', 'indicators', 'comprehensive', 'rsi', 'macd', 'bb', 'ichimoku', 'sma']
-    }
-  },
-  {
-    name: '中級：BTCのフロー分析をして',
-    description: '中級者向け：直近の売買フロー（CVD/aggressor ratio）からマーケットの方向性を分析',
-    messages: [
-      {
-        role: 'user',
-        content: [{
-          type: 'text',
-          text: `BTCのフロー分析をやって
+投資判断はご自身の責任でお願いします。`,
+					},
+				],
+			},
+		],
+		metadata: {
+			level: PromptLevel.INTERMEDIATE,
+			category: PromptCategory.ANALYSIS,
+			estimatedTime: '1分',
+			tags: ['intermediate', 'indicators', 'comprehensive', 'rsi', 'macd', 'bb', 'ichimoku', 'sma'],
+		},
+	},
+	{
+		name: '中級：BTCのフロー分析をして',
+		description: '中級者向け：直近の売買フロー（CVD/aggressor ratio）からマーケットの方向性を分析',
+		messages: [
+			{
+				role: 'user',
+				content: [
+					{
+						type: 'text',
+						text: `BTCのフロー分析をやって
 
 【使用ツール】
 1) get_flow_metrics (pair=btc_jpy, limit=300, bucketMs=60000, view=detailed)
@@ -983,26 +1004,28 @@ MACD（中央が0、左が弱気・右が強気）:
 
 板情報は秒単位で変動するため、実際のトレード前には最新状況を再確認してください。
 
-投資判断はご自身の責任でお願いします。`
-        }]
-      }
-    ],
-    metadata: {
-      level: PromptLevel.INTERMEDIATE,
-      category: PromptCategory.ANALYSIS,
-      estimatedTime: '1分',
-      tags: ['intermediate', 'flow', 'cvd', 'volume', 'transactions', 'short-term']
-    }
-  },
-  {
-    name: '中級：BTCの板の状況を詳しく見て',
-    description: '中級者向け：板の厚み・流動性分布・大口注文から短期的なサポート/レジスタンスを分析',
-    messages: [
-      {
-        role: 'user',
-        content: [{
-          type: 'text',
-          text: `BTCの板の状況を詳しく見て
+投資判断はご自身の責任でお願いします。`,
+					},
+				],
+			},
+		],
+		metadata: {
+			level: PromptLevel.INTERMEDIATE,
+			category: PromptCategory.ANALYSIS,
+			estimatedTime: '1分',
+			tags: ['intermediate', 'flow', 'cvd', 'volume', 'transactions', 'short-term'],
+		},
+	},
+	{
+		name: '中級：BTCの板の状況を詳しく見て',
+		description: '中級者向け：板の厚み・流動性分布・大口注文から短期的なサポート/レジスタンスを分析',
+		messages: [
+			{
+				role: 'user',
+				content: [
+					{
+						type: 'text',
+						text: `BTCの板の状況を詳しく見て
 
 【使用ツール】
 1) get_orderbook (pair=btc_jpy, mode=statistics, ranges=[0.5,1,2], priceZones=10)
@@ -1047,26 +1070,28 @@ MACD（中央が0、左が弱気・右が強気）:
 
 板情報は秒単位で変動するため、実際のトレード前には最新状況を再確認してください。
 
-投資判断はご自身の責任でお願いします。`
-        }]
-      }
-    ],
-    metadata: {
-      level: PromptLevel.INTERMEDIATE,
-      category: PromptCategory.ANALYSIS,
-      estimatedTime: '1分',
-      tags: ['intermediate', 'orderbook', 'depth', 'liquidity', 'support', 'resistance', 'short-term']
-    }
-  },
-  {
-    name: '中級：BTCのパターン分析をして',
-    description: '中級者向け：短期（1〜3本足）から中長期（大型パターン）まで、複数の時間軸でパターンを検出',
-    messages: [
-      {
-        role: 'user',
-        content: [{
-          type: 'text',
-          text: `BTCのチャートパターン分析
+投資判断はご自身の責任でお願いします。`,
+					},
+				],
+			},
+		],
+		metadata: {
+			level: PromptLevel.INTERMEDIATE,
+			category: PromptCategory.ANALYSIS,
+			estimatedTime: '1分',
+			tags: ['intermediate', 'orderbook', 'depth', 'liquidity', 'support', 'resistance', 'short-term'],
+		},
+	},
+	{
+		name: '中級：BTCのパターン分析をして',
+		description: '中級者向け：短期（1〜3本足）から中長期（大型パターン）まで、複数の時間軸でパターンを検出',
+		messages: [
+			{
+				role: 'user',
+				content: [
+					{
+						type: 'text',
+						text: `BTCのチャートパターン分析
 
 【核心ルール】
 - 完成後80日以上のパターン → 完全に無視（言及しない）
@@ -1122,26 +1147,28 @@ MACD（中央が0、左が弱気・右が強気）:
 ⏸️中立: 監視ポイント
 
 ---
-⚠️ 免責事項：参考情報です。投資判断はご自身の責任で。`
-        }]
-      }
-    ],
-    metadata: {
-      level: PromptLevel.INTERMEDIATE,
-      category: PromptCategory.ANALYSIS,
-      estimatedTime: '1分',
-      tags: ['intermediate', 'patterns', 'chart-patterns']
-    }
-  },
-  {
-    name: '中級：BTCのサポレジを分析して',
-    description: '中級者向け：過去の反応×板の厚み×直近の攻防から、価格帯の強弱を統合的に分析',
-    messages: [
-      {
-        role: 'user',
-        content: [{
-          type: 'text',
-          text: `BTCのサポート・レジスタンスを分析して
+⚠️ 免責事項：参考情報です。投資判断はご自身の責任で。`,
+					},
+				],
+			},
+		],
+		metadata: {
+			level: PromptLevel.INTERMEDIATE,
+			category: PromptCategory.ANALYSIS,
+			estimatedTime: '1分',
+			tags: ['intermediate', 'patterns', 'chart-patterns'],
+		},
+	},
+	{
+		name: '中級：BTCのサポレジを分析して',
+		description: '中級者向け：過去の反応×板の厚み×直近の攻防から、価格帯の強弱を統合的に分析',
+		messages: [
+			{
+				role: 'user',
+				content: [
+					{
+						type: 'text',
+						text: `BTCのサポート・レジスタンスを分析して
 
 【分析ポリシー】
 - チャートは出さない（数値・テキストのみ）
@@ -1561,26 +1588,28 @@ MACD（中央が0、左が弱気・右が強気）:
 
 板情報は秒単位で変動するため、実際のトレード前には最新状況を再確認してください。
 
-投資判断はご自身の責任でお願いします。`
-        }]
-      }
-    ],
-    metadata: {
-      level: PromptLevel.INTERMEDIATE,
-      category: PromptCategory.ANALYSIS,
-      estimatedTime: '1-2分',
-      tags: ['intermediate', 'support', 'resistance', 'price-levels', 'orderbook', 'candles', 'comprehensive']
-    }
-  },
-  {
-    name: '🌅 おはようレポート',
-    description: '【検証用】直近8時間の価格動向を HTML ダッシュボードで視覚化。Claude Desktop 推奨。',
-    messages: [
-      {
-        role: 'user',
-        content: [{
-          type: 'text',
-          text: `直近8時間で何が起きたかを **HTML ファイル** で視覚化してください。
+投資判断はご自身の責任でお願いします。`,
+					},
+				],
+			},
+		],
+		metadata: {
+			level: PromptLevel.INTERMEDIATE,
+			category: PromptCategory.ANALYSIS,
+			estimatedTime: '1-2分',
+			tags: ['intermediate', 'support', 'resistance', 'price-levels', 'orderbook', 'candles', 'comprehensive'],
+		},
+	},
+	{
+		name: '🌅 おはようレポート',
+		description: '【検証用】直近8時間の価格動向を HTML ダッシュボードで視覚化。Claude Desktop 推奨。',
+		messages: [
+			{
+				role: 'user',
+				content: [
+					{
+						type: 'text',
+						text: `直近8時間で何が起きたかを **HTML ファイル** で視覚化してください。
 
 【使用ツール】
 1. get_ticker(pair="btc_jpy") → リアルタイム現在価格
@@ -1897,24 +1926,28 @@ MACD（中央が0、左が弱気・右が強気）:
 ⚠️ 免責事項：この分析は参考情報であり、解釈には誤差が含まれる場合があります。
 
 板情報は秒単位で変動するため、実際のトレード前には最新状況を再確認してください。
-`
-        }]
-      }
-    ],
-    metadata: {
-      level: PromptLevel.INTERMEDIATE,
-      category: PromptCategory.ANALYSIS,
-      estimatedTime: '30秒',
-      tags: ['intermediate', 'btc', 'overnight', 'visual', 'html', 'artifact', 'experimental']
-    }
-  },
-  {
-    name: '🔰 今注目のコインは？',
-    description: '通貨強弱スコアと出来高・変化率から注目されている銘柄を抽出',
-    messages: [
-      {
-        role: 'user', content: [{
-          type: 'text', text: `今注目されているコインある？
+`,
+					},
+				],
+			},
+		],
+		metadata: {
+			level: PromptLevel.INTERMEDIATE,
+			category: PromptCategory.ANALYSIS,
+			estimatedTime: '30秒',
+			tags: ['intermediate', 'btc', 'overnight', 'visual', 'html', 'artifact', 'experimental'],
+		},
+	},
+	{
+		name: '🔰 今注目のコインは？',
+		description: '通貨強弱スコアと出来高・変化率から注目されている銘柄を抽出',
+		messages: [
+			{
+				role: 'user',
+				content: [
+					{
+						type: 'text',
+						text: `今注目されているコインある？
 
 【効率的な回答方法】
 1. analyze_currency_strength を1回だけ呼び出す（topN=10）
@@ -1979,29 +2012,31 @@ MACD（中央が0、左が弱気・右が強気）:
 
 ---
 
-⚠️ 免責事項：この分析は参考情報であり、投資判断はご自身の責任でお願いします。` }]
-      }
-    ],
-    metadata: {
-      level: PromptLevel.BEGINNER,
-      category: PromptCategory.ANALYSIS,
-      estimatedTime: '1分',
-      tags: ['beginner', 'ranking', 'volume', 'attention', 'strength']
-    }
-  },
+⚠️ 免責事項：この分析は参考情報であり、投資判断はご自身の責任でお願いします。`,
+					},
+				],
+			},
+		],
+		metadata: {
+			level: PromptLevel.BEGINNER,
+			category: PromptCategory.ANALYSIS,
+			estimatedTime: '1分',
+			tags: ['beginner', 'ranking', 'volume', 'attention', 'strength'],
+		},
+	},
 
-
-
-  {
-    name: '💼 ポートフォリオ分析レポート',
-    description: '口座の保有資産・月初比/年初比の資産増減・構成比・テクニカル分析を HTML ダッシュボードで視覚化。Claude Desktop 推奨。Private API 要。',
-    requiresPrivateApi: true,
-    messages: [
-      {
-        role: 'user',
-        content: [{
-          type: 'text',
-          text: `私の bitbank 口座の資産状況を **HTML ファイル** で視覚化してください。
+	{
+		name: '💼 ポートフォリオ分析レポート',
+		description:
+			'口座の保有資産・月初比/年初比の資産増減・構成比・テクニカル分析を HTML ダッシュボードで視覚化。Claude Desktop 推奨。Private API 要。',
+		requiresPrivateApi: true,
+		messages: [
+			{
+				role: 'user',
+				content: [
+					{
+						type: 'text',
+						text: `私の bitbank 口座の資産状況を **HTML ファイル** で視覚化してください。
 
 【使用ツール】
 1. analyze_my_portfolio(include_pnl=true, include_technical=true, include_deposit_withdrawal=true)
@@ -2527,42 +2562,41 @@ include_technical=true で返ってくる technical 配列を使用する。
 ---
 
 ⚠️ 免責事項：この分析は参考情報であり、解釈には誤差が含まれる場合があります。所得税計算には使用できません。
-`
-        }]
-      }
-    ],
-    metadata: {
-      level: PromptLevel.INTERMEDIATE,
-      category: PromptCategory.ANALYSIS,
-      estimatedTime: '30秒',
-      prerequisites: ['Private API キーの設定'],
-      tags: ['intermediate', 'portfolio', 'pnl', 'private-api', 'visual', 'html', 'artifact']
-    }
-  },
-
+`,
+					},
+				],
+			},
+		],
+		metadata: {
+			level: PromptLevel.INTERMEDIATE,
+			category: PromptCategory.ANALYSIS,
+			estimatedTime: '30秒',
+			prerequisites: ['Private API キーの設定'],
+			tags: ['intermediate', 'portfolio', 'pnl', 'private-api', 'visual', 'html', 'artifact'],
+		},
+	},
 ];
-
 
 // 日本語名のプロンプトのみを MCP に公開（英語名は非表示）
 // 日本語名のみ + 指定順に並べ替えて公開
 const desiredOrder = [
-  '🌅 おはようレポート',
-  '💼 ポートフォリオ分析レポート',
-  '🔰 BTCの価格を分析して',
-  '🔰 ETHの価格を分析して',
-  '🔰 今注目のコインは？',
-  '中級：主要指標でBTCを分析して',
-  '中級：BTCのフロー分析をして',
-  '中級：BTCの板の状況を詳しく見て',
-  '中級：BTCのパターン分析をして',
-  '中級：BTCのサポレジを分析して',
+	'🌅 おはようレポート',
+	'💼 ポートフォリオ分析レポート',
+	'🔰 BTCの価格を分析して',
+	'🔰 ETHの価格を分析して',
+	'🔰 今注目のコインは？',
+	'中級：主要指標でBTCを分析して',
+	'中級：BTCのフロー分析をして',
+	'中級：BTCの板の状況を詳しく見て',
+	'中級：BTCのパターン分析をして',
+	'中級：BTCのサポレジを分析して',
 ];
 const orderIndex = (name: string) => {
-  const i = desiredOrder.indexOf(name);
-  return i >= 0 ? i : Number.MAX_SAFE_INTEGER;
+	const i = desiredOrder.indexOf(name);
+	return i >= 0 ? i : Number.MAX_SAFE_INTEGER;
 };
 const privateApiEnabled = isPrivateApiEnabled();
 export const prompts: PromptDef[] = promptsAll
-  .filter(p => /[^\x00-\x7F]/.test(p.name))
-  .filter(p => !p.requiresPrivateApi || privateApiEnabled)
-  .sort((a, b) => orderIndex(a.name) - orderIndex(b.name));
+	.filter((p) => /[^\x20-\x7E]/.test(p.name))
+	.filter((p) => !p.requiresPrivateApi || privateApiEnabled)
+	.sort((a, b) => orderIndex(a.name) - orderIndex(b.name));

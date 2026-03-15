@@ -7,7 +7,11 @@ import { toIsoTime } from '../../lib/datetime.js';
 // ── helpers ──
 
 const toTs = (s?: string): number => {
-	try { return s ? Date.parse(s) : NaN; } catch { return NaN; }
+	try {
+		return s ? Date.parse(s) : NaN;
+	} catch {
+		return NaN;
+	}
 };
 
 const fmtNum = (v: unknown): string => {
@@ -38,26 +42,33 @@ const fmtPointList = (arr: any[] | undefined): string =>
 /** 検出対象期間の1行テキスト */
 export function buildPeriodLine(pats: any[]): string {
 	try {
-		const ends = pats.map(p => toTs(p?.range?.end)).filter(Number.isFinite);
-		const starts = pats.map(p => toTs(p?.range?.start)).filter(Number.isFinite);
+		const ends = pats.map((p) => toTs(p?.range?.end)).filter(Number.isFinite);
+		const starts = pats.map((p) => toTs(p?.range?.start)).filter(Number.isFinite);
 		if (starts.length && ends.length) {
 			const startIso = (toIsoTime(Math.min(...starts)) ?? '').slice(0, 10);
 			const endIso = (toIsoTime(Math.max(...ends)) ?? '').slice(0, 10);
 			const days = Math.max(1, Math.round((Math.max(...ends) - Math.min(...starts)) / 86400000));
 			return `検出対象期間: ${startIso} ~ ${endIso}（${days}日間）`;
 		}
-	} catch { /* noop */ }
+	} catch {
+		/* noop */
+	}
 	return '';
 }
 
 /** 種別別件数集計 */
 export function buildTypeSummary(pats: any[]): string {
-	const byType = pats.reduce((m: Record<string, number>, p: any) => {
-		const k = String(p?.type || 'unknown');
-		m[k] = (m[k] || 0) + 1;
-		return m;
-	}, {} as Record<string, number>);
-	return Object.entries(byType).map(([k, v]) => `${k}×${v}`).join(', ');
+	const byType = pats.reduce(
+		(m: Record<string, number>, p: any) => {
+			const k = String(p?.type || 'unknown');
+			m[k] = (m[k] || 0) + 1;
+			return m;
+		},
+		{} as Record<string, number>,
+	);
+	return Object.entries(byType)
+		.map(([k, v]) => `${k}×${v}`)
+		.join(', ');
 }
 
 // ── debug view: candidate details ──
@@ -68,54 +79,66 @@ function formatCandidateDetails(c: any): string {
 	const reason = String(c?.reason ?? '');
 
 	if (reason === 'type_classification_failed') {
-		return `\n   failureReason: ${d?.failureReason || 'n/a'}` +
+		return (
+			`\n   failureReason: ${d?.failureReason || 'n/a'}` +
 			`\n   slopes: hi=${fmtNum(d?.slopeHigh)} lo=${fmtNum(d?.slopeLow)}` +
-			`\n   slopeRatio: ${Number.isFinite(Number(d?.slopeRatio)) ? Number(d.slopeRatio).toFixed(3) : 'n/a'}`;
+			`\n   slopeRatio: ${Number.isFinite(Number(d?.slopeRatio)) ? Number(d.slopeRatio).toFixed(3) : 'n/a'}`
+		);
 	}
 
 	if (reason === 'probe_window') {
-		return `\n   upper.slope: ${fmtNum(d?.slopeHigh)}` +
+		return (
+			`\n   upper.slope: ${fmtNum(d?.slopeHigh)}` +
 			`\n   lower.slope: ${fmtNum(d?.slopeLow)}` +
 			`\n   priceRange: ${fmtRound(d?.priceRange)}` +
 			`\n   barsSpan: ${fmtInt(d?.barsSpan)}` +
 			`\n   minMeaningfulSlope: ${fmtNum(d?.minMeaningfulSlope)}` +
 			`\n   highsIn: ${fmtPointList(d?.highsIn)}` +
-			`\n   lowsIn: ${fmtPointList(d?.lowsIn)}`;
+			`\n   lowsIn: ${fmtPointList(d?.lowsIn)}`
+		);
 	}
 
 	if (reason === 'declining_highs' || reason === 'declining_highs_probe') {
-		return `\n   ${reason === 'declining_highs' ? 'declining_highs: true' : 'declining_highs_probe: metrics'}` +
+		return (
+			`\n   ${reason === 'declining_highs' ? 'declining_highs: true' : 'declining_highs_probe: metrics'}` +
 			`\n   highsIn.count: ${fmtInt(d?.highsCount)}` +
 			`\n   1st half avg: ${fmtRound(d?.firstAvg)}` +
 			`\n   2nd half avg: ${fmtRound(d?.secondAvg)}` +
-			`\n   ratio: ${fmtPct(d?.ratio)}`;
+			`\n   ratio: ${fmtPct(d?.ratio)}`
+		);
 	}
 
 	if (reason === 'rising_probe') {
-		return `\n   r2: hi=${Number.isFinite(Number(d?.r2High)) ? Number(d.r2High).toFixed(3) : 'n/a'}, lo=${Number.isFinite(Number(d?.r2Low)) ? Number(d.r2Low).toFixed(3) : 'n/a'}` +
+		return (
+			`\n   r2: hi=${Number.isFinite(Number(d?.r2High)) ? Number(d.r2High).toFixed(3) : 'n/a'}, lo=${Number.isFinite(Number(d?.r2Low)) ? Number(d.r2Low).toFixed(3) : 'n/a'}` +
 			`\n   slopes: hi=${Number.isFinite(Number(d?.slopeHigh)) ? Number(d.slopeHigh).toFixed(6) : 'n/a'} lo=${Number.isFinite(Number(d?.slopeLow)) ? Number(d.slopeLow).toFixed(6) : 'n/a'}` +
 			`\n   slopeRatioLH: ${Number.isFinite(Number(d?.slopeRatioLH)) ? Number(d.slopeRatioLH).toFixed(3) : 'n/a'}` +
 			`\n   priceRange: ${fmtRound(d?.priceRange)}, barsSpan: ${fmtInt(d?.barsSpan)}` +
 			`\n   minMeaningfulSlope: ${Number.isFinite(Number(d?.minMeaningfulSlope)) ? Number(d.minMeaningfulSlope).toFixed(6) : 'n/a'}` +
 			`\n   highsIn: ${fmtPointList(d?.highsIn)}` +
 			`\n   lowsIn: ${fmtPointList(d?.lowsIn)}` +
-			`\n   declining_highs metrics: firstAvg=${fmtRound(d?.firstAvg)}, secondAvg=${fmtRound(d?.secondAvg)}, ratio=${fmtPct(d?.ratio)}`;
+			`\n   declining_highs metrics: firstAvg=${fmtRound(d?.firstAvg)}, secondAvg=${fmtRound(d?.secondAvg)}, ratio=${fmtPct(d?.ratio)}`
+		);
 	}
 
 	if (reason === 'post_filter_rising_highs_not_declining') {
-		return `\n   post_filter: rising highs not declining` +
+		return (
+			`\n   post_filter: rising highs not declining` +
 			`\n   highsIn.count: ${fmtInt(d?.highsCount)}` +
 			`\n   1st half avg: ${fmtRound(d?.firstAvg)}` +
 			`\n   2nd half avg: ${fmtRound(d?.secondAvg)}` +
-			`\n   ratio: ${fmtPct(d?.ratio)}`;
+			`\n   ratio: ${fmtPct(d?.ratio)}`
+		);
 	}
 
 	if (reason === 'post_filter_falling_lows_not_rising') {
-		return `\n   post_filter: falling lows not rising` +
+		return (
+			`\n   post_filter: falling lows not rising` +
 			`\n   lowsIn.count: ${fmtInt(d?.lowsCount)}` +
 			`\n   1st half avg: ${fmtRound(d?.firstAvg)}` +
 			`\n   2nd half avg: ${fmtRound(d?.secondAvg)}` +
-			`\n   ratio: ${fmtPct(d?.ratio)}`;
+			`\n   ratio: ${fmtPct(d?.ratio)}`
+		);
 	}
 
 	// default
@@ -123,22 +146,25 @@ function formatCandidateDetails(c: any): string {
 	const s2 = Number(d.spreadEnd);
 	const hi = Number(d.hiSlope);
 	const lo = Number(d.loSlope);
-	const spreadPart = (Number.isFinite(s1) && Number.isFinite(s2))
-		? `${Math.round(s1).toLocaleString()} → ${Math.round(s2).toLocaleString()}`
-		: 'n/a';
-	return `\n   spread: ${spreadPart}${(Number.isFinite(hi) || Number.isFinite(lo)) ? `, slopes: hi=${fmtNum(hi)} lo=${fmtNum(lo)}` : ''}`;
+	const spreadPart =
+		Number.isFinite(s1) && Number.isFinite(s2)
+			? `${Math.round(s1).toLocaleString()} → ${Math.round(s2).toLocaleString()}`
+			: 'n/a';
+	return `\n   spread: ${spreadPart}${Number.isFinite(hi) || Number.isFinite(lo) ? `, slopes: hi=${fmtNum(hi)} lo=${fmtNum(lo)}` : ''}`;
 }
 
 export function formatDebugView(hdr: string, meta: any, pats: any[], res: any): any {
 	const swings = Array.isArray(meta?.debug?.swings) ? meta.debug.swings : [];
 	const cands = Array.isArray(meta?.debug?.candidates) ? meta.debug.candidates : [];
 
-	const swingLines = swings.map((s: any) =>
-		`- ${s.kind} idx=${s.idx} price=${Math.round(Number(s.price)).toLocaleString()} (${s.isoTime || 'n/a'})`);
+	const swingLines = swings.map(
+		(s: any) =>
+			`- ${s.kind} idx=${s.idx} price=${Math.round(Number(s.price)).toLocaleString()} (${s.isoTime || 'n/a'})`,
+	);
 
 	const candLines = cands.map((c: any, i: number) => {
 		const tag = c.accepted ? '✅' : '❌';
-		const reason = c.accepted ? (c.reason ? ` (${c.reason})` : '') : (c.reason ? ` [${c.reason}]` : '');
+		const reason = c.accepted ? (c.reason ? ` (${c.reason})` : '') : c.reason ? ` [${c.reason}]` : '';
 		const pts = Array.isArray(c.points)
 			? c.points.map((p: any) => `${p.role}@${p.idx}:${Math.round(Number(p.price)).toLocaleString()}`).join(', ')
 			: '';
@@ -148,7 +174,8 @@ export function formatDebugView(hdr: string, meta: any, pats: any[], res: any): 
 	});
 
 	const text = [
-		hdr, '',
+		hdr,
+		'',
 		'【Swings】',
 		swingLines.length ? swingLines.join('\n') : 'なし',
 		'',
@@ -185,7 +212,9 @@ function buildIdxToIso(meta: any): Record<number, string> {
 				if (Number.isFinite(i) && t) map[i] = t;
 			}
 		}
-	} catch { /* noop */ }
+	} catch {
+		/* noop */
+	}
 	return map;
 }
 
@@ -198,18 +227,18 @@ export function formatPatternLine(p: any, idx: number, view: string, meta: any):
 	let priceRange: string | null = null;
 	if (Array.isArray(p?.pivots) && p.pivots.length) {
 		const prices = p.pivots.map((v: any) => Number(v?.price)).filter(Number.isFinite);
-		if (prices.length) priceRange = `${Math.min(...prices).toLocaleString()}円 - ${Math.max(...prices).toLocaleString()}円`;
+		if (prices.length)
+			priceRange = `${Math.min(...prices).toLocaleString()}円 - ${Math.max(...prices).toLocaleString()}円`;
 	}
 
 	// neckline
 	let neckline: string | null = null;
 	if (Array.isArray(p?.neckline) && p.neckline.length === 2) {
 		const [a, b] = p.neckline;
-		const y1 = Number(a?.y), y2 = Number(b?.y);
+		const y1 = Number(a?.y),
+			y2 = Number(b?.y);
 		if (Number.isFinite(y1) && Number.isFinite(y2)) {
-			neckline = y1 === y2
-				? `${y1.toLocaleString()}円（水平）`
-				: `${y1.toLocaleString()}円 → ${y2.toLocaleString()}円`;
+			neckline = y1 === y2 ? `${y1.toLocaleString()}円（水平）` : `${y1.toLocaleString()}円 → ${y2.toLocaleString()}円`;
 		}
 	}
 
@@ -219,8 +248,8 @@ export function formatPatternLine(p: any, idx: number, view: string, meta: any):
 	const pivotLines: string[] = [];
 	if ((view === 'full' || view === 'debug') && Array.isArray(p?.pivots) && p.pivots.length >= 3) {
 		const pivs = p.pivots as Array<{ idx: number; price: number }>;
-		const roleLabels = p.type === 'double_top' ? ['山1', '谷', '山2']
-			: p.type === 'double_bottom' ? ['谷1', '山', '谷2'] : null;
+		const roleLabels =
+			p.type === 'double_top' ? ['山1', '谷', '山2'] : p.type === 'double_bottom' ? ['谷1', '山', '谷2'] : null;
 		if (roleLabels) {
 			for (let i = 0; i < 3; i++) {
 				const pv = pivs[i];
@@ -242,7 +271,9 @@ export function formatPatternLine(p: any, idx: number, view: string, meta: any):
 			const bprice = Number.isFinite(bpx) ? Math.round(bpx).toLocaleString() : 'n/a';
 			breakoutLine = `   - ブレイク: ${bdate} (${bprice}円)`;
 		}
-	} catch { /* ignore */ }
+	} catch {
+		/* ignore */
+	}
 
 	// status
 	let statusLine: string | null = null;
@@ -263,8 +294,10 @@ export function formatPatternLine(p: any, idx: number, view: string, meta: any):
 			const directionJa = p.breakoutDirection === 'up' ? '上方' : '下方';
 			const outcomeJa = p.outcome === 'success' ? '成功' : '失敗';
 			const expectedDirMap: Record<string, string | undefined> = {
-				falling_wedge: '上方', rising_wedge: '下方',
-				triangle_ascending: '上方', triangle_descending: '下方',
+				falling_wedge: '上方',
+				rising_wedge: '下方',
+				triangle_ascending: '上方',
+				triangle_descending: '下方',
 				pennant: p.poleDirection === 'up' ? '上方' : p.poleDirection === 'down' ? '下方' : undefined,
 			};
 			const expectedDir = expectedDirMap[p.type];
@@ -283,7 +316,9 @@ export function formatPatternLine(p: any, idx: number, view: string, meta: any):
 			if (expectedDir) dirLine += `（本来は${expectedDir}ブレイクが期待されるパターン）`;
 			outcomeLine = `${dirLine}\n   - パターン結果: ${outcomeJa}（${meaning}）`;
 		}
-	} catch { /* ignore */ }
+	} catch {
+		/* ignore */
+	}
 
 	// pennant fields
 	let pennantLine: string | null = null;
@@ -291,16 +326,25 @@ export function formatPatternLine(p: any, idx: number, view: string, meta: any):
 		if (p?.type === 'pennant') {
 			const parts: string[] = [];
 			if (p.poleDirection) parts.push(`フラッグポール方向: ${p.poleDirection === 'up' ? '上昇' : '下降'}`);
-			if (p.priorTrendDirection) parts.push(`先行トレンド: ${p.priorTrendDirection === 'bullish' ? '強気（上昇トレンド）' : '弱気（下降トレンド）'}`);
-			if (p.flagpoleHeight != null) parts.push(`フラッグポール値幅: ${Math.round(Number(p.flagpoleHeight)).toLocaleString()}円`);
+			if (p.priorTrendDirection)
+				parts.push(
+					`先行トレンド: ${p.priorTrendDirection === 'bullish' ? '強気（上昇トレンド）' : '弱気（下降トレンド）'}`,
+				);
+			if (p.flagpoleHeight != null)
+				parts.push(`フラッグポール値幅: ${Math.round(Number(p.flagpoleHeight)).toLocaleString()}円`);
 			if (p.retracementRatio != null) {
 				const pctStr = (Number(p.retracementRatio) * 100).toFixed(0);
-				parts.push(`戻し比率: ${pctStr}%${Number(p.retracementRatio) > 0.38 ? '（高め — トライアングル寄り）' : '（正常範囲）'}`);
+				parts.push(
+					`戻し比率: ${pctStr}%${Number(p.retracementRatio) > 0.38 ? '（高め — トライアングル寄り）' : '（正常範囲）'}`,
+				);
 			}
-			if (p.isTrendContinuation !== undefined) parts.push(`トレンド継続: ${p.isTrendContinuation ? 'はい（成功）' : 'いいえ（ダマシ）'}`);
-			if (parts.length) pennantLine = parts.map(s => `   - ${s}`).join('\n');
+			if (p.isTrendContinuation !== undefined)
+				parts.push(`トレンド継続: ${p.isTrendContinuation ? 'はい（成功）' : 'いいえ（ダマシ）'}`);
+			if (parts.length) pennantLine = parts.map((s) => `   - ${s}`).join('\n');
 		}
-	} catch { /* ignore */ }
+	} catch {
+		/* ignore */
+	}
 
 	// structure diagram
 	let diagramBlock: string | null = null;
@@ -318,12 +362,18 @@ export function formatPatternLine(p: any, idx: number, view: string, meta: any):
 				String(diagram.svg),
 			].join('\n');
 		}
-	} catch { /* noop */ }
+	} catch {
+		/* noop */
+	}
 
 	// target price
 	let targetLine: string | null = null;
 	if (p?.breakoutTarget != null) {
-		const methodJa: Record<string, string> = { flagpole_projection: 'フラッグポール値幅投影', pattern_height: 'パターン高さ投影', neckline_projection: 'ネックライン投影' };
+		const methodJa: Record<string, string> = {
+			flagpole_projection: 'フラッグポール値幅投影',
+			pattern_height: 'パターン高さ投影',
+			neckline_projection: 'ネックライン投影',
+		};
 		targetLine = `   - ターゲット価格: ${Math.round(Number(p.breakoutTarget)).toLocaleString()}円（${methodJa[p.targetMethod] || p.targetMethod}）`;
 		if (p?.targetReachedPct != null) {
 			targetLine += `\n   - ターゲット進捗: ${p.targetReachedPct}%${Number(p.targetReachedPct) >= 100 ? '（到達済み）' : ''}`;
@@ -349,27 +399,40 @@ export function formatPatternLine(p: any, idx: number, view: string, meta: any):
 // ── summary view ──
 
 export function formatSummaryView(
-	hdr: string, pats: any[], periodLine: string, typeSummary: string,
-	patterns: string[] | undefined, includeForming: boolean | undefined, res: any,
+	hdr: string,
+	pats: any[],
+	periodLine: string,
+	typeSummary: string,
+	patterns: string[] | undefined,
+	includeForming: boolean | undefined,
+	res: any,
 ): any {
 	const now = Date.now();
-	const within = (ms: number) => pats.filter(p => Number.isFinite(toTs(p?.range?.end)) && (now - toTs(p.range.end)) <= ms).length;
+	const within = (ms: number) =>
+		pats.filter((p) => Number.isFinite(toTs(p?.range?.end)) && now - toTs(p.range.end) <= ms).length;
 	const in30 = within(30 * 86400000);
 	const in90 = within(90 * 86400000);
 	const formingHint = includeForming ? '' : '\n※形成中は includeForming=true を指定してください。';
-	const text = `${hdr}（${typeSummary || '分類なし'}、直近30日: ${in30}件、直近90日: ${in90}件）\n${periodLine ? periodLine + '\n' : ''}検討パターン: ${(patterns && patterns.length) ? patterns.join(', ') : '既定セット'}${formingHint}\n詳細は structuredContent.data.patterns を参照。`;
+	const text = `${hdr}（${typeSummary || '分類なし'}、直近30日: ${in30}件、直近90日: ${in90}件）\n${periodLine ? periodLine + '\n' : ''}検討パターン: ${patterns && patterns.length ? patterns.join(', ') : '既定セット'}${formingHint}\n詳細は structuredContent.data.patterns を参照。`;
 	return { content: [{ type: 'text', text }], structuredContent: res };
 }
 
 // ── full view ──
 
 export function formatFullView(
-	hdr: string, pats: any[], periodLine: string, typeSummary: string, meta: any, res: any,
+	hdr: string,
+	pats: any[],
+	periodLine: string,
+	typeSummary: string,
+	meta: any,
+	res: any,
 ): any {
 	const body = pats.map((p, i) => formatPatternLine(p, i, 'full', meta)).join('\n\n');
 	const overlayNote = res?.data?.overlays
-		? '\n\nチャート連携: structuredContent.data.overlays を render_chart_svg.overlays に渡すと注釈/範囲を描画できます。' : '';
-	const trustNote = '\n\nパターン整合度について（形状一致度・対称性・期間から算出）:\n  0.8以上 = 理想的な形状（教科書的パターン）\n  0.7-0.8 = 標準的な形状（他指標と併用推奨）\n  0.6-0.7 = やや不明瞭（慎重に判断）\n  0.6未満 = 形状不十分';
+		? '\n\nチャート連携: structuredContent.data.overlays を render_chart_svg.overlays に渡すと注釈/範囲を描画できます。'
+		: '';
+	const trustNote =
+		'\n\nパターン整合度について（形状一致度・対称性・期間から算出）:\n  0.8以上 = 理想的な形状（教科書的パターン）\n  0.7-0.8 = 標準的な形状（他指標と併用推奨）\n  0.6-0.7 = やや不明瞭（慎重に判断）\n  0.6未満 = 形状不十分';
 	const text = `${hdr}（${typeSummary || '分類なし'}）\n${periodLine ? periodLine + '\n' : ''}\n【検出パターン（全件）】\n${body}${overlayNote}${trustNote}`;
 	return { content: [{ type: 'text', text }], structuredContent: res };
 }
@@ -377,8 +440,14 @@ export function formatFullView(
 // ── detailed view (default) ──
 
 export function formatDetailedView(
-	hdr: string, pats: any[], periodLine: string, typeSummary: string,
-	meta: any, tolerancePct: number | undefined, patterns: string[] | undefined, res: any,
+	hdr: string,
+	pats: any[],
+	periodLine: string,
+	typeSummary: string,
+	meta: any,
+	tolerancePct: number | undefined,
+	patterns: string[] | undefined,
+	res: any,
 ): any {
 	const top = pats.slice(0, 5);
 	const body = top.length ? top.map((p, i) => formatPatternLine(p, i, 'detailed', meta)).join('\n\n') : '';
@@ -390,17 +459,26 @@ export function formatDetailedView(
 			none = `\n${resSummary}`;
 		} else {
 			const effTol = meta?.effective_params?.tolerancePct ?? tolerancePct ?? 'default';
-			none = `\nパターンは検出されませんでした（tolerancePct=${effTol}）。\n・検討パターン: ${(patterns && patterns.length) ? patterns.join(', ') : '既定セット'}\n・必要に応じて tolerance を 0.03-0.06 に緩和してください`;
+			none = `\nパターンは検出されませんでした（tolerancePct=${effTol}）。\n・検討パターン: ${patterns && patterns.length ? patterns.join(', ') : '既定セット'}\n・必要に応じて tolerance を 0.03-0.06 に緩和してください`;
 		}
 	}
 
 	const overlayNote = res?.data?.overlays
-		? '\n\nチャート連携: structuredContent.data.overlays を render_chart_svg.overlays に渡すと注釈/範囲を描画できます。' : '';
-	const trustNote = '\n\nパターン整合度について（形状一致度・対称性・期間から算出）:\n  0.8以上 = 理想的な形状（教科書的パターン）\n  0.7-0.8 = 標準的な形状（他指標と併用推奨）\n  0.6-0.7 = やや不明瞭（慎重に判断）\n  0.6未満 = 形状不十分';
+		? '\n\nチャート連携: structuredContent.data.overlays を render_chart_svg.overlays に渡すと注釈/範囲を描画できます。'
+		: '';
+	const trustNote =
+		'\n\nパターン整合度について（形状一致度・対称性・期間から算出）:\n  0.8以上 = 理想的な形状（教科書的パターン）\n  0.7-0.8 = 標準的な形状（他指標と併用推奨）\n  0.6-0.7 = やや不明瞭（慎重に判断）\n  0.6未満 = 形状不十分';
 	const usage = `\n\nusage_example:\n  step1: detect_patterns を実行\n  step2: structuredContent.data.overlays を取得\n  step3: render_chart_svg の overlays に渡す`;
 	const text = `${hdr}（${typeSummary || '分類なし'}）\n${periodLine ? periodLine + '\n' : ''}\n${top.length ? '【検出パターン】\n' + body : ''}${none}${overlayNote}${trustNote}${usage}`;
 	return {
 		content: [{ type: 'text', text }],
-		structuredContent: { ...res, usage_example: { step1: 'detect_patterns を実行', step2: 'data.overlays を取得', step3: 'render_chart_svg の overlays に渡す' } },
+		structuredContent: {
+			...res,
+			usage_example: {
+				step1: 'detect_patterns を実行',
+				step2: 'data.overlays を取得',
+				step3: 'render_chart_svg の overlays に渡す',
+			},
+		},
 	};
 }

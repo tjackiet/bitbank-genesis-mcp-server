@@ -16,8 +16,7 @@ const PrivateFailResultSchema = z.object({
 // ── get_my_assets ──
 
 export const GetMyAssetsInputSchema = z.object({
-	include_jpy_valuation: z.boolean().default(true)
-		.describe('各通貨の日本円評価額を含めるか'),
+	include_jpy_valuation: z.boolean().default(true).describe('各通貨の日本円評価額を含めるか'),
 });
 
 const AssetItemSchema = z.object({
@@ -54,16 +53,11 @@ export const GetMyAssetsOutputSchema = z.union([
 // ── get_my_trade_history ──
 
 export const GetMyTradeHistoryInputSchema = z.object({
-	pair: z.string().optional()
-		.describe('通貨ペア（例: btc_jpy）。省略で全ペア'),
-	count: z.number().max(1000).default(100)
-		.describe('取得件数（最大1000）'),
-	order: z.enum(['asc', 'desc']).default('desc')
-		.describe('ソート順（asc: 古い順, desc: 新しい順）'),
-	since: z.string().optional()
-		.describe('開始日時（ISO8601、例: 2025-01-01T00:00:00+09:00）'),
-	end: z.string().optional()
-		.describe('終了日時（ISO8601、例: 2025-12-31T23:59:59+09:00）'),
+	pair: z.string().optional().describe('通貨ペア（例: btc_jpy）。省略で全ペア'),
+	count: z.number().max(1000).default(100).describe('取得件数（最大1000）'),
+	order: z.enum(['asc', 'desc']).default('desc').describe('ソート順（asc: 古い順, desc: 新しい順）'),
+	since: z.string().optional().describe('開始日時（ISO8601、例: 2025-01-01T00:00:00+09:00）'),
+	end: z.string().optional().describe('終了日時（ISO8601、例: 2025-12-31T23:59:59+09:00）'),
 });
 
 const TradeItemSchema = z.object({
@@ -104,14 +98,10 @@ export const GetMyTradeHistoryOutputSchema = z.union([
 // ── get_my_orders ──
 
 export const GetMyOrdersInputSchema = z.object({
-	pair: z.string().optional()
-		.describe('通貨ペア（例: btc_jpy）。省略で全ペア'),
-	count: z.number().max(1000).default(100)
-		.describe('取得件数（最大1000）'),
-	since: z.string().optional()
-		.describe('開始日時（ISO8601）'),
-	end: z.string().optional()
-		.describe('終了日時（ISO8601）'),
+	pair: z.string().optional().describe('通貨ペア（例: btc_jpy）。省略で全ペア'),
+	count: z.number().max(1000).default(100).describe('取得件数（最大1000）'),
+	since: z.string().optional().describe('開始日時（ISO8601）'),
+	end: z.string().optional().describe('終了日時（ISO8601）'),
 });
 
 const OrderItemSchema = z.object({
@@ -153,12 +143,14 @@ export const GetMyOrdersOutputSchema = z.union([
 // ── analyze_my_portfolio（Phase 3） ──
 
 export const AnalyzeMyPortfolioInputSchema = z.object({
-	include_technical: z.boolean().default(true)
-		.describe('保有銘柄のテクニカル分析を含めるか'),
-	include_pnl: z.boolean().default(true)
-		.describe('損益分析を含めるか（約定履歴から平均取得単価・損益を算出）'),
-	include_deposit_withdrawal: z.boolean().default(true)
-		.describe('入出金データを含めるか（true の場合、総入金額 vs 現在評価額で口座全体のリターンを算出。ページネーション対応で最大1000件/チャネル取得）'),
+	include_technical: z.boolean().default(true).describe('保有銘柄のテクニカル分析を含めるか'),
+	include_pnl: z.boolean().default(true).describe('損益分析を含めるか（約定履歴から平均取得単価・損益を算出）'),
+	include_deposit_withdrawal: z
+		.boolean()
+		.default(true)
+		.describe(
+			'入出金データを含めるか（true の場合、総入金額 vs 現在評価額で口座全体のリターンを算出。ページネーション対応で最大1000件/チャネル取得）',
+		),
 });
 
 const HoldingPnlSchema = z.object({
@@ -183,51 +175,92 @@ const TechnicalSummarySchema = z.object({
 	signal: z.string().optional().describe('総合シグナル'),
 });
 
-const DepositWithdrawalSummarySchema = z.object({
-	total_jpy_deposited: z.number().describe('JPY 入金合計'),
-	total_jpy_withdrawn: z.number().describe('JPY 出金合計'),
-	net_jpy_invested: z.number().describe('純投入額（JPY入金 - JPY出金 + 暗号資産入庫の現在価格での仮評価）。暗号資産入庫がある場合は JPY 純入金だけでなく仮評価分も含む'),
-	crypto_deposit_count: z.number().describe('暗号資産入庫件数'),
-	crypto_deposit_estimated_jpy: z.number().optional().describe('暗号資産入庫の推定 JPY 評価額（現在の市場価格で仮評価。入庫時点の価格ではない）'),
-	crypto_withdrawal_count: z.number().describe('暗号資産出庫件数'),
-	account_return_pct: z.number().optional().describe('口座全体リターン率（%）: (現在評価額 - 純投入額) / 純投入額'),
-	account_return_jpy: z.number().optional().describe('口座全体リターン額（JPY）'),
-	is_complete: z.boolean().describe('全履歴を取得できたか（false の場合は API 件数上限により一部のみ取得。リターンは概算値）'),
-	analysis_basis: z.enum(['deposit_withdrawal', 'trade_only']).describe('分析基準（deposit_withdrawal: 入出金込み, trade_only: 約定ベース）'),
-}).optional().describe('入出金ベースのリターン分析。available: 実データ（analysis_basis=deposit_withdrawal）、fallback: 常にplaceholder（analysis_basis=trade_only）、no_history/not_requested: undefined');
+const DepositWithdrawalSummarySchema = z
+	.object({
+		total_jpy_deposited: z.number().describe('JPY 入金合計'),
+		total_jpy_withdrawn: z.number().describe('JPY 出金合計'),
+		net_jpy_invested: z
+			.number()
+			.describe(
+				'純投入額（JPY入金 - JPY出金 + 暗号資産入庫の現在価格での仮評価）。暗号資産入庫がある場合は JPY 純入金だけでなく仮評価分も含む',
+			),
+		crypto_deposit_count: z.number().describe('暗号資産入庫件数'),
+		crypto_deposit_estimated_jpy: z
+			.number()
+			.optional()
+			.describe('暗号資産入庫の推定 JPY 評価額（現在の市場価格で仮評価。入庫時点の価格ではない）'),
+		crypto_withdrawal_count: z.number().describe('暗号資産出庫件数'),
+		account_return_pct: z.number().optional().describe('口座全体リターン率（%）: (現在評価額 - 純投入額) / 純投入額'),
+		account_return_jpy: z.number().optional().describe('口座全体リターン額（JPY）'),
+		is_complete: z
+			.boolean()
+			.describe('全履歴を取得できたか（false の場合は API 件数上限により一部のみ取得。リターンは概算値）'),
+		analysis_basis: z
+			.enum(['deposit_withdrawal', 'trade_only'])
+			.describe('分析基準（deposit_withdrawal: 入出金込み, trade_only: 約定ベース）'),
+	})
+	.optional()
+	.describe(
+		'入出金ベースのリターン分析。available: 実データ（analysis_basis=deposit_withdrawal）、fallback: 常にplaceholder（analysis_basis=trade_only）、no_history/not_requested: undefined',
+	);
 
-const PeriodDWSummarySchema = z.object({
-	jpy_deposited: z.number().describe('期間中のJPY入金合計'),
-	jpy_withdrawn: z.number().describe('期間中のJPY出金合計'),
-	net_jpy: z.number().describe('純入出金（JPY入金 - JPY出金）'),
-	crypto_deposit_count: z.number().int().describe('期間中の暗号資産入庫件数'),
-	crypto_deposit_estimated_jpy: z.number().optional().describe('期間中の暗号資産入庫の推定JPY評価額（現在価格で仮評価）'),
-	crypto_withdrawal_count: z.number().int().describe('期間中の暗号資産出庫件数'),
-	crypto_withdrawal_estimated_jpy: z.number().optional().describe('期間中の暗号資産出庫の推定JPY評価額（現在価格で仮評価）'),
-	period_start: z.string().describe('期間の開始日時（ISO8601 JST）'),
-	period_end: z.string().describe('期間の終了日時（ISO8601 JST）'),
-}).optional().describe('期間内の入出金サマリー');
+const PeriodDWSummarySchema = z
+	.object({
+		jpy_deposited: z.number().describe('期間中のJPY入金合計'),
+		jpy_withdrawn: z.number().describe('期間中のJPY出金合計'),
+		net_jpy: z.number().describe('純入出金（JPY入金 - JPY出金）'),
+		crypto_deposit_count: z.number().int().describe('期間中の暗号資産入庫件数'),
+		crypto_deposit_estimated_jpy: z
+			.number()
+			.optional()
+			.describe('期間中の暗号資産入庫の推定JPY評価額（現在価格で仮評価）'),
+		crypto_withdrawal_count: z.number().int().describe('期間中の暗号資産出庫件数'),
+		crypto_withdrawal_estimated_jpy: z
+			.number()
+			.optional()
+			.describe('期間中の暗号資産出庫の推定JPY評価額（現在価格で仮評価）'),
+		period_start: z.string().describe('期間の開始日時（ISO8601 JST）'),
+		period_end: z.string().describe('期間の終了日時（ISO8601 JST）'),
+	})
+	.optional()
+	.describe('期間内の入出金サマリー');
 
-const PeriodRealizedPnlSchema = z.object({
-	realized_pnl: z.number().describe('期間内の合計実現損益（JPY）'),
-	sell_count: z.number().int().describe('期間内の売却約定件数'),
-	period_start: z.string().describe('期間の開始日時（ISO8601 JST）'),
-	period_end: z.string().describe('期間の終了日時（ISO8601 JST）'),
-}).optional();
+const PeriodRealizedPnlSchema = z
+	.object({
+		realized_pnl: z.number().describe('期間内の合計実現損益（JPY）'),
+		sell_count: z.number().int().describe('期間内の売却約定件数'),
+		period_start: z.string().describe('期間の開始日時（ISO8601 JST）'),
+		period_end: z.string().describe('期間の終了日時（ISO8601 JST）'),
+	})
+	.optional();
 
-const PeriodPerformanceSchema = z.object({
-	start_value_jpy: z.number().describe('期初の口座評価額（JPY）。現在の保有状態から約定・入出金を逆算して復元し、期初時点の始値で評価'),
-	current_value_jpy: z.number().describe('現在の口座評価額（JPY）'),
-	change_jpy: z.number().describe('単純増減額 = current_value_jpy - start_value_jpy'),
-	change_pct: z.number().optional().describe('単純増減率（%）。start_value_jpy が 0 の場合は undefined'),
-	net_flow_jpy: z.number().describe('期間中の純入出金額（JPY、元本移動のみ）。正=純入金、負=純出金。出金手数料は含まない。暗号資産の入出庫は現在価格で仮評価'),
-	withdrawal_fee_jpy: z.number().describe('期間中の出金手数料合計（JPY）。出金元本は外部フローとして net_flow_jpy に含め performance から除外するが、手数料はコストとして adjusted_change_jpy に残る'),
-	adjusted_change_jpy: z.number().describe('調整後増減額 = change_jpy - net_flow_jpy（入出金元本の影響を除いた成績。出金手数料コストは含む）'),
-	adjusted_change_pct: z.number().optional().describe('調整後増減率（%）。start_value_jpy が 0 の場合は undefined'),
-	period_start: z.string().describe('期間の開始日時（ISO8601 JST）'),
-	period_end: z.string().describe('期間の終了日時（ISO8601 JST）'),
-	note: z.string().describe('計算方法・注意事項の説明'),
-}).optional();
+const PeriodPerformanceSchema = z
+	.object({
+		start_value_jpy: z
+			.number()
+			.describe('期初の口座評価額（JPY）。現在の保有状態から約定・入出金を逆算して復元し、期初時点の始値で評価'),
+		current_value_jpy: z.number().describe('現在の口座評価額（JPY）'),
+		change_jpy: z.number().describe('単純増減額 = current_value_jpy - start_value_jpy'),
+		change_pct: z.number().optional().describe('単純増減率（%）。start_value_jpy が 0 の場合は undefined'),
+		net_flow_jpy: z
+			.number()
+			.describe(
+				'期間中の純入出金額（JPY、元本移動のみ）。正=純入金、負=純出金。出金手数料は含まない。暗号資産の入出庫は現在価格で仮評価',
+			),
+		withdrawal_fee_jpy: z
+			.number()
+			.describe(
+				'期間中の出金手数料合計（JPY）。出金元本は外部フローとして net_flow_jpy に含め performance から除外するが、手数料はコストとして adjusted_change_jpy に残る',
+			),
+		adjusted_change_jpy: z
+			.number()
+			.describe('調整後増減額 = change_jpy - net_flow_jpy（入出金元本の影響を除いた成績。出金手数料コストは含む）'),
+		adjusted_change_pct: z.number().optional().describe('調整後増減率（%）。start_value_jpy が 0 の場合は undefined'),
+		period_start: z.string().describe('期間の開始日時（ISO8601 JST）'),
+		period_end: z.string().describe('期間の終了日時（ISO8601 JST）'),
+		note: z.string().describe('計算方法・注意事項の説明'),
+	})
+	.optional();
 
 const EquityPointSchema = z.object({
 	timestamp: z.string().describe('時点の日時（ISO8601 JST）'),
@@ -242,10 +275,24 @@ export const AnalyzeMyPortfolioDataSchema = z.object({
 	total_unrealized_pnl_pct: z.number().optional().describe('合計評価損益率（%）'),
 	total_realized_pnl: z.number().optional().describe('合計実現損益（全履歴ベース）'),
 	daily_performance: PeriodPerformanceSchema.describe('前日比パフォーマンス（当日0:00 JST〜現在の口座評価額増減）'),
-	yearly_performance: PeriodPerformanceSchema.describe('年初比パフォーマンス（当年1/1 00:00 JST〜現在の口座評価額増減）'),
-	monthly_performance: PeriodPerformanceSchema.describe('月初比パフォーマンス（当月1日 00:00 JST〜現在の口座評価額増減）'),
-	monthly_equity_series: z.array(EquityPointSchema).optional().describe('当月1日 00:00 JSTから現在までの日次JPY建て総資産推移。各点はその日00:00 JST時点の復元評価額。最終点は現在のリアルタイム評価額'),
-	yearly_equity_series: z.array(EquityPointSchema).optional().describe('当年1/1 00:00 JSTから現在までの月次JPY建て総資産推移。各点はその月1日 00:00 JST時点の復元評価額。最終点は現在のリアルタイム評価額'),
+	yearly_performance: PeriodPerformanceSchema.describe(
+		'年初比パフォーマンス（当年1/1 00:00 JST〜現在の口座評価額増減）',
+	),
+	monthly_performance: PeriodPerformanceSchema.describe(
+		'月初比パフォーマンス（当月1日 00:00 JST〜現在の口座評価額増減）',
+	),
+	monthly_equity_series: z
+		.array(EquityPointSchema)
+		.optional()
+		.describe(
+			'当月1日 00:00 JSTから現在までの日次JPY建て総資産推移。各点はその日00:00 JST時点の復元評価額。最終点は現在のリアルタイム評価額',
+		),
+	yearly_equity_series: z
+		.array(EquityPointSchema)
+		.optional()
+		.describe(
+			'当年1/1 00:00 JSTから現在までの月次JPY建て総資産推移。各点はその月1日 00:00 JST時点の復元評価額。最終点は現在のリアルタイム評価額',
+		),
 	yearly_realized_pnl: PeriodRealizedPnlSchema.describe('年初来実現損益（補助指標）'),
 	monthly_realized_pnl: PeriodRealizedPnlSchema.describe('月初来実現損益（補助指標）'),
 	deposit_withdrawal_summary: DepositWithdrawalSummarySchema,
@@ -260,8 +307,11 @@ export const AnalyzeMyPortfolioMetaSchema = z.object({
 	holdingCount: z.number().int(),
 	hasPnl: z.boolean(),
 	hasTechnical: z.boolean(),
-	depositWithdrawalStatus: z.enum(['available', 'fallback', 'no_history', 'not_requested'])
-		.describe('入出金分析の状態: available=入出金データ取得成功で分析実行（deposit_withdrawal_summaryあり）, fallback=API取得失敗またはpartial failureにより約定ベースにフォールバック（deposit_withdrawal_summaryはtrade_only placeholder）, no_history=API取得成功・警告なし・履歴0件（deposit_withdrawal_summaryはundefined）, not_requested=未リクエスト（deposit_withdrawal_summaryはundefined）'),
+	depositWithdrawalStatus: z
+		.enum(['available', 'fallback', 'no_history', 'not_requested'])
+		.describe(
+			'入出金分析の状態: available=入出金データ取得成功で分析実行（deposit_withdrawal_summaryあり）, fallback=API取得失敗またはpartial failureにより約定ベースにフォールバック（deposit_withdrawal_summaryはtrade_only placeholder）, no_history=API取得成功・警告なし・履歴0件（deposit_withdrawal_summaryはundefined）, not_requested=未リクエスト（deposit_withdrawal_summaryはundefined）',
+		),
 	periodBasis: z.enum(['jst']).default('jst').describe('年次・月次の期間基準タイムゾーン（jst = Asia/Tokyo）'),
 });
 
@@ -278,16 +328,17 @@ export const AnalyzeMyPortfolioOutputSchema = z.union([
 // ── get_my_deposit_withdrawal（Phase 4） ──
 
 export const GetMyDepositWithdrawalInputSchema = z.object({
-	asset: z.string().optional()
+	asset: z
+		.string()
+		.optional()
 		.describe('通貨コード（例: btc, jpy）。省略で全通貨。JPY入出金を取得するには "jpy" を指定'),
-	type: z.enum(['deposit', 'withdrawal', 'all']).default('all')
+	type: z
+		.enum(['deposit', 'withdrawal', 'all'])
+		.default('all')
 		.describe('取得タイプ（deposit: 入金/入庫のみ, withdrawal: 出金/出庫のみ, all: 両方）'),
-	count: z.number().max(100).default(25)
-		.describe('各履歴の取得件数（最大100）'),
-	since: z.string().optional()
-		.describe('開始日時（ISO8601、例: 2025-01-01T00:00:00+09:00）'),
-	end: z.string().optional()
-		.describe('終了日時（ISO8601、例: 2025-12-31T23:59:59+09:00）'),
+	count: z.number().max(100).default(25).describe('各履歴の取得件数（最大100）'),
+	since: z.string().optional().describe('開始日時（ISO8601、例: 2025-01-01T00:00:00+09:00）'),
+	end: z.string().optional().describe('終了日時（ISO8601、例: 2025-12-31T23:59:59+09:00）'),
 });
 
 const DepositItemSchema = z.object({

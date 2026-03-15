@@ -4,39 +4,37 @@
 
 // config
 export {
-  MIN_CONFIDENCE,
-  SCHEMA_DEFAULTS,
-  getDefaultParamsForTf,
-  getDefaultToleranceForTf,
-  getConvergenceFactorForTf,
-  getTriangleCoeffForTf,
-  getMinFitForTf,
-  getTriangleWindowSize,
-  resolveParams,
+	getConvergenceFactorForTf,
+	getDefaultParamsForTf,
+	getDefaultToleranceForTf,
+	getMinFitForTf,
+	getTriangleCoeffForTf,
+	getTriangleWindowSize,
+	MIN_CONFIDENCE,
+	resolveParams,
+	SCHEMA_DEFAULTS,
 } from './config.js';
-
-// swing
-export {
-  type Candle,
-  type Pivot,
-  type DetectSwingePointsOptions,
-  detectSwingPoints,
-  filterPeaks,
-  filterValleys,
-} from './swing.js';
-
 // regression
 export {
-  type RegressionPoint,
-  type XYPoint,
-  type LinearRegressionResult,
-  type LinearRegressionWithR2Result,
-  linearRegression,
-  trendlineFit,
-  linearRegressionWithR2,
-  near,
-  pct,
-  clamp01,
-  relDev,
-  marginFromRelDev,
+	clamp01,
+	type LinearRegressionResult,
+	type LinearRegressionWithR2Result,
+	linearRegression,
+	linearRegressionWithR2,
+	marginFromRelDev,
+	near,
+	pct,
+	type RegressionPoint,
+	relDev,
+	trendlineFit,
+	type XYPoint,
 } from './regression.js';
+// swing
+export {
+	type Candle,
+	type DetectSwingePointsOptions,
+	detectSwingPoints,
+	filterPeaks,
+	filterValleys,
+	type Pivot,
+} from './swing.js';

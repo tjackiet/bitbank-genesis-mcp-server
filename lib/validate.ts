@@ -41,15 +41,15 @@ export const ALLOWED_PAIRS: Set<Pair> = new Set([
 	'klay_jpy',
 	'imx_jpy',
 	'mask_jpy',
-	'pol_jpy',      // 旧 matic_jpy
+	'pol_jpy', // 旧 matic_jpy
 	'sol_jpy',
 	'cyber_jpy',
-	'render_jpy',   // 旧 rndr_jpy
+	'render_jpy', // 旧 rndr_jpy
 	'trx_jpy',
 	'lpt_jpy',
 	'atom_jpy',
 	'sui_jpy',
-	'sky_jpy',      // 旧 mkr_jpy
+	'sky_jpy', // 旧 mkr_jpy
 ]);
 
 export function normalizePair(raw: unknown): Pair | null {
@@ -61,9 +61,9 @@ export function normalizePair(raw: unknown): Pair | null {
 	return s as Pair;
 }
 
-export function ensurePair(pair: unknown):
-	| { ok: true; pair: Pair }
-	| { ok: false; error: { type: 'user' | 'internal'; message: string } } {
+export function ensurePair(
+	pair: unknown,
+): { ok: true; pair: Pair } | { ok: false; error: { type: 'user' | 'internal'; message: string } } {
 	const norm = normalizePair(pair);
 	if (!norm) {
 		return {
@@ -87,10 +87,8 @@ export function validateLimit(
 	limit: unknown,
 	min = 1,
 	max = 1000,
-	paramName = 'limit'
-):
-	| { ok: true; value: number }
-	| { ok: false; error: { type: 'user' | 'internal'; message: string } } {
+	paramName = 'limit',
+): { ok: true; value: number } | { ok: false; error: { type: 'user' | 'internal'; message: string } } {
 	const num = Number(limit);
 	if (!Number.isInteger(num) || num < min || num > max) {
 		return {
@@ -106,25 +104,20 @@ export function validateLimit(
 
 export function validateDate(
 	date: string,
-	type: string | null = null
-):
-	| { ok: true; value: string }
-	| { ok: false; error: { type: 'user' | 'internal'; message: string } } {
+	type: string | null = null,
+): { ok: true; value: string } | { ok: false; error: { type: 'user' | 'internal'; message: string } } {
 	if (type) {
 		// YYYYMMDD が必要なタイプ（分足～1時間足）
-		const TYPES_REQUIRE_YYYYMMDD = new Set([
-			'1min',
-			'5min',
-			'15min',
-			'30min',
-			'1hour',
-		]);
+		const TYPES_REQUIRE_YYYYMMDD = new Set(['1min', '5min', '15min', '30min', '1hour']);
 
 		if (TYPES_REQUIRE_YYYYMMDD.has(type)) {
 			if (!/^\d{8}$/.test(date)) {
 				return {
 					ok: false,
-					error: { type: 'user', message: `${type} の場合、date は YYYYMMDD 形式で指定してください（指定値: ${date}）` },
+					error: {
+						type: 'user',
+						message: `${type} の場合、date は YYYYMMDD 形式で指定してください（指定値: ${date}）`,
+					},
 				};
 			}
 			return { ok: true, value: date };
@@ -156,5 +149,3 @@ export function createMeta(pair: Pair, additional: Record<string, unknown> = {})
 		...additional,
 	};
 }
-
-

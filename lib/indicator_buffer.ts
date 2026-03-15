@@ -39,5 +39,3 @@ export function getFetchCount(displayCount: number, indicatorKeys: IndicatorBuff
 	const buffer = maxPeriod > 0 ? maxPeriod - 1 : 0;
 	return displayCount + buffer;
 }
-
-

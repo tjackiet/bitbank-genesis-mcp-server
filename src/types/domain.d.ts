@@ -107,13 +107,16 @@ export interface EmaSeriesFixed {
 }
 
 // Chart-side indicator series shape (flattened series only)
-export type ChartIndicators = IchimokuSeries & BollingerBandsSeries & SmaSeriesFixed & EmaSeriesFixed & {
-	RSI_14?: number | null;
-	RSI_14_series?: NumericSeries;
-	macd_series?: { line: NumericSeries; signal: NumericSeries; hist: NumericSeries };
-	stoch_k_series?: NumericSeries;
-	stoch_d_series?: NumericSeries;
-};
+export type ChartIndicators = IchimokuSeries &
+	BollingerBandsSeries &
+	SmaSeriesFixed &
+	EmaSeriesFixed & {
+		RSI_14?: number | null;
+		RSI_14_series?: NumericSeries;
+		macd_series?: { line: NumericSeries; signal: NumericSeries; hist: NumericSeries };
+		stoch_k_series?: NumericSeries;
+		stoch_d_series?: NumericSeries;
+	};
 
 export interface ChartMeta {
 	pastBuffer?: number; // how many items are trimmed from head for display
@@ -183,7 +186,13 @@ export interface IndicatorsInternal {
 	bb1_series?: { upper: NumericSeries; middle: NumericSeries; lower: NumericSeries };
 	bb2_series?: { upper: NumericSeries; middle: NumericSeries; lower: NumericSeries };
 	bb3_series?: { upper: NumericSeries; middle: NumericSeries; lower: NumericSeries };
-	ichi_series?: { tenkan: NumericSeries; kijun: NumericSeries; spanA: NumericSeries; spanB: NumericSeries; chikou: NumericSeries };
+	ichi_series?: {
+		tenkan: NumericSeries;
+		kijun: NumericSeries;
+		spanA: NumericSeries;
+		spanB: NumericSeries;
+		chikou: NumericSeries;
+	};
 	sma_5_series?: NumericSeries;
 	sma_20_series?: NumericSeries;
 	sma_25_series?: NumericSeries;

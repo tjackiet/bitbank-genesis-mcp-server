@@ -1,11 +1,19 @@
-import { toDisplayTime, dayjs } from './datetime.js';
+import { dayjs, toDisplayTime } from './datetime.js';
 
 /** 時間足コードを日本語ラベルに変換 */
 export function timeframeLabel(type: string): string {
 	const map: Record<string, string> = {
-		'1min': '1分足', '5min': '5分足', '15min': '15分足', '30min': '30分足',
-		'1hour': '1時間足', '4hour': '4時間足', '8hour': '8時間足', '12hour': '12時間足',
-		'1day': '日足', '1week': '週足', '1month': '月足',
+		'1min': '1分足',
+		'5min': '5分足',
+		'15min': '15分足',
+		'30min': '30分足',
+		'1hour': '1時間足',
+		'4hour': '4時間足',
+		'8hour': '8時間足',
+		'12hour': '12時間足',
+		'1day': '日足',
+		'1week': '週足',
+		'1month': '月足',
 	};
 	return map[type] || type;
 }
@@ -98,17 +106,19 @@ export function formatVolumeJPY(value: number | null | undefined): string {
 	return `${Math.round(value / 10_000)}万円`;
 }
 
-export function formatSummary(args: {
-	pair?: string;
-	timeframe?: string;
-	latest?: number;
-	totalItems?: number;
-	keyPoints?: any;
-	volumeStats?: any;
-	extra?: string;
-	// 追加: 全件の範囲情報
-	priceRange?: { high: number; low: number; periodStart: string; periodEnd: string };
-} = {}): string {
+export function formatSummary(
+	args: {
+		pair?: string;
+		timeframe?: string;
+		latest?: number;
+		totalItems?: number;
+		keyPoints?: any;
+		volumeStats?: any;
+		extra?: string;
+		// 追加: 全件の範囲情報
+		priceRange?: { high: number; low: number; periodStart: string; periodEnd: string };
+	} = {},
+): string {
 	const { pair, timeframe, latest, totalItems, keyPoints, volumeStats, extra, priceRange } = args;
 	const p = formatPair(pair ?? '');
 	const tf = timeframe ? ` [${timeframe}]` : '';
@@ -122,7 +132,7 @@ export function formatSummary(args: {
 	if (typeof totalItems === 'number' && totalItems > 0) {
 		summary += `${tf} ローソク足${totalItems}本取得`;
 		summary += `\n⚠️ 配列は古い順: data[0]=最古、data[${totalItems - 1}]=最新`;
-		
+
 		// 全件の範囲情報を追加
 		if (priceRange) {
 			summary += `\n\n📈 全${totalItems}件の価格範囲:`;
@@ -184,5 +194,3 @@ export function formatSummary(args: {
 	const tail = extra ? ` ${extra}` : '';
 	return `${summary}${tail}`.trim();
 }
-
-

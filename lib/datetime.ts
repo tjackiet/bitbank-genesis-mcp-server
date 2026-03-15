@@ -5,9 +5,9 @@
  */
 
 import dayjs from 'dayjs';
-import utc from 'dayjs/plugin/utc.js';
-import timezone from 'dayjs/plugin/timezone.js';
 import customParseFormat from 'dayjs/plugin/customParseFormat.js';
+import timezone from 'dayjs/plugin/timezone.js';
+import utc from 'dayjs/plugin/utc.js';
 
 // プラグイン有効化
 dayjs.extend(utc);
@@ -122,11 +122,7 @@ export function parseIso8601(value: string): dayjs.Dayjs | null {
 	}
 
 	// 日時部分のフォーマット候補
-	const formats = [
-		'YYYY-MM-DDTHH:mm:ss.SSS',
-		'YYYY-MM-DDTHH:mm:ss',
-		'YYYY-MM-DD',
-	];
+	const formats = ['YYYY-MM-DDTHH:mm:ss.SSS', 'YYYY-MM-DDTHH:mm:ss', 'YYYY-MM-DD'];
 
 	for (const fmt of formats) {
 		const d = dayjs(dateTimePart, fmt, true); // strict = true
