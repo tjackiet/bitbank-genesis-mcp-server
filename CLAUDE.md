@@ -26,6 +26,14 @@ npm run gen:types && npm run typecheck
 - ツール追加・修正 → `.claude/rules/tools.md`
 - HTML の Tailwind → `.claude/rules/html.md`
 
+## セッション開始時
+
+```bash
+npm run gen:types && npm run typecheck && npm test
+```
+
+型定義の再生成 → 型チェック → テスト実行の順に走らせ、コードベースが健全な状態であることを確認してから作業を開始する。
+
 ## リポジトリルール
 
 - `main` ブランチ保護。PR 経由でマージ。
