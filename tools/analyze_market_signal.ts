@@ -1,8 +1,13 @@
+import type { z } from 'zod';
 import { formatPercent, formatPriceJPY, formatSummary } from '../lib/formatter.js';
 import { slidingMean } from '../lib/math.js';
 import { fail, failFromError, failFromValidation, ok } from '../lib/result.js';
 import { createMeta, ensurePair } from '../lib/validate.js';
-import { AnalyzeMarketSignalOutputSchema } from '../src/schemas.js';
+import {
+	AnalyzeMarketSignalDataSchemaOut,
+	AnalyzeMarketSignalMetaSchemaOut,
+	AnalyzeMarketSignalOutputSchema,
+} from '../src/schemas.js';
 import analyzeIndicators from './analyze_indicators.js';
 import getFlowMetrics from './get_flow_metrics.js';
 import getVolatilityMetrics from './get_volatility_metrics.js';
@@ -203,23 +208,32 @@ export default async function analyzeMarketSignal(pair: string = 'btc_jpy', opts
 
 	try {
 		const [flowRes, volRes, indRes] = await Promise.all([
-			getFlowMetrics(chk.pair, flowLimit, undefined as any, bucketMs) as any,
-			getVolatilityMetrics(chk.pair, type, 200, windows, { annualize: true }) as any,
+			getFlowMetrics(chk.pair, flowLimit, undefined, bucketMs),
+			getVolatilityMetrics(chk.pair, type, 200, windows, { annualize: true }),
 			// SMA25/75/200 を扱うため十分な本数を取得（最低200+バッファ）
-			analyzeIndicators(chk.pair, type, 220) as any,
+			analyzeIndicators(chk.pair, type, 220),
 		]);
 
 		if (!flowRes?.ok)
 			return AnalyzeMarketSignalOutputSchema.parse(
-				fail(flowRes?.summary || 'flow failed', (flowRes?.meta as any)?.errorType || 'internal'),
+				fail(
+					flowRes?.summary || 'flow failed',
+					(!flowRes.ok && 'errorType' in flowRes.meta ? flowRes.meta.errorType : undefined) || 'internal',
+				),
 			);
 		if (!volRes?.ok)
 			return AnalyzeMarketSignalOutputSchema.parse(
-				fail(volRes?.summary || 'vol failed', (volRes?.meta as any)?.errorType || 'internal'),
+				fail(
+					volRes?.summary || 'vol failed',
+					(!volRes.ok && 'errorType' in volRes.meta ? volRes.meta.errorType : undefined) || 'internal',
+				),
 			);
 		if (!indRes?.ok)
 			return AnalyzeMarketSignalOutputSchema.parse(
-				fail(indRes?.summary || 'indicators failed', (indRes?.meta as any)?.errorType || 'internal'),
+				fail(
+					indRes?.summary || 'indicators failed',
+					(!indRes.ok && 'errorType' in indRes.meta ? indRes.meta.errorType : undefined) || 'internal',
+				),
 			);
 
 		// Flow metrics
@@ -281,8 +295,9 @@ export default async function analyzeMarketSignal(pair: string = 'btc_jpy', opts
 		// Recent cross detection for 25/75 using normalized closes (fallback if indicator series not available)
 		let recentCross: { type: 'golden_cross' | 'death_cross'; pair: '25/75'; barsAgo: number } | null = null;
 		try {
-			const closes: number[] = Array.isArray((indRes?.data as any)?.normalized)
-				? ((indRes as any).data.normalized as any[]).map((c: any) => Number(c?.close)).filter((v) => Number.isFinite(v))
+			const normalized = indRes.data.normalized;
+			const closes: number[] = Array.isArray(normalized)
+				? normalized.map((c) => Number(c?.close)).filter((v) => Number.isFinite(v))
 				: [];
 			if (closes.length >= 80) {
 				const sma25Series = slidingMean(closes, 25);
@@ -637,7 +652,13 @@ export default async function analyzeMarketSignal(pair: string = 'btc_jpy', opts
 		});
 
 		const meta = createMeta(chk.pair, { type, windows, bucketMs, flowLimit });
-		return AnalyzeMarketSignalOutputSchema.parse(ok(fullText, data as any, meta as any));
+		return AnalyzeMarketSignalOutputSchema.parse(
+			ok(
+				fullText,
+				data as z.infer<typeof AnalyzeMarketSignalDataSchemaOut>,
+				meta as z.infer<typeof AnalyzeMarketSignalMetaSchemaOut>,
+			),
+		);
 	} catch (e: unknown) {
 		return failFromError(e, { schema: AnalyzeMarketSignalOutputSchema });
 	}

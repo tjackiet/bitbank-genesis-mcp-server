@@ -4,12 +4,13 @@ import { nowIso } from '../lib/datetime.js';
 import getDepth from '../lib/get-depth.js';
 import { fail, failFromError, failFromValidation, ok } from '../lib/result.js';
 import { createMeta, ensurePair } from '../lib/validate.js';
+import type { Result } from '../src/schemas.js';
 import type { ToolDefinition } from '../src/tool-definition.js';
 import getCandles from './get_candles.js';
 
 type Lookback = '30min' | '1hour' | '2hour';
 
-const cache = new TtlCache<unknown>({ ttlMs: 60_000 });
+const cache = new TtlCache<Result>({ ttlMs: 60_000 });
 
 function extractLargeOrders(levels: Array<[number, number]>, minSize: number) {
 	return (levels || [])
@@ -152,7 +153,8 @@ export default async function detectWhaleEvents(
 			meta: { lookback, minSize },
 		};
 
-		const out = ok(text, data as any, createMeta(chk.pair, { fetchedAt: nowIso() })) as any;
+		const meta = createMeta(chk.pair, { fetchedAt: nowIso() });
+		const out = ok(text, data, meta);
 		cache.set(cacheKey, out);
 		return out;
 	} catch (e: unknown) {

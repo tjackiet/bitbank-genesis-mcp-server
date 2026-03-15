@@ -1,8 +1,14 @@
+import type { z } from 'zod';
 import { formatSummary } from '../lib/formatter.js';
 import { avg } from '../lib/math.js';
 import { fail, failFromError, failFromValidation, ok } from '../lib/result.js';
 import { createMeta, ensurePair } from '../lib/validate.js';
-import { AnalyzeIchimokuSnapshotInputSchema, AnalyzeIchimokuSnapshotOutputSchema } from '../src/schemas.js';
+import {
+	AnalyzeIchimokuSnapshotDataSchemaOut,
+	AnalyzeIchimokuSnapshotInputSchema,
+	AnalyzeIchimokuSnapshotMetaSchemaOut,
+	AnalyzeIchimokuSnapshotOutputSchema,
+} from '../src/schemas.js';
 import type { ToolDefinition } from '../src/tool-definition.js';
 import analyzeIndicators from './analyze_indicators.js';
 
@@ -145,13 +151,15 @@ export function buildIchimokuSnapshotText(input: BuildIchimokuSnapshotTextInput)
 		);
 	lines.push('');
 	lines.push('【シグナル分析】');
-	const achieved = ['priceAboveCloud', 'tenkanAboveKijun', 'chikouAbovePrice'].filter(
-		(k) => (sanpuku.conditions as any)[k],
-	).length;
+	const achieved = [
+		sanpuku.conditions.priceAboveCloud,
+		sanpuku.conditions.tenkanAboveKijun,
+		sanpuku.conditions.chikouAbovePrice,
+	].filter(Boolean).length;
 	lines.push(`・三役判定: ${sanpuku.kouten ? '好転' : sanpuku.gyakuten ? '逆転' : `好転条件 ${achieved}/3 達成`}`);
-	lines.push(`  ${(sanpuku.conditions as any).priceAboveCloud ? '✓' : '✗'} 価格が雲の上`);
-	lines.push(`  ${(sanpuku.conditions as any).tenkanAboveKijun ? '✓' : '✗'} 転換線が基準線の上`);
-	lines.push(`  ${(sanpuku.conditions as any).chikouAbovePrice ? '✓' : '✗'} 遅行スパンが好転中`);
+	lines.push(`  ${sanpuku.conditions.priceAboveCloud ? '✓' : '✗'} 価格が雲の上`);
+	lines.push(`  ${sanpuku.conditions.tenkanAboveKijun ? '✓' : '✗'} 転換線が基準線の上`);
+	lines.push(`  ${sanpuku.conditions.chikouAbovePrice ? '✓' : '✗'} 遅行スパンが好転中`);
 	if (recentCrosses.length) lines.push('・直近のイベント:');
 	for (const ev of recentCrosses)
 		lines.push(`  - ${ev.barsAgo}本前: ${ev.type === 'golden_cross' ? 'ゴールデンクロス' : 'デッドクロス'}`);
@@ -551,8 +559,12 @@ export default async function analyzeIchimokuSnapshot(
 			kumoTwist,
 			overallSignal,
 			overallConfidence,
-			scenarios: data.scenarios as any,
-			trend: data.trend as any,
+			scenarios: {
+				scenarios: data.scenarios.scenarios,
+				keyLevels: { support: data.scenarios.keyLevels.support, resistance: data.scenarios.keyLevels.resistance },
+				watchPoints: data.scenarios.watchPoints,
+			},
+			trend: { trendStrength: data.trend.trendStrength, momentum: data.trend.momentum },
 			cloudHistory,
 			currentSpanA,
 			currentSpanB,
@@ -560,7 +572,13 @@ export default async function analyzeIchimokuSnapshot(
 			futureSpanB,
 			tkDistPct,
 		});
-		return AnalyzeIchimokuSnapshotOutputSchema.parse(ok(text, data as any, meta as any));
+		return AnalyzeIchimokuSnapshotOutputSchema.parse(
+			ok(
+				text,
+				data as z.infer<typeof AnalyzeIchimokuSnapshotDataSchemaOut>,
+				meta as z.infer<typeof AnalyzeIchimokuSnapshotMetaSchemaOut>,
+			),
+		);
 	} catch (e: unknown) {
 		return failFromError(e, { schema: AnalyzeIchimokuSnapshotOutputSchema });
 	}

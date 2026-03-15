@@ -1,8 +1,13 @@
+import type { z } from 'zod';
 import { today } from '../lib/datetime.js';
 import { formatSummary } from '../lib/formatter.js';
 import { fail, failFromError, failFromValidation, ok } from '../lib/result.js';
 import { createMeta, ensurePair } from '../lib/validate.js';
-import { AnalyzeSmaSnapshotInputSchema, AnalyzeSmaSnapshotOutputSchema } from '../src/schemas.js';
+import {
+	AnalyzeSmaSnapshotDataSchemaOut,
+	AnalyzeSmaSnapshotInputSchema,
+	AnalyzeSmaSnapshotOutputSchema,
+} from '../src/schemas.js';
 import type { ToolDefinition } from '../src/tool-definition.js';
 import analyzeIndicators from './analyze_indicators.js';
 
@@ -284,7 +289,7 @@ export default async function analyzeSmaSnapshot(
 			recentCrosses,
 		});
 
-		const data = {
+		const data: z.infer<typeof AnalyzeSmaSnapshotDataSchemaOut> = {
 			latest: { close },
 			sma: map,
 			crosses,
@@ -294,9 +299,9 @@ export default async function analyzeSmaSnapshot(
 			summary: { close, align: alignment, position },
 			smas: smasExt,
 			recentCrosses,
-		} as any;
+		};
 		const meta = createMeta(chk.pair, { type, count: indRes.data.normalized.length, periods });
-		return AnalyzeSmaSnapshotOutputSchema.parse(ok(summaryText, data as any, meta as any));
+		return AnalyzeSmaSnapshotOutputSchema.parse(ok(summaryText, data, meta));
 	} catch (e: unknown) {
 		return failFromError(e, { schema: AnalyzeSmaSnapshotOutputSchema });
 	}

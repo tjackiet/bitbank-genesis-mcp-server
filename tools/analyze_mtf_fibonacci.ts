@@ -113,7 +113,7 @@ function detectConfluence(
 function generateMtfContent(
 	pair: string,
 	currentPrice: number,
-	periodResults: Array<{ lookbackDays: number; data: any }>,
+	periodResults: Array<{ lookbackDays: number; data: Record<string, unknown> }>,
 	confluence: ConfluenceZone[],
 ): Array<{ type: 'text'; text: string }> {
 	const lines: string[] = [];
@@ -126,10 +126,12 @@ function generateMtfContent(
 	// Per-period summaries
 	for (const pr of periodResults) {
 		const d = pr.data;
+		const swingHigh = d.swingHigh as { price: number; date: string };
+		const swingLow = d.swingLow as { price: number; date: string };
 		lines.push(`--- ${pr.lookbackDays}日 ---`);
 		lines.push(`  トレンド: ${d.trend === 'up' ? '上昇↑' : '下降↓'}`);
-		lines.push(`  スイングハイ: ${formatPrice(d.swingHigh.price, pair)}（${d.swingHigh.date}）`);
-		lines.push(`  スイングロー: ${formatPrice(d.swingLow.price, pair)}（${d.swingLow.date}）`);
+		lines.push(`  スイングハイ: ${formatPrice(swingHigh.price, pair)}（${swingHigh.date}）`);
+		lines.push(`  スイングロー: ${formatPrice(swingLow.price, pair)}（${swingLow.date}）`);
 
 		// All retracement levels (0% and 100% are swing points, still useful for reference)
 		const allLevels = (d.levels as FibLevel[]) ?? [];
@@ -188,27 +190,30 @@ export default async function analyzeMtfFibonacci(pair: string = 'btc_jpy', look
 					mode: 'retracement',
 					historyLookbackDays: days,
 				});
-				return { lookbackDays: days, result: res as any };
+				return { lookbackDays: days, result: res as Record<string, unknown> };
 			}),
 		);
 
 		// Build per-period data
-		const periods: Record<string, any> = {};
-		const periodSummaries: Array<{ lookbackDays: number; data: any; levels: FibLevel[] }> = [];
+		const periods: Record<string, unknown> = {};
+		const periodSummaries: Array<{ lookbackDays: number; data: Record<string, unknown>; levels: FibLevel[] }> = [];
 		let currentPrice = 0;
 
 		for (const { lookbackDays: days, result } of results) {
 			if (result?.ok && result?.data) {
-				const d = result.data;
+				const d = result.data as Record<string, unknown>;
+				const swingHigh = d.swingHigh as { price: number; date: string };
+				const swingLow = d.swingLow as { price: number; date: string };
+				const levels = (d.levels as FibLevel[]) ?? [];
 				periods[String(days)] = {
 					lookbackDays: days,
 					trend: d.trend,
-					swingHigh: { price: d.swingHigh.price, date: d.swingHigh.date },
-					swingLow: { price: d.swingLow.price, date: d.swingLow.date },
-					levels: d.levels,
+					swingHigh: { price: swingHigh.price, date: swingHigh.date },
+					swingLow: { price: swingLow.price, date: swingLow.date },
+					levels,
 				};
-				periodSummaries.push({ lookbackDays: days, data: d, levels: d.levels ?? [] });
-				if (d.currentPrice) currentPrice = d.currentPrice;
+				periodSummaries.push({ lookbackDays: days, data: d, levels });
+				if (d.currentPrice) currentPrice = d.currentPrice as number;
 			} else {
 				periods[String(days)] = {
 					lookbackDays: days,

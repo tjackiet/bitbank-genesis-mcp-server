@@ -1,6 +1,12 @@
+import type { z } from 'zod';
 import { failFromError, failFromValidation, ok } from '../lib/result.js';
 import { createMeta, ensurePair } from '../lib/validate.js';
-import { AnalyzeMtfSmaInputSchema, AnalyzeMtfSmaOutputSchema } from '../src/schemas.js';
+import {
+	AnalyzeMtfSmaDataSchemaOut,
+	AnalyzeMtfSmaInputSchema,
+	AnalyzeMtfSmaMetaSchemaOut,
+	AnalyzeMtfSmaOutputSchema,
+} from '../src/schemas.js';
 import type { ToolDefinition } from '../src/tool-definition.js';
 import analyzeSmaSnapshot from './analyze_sma_snapshot.js';
 
@@ -21,20 +27,21 @@ export default async function analyzeMtfSma(
 		const results = await Promise.all(
 			uniqueTimeframes.map(async (tf) => {
 				const res = await analyzeSmaSnapshot(chk.pair, tf, 220, periods);
-				return { timeframe: tf, result: res as any };
+				return { timeframe: tf, result: res as Record<string, unknown> };
 			}),
 		);
 
 		// Build per-timeframe results (pick fields relevant to MTF view)
-		const byTimeframe: Record<string, any> = {};
+		const byTimeframe: Record<string, unknown> = {};
 		const alignments: string[] = [];
 
 		for (const { timeframe, result } of results) {
 			if (result?.ok && result?.data) {
-				const d = result.data;
+				const d = result.data as Record<string, unknown>;
+				const summary = d.summary as Record<string, unknown> | undefined;
 				byTimeframe[timeframe] = {
 					alignment: d.alignment,
-					position: d.summary?.position ?? 'unknown',
+					position: (summary?.position as string) ?? 'unknown',
 					latest: d.latest,
 					sma: d.sma,
 					smas: d.smas,
@@ -42,7 +49,7 @@ export default async function analyzeMtfSma(
 					recentCrosses: d.recentCrosses,
 					tags: d.tags,
 				};
-				alignments.push(d.alignment);
+				alignments.push(d.alignment as string);
 			} else {
 				byTimeframe[timeframe] = { alignment: 'unknown', latest: { close: null } };
 				alignments.push('unknown');
@@ -68,19 +75,20 @@ export default async function analyzeMtfSma(
 		}
 
 		const dirLabel = direction === 'bullish' ? '上昇' : direction === 'bearish' ? '下降' : '混合';
+		const tfEntry = (tf: string) => byTimeframe[tf] as Record<string, unknown> | undefined;
 		const summary = aligned
 			? `全時間軸が${dirLabel}方向で一致`
-			: `時間軸間で方向が分かれている（${timeframes.map((tf) => `${tf}:${byTimeframe[tf]?.alignment}`).join(', ')})`;
+			: `時間軸間で方向が分かれている（${timeframes.map((tf) => `${tf}:${tfEntry(tf)?.alignment}`).join(', ')})`;
 
-		const summaryText = timeframes.map((tf) => `${tf}: ${byTimeframe[tf]?.alignment}`).join(' / ') + ` → ${summary}`;
+		const summaryText = timeframes.map((tf) => `${tf}: ${tfEntry(tf)?.alignment}`).join(' / ') + ` → ${summary}`;
 
-		const data = {
-			timeframes: byTimeframe,
+		const data: z.infer<typeof AnalyzeMtfSmaDataSchemaOut> = {
+			timeframes: byTimeframe as z.infer<typeof AnalyzeMtfSmaDataSchemaOut>['timeframes'],
 			confluence: { aligned, direction, summary },
 		};
 
-		const meta = createMeta(chk.pair, { timeframes, periods });
-		return AnalyzeMtfSmaOutputSchema.parse(ok(summaryText, data as any, meta as any));
+		const meta = createMeta(chk.pair, { timeframes, periods }) as z.infer<typeof AnalyzeMtfSmaMetaSchemaOut>;
+		return AnalyzeMtfSmaOutputSchema.parse(ok(summaryText, data, meta));
 	} catch (e: unknown) {
 		return failFromError(e, { schema: AnalyzeMtfSmaOutputSchema });
 	}

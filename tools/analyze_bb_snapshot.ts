@@ -1,8 +1,13 @@
+import type { z } from 'zod';
 import { nowIso } from '../lib/datetime.js';
 import { formatSummary } from '../lib/formatter.js';
 import { fail, failFromError, failFromValidation, ok } from '../lib/result.js';
 import { createMeta, ensurePair } from '../lib/validate.js';
-import { AnalyzeBbSnapshotInputSchema, AnalyzeBbSnapshotOutputSchema } from '../src/schemas.js';
+import {
+	AnalyzeBbSnapshotDataSchemaOut,
+	AnalyzeBbSnapshotInputSchema,
+	AnalyzeBbSnapshotOutputSchema,
+} from '../src/schemas.js';
 import type { ToolDefinition } from '../src/tool-definition.js';
 import analyzeIndicators from './analyze_indicators.js';
 
@@ -257,7 +262,7 @@ export default async function analyzeBbSnapshot(
 				if_need_visualization: 'Use render_chart_svg with withBB=true',
 				if_extreme_detected: 'Consider get_volatility_metrics for deeper analysis',
 			};
-			const data = {
+			const data: z.infer<typeof AnalyzeBbSnapshotDataSchemaOut> = {
 				mode,
 				price: close ?? null,
 				bb: { middle: mid, upper, lower, zScore, bandWidthPct },
@@ -265,7 +270,7 @@ export default async function analyzeBbSnapshot(
 				context,
 				signals,
 				next_steps,
-			} as any;
+			};
 			// content 強化用: LLM が本文だけ見ても要点が掴めるように複数行の要約を生成
 			const summaryLines = buildBbDefaultText({
 				baseSummary: summaryBase,
@@ -296,7 +301,7 @@ export default async function analyzeBbSnapshot(
 					},
 				},
 			});
-			return AnalyzeBbSnapshotOutputSchema.parse(ok(summaryLines, data, meta as any));
+			return AnalyzeBbSnapshotOutputSchema.parse(ok(summaryLines, data, meta));
 		}
 
 		// extended mode
@@ -312,7 +317,7 @@ export default async function analyzeBbSnapshot(
 						: Math.abs(zScore) <= 3
 							? 'beyond_2σ'
 							: 'beyond_3σ';
-		const data = {
+		const data: z.infer<typeof AnalyzeBbSnapshotDataSchemaOut> = {
 			mode,
 			price: close ?? null,
 			bb: { middle: mid, bands: bbBands, zScore, bandWidthPct: bandWidthAll },
@@ -325,7 +330,7 @@ export default async function analyzeBbSnapshot(
 			},
 			interpretation: { volatility_state: null, extreme_risk: null, mean_reversion_potential: null },
 			tags,
-		} as any;
+		};
 		const meta = createMeta(chk.pair, {
 			type,
 			count: indRes.data.normalized.length,
@@ -344,7 +349,7 @@ export default async function analyzeBbSnapshot(
 			`\n\n---\n📌 含まれるもの: ボリンジャーバンド拡張（±1σ/±2σ/±3σ）、Zスコア、バンド幅` +
 			`\n📌 含まれないもの: 他のテクニカル指標（RSI・MACD・一目均衡表）、出来高フロー、板情報` +
 			`\n📌 補完ツール: analyze_indicators（他指標）, get_flow_metrics（出来高）, get_volatility_metrics（ボラ詳細）`;
-		return AnalyzeBbSnapshotOutputSchema.parse(ok(extSummary, data as any, meta as any));
+		return AnalyzeBbSnapshotOutputSchema.parse(ok(extSummary, data, meta));
 	} catch (e: unknown) {
 		return failFromError(e, { schema: AnalyzeBbSnapshotOutputSchema });
 	}

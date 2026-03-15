@@ -1,8 +1,13 @@
+import type { z } from 'zod';
 import { today } from '../lib/datetime.js';
 import { formatSummary } from '../lib/formatter.js';
 import { fail, failFromError, failFromValidation, ok } from '../lib/result.js';
 import { createMeta, ensurePair } from '../lib/validate.js';
-import { AnalyzeStochSnapshotInputSchema, AnalyzeStochSnapshotOutputSchema } from '../src/schemas.js';
+import {
+	AnalyzeStochSnapshotDataSchemaOut,
+	AnalyzeStochSnapshotInputSchema,
+	AnalyzeStochSnapshotOutputSchema,
+} from '../src/schemas.js';
 import type { ToolDefinition } from '../src/tool-definition.js';
 import analyzeIndicators, { computeClassicStochastic } from './analyze_indicators.js';
 import getCandles from './get_candles.js';
@@ -232,7 +237,7 @@ export default async function analyzeStochSnapshot(
 			recentCrosses,
 		});
 
-		const data = {
+		const data: z.infer<typeof AnalyzeStochSnapshotDataSchemaOut> = {
 			latest: { close },
 			stoch: { k: stochK, d: stochD, prevK, prevD },
 			zone,
@@ -240,9 +245,9 @@ export default async function analyzeStochSnapshot(
 			recentCrosses,
 			divergence: { type: divType, description: divDesc },
 			tags,
-		} as any;
+		};
 		const meta = createMeta(chk.pair, { type, count: normalizedLen, params: { kPeriod, smoothK, smoothD } });
-		return AnalyzeStochSnapshotOutputSchema.parse(ok(summaryText, data as any, meta as any));
+		return AnalyzeStochSnapshotOutputSchema.parse(ok(summaryText, data, meta));
 	} catch (e: unknown) {
 		return failFromError(e, { schema: AnalyzeStochSnapshotOutputSchema });
 	}

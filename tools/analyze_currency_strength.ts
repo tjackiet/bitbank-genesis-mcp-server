@@ -1,7 +1,13 @@
+import type { z } from 'zod';
 import { nowIso } from '../lib/datetime.js';
 import { formatPercent, formatPriceJPY, formatVolumeJPY } from '../lib/formatter.js';
 import { fail, failFromError, ok } from '../lib/result.js';
-import { AnalyzeCurrencyStrengthInputSchema, AnalyzeCurrencyStrengthOutputSchema } from '../src/schemas.js';
+import {
+	AnalyzeCurrencyStrengthDataSchemaOut,
+	AnalyzeCurrencyStrengthInputSchema,
+	AnalyzeCurrencyStrengthMetaSchemaOut,
+	AnalyzeCurrencyStrengthOutputSchema,
+} from '../src/schemas.js';
 import type { ToolDefinition } from '../src/tool-definition.js';
 import analyzeIndicators from './analyze_indicators.js';
 import getTickersJpy from './get_tickers_jpy.js';
@@ -56,7 +62,7 @@ function extractCurrency(pair: string): string {
 export default async function analyzeCurrencyStrength(topN: number = 10, type: string = '1day') {
 	try {
 		// 1. Fetch all tickers
-		const tickerRes: any = await getTickersJpy();
+		const tickerRes = await getTickersJpy();
 		if (!tickerRes?.ok) {
 			return AnalyzeCurrencyStrengthOutputSchema.parse(fail(tickerRes?.summary || 'tickers fetch failed', 'upstream'));
 		}
@@ -95,7 +101,7 @@ export default async function analyzeCurrencyStrength(topN: number = 10, type: s
 		const failedIndicatorPairs: string[] = [];
 		for (let i = 0; i < indicatorResults.length; i++) {
 			const r = indicatorResults[i];
-			if (r.status === 'rejected' || !(r.value as any)?.ok) {
+			if (r.status === 'rejected' || !r.value.ok) {
 				failedIndicatorPairs.push(targets[i].pair);
 			}
 		}
@@ -107,8 +113,7 @@ export default async function analyzeCurrencyStrength(topN: number = 10, type: s
 		// 4. Compute composite score for each
 		const items: RankedItem[] = targets.map((t, i) => {
 			const indResult = indicatorResults[i];
-			const ind =
-				indResult.status === 'fulfilled' && (indResult.value as any)?.ok ? (indResult.value as any).data : null;
+			const ind = indResult.status === 'fulfilled' && indResult.value.ok ? indResult.value.data : null;
 
 			// Component: 24h change → score [-100, +100]
 			// ±5% → ±100
@@ -237,7 +242,13 @@ export default async function analyzeCurrencyStrength(topN: number = 10, type: s
 
 		const summaryText = lines.join('\n');
 
-		return AnalyzeCurrencyStrengthOutputSchema.parse(ok(summaryText, data as any, meta as any));
+		return AnalyzeCurrencyStrengthOutputSchema.parse(
+			ok(
+				summaryText,
+				data as z.infer<typeof AnalyzeCurrencyStrengthDataSchemaOut>,
+				meta as z.infer<typeof AnalyzeCurrencyStrengthMetaSchemaOut>,
+			),
+		);
 	} catch (e: unknown) {
 		return failFromError(e, { schema: AnalyzeCurrencyStrengthOutputSchema });
 	}

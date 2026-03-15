@@ -1,9 +1,15 @@
+import { z } from 'zod';
 import { dayjs, toIsoMs } from '../lib/datetime.js';
 import { formatPair, formatPrice } from '../lib/formatter.js';
 import { BITBANK_API_BASE, DEFAULT_RETRIES, fetchJson } from '../lib/http.js';
 import { fail, failFromError, failFromValidation, ok } from '../lib/result.js';
 import { createMeta, ensurePair, validateLimit } from '../lib/validate.js';
-import { GetTransactionsInputSchema, GetTransactionsOutputSchema } from '../src/schemas.js';
+import {
+	GetTransactionsDataSchemaOut,
+	GetTransactionsInputSchema,
+	GetTransactionsMetaSchemaOut,
+	GetTransactionsOutputSchema,
+} from '../src/schemas.js';
 import type { ToolDefinition } from '../src/tool-definition.js';
 
 type TxnRaw = Record<string, unknown>;
@@ -119,7 +125,13 @@ export default async function getTransactions(pair: string = 'btc_jpy', limit: n
 
 		const data = { raw: json, normalized: latest };
 		const meta = createMeta(chk.pair, { count: latest.length, source: date ? 'by_date' : 'latest' });
-		return GetTransactionsOutputSchema.parse(ok(summary, data as any, meta as any));
+		return GetTransactionsOutputSchema.parse(
+			ok<z.infer<typeof GetTransactionsDataSchemaOut>, z.infer<typeof GetTransactionsMetaSchemaOut>>(
+				summary,
+				data,
+				meta as z.infer<typeof GetTransactionsMetaSchemaOut>,
+			),
+		);
 	} catch (e: unknown) {
 		return failFromError(e, {
 			schema: GetTransactionsOutputSchema,

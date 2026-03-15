@@ -1,8 +1,13 @@
+import type { z } from 'zod';
 import { today } from '../lib/datetime.js';
 import { formatSummary } from '../lib/formatter.js';
 import { fail, failFromError, failFromValidation, ok } from '../lib/result.js';
 import { createMeta, ensurePair } from '../lib/validate.js';
-import { AnalyzeEmaSnapshotInputSchema, AnalyzeEmaSnapshotOutputSchema } from '../src/schemas.js';
+import {
+	AnalyzeEmaSnapshotDataSchemaOut,
+	AnalyzeEmaSnapshotInputSchema,
+	AnalyzeEmaSnapshotOutputSchema,
+} from '../src/schemas.js';
 import type { ToolDefinition } from '../src/tool-definition.js';
 import analyzeIndicators, { ema } from './analyze_indicators.js';
 import getCandles from './get_candles.js';
@@ -315,7 +320,7 @@ export default async function analyzeEmaSnapshot(
 			recentCrosses,
 		});
 
-		const data = {
+		const data: z.infer<typeof AnalyzeEmaSnapshotDataSchemaOut> = {
 			latest: { close },
 			ema: map,
 			crosses,
@@ -324,9 +329,9 @@ export default async function analyzeEmaSnapshot(
 			summary: { close, align: alignment, position },
 			emas: emasExt,
 			recentCrosses,
-		} as any;
+		};
 		const meta = createMeta(chk.pair, { type, count: normalizedLen, periods });
-		return AnalyzeEmaSnapshotOutputSchema.parse(ok(summaryText, data as any, meta as any));
+		return AnalyzeEmaSnapshotOutputSchema.parse(ok(summaryText, data, meta));
 	} catch (e: unknown) {
 		return failFromError(e, { schema: AnalyzeEmaSnapshotOutputSchema });
 	}

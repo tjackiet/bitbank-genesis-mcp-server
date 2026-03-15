@@ -1,3 +1,4 @@
+import { z } from 'zod';
 import { nowIso } from '../lib/datetime.js';
 import { formatSummary } from '../lib/formatter.js';
 import { trueRange } from '../lib/indicators.js';
@@ -11,7 +12,7 @@ import {
 	parkinsonComponents,
 	rogersSatchellComponents,
 } from '../lib/volatility.js';
-import { GetVolMetricsOutputSchema } from '../src/schemas.js';
+import { GetVolMetricsDataSchemaOut, GetVolMetricsMetaSchemaOut, GetVolMetricsOutputSchema } from '../src/schemas.js';
 import getCandles from './get_candles.js';
 
 type Candle = { open: number; high: number; low: number; close: number; isoTime?: string | null };
@@ -274,7 +275,13 @@ export default async function getVolatilityMetrics(
 		});
 
 		const meta = createMeta(chk.pair, { type, count: candles.length });
-		return GetVolMetricsOutputSchema.parse(ok(summary, data as any, meta as any));
+		return GetVolMetricsOutputSchema.parse(
+			ok<z.infer<typeof GetVolMetricsDataSchemaOut>, z.infer<typeof GetVolMetricsMetaSchemaOut>>(
+				summary,
+				data,
+				meta as z.infer<typeof GetVolMetricsMetaSchemaOut>,
+			),
+		);
 	} catch (e: unknown) {
 		return failFromError(e, { schema: GetVolMetricsOutputSchema });
 	}

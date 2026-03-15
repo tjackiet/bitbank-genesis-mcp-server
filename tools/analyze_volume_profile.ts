@@ -9,12 +9,18 @@
  * 3. Trade Size Distribution (約定サイズ別の分類 + 大口偏り)
  */
 
+import { z } from 'zod';
 import { dayjs, toDisplayTime, toIsoWithTz } from '../lib/datetime.js';
 import { formatPair, formatPercent, formatPrice } from '../lib/formatter.js';
 import { median } from '../lib/math.js';
 import { fail, failFromError, failFromValidation, ok } from '../lib/result.js';
 import { createMeta, ensurePair, validateLimit } from '../lib/validate.js';
-import { AnalyzeVolumeProfileInputSchema, AnalyzeVolumeProfileOutputSchema } from '../src/schemas.js';
+import {
+	AnalyzeVolumeProfileDataSchemaOut,
+	AnalyzeVolumeProfileInputSchema,
+	AnalyzeVolumeProfileMetaSchemaOut,
+	AnalyzeVolumeProfileOutputSchema,
+} from '../src/schemas.js';
 import type { ToolDefinition } from '../src/tool-definition.js';
 import getTransactions from './get_transactions.js';
 
@@ -509,7 +515,13 @@ export default async function analyzeVolumeProfile(
 		const metaExtra: Record<string, unknown> = { count: txs.length };
 		if (fetchResult.fetchWarning) metaExtra.warning = fetchResult.fetchWarning;
 		const meta = createMeta(chk.pair, metaExtra);
-		return AnalyzeVolumeProfileOutputSchema.parse(ok(summary, data as any, meta as any));
+		return AnalyzeVolumeProfileOutputSchema.parse(
+			ok<z.infer<typeof AnalyzeVolumeProfileDataSchemaOut>, z.infer<typeof AnalyzeVolumeProfileMetaSchemaOut>>(
+				summary,
+				data,
+				meta as z.infer<typeof AnalyzeVolumeProfileMetaSchemaOut>,
+			),
+		);
 	} catch (e: unknown) {
 		return failFromError(e, { schema: AnalyzeVolumeProfileOutputSchema });
 	}
