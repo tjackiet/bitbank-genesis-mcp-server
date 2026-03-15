@@ -71,9 +71,9 @@ export function detectDoubles(ctx: DetectContext): DetectResult {
 						const diagram = generatePatternDiagram(
 							'double_top',
 							[
-								{ ...a, date: (candles[a.idx] as any)?.isoTime },
-								{ ...b, date: (candles[b.idx] as any)?.isoTime },
-								{ ...c, date: (candles[c.idx] as any)?.isoTime },
+								{ ...a, date: candles[a.idx]?.isoTime },
+								{ ...b, date: candles[b.idx]?.isoTime },
+								{ ...c, date: candles[c.idx]?.isoTime },
 							],
 							{ price: necklinePrice },
 							{ start, end },
@@ -193,9 +193,9 @@ export function detectDoubles(ctx: DetectContext): DetectResult {
 						const diagram = generatePatternDiagram(
 							'double_bottom',
 							[
-								{ ...a, date: (candles[a.idx] as any)?.isoTime },
-								{ ...b, date: (candles[b.idx] as any)?.isoTime },
-								{ ...c, date: (candles[c.idx] as any)?.isoTime },
+								{ ...a, date: candles[a.idx]?.isoTime },
+								{ ...b, date: candles[b.idx]?.isoTime },
+								{ ...c, date: candles[c.idx]?.isoTime },
 							],
 							{ price: necklinePrice },
 							{ start, end },
@@ -339,9 +339,9 @@ export function detectDoubles(ctx: DetectContext): DetectResult {
 						const diagram = generatePatternDiagram(
 							'double_top',
 							[
-								{ ...a, date: (candles[a.idx] as any)?.isoTime },
-								{ ...b, date: (candles[b.idx] as any)?.isoTime },
-								{ ...c, date: (candles[c.idx] as any)?.isoTime },
+								{ ...a, date: candles[a.idx]?.isoTime },
+								{ ...b, date: candles[b.idx]?.isoTime },
+								{ ...c, date: candles[c.idx]?.isoTime },
 							],
 							{ price: necklinePrice },
 							{ start, end },
@@ -455,9 +455,9 @@ export function detectDoubles(ctx: DetectContext): DetectResult {
 						const diagram = generatePatternDiagram(
 							'double_bottom',
 							[
-								{ ...a, date: (candles[a.idx] as any)?.isoTime },
-								{ ...b, date: (candles[b.idx] as any)?.isoTime },
-								{ ...c, date: (candles[c.idx] as any)?.isoTime },
+								{ ...a, date: candles[a.idx]?.isoTime },
+								{ ...b, date: candles[b.idx]?.isoTime },
+								{ ...c, date: candles[c.idx]?.isoTime },
 							],
 							{ price: necklinePrice },
 							{ start, end },
@@ -504,7 +504,7 @@ export function detectDoubles(ctx: DetectContext): DetectResult {
 	if (includeForming && (want.size === 0 || want.has('double_top') || want.has('double_bottom'))) {
 		const lastIdx = candles.length - 1;
 		const currentPrice = Number(candles[lastIdx]?.close ?? NaN);
-		const isoAt = (i: number) => (candles[i] as any)?.isoTime || '';
+		const isoAt = (i: number) => candles[i]?.isoTime || '';
 		const maxFormingDays = 90; // 形成中パターンは3ヶ月以内に制限
 		const daysPerBar = ctx.type === '1day' ? 1 : ctx.type === '1week' ? 7 : 1;
 

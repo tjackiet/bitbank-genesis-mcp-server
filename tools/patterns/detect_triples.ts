@@ -78,11 +78,11 @@ export function detectTriples(ctx: DetectContext): DetectResult {
 						diagram = generatePatternDiagram(
 							'triple_top',
 							[
-								{ ...a, date: (candles[a.idx] as any)?.isoTime },
-								{ ...v1, date: (candles[v1.idx] as any)?.isoTime },
-								{ ...b, date: (candles[b.idx] as any)?.isoTime },
-								{ ...v2, date: (candles[v2.idx] as any)?.isoTime },
-								{ ...c, date: (candles[c.idx] as any)?.isoTime },
+								{ ...a, date: candles[a.idx]?.isoTime },
+								{ ...v1, date: candles[v1.idx]?.isoTime },
+								{ ...b, date: candles[b.idx]?.isoTime },
+								{ ...v2, date: candles[v2.idx]?.isoTime },
+								{ ...c, date: candles[c.idx]?.isoTime },
 							],
 							{ price: nlAvg },
 							{ start, end },
@@ -189,11 +189,11 @@ export function detectTriples(ctx: DetectContext): DetectResult {
 						diagram = generatePatternDiagram(
 							'triple_bottom',
 							[
-								{ ...a, date: (candles[a.idx] as any)?.isoTime },
-								{ ...p1, date: (candles[p1.idx] as any)?.isoTime },
-								{ ...b, date: (candles[b.idx] as any)?.isoTime },
-								{ ...p2, date: (candles[p2.idx] as any)?.isoTime },
-								{ ...c, date: (candles[c.idx] as any)?.isoTime },
+								{ ...a, date: candles[a.idx]?.isoTime },
+								{ ...p1, date: candles[p1.idx]?.isoTime },
+								{ ...b, date: candles[b.idx]?.isoTime },
+								{ ...p2, date: candles[p2.idx]?.isoTime },
+								{ ...c, date: candles[c.idx]?.isoTime },
 							],
 							{ price: nlAvg },
 							{ start, end },
@@ -304,16 +304,16 @@ export function detectTriples(ctx: DetectContext): DetectResult {
 										{ x: a.idx, y: nlAvg },
 										{ x: c.idx, y: nlAvg },
 									]
-								: (undefined as any);
+								: undefined;
 						if (v1 && v2) {
 							diagram = generatePatternDiagram(
 								'triple_top',
 								[
-									{ ...a, date: (candles[a.idx] as any)?.isoTime },
-									{ ...v1, date: (candles[v1.idx] as any)?.isoTime },
-									{ ...b, date: (candles[b.idx] as any)?.isoTime },
-									{ ...v2, date: (candles[v2.idx] as any)?.isoTime },
-									{ ...c, date: (candles[c.idx] as any)?.isoTime },
+									{ ...a, date: candles[a.idx]?.isoTime },
+									{ ...v1, date: candles[v1.idx]?.isoTime },
+									{ ...b, date: candles[b.idx]?.isoTime },
+									{ ...v2, date: candles[v2.idx]?.isoTime },
+									{ ...c, date: candles[c.idx]?.isoTime },
 								],
 								{ price: nlAvg ?? Number(b.price) },
 								{ start, end },
@@ -410,16 +410,16 @@ export function detectTriples(ctx: DetectContext): DetectResult {
 										{ x: a.idx, y: nlAvg },
 										{ x: c.idx, y: nlAvg },
 									]
-								: (undefined as any);
+								: undefined;
 						if (p1 && p2) {
 							diagram = generatePatternDiagram(
 								'triple_bottom',
 								[
-									{ ...a, date: (candles[a.idx] as any)?.isoTime },
-									{ ...p1, date: (candles[p1.idx] as any)?.isoTime },
-									{ ...b, date: (candles[b.idx] as any)?.isoTime },
-									{ ...p2, date: (candles[p2.idx] as any)?.isoTime },
-									{ ...c, date: (candles[c.idx] as any)?.isoTime },
+									{ ...a, date: candles[a.idx]?.isoTime },
+									{ ...p1, date: candles[p1.idx]?.isoTime },
+									{ ...b, date: candles[b.idx]?.isoTime },
+									{ ...p2, date: candles[p2.idx]?.isoTime },
+									{ ...c, date: candles[c.idx]?.isoTime },
 								],
 								{ price: nlAvg ?? Number(b.price) },
 								{ start, end },
@@ -459,7 +459,7 @@ export function detectTriples(ctx: DetectContext): DetectResult {
 	if (includeForming && (want.size === 0 || want.has('triple_top') || want.has('triple_bottom'))) {
 		const lastIdx = candles.length - 1;
 		const currentPrice = Number(candles[lastIdx]?.close ?? NaN);
-		const isoAt = (i: number) => (candles[i] as any)?.isoTime || '';
+		const isoAt = (i: number) => candles[i]?.isoTime || '';
 		const maxFormingDays = 90; // 形成中パターンは3ヶ月以内に制限
 		const daysPerBar = ctx.type === '1day' ? 1 : ctx.type === '1week' ? 7 : 1;
 		const tripleTolerancePct = tolerancePct * 1.2; // やや緩めの許容範囲

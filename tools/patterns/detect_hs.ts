@@ -54,11 +54,11 @@ export function detectHeadAndShoulders(ctx: DetectContext): DetectResult {
 					const diagram = generatePatternDiagram(
 						'inverse_head_and_shoulders',
 						[
-							{ ...p0, date: (candles[p0.idx] as any)?.isoTime },
-							{ ...p1, date: (candles[p1.idx] as any)?.isoTime },
-							{ ...p2, date: (candles[p2.idx] as any)?.isoTime },
-							{ ...p3, date: (candles[p3.idx] as any)?.isoTime },
-							{ ...p4, date: (candles[p4.idx] as any)?.isoTime },
+							{ ...p0, date: candles[p0.idx]?.isoTime },
+							{ ...p1, date: candles[p1.idx]?.isoTime },
+							{ ...p2, date: candles[p2.idx]?.isoTime },
+							{ ...p3, date: candles[p3.idx]?.isoTime },
+							{ ...p4, date: candles[p4.idx]?.isoTime },
 						],
 						{ price: nlAvg },
 						{ start, end },
@@ -85,11 +85,11 @@ export function detectHeadAndShoulders(ctx: DetectContext): DetectResult {
 						accepted: true,
 						indices: [p0.idx, p1.idx, p2.idx, p3.idx, p4.idx],
 						points: [
-							{ role: 'left_shoulder', idx: p0.idx, price: p0.price, isoTime: (candles[p0.idx] as any)?.isoTime },
-							{ role: 'peak1', idx: p1.idx, price: p1.price, isoTime: (candles[p1.idx] as any)?.isoTime },
-							{ role: 'head', idx: p2.idx, price: p2.price, isoTime: (candles[p2.idx] as any)?.isoTime },
-							{ role: 'peak2', idx: p3.idx, price: p3.price, isoTime: (candles[p3.idx] as any)?.isoTime },
-							{ role: 'right_shoulder', idx: p4.idx, price: p4.price, isoTime: (candles[p4.idx] as any)?.isoTime },
+							{ role: 'left_shoulder', idx: p0.idx, price: p0.price, isoTime: candles[p0.idx]?.isoTime },
+							{ role: 'peak1', idx: p1.idx, price: p1.price, isoTime: candles[p1.idx]?.isoTime },
+							{ role: 'head', idx: p2.idx, price: p2.price, isoTime: candles[p2.idx]?.isoTime },
+							{ role: 'peak2', idx: p3.idx, price: p3.price, isoTime: candles[p3.idx]?.isoTime },
+							{ role: 'right_shoulder', idx: p4.idx, price: p4.price, isoTime: candles[p4.idx]?.isoTime },
 						],
 					});
 				}
@@ -150,11 +150,11 @@ export function detectHeadAndShoulders(ctx: DetectContext): DetectResult {
 					const diagram = generatePatternDiagram(
 						'head_and_shoulders',
 						[
-							{ ...p0, date: (candles[p0.idx] as any)?.isoTime },
-							{ ...p1, date: (candles[p1.idx] as any)?.isoTime },
-							{ ...p2, date: (candles[p2.idx] as any)?.isoTime },
-							{ ...p3, date: (candles[p3.idx] as any)?.isoTime },
-							{ ...p4, date: (candles[p4.idx] as any)?.isoTime },
+							{ ...p0, date: candles[p0.idx]?.isoTime },
+							{ ...p1, date: candles[p1.idx]?.isoTime },
+							{ ...p2, date: candles[p2.idx]?.isoTime },
+							{ ...p3, date: candles[p3.idx]?.isoTime },
+							{ ...p4, date: candles[p4.idx]?.isoTime },
 						],
 						{ price: nlAvg },
 						{ start, end },
@@ -181,11 +181,11 @@ export function detectHeadAndShoulders(ctx: DetectContext): DetectResult {
 						accepted: true,
 						indices: [p0.idx, p1.idx, p2.idx, p3.idx, p4.idx],
 						points: [
-							{ role: 'left_shoulder', idx: p0.idx, price: p0.price, isoTime: (candles[p0.idx] as any)?.isoTime },
-							{ role: 'valley1', idx: p1.idx, price: p1.price, isoTime: (candles[p1.idx] as any)?.isoTime },
-							{ role: 'head', idx: p2.idx, price: p2.price, isoTime: (candles[p2.idx] as any)?.isoTime },
-							{ role: 'valley2', idx: p3.idx, price: p3.price, isoTime: (candles[p3.idx] as any)?.isoTime },
-							{ role: 'right_shoulder', idx: p4.idx, price: p4.price, isoTime: (candles[p4.idx] as any)?.isoTime },
+							{ role: 'left_shoulder', idx: p0.idx, price: p0.price, isoTime: candles[p0.idx]?.isoTime },
+							{ role: 'valley1', idx: p1.idx, price: p1.price, isoTime: candles[p1.idx]?.isoTime },
+							{ role: 'head', idx: p2.idx, price: p2.price, isoTime: candles[p2.idx]?.isoTime },
+							{ role: 'valley2', idx: p3.idx, price: p3.price, isoTime: candles[p3.idx]?.isoTime },
+							{ role: 'right_shoulder', idx: p4.idx, price: p4.price, isoTime: candles[p4.idx]?.isoTime },
 						],
 					});
 				}
@@ -260,11 +260,11 @@ export function detectHeadAndShoulders(ctx: DetectContext): DetectResult {
 				const diagram = generatePatternDiagram(
 					'head_and_shoulders',
 					[
-						{ ...p0, date: (candles[p0.idx] as any)?.isoTime },
-						{ ...p1, date: (candles[p1.idx] as any)?.isoTime },
-						{ ...p2, date: (candles[p2.idx] as any)?.isoTime },
-						{ ...p3, date: (candles[p3.idx] as any)?.isoTime },
-						{ ...p4, date: (candles[p4.idx] as any)?.isoTime },
+						{ ...p0, date: candles[p0.idx]?.isoTime },
+						{ ...p1, date: candles[p1.idx]?.isoTime },
+						{ ...p2, date: candles[p2.idx]?.isoTime },
+						{ ...p3, date: candles[p3.idx]?.isoTime },
+						{ ...p4, date: candles[p4.idx]?.isoTime },
 					],
 					{ price: nlAvg },
 					{ start, end },
@@ -343,11 +343,11 @@ export function detectHeadAndShoulders(ctx: DetectContext): DetectResult {
 					const diagram = generatePatternDiagram(
 						'inverse_head_and_shoulders',
 						[
-							{ ...p0, date: (candles[p0.idx] as any)?.isoTime },
-							{ ...p1, date: (candles[p1.idx] as any)?.isoTime },
-							{ ...p2, date: (candles[p2.idx] as any)?.isoTime },
-							{ ...p3, date: (candles[p3.idx] as any)?.isoTime },
-							{ ...p4, date: (candles[p4.idx] as any)?.isoTime },
+							{ ...p0, date: candles[p0.idx]?.isoTime },
+							{ ...p1, date: candles[p1.idx]?.isoTime },
+							{ ...p2, date: candles[p2.idx]?.isoTime },
+							{ ...p3, date: candles[p3.idx]?.isoTime },
+							{ ...p4, date: candles[p4.idx]?.isoTime },
 						],
 						{ price: nlAvg },
 						{ start, end },
@@ -382,7 +382,7 @@ export function detectHeadAndShoulders(ctx: DetectContext): DetectResult {
 	if (includeForming && (want.size === 0 || want.has('head_and_shoulders'))) {
 		const lastIdx = candles.length - 1;
 		const currentPrice = Number(candles[lastIdx]?.close ?? NaN);
-		const isoAt = (i: number) => (candles[i] as any)?.isoTime || '';
+		const isoAt = (i: number) => candles[i]?.isoTime || '';
 		const rightPeakTolerancePct = 0.08; // 右肩の許容範囲
 		const maxFormingDaysHS = 90; // 形成中パターンは3ヶ月以内に制限
 		const daysPerBarHS = ctx.type === '1day' ? 1 : ctx.type === '1week' ? 7 : 1;
@@ -495,7 +495,7 @@ export function detectHeadAndShoulders(ctx: DetectContext): DetectResult {
 	if (includeForming && (want.size === 0 || want.has('inverse_head_and_shoulders'))) {
 		const lastIdx = candles.length - 1;
 		const currentPrice = Number(candles[lastIdx]?.close ?? NaN);
-		const isoAt = (i: number) => (candles[i] as any)?.isoTime || '';
+		const isoAt = (i: number) => candles[i]?.isoTime || '';
 		const rightValleyTolerancePct = 0.08; // 右肩の許容範囲
 		const maxFormingDaysIHS = 90; // 形成中パターンは3ヶ月以内に制限
 		const daysPerBarIHS = ctx.type === '1day' ? 1 : ctx.type === '1week' ? 7 : 1;

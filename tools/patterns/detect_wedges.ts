@@ -414,8 +414,8 @@ export function detectWedges(ctx: DetectContext): DetectResult {
 				});
 				continue;
 			}
-			const start = (candles[w.startIdx] as any)?.isoTime;
-			const theoreticalEnd = (candles[w.endIdx] as any)?.isoTime;
+			const start = candles[w.startIdx]?.isoTime;
+			const theoreticalEnd = candles[w.endIdx]?.isoTime;
 			if (!start || !theoreticalEnd) continue;
 
 			// ブレイク検出
@@ -425,7 +425,7 @@ export function detectWedges(ctx: DetectContext): DetectResult {
 
 			// 終点: ブレイクが検出された場合はブレイク日、そうでなければウィンドウ終端
 			const actualEndIdx = breakInfo.detected ? breakInfo.breakIdx : w.endIdx;
-			const end = (candles[actualEndIdx] as any)?.isoTime ?? theoreticalEnd;
+			const end = candles[actualEndIdx]?.isoTime ?? theoreticalEnd;
 
 			// ブレイク方向の判定
 			let breakoutDirection: 'up' | 'down' | null = null;
@@ -480,7 +480,7 @@ export function detectWedges(ctx: DetectContext): DetectResult {
 				idx: p.idx,
 				price: Number(candles[p.idx]?.close ?? NaN),
 				kind: p.kind,
-				date: (candles[p.idx] as any)?.isoTime,
+				date: candles[p.idx]?.isoTime,
 			}));
 			let diagram: any;
 			try {
@@ -820,8 +820,8 @@ export function detectWedges(ctx: DetectContext): DetectResult {
 			// ブレイクがない場合は形成中
 			const isForming = breakoutIdx === -1;
 			const actualEndIdx = isForming ? endIdx : breakoutIdx;
-			const start = (candles[startIdx] as any)?.isoTime;
-			const end = (candles[actualEndIdx] as any)?.isoTime;
+			const start = candles[startIdx]?.isoTime;
+			const end = candles[actualEndIdx]?.isoTime;
 			if (!start || !end) continue;
 
 			// 重複チェック
@@ -858,7 +858,7 @@ export function detectWedges(ctx: DetectContext): DetectResult {
 			}
 
 			// ブレイク日の取得
-			const breakoutDate = breakoutIdx !== -1 ? (candles[breakoutIdx] as any)?.isoTime : undefined;
+			const breakoutDate = breakoutIdx !== -1 ? candles[breakoutIdx]?.isoTime : undefined;
 
 			// --- ターゲット価格計算（pattern_height 方式） ---
 			const fPatternHeight = Math.abs(upperLine.valueAt(startIdx) - lowerLine.valueAt(startIdx));
