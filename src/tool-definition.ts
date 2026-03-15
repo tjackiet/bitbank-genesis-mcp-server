@@ -1,4 +1,11 @@
 import type { z } from 'zod';
+import type { Result } from './types/domain.d.ts';
+
+/** SVG 等を直接返すハンドラ用の事前フォーマット済み MCP レスポンス */
+export interface McpResponse {
+	content: Array<{ type: string; text: string }>;
+	structuredContent: unknown;
+}
 
 /**
  * MCP ツール定義。各ツールファイル（または src/handlers/）で `toolDef` として export する。
@@ -14,5 +21,5 @@ export interface ToolDefinition {
 	/** Zod 入力スキーマ */
 	inputSchema: z.ZodTypeAny;
 	/** MCP ハンドラ（入力を受けて結果を返す）。respond() で自動ラップされる。 */
-	handler: (args: any) => Promise<unknown>;
+	handler: (args: any) => Promise<Result | McpResponse>;
 }

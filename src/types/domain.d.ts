@@ -302,7 +302,7 @@ export interface OkResult<T = Record<string, unknown>, M = Record<string, unknow
 export interface FailResult<M = Record<string, unknown>> {
 	ok: false;
 	summary: string; // prefixed with "Error: "
-	data: Record<string, never>;
+	data: Record<string, unknown>;
 	meta: { errorType: string } & M;
 }
 
