@@ -1,5 +1,5 @@
 import type { z } from 'zod';
-import type { Result } from './types/domain.d.ts';
+import type { Result } from './schemas.js';
 
 /** SVG 等を直接返すハンドラ用の事前フォーマット済み MCP レスポンス */
 export interface McpResponse {

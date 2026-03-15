@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { formatPair, formatPercent, formatPrice } from '../lib/formatter.js';
-import { failFromError, failFromValidation, ok } from '../lib/result.js';
+import { failFromError, failFromValidation } from '../lib/result.js';
 import { createMeta, ensurePair } from '../lib/validate.js';
 import { AnalyzeMtfFibonacciInputSchema as _BaseInputSchema, AnalyzeMtfFibonacciOutputSchema } from '../src/schemas.js';
 import analyzeFibonacci from './analyze_fibonacci.js';
@@ -9,8 +9,8 @@ const AnalyzeMtfFibonacciInputSchema = _BaseInputSchema.extend({
 	lookbackDays: z.array(z.number().int().min(14).max(365)).nonempty().optional().default([30, 90, 180]),
 });
 
+import type { Pair } from '../src/schemas.js';
 import type { ToolDefinition } from '../src/tool-definition.js';
-import type { Pair } from '../src/types/domain.d.ts';
 
 // ── Types ──
 

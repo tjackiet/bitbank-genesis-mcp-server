@@ -1,5 +1,5 @@
 // Hand-written type declarations for the corresponding .ts module.
-import type { Pair } from '../src/types/domain.d';
+import type { Pair } from '../src/schemas.js';
 
 export const ALLOWED_PAIRS: Set<Pair>;
 

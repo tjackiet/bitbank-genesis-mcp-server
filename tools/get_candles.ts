@@ -4,9 +4,9 @@ import { formatSummary } from '../lib/formatter.js';
 import { BITBANK_API_BASE, DEFAULT_RETRIES, fetchJson } from '../lib/http.js';
 import { fail, failFromError, failFromValidation, ok } from '../lib/result.js';
 import { createMeta, ensurePair, validateDate, validateLimit } from '../lib/validate.js';
+import type { CandleType, GetCandlesData, GetCandlesMeta, Result } from '../src/schemas.js';
 import { GetCandlesInputSchema, GetCandlesOutputSchema } from '../src/schemas.js';
 import type { ToolDefinition } from '../src/tool-definition.js';
-import type { CandleType, GetCandlesData, GetCandlesMeta, Result } from '../src/types/domain.d.ts';
 
 const TYPES: Set<CandleType | string> = new Set([
 	'1min',
@@ -92,7 +92,7 @@ async function fetchSingleDay(
 }
 
 // N日前の日付をYYYYMMDD形式で取得
-function getDateNDaysAgo(n: number): string {
+function _getDateNDaysAgo(n: number): string {
 	return daysAgo(n, 'YYYYMMDD');
 }
 

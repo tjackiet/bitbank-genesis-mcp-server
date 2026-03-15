@@ -1,5 +1,5 @@
 // Hand-written type declarations for the corresponding .ts module.
-import type { OkResult, FailResult } from '../src/types/domain.d';
+import type { OkResult, FailResult } from '../src/schemas.js';
 
 export function ok<T = Record<string, unknown>, M = Record<string, unknown>>(
 	summary: string,

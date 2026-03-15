@@ -1,4 +1,4 @@
-import type { Pair } from '../src/types/domain.d.ts';
+import type { Pair } from '../src/schemas.js';
 import { nowIso } from './datetime.js';
 
 // bitbank 公式ペアリスト（アクティブなもののみ）

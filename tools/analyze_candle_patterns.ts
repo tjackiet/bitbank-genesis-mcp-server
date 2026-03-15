@@ -40,9 +40,9 @@ import type {
 	WindowCandle,
 } from '../src/handlers/analyzeCandlePatternsHandler.js';
 import { generateContent, generateSummary } from '../src/handlers/analyzeCandlePatternsHandler.js';
+import type { Candle, Pair } from '../src/schemas.js';
 import { AnalyzeCandlePatternsInputSchema, AnalyzeCandlePatternsOutputSchema } from '../src/schemas.js';
 import type { ToolDefinition } from '../src/tool-definition.js';
-import type { Candle, Pair } from '../src/types/domain.d.ts';
 import getCandles from './get_candles.js';
 
 // ----- パターンコンテキスト -----

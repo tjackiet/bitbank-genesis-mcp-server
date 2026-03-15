@@ -1,7 +1,7 @@
 #!/usr/bin/env tsx
+import type { BbMode, ChartStyle, IchimokuMode, Pair, RenderChartSvgOptions } from '../src/schemas.js';
 import renderChartSvg from '../tools/render_chart_svg.js';
-import { parseArgs, intArg } from './cli-utils.js';
-import type { RenderChartSvgOptions, ChartStyle, BbMode, IchimokuMode, Pair } from '../src/types/domain.d.ts';
+import { intArg, parseArgs } from './cli-utils.js';
 
 async function main() {
 	const { positional, flags } = parseArgs();

@@ -1,4 +1,4 @@
-import type { FailResult, OkResult } from '../src/types/domain.d.ts';
+import type { FailResult, OkResult } from '../src/schemas.js';
 import { getErrorMessage, isAbortError } from './error.js';
 
 export function ok<T = Record<string, unknown>, M = Record<string, unknown>>(

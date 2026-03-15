@@ -3,9 +3,9 @@ import { formatPair, formatPercent, formatPrice } from '../lib/formatter.js';
 import { BITBANK_API_BASE, DEFAULT_RETRIES, fetchJson } from '../lib/http.js';
 import { fail, failFromError, failFromValidation, ok } from '../lib/result.js';
 import { createMeta, ensurePair } from '../lib/validate.js';
+import type { GetTickerData, GetTickerMeta, Result } from '../src/schemas.js';
 import { GetTickerInputSchema, GetTickerOutputSchema } from '../src/schemas.js';
 import type { ToolDefinition } from '../src/tool-definition.js';
-import type { GetTickerData, GetTickerMeta, Result } from '../src/types/domain.d.ts';
 
 export interface GetTickerOptions {
 	timeoutMs?: number;
@@ -16,7 +16,7 @@ export interface GetTickerOptions {
  */
 function formatTickerSummary(pair: string, d: Record<string, unknown>): string {
 	const pairDisplay = formatPair(pair);
-	const isJpy = pair.toLowerCase().includes('jpy');
+	const _isJpy = pair.toLowerCase().includes('jpy');
 
 	const last = d.last != null ? Number(d.last) : null;
 	const open = d.open != null ? Number(d.open) : null;

@@ -23,14 +23,14 @@
  *   { svg?: string | null; filePath?: string | null; legend?: Record<string,string> },
  *   { pair: string; type: string; limit?: number; indicators?: string[]; bbMode: 'default'|'extended'; range?: {start:string; end:string}; sizeBytes?: number; layerCount?: number; truncated?: boolean; }>
  */
-import fs from 'fs/promises';
-import path from 'path';
+import fs from 'node:fs/promises';
+import path from 'node:path';
 import { dayjs } from '../lib/datetime.js';
 import { getErrorMessage } from '../lib/error.js';
 import { formatPair } from '../lib/formatter.js';
 import getDepth from '../lib/get-depth.js';
 import { fail, ok } from '../lib/result.js';
-import type { CandleType, ChartPayload, Pair, RenderChartSvgOptions, Result } from '../src/types/domain.d.ts';
+import type { CandleType, ChartPayload, Pair, RenderChartSvgOptions, Result } from '../src/schemas.js';
 import analyzeIndicators from './analyze_indicators.js';
 
 type RenderData = { svg?: string; filePath?: string; legend?: Record<string, string> };
@@ -71,7 +71,7 @@ export default async function renderChartSvg(
 	// 互換: 以前の仕様からの流入に備え、withIchimoku時は引き続きBB/SMAをオフ
 	let withSMA = args.withSMA ?? [];
 	let withEMA = (args as any).withEMA ?? [];
-	let withBB = args.withBB ?? (withIchimoku ? false : false);
+	let withBB = args.withBB ?? false;
 	const svgPrecision = Math.max(0, Math.min(3, Number((args as any)?.svgPrecision ?? 1)));
 	const effectivePrecision = Math.max(1, svgPrecision);
 	const svgMinify = (args as any)?.svgMinify !== false;
@@ -158,7 +158,7 @@ export default async function renderChartSvg(
 			const toStepPath = (steps: Array<[number, number]>) => {
 				if (!steps.length) return '';
 				const pts = steps.map(([p, q]) => `${x(p)},${y(q)}`);
-				return 'M ' + pts.join(' L ');
+				return `M ${pts.join(' L ')}`;
 			};
 			const bidPath = toStepPath(bidSteps);
 			const askPath = toStepPath(askSteps);
@@ -335,8 +335,8 @@ export default async function renderChartSvg(
 	const xs = displayItems.map((_, i) => i);
 	const highs = displayItems.map((d: any) => d.high as number);
 	const lows = displayItems.map((d: any) => d.low as number);
-	const xMin = 0;
-	const xMax = xs.length - 1;
+	const _xMin = 0;
+	const _xMax = xs.length - 1;
 	// forwardShift は上部で meta.shift から取得済み
 
 	// Y軸の範囲を、表示されるすべての要素から計算
@@ -558,7 +558,7 @@ export default async function renderChartSvg(
 			raw = simplifyPts(raw);
 		}
 		const points = raw.map((p) => `${round(p.x)},${round(p.y)}`);
-		const d = 'M ' + points.join(' L ');
+		const d = `M ${points.join(' L ')}`;
 		const dash = options.dash ? `stroke-dasharray="${options.dash}"` : '';
 		const width = options.width || '2';
 		if (debugEnabled) {
@@ -669,7 +669,7 @@ export default async function renderChartSvg(
 		};
 		const createPathFromPoints = (points?: Pt[]): string => {
 			if (!points || points.length === 0) return '';
-			return 'M ' + points.map((p) => `${round(p.x)},${round(p.y)}`).join(' L ');
+			return `M ${points.map((p) => `${round(p.x)},${round(p.y)}`).join(' L ')}`;
 		};
 
 		const makeBand = (upperSeries?: Array<number | null>, lowerSeries?: Array<number | null>) => {
@@ -681,7 +681,7 @@ export default async function renderChartSvg(
 			if (upperPoints.length > 0 && lowerPoints.length > 0) {
 				const lowerPointsReversed = [...lowerPoints].reverse();
 				const allPoints = [...upperPoints, ...lowerPointsReversed];
-				bandPath = createPathFromPoints(allPoints) + ' Z';
+				bandPath = `${createPathFromPoints(allPoints)} Z`;
 			}
 			return { upperPath, lowerPath, bandPath };
 		};
@@ -754,8 +754,7 @@ export default async function renderChartSvg(
 
 			const pushPolygon = () => {
 				if (currentTop.length < 2 || currentBottom.length < 2) return;
-				const polygon =
-					'M ' + [...currentTop, ...currentBottom.slice().reverse()].map((p) => `${p.x},${p.y}`).join(' L ') + ' Z';
+				const polygon = `M ${[...currentTop, ...currentBottom.slice().reverse()].map((p) => `${p.x},${p.y}`).join(' L ')} Z`;
 				if (currentIsGreen) greenCloudPath += polygon;
 				else redCloudPath += polygon;
 			};
@@ -774,10 +773,10 @@ export default async function renderChartSvg(
 					b0 == null ||
 					a1 == null ||
 					b1 == null ||
-					!isFinite(a0) ||
-					!isFinite(b0) ||
-					!isFinite(a1) ||
-					!isFinite(b1)
+					!Number.isFinite(a0) ||
+					!Number.isFinite(b0) ||
+					!Number.isFinite(a1) ||
+					!Number.isFinite(b1)
 				) {
 					pushPolygon();
 					currentTop = [];

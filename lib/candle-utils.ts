@@ -5,7 +5,7 @@
  * analyze_candle_patterns.ts から抽出。他ツールでも再利用可能。
  */
 
-import type { Candle } from '../src/types/domain.d.ts';
+import type { Candle } from '../src/schemas.js';
 
 /** ローソク足が陽線かどうか */
 export function isBullish(c: Candle): boolean {

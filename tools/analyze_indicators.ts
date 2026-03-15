@@ -16,7 +16,6 @@ import {
 } from '../lib/indicators.js';
 import { fail, failFromValidation, ok } from '../lib/result.js';
 import { createMeta, ensurePair } from '../lib/validate.js';
-import { GetIndicatorsDataSchema, GetIndicatorsMetaSchema, GetIndicatorsOutputSchema } from '../src/schemas.js';
 import type {
 	Candle,
 	CandleType,
@@ -25,7 +24,8 @@ import type {
 	NumericSeries,
 	Result,
 	TrendLabel,
-} from '../src/types/domain.d.ts';
+} from '../src/schemas.js';
+import { GetIndicatorsDataSchema, GetIndicatorsMetaSchema, GetIndicatorsOutputSchema } from '../src/schemas.js';
 import getCandles from './get_candles.js';
 
 // --- Result cache for analyzeIndicators ---

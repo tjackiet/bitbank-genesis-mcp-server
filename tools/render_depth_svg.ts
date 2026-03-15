@@ -1,13 +1,13 @@
 // tools/render_depth_svg.ts
-import fs from 'fs/promises';
-import path from 'path';
+import fs from 'node:fs/promises';
+import path from 'node:path';
 import { z } from 'zod';
 import { nowIso, toDisplayTime } from '../lib/datetime.js';
 import { formatPair } from '../lib/formatter.js';
 import getDepth from '../lib/get-depth.js';
 import { fail, failFromError, ok } from '../lib/result.js';
+import type { Pair, Result } from '../src/schemas.js';
 import type { ToolDefinition } from '../src/tool-definition.js';
-import type { Pair, Result } from '../src/types/domain.d.ts';
 
 type RenderData = { svg?: string; filePath?: string; summary?: Record<string, any> };
 type RenderMeta = {
@@ -88,7 +88,7 @@ export default async function renderDepthSvg(
 		const toStepPath = (steps: Array<[number, number]>) => {
 			if (!steps.length) return '';
 			const pts = steps.map(([p, q]) => `${x(p)},${y(q)}`);
-			return 'M ' + pts.join(' L ');
+			return `M ${pts.join(' L ')}`;
 		};
 		const bidPath = toStepPath(bidSteps);
 		const askPath = toStepPath(askSteps);

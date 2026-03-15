@@ -98,7 +98,7 @@ export default async function analyzeEmaSnapshot(
 
 		let close: number | null = null;
 		let chartInd: any = {};
-		let candles: Array<{ isoTime?: string }> = [];
+		let candles: Array<{ isoTime?: string | null }> = [];
 		let normalizedLen = 0;
 		const map: Record<string, number | null> = {};
 

@@ -17,9 +17,9 @@ import { formatSummary, formatTimestampJST } from '../lib/formatter.js';
 import { BITBANK_API_BASE, DEFAULT_RETRIES, fetchJson } from '../lib/http.js';
 import { fail, failFromError, failFromValidation, ok } from '../lib/result.js';
 import { createMeta, ensurePair, validateLimit } from '../lib/validate.js';
+import type { OrderbookLevelWithCum } from '../src/schemas.js';
 import { GetOrderbookInputSchema } from '../src/schemas.js';
 import type { ToolDefinition } from '../src/tool-definition.js';
-import type { OrderbookLevelWithCum } from '../src/types/domain.d.ts';
 
 export type OrderbookMode = 'summary' | 'pressure' | 'statistics' | 'raw';
 
@@ -335,8 +335,8 @@ function buildStatistics(
 	const text = [
 		`📸 ${formatTimestampJST(timestamp)}`,
 		'',
-		'=== ' + String(pair).toUpperCase() + ' 板統計分析 ===',
-		'💰 現在価格: ' + (basic.currentPrice != null ? `${basic.currentPrice.toLocaleString()}円` : 'n/a'),
+		`=== ${String(pair).toUpperCase()} 板統計分析 ===`,
+		`💰 現在価格: ${basic.currentPrice != null ? `${basic.currentPrice.toLocaleString()}円` : 'n/a'}`,
 		basic.spread != null ? `   スプレッド: ${basic.spread}円 (${((basic.spreadPct || 0) * 100).toFixed(6)}%)` : '',
 		'',
 		'📊 板の厚み分析:',
@@ -353,11 +353,11 @@ function buildStatistics(
 		'🐋 大口注文:',
 		...largeBids.map(
 			(o) =>
-				`買い板: ${o.price.toLocaleString()}円に${o.size} BTC (${o.distance != null ? (o.distance >= 0 ? '+' : '') + o.distance + '%' : ''})`,
+				`買い板: ${o.price.toLocaleString()}円に${o.size} BTC (${o.distance != null ? `${(o.distance >= 0 ? '+' : '') + o.distance}%` : ''})`,
 		),
 		...largeAsks.map(
 			(o) =>
-				`売り板: ${o.price.toLocaleString()}円に${o.size} BTC (${o.distance != null ? (o.distance >= 0 ? '+' : '') + o.distance + '%' : ''})`,
+				`売り板: ${o.price.toLocaleString()}円に${o.size} BTC (${o.distance != null ? `${(o.distance >= 0 ? '+' : '') + o.distance}%` : ''})`,
 		),
 		'',
 		`💡 総合評価: ${overall}（${strength}）`,
@@ -496,7 +496,6 @@ export default async function getOrderbook(params: GetOrderbookParams | string =
 			case 'raw':
 				result = buildRaw(chk.pair, d, rawBids, rawAsks, timestamp);
 				break;
-			case 'summary':
 			default:
 				result = buildSummary(chk.pair, bidsNum, asksNum, topN, timestamp);
 				break;

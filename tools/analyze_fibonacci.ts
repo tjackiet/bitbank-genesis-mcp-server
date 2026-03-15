@@ -1,10 +1,9 @@
-import { nowIso } from '../lib/datetime.js';
 import { formatPair, formatPercent, formatPrice, timeframeLabel } from '../lib/formatter.js';
-import { fail, failFromError, failFromValidation, ok } from '../lib/result.js';
+import { fail, failFromError, failFromValidation } from '../lib/result.js';
 import { createMeta, ensurePair } from '../lib/validate.js';
+import type { Pair } from '../src/schemas.js';
 import { AnalyzeFibonacciInputSchema, AnalyzeFibonacciOutputSchema } from '../src/schemas.js';
 import type { ToolDefinition } from '../src/tool-definition.js';
-import type { Pair } from '../src/types/domain.d.ts';
 import getCandles from './get_candles.js';
 
 // ── Constants ──
@@ -13,7 +12,7 @@ import getCandles from './get_candles.js';
 const RETRACEMENT_RATIOS = [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1.0];
 
 /** Standard Fibonacci extension ratios */
-const EXTENSION_RATIOS = [1.272, 1.414, 1.618, 2.0, 2.618];
+const EXTENSION_RATIOS = [1.272, Math.SQRT2, 1.618, 2.0, 2.618];
 
 // ── Types ──
 
@@ -420,7 +419,7 @@ export default async function analyzeFibonacci(opts: Record<string, unknown> = {
 			extensions = calculateExtensions(swingHigh, swingLow, trend, currentPrice, EXTENSION_RATIOS);
 		}
 
-		const allLevels = [...levels, ...extensions];
+		const _allLevels = [...levels, ...extensions];
 		const position = findPosition(levels.length > 0 ? levels : extensions, currentPrice);
 
 		// Calculate historical reaction stats (Feature #3)

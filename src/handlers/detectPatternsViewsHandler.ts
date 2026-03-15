@@ -188,7 +188,7 @@ export function formatDebugView(hdr: string, meta: any, pats: any[], res: any): 
 		return {
 			content: [{ type: 'text', text }],
 			structuredContent: {
-				data: { ...(result?.data ?? {}), candidates: cands },
+				data: { ...result?.data, candidates: cands },
 				meta: result?.meta ?? {},
 				ok: result?.ok ?? true,
 				summary: result?.summary ?? hdr,

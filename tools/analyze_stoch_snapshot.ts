@@ -90,7 +90,7 @@ export default async function analyzeStochSnapshot(
 		let stochD: number | null = null;
 		let prevK: number | null = null;
 		let prevD: number | null = null;
-		let candles: Array<{ isoTime?: string; close: number }> = [];
+		let candles: Array<{ isoTime?: string | null; close: number }> = [];
 		let normalizedLen = 0;
 
 		if (isDefault) {
