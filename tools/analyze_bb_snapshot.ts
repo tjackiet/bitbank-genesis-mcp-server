@@ -92,7 +92,7 @@ export default async function analyzeBbSnapshot(
 	mode: 'default' | 'extended' = 'default',
 ) {
 	const chk = ensurePair(pair);
-	if (!chk.ok) return failFromValidation(chk, AnalyzeBbSnapshotOutputSchema) as any;
+	if (!chk.ok) return failFromValidation(chk, AnalyzeBbSnapshotOutputSchema);
 	try {
 		const indRes = await analyzeIndicators(chk.pair, type, Math.max(60, limit));
 		if (!indRes?.ok)
@@ -296,7 +296,7 @@ export default async function analyzeBbSnapshot(
 					},
 				},
 			});
-			return AnalyzeBbSnapshotOutputSchema.parse(ok(summaryLines, data, meta as any)) as any;
+			return AnalyzeBbSnapshotOutputSchema.parse(ok(summaryLines, data, meta as any));
 		}
 
 		// extended mode
@@ -344,9 +344,9 @@ export default async function analyzeBbSnapshot(
 			`\n\n---\n📌 含まれるもの: ボリンジャーバンド拡張（±1σ/±2σ/±3σ）、Zスコア、バンド幅` +
 			`\n📌 含まれないもの: 他のテクニカル指標（RSI・MACD・一目均衡表）、出来高フロー、板情報` +
 			`\n📌 補完ツール: analyze_indicators（他指標）, get_flow_metrics（出来高）, get_volatility_metrics（ボラ詳細）`;
-		return AnalyzeBbSnapshotOutputSchema.parse(ok(extSummary, data as any, meta as any)) as any;
+		return AnalyzeBbSnapshotOutputSchema.parse(ok(extSummary, data as any, meta as any));
 	} catch (e: unknown) {
-		return failFromError(e, { schema: AnalyzeBbSnapshotOutputSchema }) as any;
+		return failFromError(e, { schema: AnalyzeBbSnapshotOutputSchema });
 	}
 }
 

@@ -193,7 +193,7 @@ function clamp(x: number, min: number, max: number) {
 
 export default async function analyzeMarketSignal(pair: string = 'btc_jpy', opts: AnalyzeOpts = {}) {
 	const chk = ensurePair(pair);
-	if (!chk.ok) return failFromValidation(chk, AnalyzeMarketSignalOutputSchema) as any;
+	if (!chk.ok) return failFromValidation(chk, AnalyzeMarketSignalOutputSchema);
 
 	const type = opts.type || '1day';
 	const flowLimit = Math.max(50, Math.min(opts.flowLimit ?? 300, 2000));
@@ -212,15 +212,15 @@ export default async function analyzeMarketSignal(pair: string = 'btc_jpy', opts
 		if (!flowRes?.ok)
 			return AnalyzeMarketSignalOutputSchema.parse(
 				fail(flowRes?.summary || 'flow failed', (flowRes?.meta as any)?.errorType || 'internal'),
-			) as any;
+			);
 		if (!volRes?.ok)
 			return AnalyzeMarketSignalOutputSchema.parse(
 				fail(volRes?.summary || 'vol failed', (volRes?.meta as any)?.errorType || 'internal'),
-			) as any;
+			);
 		if (!indRes?.ok)
 			return AnalyzeMarketSignalOutputSchema.parse(
 				fail(indRes?.summary || 'indicators failed', (indRes?.meta as any)?.errorType || 'internal'),
-			) as any;
+			);
 
 		// Flow metrics
 		const agg = flowRes.data.aggregates || {};
@@ -637,8 +637,8 @@ export default async function analyzeMarketSignal(pair: string = 'btc_jpy', opts
 		});
 
 		const meta = createMeta(chk.pair, { type, windows, bucketMs, flowLimit });
-		return AnalyzeMarketSignalOutputSchema.parse(ok(fullText, data as any, meta as any)) as any;
+		return AnalyzeMarketSignalOutputSchema.parse(ok(fullText, data as any, meta as any));
 	} catch (e: unknown) {
-		return failFromError(e, { schema: AnalyzeMarketSignalOutputSchema }) as any;
+		return failFromError(e, { schema: AnalyzeMarketSignalOutputSchema });
 	}
 }

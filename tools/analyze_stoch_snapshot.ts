@@ -79,7 +79,7 @@ export default async function analyzeStochSnapshot(
 	smoothD: number = DEFAULT_SMOOTH_D,
 ) {
 	const chk = ensurePair(pair);
-	if (!chk.ok) return failFromValidation(chk, AnalyzeStochSnapshotOutputSchema) as any;
+	if (!chk.ok) return failFromValidation(chk, AnalyzeStochSnapshotOutputSchema);
 	try {
 		const isDefault = kPeriod === DEFAULT_K_PERIOD && smoothK === DEFAULT_SMOOTH_K && smoothD === DEFAULT_SMOOTH_D;
 
@@ -98,7 +98,7 @@ export default async function analyzeStochSnapshot(
 			if (!indRes.ok)
 				return AnalyzeStochSnapshotOutputSchema.parse(
 					fail(indRes.summary || 'indicators failed', indRes.meta.errorType || 'internal'),
-				) as any;
+				);
 			const ind = indRes.data.indicators;
 			close = indRes.data.normalized.at(-1)?.close ?? null;
 			stochK = ind.STOCH_K ?? null;
@@ -118,7 +118,7 @@ export default async function analyzeStochSnapshot(
 			if (!candlesResult.ok)
 				return AnalyzeStochSnapshotOutputSchema.parse(
 					fail(candlesResult.summary || 'candles failed', candlesResult.meta.errorType || 'internal'),
-				) as any;
+				);
 			const normalized = candlesResult.data.normalized;
 			const highs = normalized.map((c) => c.high);
 			const lows = normalized.map((c) => c.low);
@@ -242,9 +242,9 @@ export default async function analyzeStochSnapshot(
 			tags,
 		} as any;
 		const meta = createMeta(chk.pair, { type, count: normalizedLen, params: { kPeriod, smoothK, smoothD } });
-		return AnalyzeStochSnapshotOutputSchema.parse(ok(summaryText, data as any, meta as any)) as any;
+		return AnalyzeStochSnapshotOutputSchema.parse(ok(summaryText, data as any, meta as any));
 	} catch (e: unknown) {
-		return failFromError(e, { schema: AnalyzeStochSnapshotOutputSchema }) as any;
+		return failFromError(e, { schema: AnalyzeStochSnapshotOutputSchema });
 	}
 }
 

@@ -172,7 +172,7 @@ function generateMtfContent(
 
 export default async function analyzeMtfFibonacci(pair: string = 'btc_jpy', lookbackDays: number[] = [30, 90, 180]) {
 	const chk = ensurePair(pair);
-	if (!chk.ok) return failFromValidation(chk, AnalyzeMtfFibonacciOutputSchema) as any;
+	if (!chk.ok) return failFromValidation(chk, AnalyzeMtfFibonacciOutputSchema);
 
 	try {
 		// Deduplicate lookback periods
@@ -252,9 +252,9 @@ export default async function analyzeMtfFibonacci(pair: string = 'btc_jpy', look
 			content,
 			data,
 			meta,
-		}) as any;
+		});
 	} catch (e: unknown) {
-		return failFromError(e, { schema: AnalyzeMtfFibonacciOutputSchema }) as any;
+		return failFromError(e, { schema: AnalyzeMtfFibonacciOutputSchema });
 	}
 }
 

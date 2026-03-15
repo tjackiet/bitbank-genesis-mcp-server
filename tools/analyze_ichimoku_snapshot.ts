@@ -235,7 +235,7 @@ export default async function analyzeIchimokuSnapshot(
 	lookback: number = 10,
 ) {
 	const chk = ensurePair(pair);
-	if (!chk.ok) return failFromValidation(chk, AnalyzeIchimokuSnapshotOutputSchema) as any;
+	if (!chk.ok) return failFromValidation(chk, AnalyzeIchimokuSnapshotOutputSchema);
 
 	try {
 		const indRes = await analyzeIndicators(chk.pair, type, Math.max(100, limit));
@@ -560,9 +560,9 @@ export default async function analyzeIchimokuSnapshot(
 			futureSpanB,
 			tkDistPct,
 		});
-		return AnalyzeIchimokuSnapshotOutputSchema.parse(ok(text, data as any, meta as any)) as any;
+		return AnalyzeIchimokuSnapshotOutputSchema.parse(ok(text, data as any, meta as any));
 	} catch (e: unknown) {
-		return failFromError(e, { schema: AnalyzeIchimokuSnapshotOutputSchema }) as any;
+		return failFromError(e, { schema: AnalyzeIchimokuSnapshotOutputSchema });
 	}
 }
 

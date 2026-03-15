@@ -86,13 +86,13 @@ export default async function analyzeSmaSnapshot(
 	periods: number[] = [25, 75, 200],
 ) {
 	const chk = ensurePair(pair);
-	if (!chk.ok) return failFromValidation(chk, AnalyzeSmaSnapshotOutputSchema) as any;
+	if (!chk.ok) return failFromValidation(chk, AnalyzeSmaSnapshotOutputSchema);
 	try {
 		const indRes = await analyzeIndicators(chk.pair, type, Math.max(Math.max(...periods, 200), limit));
 		if (!indRes.ok)
 			return AnalyzeSmaSnapshotOutputSchema.parse(
 				fail(indRes.summary || 'indicators failed', indRes.meta.errorType || 'internal'),
-			) as any;
+			);
 
 		const close = indRes.data.normalized.at(-1)?.close ?? null;
 		const map: Record<string, number | null> = {};
@@ -296,9 +296,9 @@ export default async function analyzeSmaSnapshot(
 			recentCrosses,
 		} as any;
 		const meta = createMeta(chk.pair, { type, count: indRes.data.normalized.length, periods });
-		return AnalyzeSmaSnapshotOutputSchema.parse(ok(summaryText, data as any, meta as any)) as any;
+		return AnalyzeSmaSnapshotOutputSchema.parse(ok(summaryText, data as any, meta as any));
 	} catch (e: unknown) {
-		return failFromError(e, { schema: AnalyzeSmaSnapshotOutputSchema }) as any;
+		return failFromError(e, { schema: AnalyzeSmaSnapshotOutputSchema });
 	}
 }
 

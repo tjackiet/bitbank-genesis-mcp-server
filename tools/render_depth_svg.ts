@@ -6,7 +6,7 @@ import { nowIso, toDisplayTime } from '../lib/datetime.js';
 import { formatPair } from '../lib/formatter.js';
 import getDepth from '../lib/get-depth.js';
 import { fail, failFromError, ok } from '../lib/result.js';
-import type { Pair, Result } from '../src/schemas.js';
+import type { FailResult, OkResult, Pair } from '../src/schemas.js';
 import type { ToolDefinition } from '../src/tool-definition.js';
 
 type RenderData = { svg?: string; filePath?: string; summary?: Record<string, any> };
@@ -25,7 +25,7 @@ export default async function renderDepthSvg(
 		preferFile?: boolean;
 		autoSave?: boolean;
 	} = {},
-): Promise<Result<RenderData, RenderMeta>> {
+): Promise<OkResult<RenderData, RenderMeta> | FailResult> {
 	try {
 		const pair = (args.pair || 'btc_jpy') as Pair;
 		const type = String(args.type || '1day');
@@ -227,7 +227,7 @@ export default async function renderDepthSvg(
 			meta,
 		);
 	} catch (e: unknown) {
-		return failFromError(e, { defaultMessage: 'failed to render depth' }) as any;
+		return failFromError(e, { defaultMessage: 'failed to render depth' });
 	}
 }
 

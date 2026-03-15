@@ -10,7 +10,7 @@ export default async function analyzeMtfSma(
 	periods: number[] = [25, 75, 200],
 ) {
 	const chk = ensurePair(pair);
-	if (!chk.ok) return failFromValidation(chk, AnalyzeMtfSmaOutputSchema) as any;
+	if (!chk.ok) return failFromValidation(chk, AnalyzeMtfSmaOutputSchema);
 
 	try {
 		// Deduplicate timeframes to avoid redundant calls
@@ -80,9 +80,9 @@ export default async function analyzeMtfSma(
 		};
 
 		const meta = createMeta(chk.pair, { timeframes, periods });
-		return AnalyzeMtfSmaOutputSchema.parse(ok(summaryText, data as any, meta as any)) as any;
+		return AnalyzeMtfSmaOutputSchema.parse(ok(summaryText, data as any, meta as any));
 	} catch (e: unknown) {
-		return failFromError(e, { schema: AnalyzeMtfSmaOutputSchema }) as any;
+		return failFromError(e, { schema: AnalyzeMtfSmaOutputSchema });
 	}
 }
 

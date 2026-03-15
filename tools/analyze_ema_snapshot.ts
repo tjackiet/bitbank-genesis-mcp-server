@@ -89,7 +89,7 @@ export default async function analyzeEmaSnapshot(
 	periods: number[] = [12, 26, 50, 200],
 ) {
 	const chk = ensurePair(pair);
-	if (!chk.ok) return failFromValidation(chk, AnalyzeEmaSnapshotOutputSchema) as any;
+	if (!chk.ok) return failFromValidation(chk, AnalyzeEmaSnapshotOutputSchema);
 	try {
 		const maxPeriod = Math.max(...periods, 200);
 		const fetchLimit = Math.max(maxPeriod, limit);
@@ -107,7 +107,7 @@ export default async function analyzeEmaSnapshot(
 			if (!candlesResult.ok)
 				return AnalyzeEmaSnapshotOutputSchema.parse(
 					fail(candlesResult.summary || 'candles failed', candlesResult.meta.errorType || 'internal'),
-				) as any;
+				);
 			const normalized = candlesResult.data.normalized;
 			const allCloses = normalized.map((c) => c.close);
 			close = allCloses.at(-1) ?? null;
@@ -125,7 +125,7 @@ export default async function analyzeEmaSnapshot(
 			if (!indRes.ok)
 				return AnalyzeEmaSnapshotOutputSchema.parse(
 					fail(indRes.summary || 'indicators failed', indRes.meta.errorType || 'internal'),
-				) as any;
+				);
 			close = indRes.data.normalized.at(-1)?.close ?? null;
 			chartInd = indRes?.data?.chart?.indicators || {};
 			candles = Array.isArray(indRes?.data?.chart?.candles)
@@ -326,9 +326,9 @@ export default async function analyzeEmaSnapshot(
 			recentCrosses,
 		} as any;
 		const meta = createMeta(chk.pair, { type, count: normalizedLen, periods });
-		return AnalyzeEmaSnapshotOutputSchema.parse(ok(summaryText, data as any, meta as any)) as any;
+		return AnalyzeEmaSnapshotOutputSchema.parse(ok(summaryText, data as any, meta as any));
 	} catch (e: unknown) {
-		return failFromError(e, { schema: AnalyzeEmaSnapshotOutputSchema }) as any;
+		return failFromError(e, { schema: AnalyzeEmaSnapshotOutputSchema });
 	}
 }
 

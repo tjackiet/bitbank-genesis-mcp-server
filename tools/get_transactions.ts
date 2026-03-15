@@ -71,10 +71,10 @@ function formatTransactionsSummary(pair: string, transactions: NormalizedTxn[], 
 
 export default async function getTransactions(pair: string = 'btc_jpy', limit: number = 60, date?: string) {
 	const chk = ensurePair(pair);
-	if (!chk.ok) return failFromValidation(chk, GetTransactionsOutputSchema) as any;
+	if (!chk.ok) return failFromValidation(chk, GetTransactionsOutputSchema);
 
 	const lim = validateLimit(limit, 1, 1000);
-	if (!lim.ok) return failFromValidation(lim, GetTransactionsOutputSchema) as any;
+	if (!lim.ok) return failFromValidation(lim, GetTransactionsOutputSchema);
 
 	const url =
 		date && /\d{8}/.test(String(date))
@@ -119,14 +119,14 @@ export default async function getTransactions(pair: string = 'btc_jpy', limit: n
 
 		const data = { raw: json, normalized: latest };
 		const meta = createMeta(chk.pair, { count: latest.length, source: date ? 'by_date' : 'latest' });
-		return GetTransactionsOutputSchema.parse(ok(summary, data as any, meta as any)) as any;
+		return GetTransactionsOutputSchema.parse(ok(summary, data as any, meta as any));
 	} catch (e: unknown) {
 		return failFromError(e, {
 			schema: GetTransactionsOutputSchema,
 			timeoutMs: 4000,
 			defaultType: 'network',
 			defaultMessage: 'ネットワークエラー',
-		}) as any;
+		});
 	}
 }
 

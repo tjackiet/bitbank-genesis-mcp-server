@@ -383,16 +383,16 @@ export default async function analyzeVolumeProfile(
 	tz: string = 'Asia/Tokyo',
 ) {
 	const chk = ensurePair(pair);
-	if (!chk.ok) return failFromValidation(chk, AnalyzeVolumeProfileOutputSchema) as any;
+	if (!chk.ok) return failFromValidation(chk, AnalyzeVolumeProfileOutputSchema);
 
 	try {
 		const fetchResult = await fetchTransactions(chk.pair, hours, limit);
 		if (!fetchResult.ok) {
-			return AnalyzeVolumeProfileOutputSchema.parse(fail(fetchResult.summary, fetchResult.errorType)) as any;
+			return AnalyzeVolumeProfileOutputSchema.parse(fail(fetchResult.summary, fetchResult.errorType));
 		}
 		const txs = fetchResult.txs;
 		if (txs.length < 10) {
-			return AnalyzeVolumeProfileOutputSchema.parse(fail('約定データが不足しています（10件未満）', 'user')) as any;
+			return AnalyzeVolumeProfileOutputSchema.parse(fail('約定データが不足しています（10件未満）', 'user'));
 		}
 
 		const currentPrice = txs[txs.length - 1].price;
@@ -509,9 +509,9 @@ export default async function analyzeVolumeProfile(
 		const metaExtra: Record<string, unknown> = { count: txs.length };
 		if (fetchResult.fetchWarning) metaExtra.warning = fetchResult.fetchWarning;
 		const meta = createMeta(chk.pair, metaExtra);
-		return AnalyzeVolumeProfileOutputSchema.parse(ok(summary, data as any, meta as any)) as any;
+		return AnalyzeVolumeProfileOutputSchema.parse(ok(summary, data as any, meta as any));
 	} catch (e: unknown) {
-		return failFromError(e, { schema: AnalyzeVolumeProfileOutputSchema }) as any;
+		return failFromError(e, { schema: AnalyzeVolumeProfileOutputSchema });
 	}
 }
 

@@ -103,7 +103,7 @@ export default async function getFlowMetrics(
 	hours?: number,
 ) {
 	const chk = ensurePair(pair);
-	if (!chk.ok) return failFromValidation(chk, GetFlowMetricsOutputSchema) as any;
+	if (!chk.ok) return failFromValidation(chk, GetFlowMetricsOutputSchema);
 
 	try {
 		let txs: Tx[];
@@ -138,7 +138,7 @@ export default async function getFlowMetrics(
 			if (failedCount > 0 && failedCount >= totalCount / 2) {
 				return GetFlowMetricsOutputSchema.parse(
 					fail(`API取得の過半数が失敗しました（${totalCount}件中${failedCount}件失敗）`, 'upstream'),
-				) as any;
+				);
 			}
 			fetchWarning = partialFailureWarning(totalCount, failedCount) ?? undefined;
 
@@ -148,7 +148,7 @@ export default async function getFlowMetrics(
 		} else {
 			// === 件数ベース取得 ===
 			const lim = validateLimit(limit, 1, 2000);
-			if (!lim.ok) return failFromValidation(lim, GetFlowMetricsOutputSchema) as any;
+			if (!lim.ok) return failFromValidation(lim, GetFlowMetricsOutputSchema);
 
 			if (date) {
 				// 明示的な日付指定がある場合はそのまま取得
@@ -156,7 +156,7 @@ export default async function getFlowMetrics(
 				if (!txRes?.ok)
 					return GetFlowMetricsOutputSchema.parse(
 						fail(txRes?.summary || 'failed', (txRes?.meta as any)?.errorType || 'internal'),
-					) as any;
+					);
 				txs = txRes.data.normalized as Tx[];
 			} else {
 				// 日付指定なし: latest で取得し、不足なら日付ベースで補完
@@ -181,13 +181,13 @@ export default async function getFlowMetrics(
 					const { txs: merged, totalCount, failedCount } = mergeTxResults(allResults);
 					// 全て失敗した場合は network エラーとして返す
 					if (merged.length === 0 && failedCount > 0) {
-						return GetFlowMetricsOutputSchema.parse(fail('upstream fetch all failed', 'network')) as any;
+						return GetFlowMetricsOutputSchema.parse(fail('upstream fetch all failed', 'network'));
 					}
 					// 過半数失敗なら fail
 					if (failedCount > 0 && failedCount >= totalCount / 2) {
 						return GetFlowMetricsOutputSchema.parse(
 							fail(`API取得の過半数が失敗しました（${totalCount}件中${failedCount}件失敗）`, 'upstream'),
-						) as any;
+						);
 					}
 					fetchWarning = partialFailureWarning(totalCount, failedCount) ?? undefined;
 					txs = merged.sort((a, b) => a.timestampMs - b.timestampMs).slice(-lim.value);
@@ -215,7 +215,7 @@ export default async function getFlowMetrics(
 					},
 					createMeta(chk.pair, { count: 0, bucketMs }),
 				),
-			) as any;
+			);
 		}
 
 		// バケット分割
@@ -388,9 +388,9 @@ export default async function getFlowMetrics(
 			metaExtra.warning = dataWarning;
 		}
 		const meta = createMeta(chk.pair, metaExtra);
-		return GetFlowMetricsOutputSchema.parse(ok(summary, data as any, meta as any)) as any;
+		return GetFlowMetricsOutputSchema.parse(ok(summary, data as any, meta as any));
 	} catch (e: unknown) {
-		return failFromError(e, { schema: GetFlowMetricsOutputSchema }) as any;
+		return failFromError(e, { schema: GetFlowMetricsOutputSchema });
 	}
 }
 
