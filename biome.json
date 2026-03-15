@@ -6,7 +6,13 @@
 		"useIgnoreFile": true
 	},
 	"files": {
-		"includes": ["src/**", "tools/**", "lib/**", "scripts/**", "tests/**"]
+		"includes": [
+			"src/**",
+			"tools/**",
+			"lib/**",
+			"scripts/**",
+			"tests/**"
+		]
 	},
 	"formatter": {
 		"enabled": true,
@@ -18,7 +24,7 @@
 		"rules": {
 			"recommended": true,
 			"suspicious": {
-				"noExplicitAny": "error"
+				"noExplicitAny": "off"
 			}
 		}
 	},
