@@ -22,9 +22,10 @@ type Tx = { price: number; amount: number; side: 'buy' | 'sell'; timestampMs: nu
 
 // ── Transaction fetch helpers (shared pattern with get_flow_metrics) ──
 
-function mergeTxResults(results: unknown[]): Tx[] {
+function mergeTxResults(results: unknown[]): { txs: Tx[]; totalCount: number; failedCount: number } {
 	const seen = new Set<string>();
 	const merged: Tx[] = [];
+	let failedCount = 0;
 	for (const res of results) {
 		const r = res as { ok?: boolean; data?: { normalized?: Tx[] } } | null;
 		if (r?.ok && Array.isArray(r.data?.normalized)) {
@@ -35,12 +36,14 @@ function mergeTxResults(results: unknown[]): Tx[] {
 					merged.push(tx);
 				}
 			}
+		} else {
+			failedCount++;
 		}
 	}
-	return merged;
+	return { txs: merged, totalCount: results.length, failedCount };
 }
 
-type FetchResult = { ok: true; txs: Tx[] } | { ok: false; errorType: string; summary: string };
+type FetchResult = { ok: true; txs: Tx[]; fetchWarning?: string } | { ok: false; errorType: string; summary: string };
 
 function extractUpstreamError(results: unknown[]): { errorType: string; summary: string } | null {
 	for (const res of results) {
@@ -50,6 +53,11 @@ function extractUpstreamError(results: unknown[]): { errorType: string; summary:
 		}
 	}
 	return null;
+}
+
+function partialFailureWarning(totalCount: number, failedCount: number): string | undefined {
+	if (failedCount === 0) return undefined;
+	return `⚠️ ${totalCount}件中${failedCount}件のAPI取得に失敗しました。データが不完全な可能性があります。`;
 }
 
 async function fetchTransactions(pair: string, hours?: number, limit?: number): Promise<FetchResult> {
@@ -69,16 +77,24 @@ async function fetchTransactions(pair: string, hours?: number, limit?: number): 
 		const fetches: Promise<unknown>[] = dates.map((ds) => getTransactions(pair, 1000, ds));
 		fetches.push(getTransactions(pair, 1000));
 		const results = await Promise.all(fetches);
-		const merged = mergeTxResults(results);
-		if (merged.length === 0) {
+		const { txs: mergedTxs, totalCount, failedCount } = mergeTxResults(results);
+		if (mergedTxs.length === 0) {
 			const upstreamErr = extractUpstreamError(results);
 			if (upstreamErr) return { ok: false, ...upstreamErr };
 		}
+		if (failedCount > 0 && failedCount >= totalCount / 2) {
+			return {
+				ok: false,
+				errorType: 'upstream',
+				summary: `API取得の過半数が失敗しました（${totalCount}件中${failedCount}件失敗）`,
+			};
+		}
 		return {
 			ok: true,
-			txs: merged
+			txs: mergedTxs
 				.filter((t) => t.timestampMs >= sinceMs && t.timestampMs <= nowMs)
 				.sort((a, b) => a.timestampMs - b.timestampMs),
+			fetchWarning: partialFailureWarning(totalCount, failedCount),
 		};
 	}
 
@@ -101,14 +117,23 @@ async function fetchTransactions(pair: string, hours?: number, limit?: number): 
 		supplementFetches.push(getTransactions(pair, 1000, todayJst.subtract(2, 'day').format('YYYYMMDD')));
 	}
 	const supplementResults = await Promise.all(supplementFetches);
-	const merged = mergeTxResults([latestRes, ...supplementResults]);
-	if (merged.length === 0) {
-		const upstreamErr = extractUpstreamError([latestRes, ...supplementResults]);
+	const allResults = [latestRes, ...supplementResults];
+	const { txs: mergedTxs, totalCount, failedCount } = mergeTxResults(allResults);
+	if (mergedTxs.length === 0) {
+		const upstreamErr = extractUpstreamError(allResults);
 		if (upstreamErr) return { ok: false, ...upstreamErr };
+	}
+	if (failedCount > 0 && failedCount >= totalCount / 2) {
+		return {
+			ok: false,
+			errorType: 'upstream',
+			summary: `API取得の過半数が失敗しました（${totalCount}件中${failedCount}件失敗）`,
+		};
 	}
 	return {
 		ok: true,
-		txs: merged.sort((a, b) => a.timestampMs - b.timestampMs).slice(-lim),
+		txs: mergedTxs.sort((a, b) => a.timestampMs - b.timestampMs).slice(-lim),
+		fetchWarning: partialFailureWarning(totalCount, failedCount),
 	};
 }
 
@@ -449,7 +474,10 @@ export default async function analyzeVolumeProfile(
 			})
 			.join('\n');
 
+		const summaryLines: string[] = [];
+		if (fetchResult.fetchWarning) summaryLines.push(fetchResult.fetchWarning);
 		const summary = [
+			...summaryLines,
 			`${pairDisplay} Volume Profile & VWAP (${txs.length}件, ${durationMin}分間)`,
 			`期間: ${rangeStr}`,
 			'',
@@ -478,7 +506,9 @@ export default async function analyzeVolumeProfile(
 			`📌 補完ツール: get_flow_metrics（CVD・スパイク）, get_orderbook（板情報）, analyze_indicators（指標）`,
 		].join('\n');
 
-		const meta = createMeta(chk.pair, { count: txs.length });
+		const metaExtra: Record<string, unknown> = { count: txs.length };
+		if (fetchResult.fetchWarning) metaExtra.warning = fetchResult.fetchWarning;
+		const meta = createMeta(chk.pair, metaExtra);
 		return AnalyzeVolumeProfileOutputSchema.parse(ok(summary, data as any, meta as any)) as any;
 	} catch (e: unknown) {
 		return failFromError(e, { schema: AnalyzeVolumeProfileOutputSchema }) as any;

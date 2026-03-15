@@ -66,10 +66,11 @@ export function buildFlowMetricsText(input: BuildFlowMetricsTextInput): string {
 	);
 }
 
-/** 複数の getTransactions 結果をマージし重複を除去する */
-function mergeTxResults(results: unknown[]): Tx[] {
+/** 複数の getTransactions 結果をマージし重複を除去する（失敗数も返す） */
+function mergeTxResults(results: unknown[]): { txs: Tx[]; totalCount: number; failedCount: number } {
 	const seen = new Set<string>();
 	const merged: Tx[] = [];
+	let failedCount = 0;
 	for (const res of results) {
 		const r = res as { ok?: boolean; data?: { normalized?: Tx[] } } | null;
 		if (r?.ok && Array.isArray(r.data?.normalized)) {
@@ -80,9 +81,17 @@ function mergeTxResults(results: unknown[]): Tx[] {
 					merged.push(tx);
 				}
 			}
+		} else {
+			failedCount++;
 		}
 	}
-	return merged;
+	return { txs: merged, totalCount: results.length, failedCount };
+}
+
+/** 部分失敗時の警告メッセージを生成する */
+function partialFailureWarning(totalCount: number, failedCount: number): string | null {
+	if (failedCount === 0) return null;
+	return `⚠️ ${totalCount}件中${failedCount}件のAPI取得に失敗しました。データが不完全な可能性があります。`;
 }
 
 export default async function getFlowMetrics(
@@ -98,6 +107,7 @@ export default async function getFlowMetrics(
 
 	try {
 		let txs: Tx[];
+		let fetchWarning: string | undefined;
 
 		if (hours != null && hours > 0) {
 			// === 時間範囲ベースの取得 ===
@@ -107,7 +117,6 @@ export default async function getFlowMetrics(
 			// bitbank API は JST 基準の日付を使用するため、JST で日付計算
 			const sinceDayjs = dayjs(sinceMs).tz('Asia/Tokyo');
 			const nowDayjs = dayjs(nowMs).tz('Asia/Tokyo');
-			const todayStr = nowDayjs.format('YYYYMMDD');
 
 			// 必要な日付を YYYYMMDD (JST) 形式で列挙（古い順）
 			const dates: string[] = [];
@@ -123,7 +132,15 @@ export default async function getFlowMetrics(
 			fetches.push(getTransactions(chk.pair, 1000)); // latest で最新約定を補完
 
 			const results = await Promise.all(fetches);
-			const allTxs = mergeTxResults(results);
+			const { txs: allTxs, totalCount, failedCount } = mergeTxResults(results);
+
+			// 過半数失敗なら信頼性が低いため fail
+			if (failedCount > 0 && failedCount >= totalCount / 2) {
+				return GetFlowMetricsOutputSchema.parse(
+					fail(`API取得の過半数が失敗しました（${totalCount}件中${failedCount}件失敗）`, 'upstream'),
+				) as any;
+			}
+			fetchWarning = partialFailureWarning(totalCount, failedCount) ?? undefined;
 
 			txs = allTxs
 				.filter((t) => t.timestampMs >= sinceMs && t.timestampMs <= nowMs)
@@ -161,12 +178,18 @@ export default async function getFlowMetrics(
 					}
 					const supplementResults = await Promise.all(supplementFetches);
 					const allResults = [latestRes, ...supplementResults];
-					// 上流取得がすべて失敗した場合は network エラーとして返す
-					const anySuccess = allResults.some((r) => !!(r as any)?.ok);
-					if (!anySuccess) {
+					const { txs: merged, totalCount, failedCount } = mergeTxResults(allResults);
+					// 全て失敗した場合は network エラーとして返す
+					if (merged.length === 0 && failedCount > 0) {
 						return GetFlowMetricsOutputSchema.parse(fail('upstream fetch all failed', 'network')) as any;
 					}
-					const merged = mergeTxResults(allResults);
+					// 過半数失敗なら fail
+					if (failedCount > 0 && failedCount >= totalCount / 2) {
+						return GetFlowMetricsOutputSchema.parse(
+							fail(`API取得の過半数が失敗しました（${totalCount}件中${failedCount}件失敗）`, 'upstream'),
+						) as any;
+					}
+					fetchWarning = partialFailureWarning(totalCount, failedCount) ?? undefined;
 					txs = merged.sort((a, b) => a.timestampMs - b.timestampMs).slice(-lim.value);
 				}
 			}
@@ -271,14 +294,18 @@ export default async function getFlowMetrics(
 		const actualDurationMin = actualStartMs && actualEndMs ? Math.round((actualEndMs - actualStartMs) / 60_000) : 0;
 
 		// データ不足警告
-		let dataWarning: string | undefined;
+		const warnings: string[] = [];
+		if (fetchWarning) warnings.push(fetchWarning);
 		if (hours != null && hours > 0 && actualDurationMin > 0) {
 			const requestedMin = hours * 60;
 			const coveragePct = Math.round((actualDurationMin / requestedMin) * 100);
 			if (coveragePct < 80) {
-				dataWarning = `⚠️ ${hours}時間分をリクエストしましたが、取得できたデータは約${actualDurationMin}分間（カバー率${coveragePct}%）です。bitbank API の返却上限による制約の可能性があります。`;
+				warnings.push(
+					`⚠️ ${hours}時間分をリクエストしましたが、取得できたデータは約${actualDurationMin}分間（カバー率${coveragePct}%）です。bitbank API の返却上限による制約の可能性があります。`,
+				);
 			}
 		}
+		const dataWarning = warnings.length > 0 ? warnings.join('\n') : undefined;
 
 		// スパイク情報を集計（spike が null でないものをフィルタ）
 		const spikes = outBuckets.filter((b) => b.spike !== null);

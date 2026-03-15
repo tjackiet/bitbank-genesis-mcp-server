@@ -91,8 +91,15 @@ export default async function analyzeCurrencyStrength(topN: number = 10, type: s
 		// 3. Fetch RSI & SMA for each target (parallel, with concurrency limit)
 		const indicatorResults = await Promise.allSettled(targets.map((t) => analyzeIndicators(t.pair, type, 60)));
 
-		// 3b. Check if ALL indicators failed
-		const allIndicatorsFailed = indicatorResults.every((r) => r.status === 'rejected' || !(r.value as any)?.ok);
+		// 3b. Check failures
+		const failedIndicatorPairs: string[] = [];
+		for (let i = 0; i < indicatorResults.length; i++) {
+			const r = indicatorResults[i];
+			if (r.status === 'rejected' || !(r.value as any)?.ok) {
+				failedIndicatorPairs.push(targets[i].pair);
+			}
+		}
+		const allIndicatorsFailed = failedIndicatorPairs.length === targets.length;
 		if (allIndicatorsFailed) {
 			return AnalyzeCurrencyStrengthOutputSchema.parse(fail('全銘柄のテクニカル指標取得に失敗しました', 'upstream'));
 		}
@@ -174,14 +181,24 @@ export default async function analyzeCurrencyStrength(topN: number = 10, type: s
 			},
 		};
 
-		const meta = {
+		const meta: Record<string, unknown> = {
 			fetchedAt: nowIso(),
 			type,
 			topN,
 		};
+		if (failedIndicatorPairs.length > 0) {
+			meta.warning = `⚠️ ${targets.length}銘柄中${failedIndicatorPairs.length}銘柄の指標取得に失敗しました: ${failedIndicatorPairs.join(', ')}`;
+			meta.failedPairs = failedIndicatorPairs;
+		}
 
 		// Build text summary
 		const lines: string[] = [];
+		if (failedIndicatorPairs.length > 0) {
+			lines.push(
+				`⚠️ ${targets.length}銘柄中${failedIndicatorPairs.length}銘柄の指標取得に失敗（${failedIndicatorPairs.join(', ')}）。該当銘柄のスコアは価格変動のみで算出されています。`,
+			);
+			lines.push('');
+		}
 		lines.push(`📊 通貨強弱ランキング（出来高上位${items.length}銘柄 / 全${tickers.length}ペア）`);
 		lines.push(
 			`市場バイアス: ${marketBias === 'bullish' ? '🟢 強気' : marketBias === 'bearish' ? '🔴 弱気' : '⚪ 中立'}（平均スコア: ${avgScore}）`,

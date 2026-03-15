@@ -253,11 +253,15 @@ async function screenMode(
 			: Array.from(ALLOWED_PAIRS.values()).filter((p) => (market === 'jpy' ? p.endsWith('_jpy') : true));
 
 	const allDetailed: CrossDetailed[] = [];
+	const failedPairs: string[] = [];
 	await Promise.all(
 		universe.map(async (pair) => {
 			try {
 				const ind = await analyzeIndicators(pair, '1day', 120);
-				if (!ind?.ok) return;
+				if (!ind?.ok) {
+					failedPairs.push(pair);
+					return;
+				}
 				const macdSeries = (ind.data?.indicators as { macd_series?: { line: number[]; signal: number[] } })
 					?.macd_series;
 				const line = macdSeries?.line || [];
@@ -268,7 +272,9 @@ async function screenMode(
 				const start = Math.max(1, n - lookback);
 				const cross = detectCrossInRange(line, signal, candles, start, n - 1, n, pair as string);
 				if (cross) allDetailed.push(cross);
-			} catch {}
+			} catch {
+				failedPairs.push(pair);
+			}
 		}),
 	);
 
@@ -326,11 +332,12 @@ async function screenMode(
 	if (opts.minReturnPct != null) conds.push(`return≥${opts.minReturnPct}%`);
 	if (opts.maxReturnPct != null) conds.push(`return≤${opts.maxReturnPct}%`);
 	if (opts.limit != null) conds.push(`top${opts.limit}`);
+	const failedInfo = failedPairs.length > 0 ? ` | ⚠️${failedPairs.length}/${universe.length}ペア取得失敗` : '';
 	const condStr = conds.length ? ` (全${totalFound}件中, 条件: ${conds.join(', ')})` : '';
 	const baseSummary = formatSummary({
 		pair: 'multi',
 		latest: undefined,
-		extra: `crosses=${resultsScreened.length}${condStr}${brief ? ' [' + brief + ']' : ''}`,
+		extra: `crosses=${resultsScreened.length}${condStr}${failedInfo}${brief ? ' [' + brief + ']' : ''}`,
 	});
 	const screenCrosses: MacdScreenCross[] = filtered.map((r) => ({
 		pair: r.pair,
@@ -354,13 +361,18 @@ async function screenMode(
 		data.resultsDetailed = allDetailed;
 		data.screenedDetailed = filtered;
 	}
-	return ok(summary, data, {
+	const meta: Record<string, unknown> = {
 		market,
 		lookback,
 		pairs: universe,
 		view,
 		screen: { ...opts, crossType, sortBy, sortOrder: opts.sortOrder || 'desc' },
-	});
+	};
+	if (failedPairs.length > 0) {
+		meta.warning = `⚠️ ${universe.length}ペア中${failedPairs.length}ペアの指標取得に失敗しました: ${failedPairs.join(', ')}`;
+		meta.failedPairs = failedPairs;
+	}
+	return ok(summary, data, meta);
 }
 
 // ── モード B: 単一ペア深掘り（forming + 過去統計） ──

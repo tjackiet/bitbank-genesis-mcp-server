@@ -143,6 +143,7 @@ export default async function getCandles(
 
 	let ohlcvs: unknown[] = [];
 	let json: unknown = null;
+	let fetchWarning: string | undefined;
 
 	try {
 		if (needsMultiYear) {
@@ -151,6 +152,10 @@ export default async function getCandles(
 			const years = Array.from({ length: yearsNeeded }, (_, i) => currentYear - i);
 
 			const results = await Promise.all(years.map((year) => fetchSingleYear(chk.pair, type, year)));
+
+			// 部分失敗を追跡
+			const failedChunks = results.filter((r) => r.error);
+			const totalChunks = results.length;
 
 			// 古い年順にマージ（時系列順）
 			const allOhlcvs: OhlcvRow[] = [];
@@ -162,6 +167,18 @@ export default async function getCandles(
 			if (allOhlcvs.length === 0) {
 				const firstError = results.find((r) => r.error);
 				if (firstError?.error) throw firstError.error;
+			}
+
+			// 過半数失敗なら信頼性が低いため fail
+			if (failedChunks.length > 0 && failedChunks.length >= totalChunks / 2) {
+				return fail(
+					`ローソク足取得の過半数が失敗しました（${totalChunks}年中${failedChunks.length}年失敗）`,
+					'upstream',
+				);
+			}
+			if (failedChunks.length > 0) {
+				const failedYears = years.filter((_, i) => results[i].error);
+				fetchWarning = `⚠️ ${totalChunks}年中${failedChunks.length}年の取得に失敗しました（${failedYears.join(', ')}年）。データが不完全な可能性があります。`;
 			}
 
 			// タイムスタンプでソート（念のため）
@@ -200,10 +217,22 @@ export default async function getCandles(
 				}
 			}
 
+			// 部分失敗を追跡
+			const failedDays = allDayResults.filter((r) => r.error);
+			const totalDays = allDayResults.length;
+
 			// 全チャンクがエラーの場合はネットワークエラーとして伝播
 			if (allOhlcvs.length === 0) {
 				const firstError = allDayResults.find((r) => r.error);
 				if (firstError?.error) throw firstError.error;
+			}
+
+			// 過半数失敗なら信頼性が低いため fail
+			if (failedDays.length > 0 && failedDays.length >= totalDays / 2) {
+				return fail(`ローソク足取得の過半数が失敗しました（${totalDays}日中${failedDays.length}日失敗）`, 'upstream');
+			}
+			if (failedDays.length > 0) {
+				fetchWarning = `⚠️ ${totalDays}日中${failedDays.length}日の取得に失敗しました。データが不完全な可能性があります。`;
 			}
 
 			// タイムスタンプでソート（古い順）
@@ -360,6 +389,7 @@ export default async function getCandles(
 			return `[${i}] ${t} O:${c.open} H:${c.high} L:${c.low} C:${c.close} V:${c.volume}`;
 		});
 		const summary =
+			(fetchWarning ? `${fetchWarning}\n` : '') +
 			baseSummary +
 			`\n\n📋 全${normalized.length}件のOHLCV (volume=${baseCurrency}建て合算値):\n` +
 			candleLines.join('\n') +
@@ -368,6 +398,7 @@ export default async function getCandles(
 			`\n📌 補完ツール: get_flow_metrics（売買内訳・CVD）, get_transactions（個別約定）, get_orderbook（板情報）`;
 
 		const metaExtra: Record<string, unknown> = { type, count: normalized.length };
+		if (fetchWarning) metaExtra.warning = fetchWarning;
 		if (needsMultiYear) {
 			metaExtra.multiYear = {
 				yearsRequested: yearsNeeded,
