@@ -130,7 +130,7 @@ function detectPole(
 		const magnitude = endPrice - startPrice;
 		const changePct = Math.abs(magnitude) / Math.max(1e-12, startPrice);
 
-		const localATR = calcATR(candles as any, Math.max(1, ps), poleEnd, 14);
+		const localATR = calcATR(candles, Math.max(1, ps), poleEnd, 14);
 		if (localATR <= 0) continue;
 
 		const atrMult = Math.abs(magnitude) / localATR;
@@ -282,7 +282,7 @@ export function detectTriangles(ctx: DetectContext): DetectResult {
 
 			if (upperLine.r2 < params.minR2 || lowerLine.r2 < params.minR2) {
 				debugCandidates.push({
-					type: 'triangle_symmetrical' as any,
+					type: 'triangle_symmetrical',
 					accepted: false,
 					reason: 'poor_trendline_fit',
 					indices: [winStart, winEnd],
@@ -336,7 +336,7 @@ export function detectTriangles(ctx: DetectContext): DetectResult {
 
 			if (!triangleType) {
 				debugCandidates.push({
-					type: 'triangle_symmetrical' as any,
+					type: 'triangle_symmetrical',
 					accepted: false,
 					reason: 'classification_failed',
 					indices: [winStart, winEnd],
@@ -600,7 +600,7 @@ export function detectTriangles(ctx: DetectContext): DetectResult {
 			});
 
 			debugCandidates.push({
-				type: finalType as any,
+				type: finalType,
 				accepted: true,
 				reason: finalType === 'pennant' ? 'reclassified_from_triangle' : 'detected',
 				indices: [winStart, resultEndIdx],

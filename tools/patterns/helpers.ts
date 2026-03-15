@@ -12,7 +12,7 @@ import type { CandleData } from './types.js';
 // ---------------------------------------------------------------------------
 // ATR 計算（lib/indicators.ts の trueRange に委譲）
 // ---------------------------------------------------------------------------
-export function calcATR(candles: CandleData[], from: number, to: number, period: number = 14): number {
+export function calcATR(candles: readonly CandleData[], from: number, to: number, period: number = 14): number {
 	const start = Math.max(1, from);
 	const end = Math.max(start + 1, to);
 	const slice = candles.slice(start - 1, end + 1); // prevClose 用に 1 つ前を含める
@@ -256,7 +256,13 @@ export function checkConvergenceEx(upper: any, lower: any, startIdx: number, end
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function evaluateTouchesEx(candles: CandleData[], upper: any, lower: any, startIdx: number, endIdx: number) {
+export function evaluateTouchesEx(
+	candles: readonly CandleData[],
+	upper: any,
+	lower: any,
+	startIdx: number,
+	endIdx: number,
+) {
 	const touchThresholdPct = 0.005;
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	const upperTouches: any[] = [],
@@ -298,7 +304,7 @@ export function calcAlternationScoreEx(touches: any): number {
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function calcInsideRatioEx(
-	candles: CandleData[],
+	candles: readonly CandleData[],
 	upper: any,
 	lower: any,
 	startIdx: number,

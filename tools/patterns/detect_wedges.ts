@@ -77,6 +77,7 @@ export function detectWedges(ctx: DetectContext): DetectResult {
 			minTouchesPerLine: 3,
 			minScore: 0.5,
 			minContainment: 0.85, // 包含率: 85%以上の終値が境界内
+			slopeRatioMinFalling: 1.15,
 		};
 
 		// SG ピボットと元ピボットをマージ（SG 優先、元で補完）
@@ -90,8 +91,8 @@ export function detectWedges(ctx: DetectContext): DetectResult {
 			lows: useSmoothed ? sgValleys : origLows,
 		};
 
-		const allowRising = want.size === 0 || want.has('rising_wedge' as any);
-		const allowFalling = want.size === 0 || want.has('falling_wedge' as any);
+		const allowRising = want.size === 0 || want.has('rising_wedge');
+		const allowFalling = want.size === 0 || want.has('falling_wedge');
 		const windows = generateWindows(candles.length, params.windowSizeMin, params.windowSizeMax, params.windowStep);
 		for (const w of windows) {
 			const highsIn = swings.highs.filter((s) => s.index >= w.startIdx && s.index <= w.endIdx);
@@ -109,7 +110,7 @@ export function detectWedges(ctx: DetectContext): DetectResult {
 							? 'rising_wedge'
 							: 'triangle_symmetrical';
 				debugCandidates.push({
-					type: dbgType as any,
+					type: dbgType,
 					accepted: false,
 					reason: 'r2_below_threshold',
 					indices: [w.startIdx, w.endIdx],
@@ -139,7 +140,7 @@ export function detectWedges(ctx: DetectContext): DetectResult {
 				const absHi = Math.abs(upper.slope);
 				if (absHi < minMeaningfulSlope) {
 					debugCandidates.push({
-						type: 'rising_wedge' as any,
+						type: 'rising_wedge',
 						accepted: false,
 						reason: 'upper_line_barely_rising',
 						indices: [w.startIdx, w.endIdx],
@@ -157,7 +158,7 @@ export function detectWedges(ctx: DetectContext): DetectResult {
 					const ratio = Number((secondAvg / Math.max(1e-12, firstAvg)).toFixed(4));
 					if (Number.isFinite(firstAvg) && Number.isFinite(secondAvg) && ratio < 0.99) {
 						debugCandidates.push({
-							type: 'rising_wedge' as any,
+							type: 'rising_wedge',
 							accepted: false,
 							reason: 'declining_highs',
 							indices: [w.startIdx, w.endIdx],
@@ -187,7 +188,7 @@ export function detectWedges(ctx: DetectContext): DetectResult {
 						failureReason = 'slopes_too_flat';
 					} else if (!(absHi > absLo)) {
 						failureReason = 'wrong_side_steeper';
-					} else if (!(slopeRatioHL > ((params as any).slopeRatioMinFalling ?? params.slopeRatioMin ?? 1.15))) {
+					} else if (!(slopeRatioHL > (params.slopeRatioMinFalling ?? params.slopeRatioMin ?? 1.15))) {
 						failureReason = 'slope_ratio_too_small';
 					}
 				} else {
@@ -200,7 +201,7 @@ export function detectWedges(ctx: DetectContext): DetectResult {
 							? 'rising_wedge'
 							: 'triangle_symmetrical';
 				debugCandidates.push({
-					type: dbgType as any,
+					type: dbgType,
 					accepted: false,
 					reason: 'type_classification_failed',
 					indices: [w.startIdx, w.endIdx],
@@ -213,7 +214,7 @@ export function detectWedges(ctx: DetectContext): DetectResult {
 						slopeRatioMin:
 							dbgType === 'rising_wedge'
 								? (params.slopeRatioMinRising ?? 1.2)
-								: ((params as any).slopeRatioMinFalling ?? params.slopeRatioMin ?? 1.15),
+								: (params.slopeRatioMinFalling ?? params.slopeRatioMin ?? 1.15),
 						failureReason,
 					},
 				});
@@ -222,7 +223,7 @@ export function detectWedges(ctx: DetectContext): DetectResult {
 			// リクエストされていないタイプは以降を評価しない
 			if ((wedgeType === 'rising_wedge' && !allowRising) || (wedgeType === 'falling_wedge' && !allowFalling)) {
 				debugCandidates.push({
-					type: wedgeType as any,
+					type: wedgeType,
 					accepted: false,
 					reason: 'type_not_requested',
 					indices: [w.startIdx, w.endIdx],
@@ -234,7 +235,7 @@ export function detectWedges(ctx: DetectContext): DetectResult {
 			const apex = calcApex(upper, lower, w.endIdx);
 			if (!apex.isValid) {
 				debugCandidates.push({
-					type: wedgeType as any,
+					type: wedgeType,
 					accepted: false,
 					reason: 'apex_not_in_future',
 					indices: [w.startIdx, w.endIdx],
@@ -247,7 +248,7 @@ export function detectWedges(ctx: DetectContext): DetectResult {
 			const conv = checkConvergenceEx(upper, lower, w.startIdx, w.endIdx);
 			if (!conv.isConverging) {
 				debugCandidates.push({
-					type: wedgeType as any,
+					type: wedgeType,
 					accepted: false,
 					reason: 'convergence_failed',
 					indices: [w.startIdx, w.endIdx],
@@ -260,7 +261,7 @@ export function detectWedges(ctx: DetectContext): DetectResult {
 			const containment = checkContainment(candles, upper, lower, w.startIdx, w.endIdx);
 			if (containment.closeInsideRatio < params.minContainment) {
 				debugCandidates.push({
-					type: wedgeType as any,
+					type: wedgeType,
 					accepted: false,
 					reason: 'containment_violated',
 					indices: [w.startIdx, w.endIdx],
@@ -274,13 +275,13 @@ export function detectWedges(ctx: DetectContext): DetectResult {
 				continue;
 			}
 
-			const touches = evaluateTouchesEx(candles as any, upper, lower, w.startIdx, w.endIdx);
+			const touches = evaluateTouchesEx(candles, upper, lower, w.startIdx, w.endIdx);
 			if (
 				touches.upperQuality < (params.minTouchesPerLine ?? 2) ||
 				touches.lowerQuality < (params.minTouchesPerLine ?? 2)
 			) {
 				debugCandidates.push({
-					type: wedgeType as any,
+					type: wedgeType,
 					accepted: false,
 					reason: 'insufficient_touches',
 					indices: [w.startIdx, w.endIdx],
@@ -311,7 +312,7 @@ export function detectWedges(ctx: DetectContext): DetectResult {
 			const maxGap = Math.max(upperMaxGap, lowerMaxGap);
 			if (maxGap > maxTouchGap) {
 				debugCandidates.push({
-					type: wedgeType as any,
+					type: wedgeType,
 					accepted: false,
 					reason: 'touch_gap_too_large',
 					indices: [w.startIdx, w.endIdx],
@@ -327,7 +328,7 @@ export function detectWedges(ctx: DetectContext): DetectResult {
 				const startGap = Math.abs(firstUpperTouch.index - firstLowerTouch.index);
 				if (startGap > maxStartGap) {
 					debugCandidates.push({
-						type: wedgeType as any,
+						type: wedgeType,
 						accepted: false,
 						reason: 'start_gap_too_large',
 						indices: [w.startIdx, w.endIdx],
@@ -351,7 +352,7 @@ export function detectWedges(ctx: DetectContext): DetectResult {
 				const minTouchBalance = 0.45;
 				if (touchBalance < minTouchBalance) {
 					debugCandidates.push({
-						type: wedgeType as any,
+						type: wedgeType,
 						accepted: false,
 						reason: 'unbalanced_touches',
 						indices: [w.startIdx, w.endIdx],
@@ -365,7 +366,7 @@ export function detectWedges(ctx: DetectContext): DetectResult {
 					continue;
 				}
 			}
-			const insideRatio = calcInsideRatioEx(candles as any, upper, lower, w.startIdx, w.endIdx);
+			const insideRatio = calcInsideRatioEx(candles, upper, lower, w.startIdx, w.endIdx);
 			const score = calculatePatternScoreEx({
 				fitScore: (upper.r2 + lower.r2) / 2,
 				convergeScore: conv.score,
@@ -379,7 +380,7 @@ export function detectWedges(ctx: DetectContext): DetectResult {
 				const minAlternation = 0.25;
 				if (Number(alternation ?? 0) < minAlternation) {
 					debugCandidates.push({
-						type: wedgeType as any,
+						type: wedgeType,
 						accepted: false,
 						reason: 'insufficient_alternation',
 						indices: [w.startIdx, w.endIdx],
@@ -395,7 +396,7 @@ export function detectWedges(ctx: DetectContext): DetectResult {
 			}
 			if (score < (params.minScore ?? 0.6)) {
 				debugCandidates.push({
-					type: wedgeType as any,
+					type: wedgeType,
 					accepted: false,
 					reason: 'score_below_threshold',
 					indices: [w.startIdx, w.endIdx],
@@ -569,8 +570,8 @@ export function detectWedges(ctx: DetectContext): DetectResult {
 		const fWindowSizeMax = 120;
 		const fWindowStep = 5;
 
-		const fAllowFalling = want.size === 0 || want.has('falling_wedge' as any);
-		const fAllowRising = want.size === 0 || want.has('rising_wedge' as any);
+		const fAllowFalling = want.size === 0 || want.has('falling_wedge');
+		const fAllowRising = want.size === 0 || want.has('rising_wedge');
 
 		// SG 平滑化データからリラックスピボットを検出（swingDepth=1 相当）
 		const relaxedPeaks: Array<{ idx: number; price: number }> = [];

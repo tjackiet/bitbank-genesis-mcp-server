@@ -167,7 +167,7 @@ export function detectPennantsFlags(ctx: DetectContext): DetectResult {
 
 		if (consHighs.length < 2 || consLows.length < 2) {
 			debugCandidates.push({
-				type: 'flag' as any,
+				type: 'flag',
 				accepted: false,
 				reason: 'insufficient_consolidation_swings',
 				indices: [bestPoleStart, poleEnd],
@@ -185,7 +185,7 @@ export function detectPennantsFlags(ctx: DetectContext): DetectResult {
 
 		if (upperSpan < consZoneWidth * minSpanRatio || lowerSpan < consZoneWidth * minSpanRatio) {
 			debugCandidates.push({
-				type: 'flag' as any,
+				type: 'flag',
 				accepted: false,
 				reason: 'trendline_span_too_short',
 				indices: [bestPoleStart, poleEnd],
@@ -209,7 +209,7 @@ export function detectPennantsFlags(ctx: DetectContext): DetectResult {
 		const minR2 = 0.65; // 平行チャネルは線形性が命 — 0.25 では偽陽性が多すぎた
 		if (upperLine.r2 < minR2 || lowerLine.r2 < minR2) {
 			debugCandidates.push({
-				type: 'flag' as any,
+				type: 'flag',
 				accepted: false,
 				reason: 'poor_trendline_fit',
 				indices: [bestPoleStart, consMaxEnd],
@@ -228,7 +228,7 @@ export function detectPennantsFlags(ctx: DetectContext): DetectResult {
 		const poleRange = Math.abs(bestPoleMag);
 		if (gapStart > poleRange * 0.9) {
 			debugCandidates.push({
-				type: 'flag' as any,
+				type: 'flag',
 				accepted: false,
 				reason: 'consolidation_too_wide',
 				indices: [bestPoleStart, consEndIdx],
@@ -251,7 +251,7 @@ export function detectPennantsFlags(ctx: DetectContext): DetectResult {
 
 		if (!(isParallel && isAgainstPole && convergenceRatio > 0.6)) {
 			debugCandidates.push({
-				type: 'flag' as any,
+				type: 'flag',
 				accepted: false,
 				reason: 'classification_failed',
 				indices: [bestPoleStart, consEndIdx],
@@ -350,7 +350,7 @@ export function detectPennantsFlags(ctx: DetectContext): DetectResult {
 		});
 
 		debugCandidates.push({
-			type: 'flag' as any,
+			type: 'flag',
 			accepted: true,
 			reason: 'detected',
 			indices: [bestPoleStart, patternEndIdx],
