@@ -64,6 +64,21 @@ export function failFromError(err: unknown, opts: FailFromErrorOptions = {}): Re
 }
 
 /**
+ * Zod スキーマの .parse() 結果を OkResult<T, M> | FailResult として返す型安全ヘルパー。
+ *
+ * 背景: toolResultSchema() が生成する Zod union の z.infer 型と
+ * OkResult<T, M> | FailResult は構造的に一致するが、FailResult の meta 型の
+ * 推論差異により TypeScript が直接代入を許可しない。このヘルパーでキャストを
+ * 1箇所に集約し、各ツールファイルからキャストを排除する。
+ */
+export function parseAsResult<T, M>(
+	schema: { parse: (v: unknown) => unknown },
+	value: unknown,
+): OkResult<T, M> | FailResult {
+	return schema.parse(value) as OkResult<T, M> | FailResult;
+}
+
+/**
  * ensurePair / validateLimit / validateDate の失敗結果から fail() を生成する共通ヘルパー。
  *
  * @param result - バリデーション関数の失敗結果 ({ error: { message, type } })

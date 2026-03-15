@@ -1,9 +1,9 @@
 import { toDisplayTime, toIsoTime } from '../lib/datetime.js';
 import { formatPair, formatPercent, formatPrice } from '../lib/formatter.js';
 import { BITBANK_API_BASE, DEFAULT_RETRIES, fetchJson } from '../lib/http.js';
-import { fail, failFromError, failFromValidation, ok } from '../lib/result.js';
+import { fail, failFromError, failFromValidation, ok, parseAsResult } from '../lib/result.js';
 import { createMeta, ensurePair } from '../lib/validate.js';
-import type { GetTickerData, GetTickerMeta, Result } from '../src/schemas.js';
+import type { FailResult, GetTickerData, GetTickerMeta, OkResult } from '../src/schemas.js';
 import { GetTickerInputSchema, GetTickerOutputSchema } from '../src/schemas.js';
 import type { ToolDefinition } from '../src/tool-definition.js';
 
@@ -74,9 +74,9 @@ function formatTickerSummary(pair: string, d: Record<string, unknown>): string {
 export default async function getTicker(
 	pair: string,
 	{ timeoutMs = 5000 }: GetTickerOptions = {},
-): Promise<Result<GetTickerData, GetTickerMeta>> {
+): Promise<OkResult<GetTickerData, GetTickerMeta> | FailResult> {
 	const chk = ensurePair(pair);
-	if (!chk.ok) return failFromValidation(chk) as any;
+	if (!chk.ok) return failFromValidation(chk);
 
 	const url = `${BITBANK_API_BASE}/${chk.pair}/ticker`;
 
@@ -86,7 +86,7 @@ export default async function getTicker(
 
 		// 上流レスポンスの構造バリデーション
 		if (jsonObj?.success !== 1 || !jsonObj?.data || typeof jsonObj.data !== 'object') {
-			return fail('上流レスポンスが不正です', 'upstream') as unknown as Result<GetTickerData, GetTickerMeta>;
+			return fail('上流レスポンスが不正です', 'upstream');
 		}
 
 		const d = jsonObj.data;
@@ -108,17 +108,14 @@ export default async function getTicker(
 			},
 		};
 
-		return GetTickerOutputSchema.parse(ok(summary, data, createMeta(chk.pair))) as unknown as Result<
-			GetTickerData,
-			GetTickerMeta
-		>;
+		return parseAsResult<GetTickerData, GetTickerMeta>(GetTickerOutputSchema, ok(summary, data, createMeta(chk.pair)));
 	} catch (err: unknown) {
 		return failFromError(err, {
 			schema: GetTickerOutputSchema,
 			timeoutMs,
 			defaultType: 'network',
 			defaultMessage: 'ネットワークエラー',
-		}) as unknown as Result<GetTickerData, GetTickerMeta>;
+		});
 	}
 }
 

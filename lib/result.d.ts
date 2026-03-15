@@ -8,3 +8,8 @@ export function ok<T = Record<string, unknown>, M = Record<string, unknown>>(
 ): OkResult<T, M>;
 
 export function fail<M = Record<string, unknown>>(message: string, type?: string, meta?: M): FailResult<M>;
+
+export function parseAsResult<T, M>(
+	schema: { parse: (v: unknown) => unknown },
+	value: unknown,
+): OkResult<T, M> | FailResult;

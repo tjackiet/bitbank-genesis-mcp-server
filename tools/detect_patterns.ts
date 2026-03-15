@@ -1,6 +1,6 @@
 import { dayjs } from '../lib/datetime.js';
 import { fail, failFromError, ok } from '../lib/result.js';
-import { type DetectPatternsInputSchema, DetectPatternsOutputSchema, type PatternTypeEnum } from '../src/schemas.js';
+import { DetectPatternsOutputSchema, type PatternTypeEnum } from '../src/schemas.js';
 import analyzeIndicators from './analyze_indicators.js';
 import { buildStatistics } from './patterns/aftermath.js';
 import { resolveParams } from './patterns/config.js';
@@ -29,8 +29,6 @@ import type { CandDebugEntry, DetectContext } from './patterns/types.js';
  * - includeCompleted: true (デフォルト) → 完成済みパターンを検出
  * - includeForming: true → 形成中パターンも検出（早期警告向け）
  */
-
-type DetectIn = typeof DetectPatternsInputSchema extends { _type: infer T } ? T : any;
 
 export default async function detectPatterns(
 	pair: string = 'btc_jpy',
@@ -67,8 +65,8 @@ export default async function detectPatterns(
 			want.add('triangle_symmetrical' as any);
 		}
 
-		const res = await analyzeIndicators(pair, type as any, limit);
-		if (!res?.ok) return DetectPatternsOutputSchema.parse(fail(res.summary || 'failed', 'internal')) as any;
+		const res = await analyzeIndicators(pair, type, limit);
+		if (!res.ok) return DetectPatternsOutputSchema.parse(fail(res.summary || 'failed', 'internal'));
 
 		const candles = res.data.chart.candles as Array<{
 			open: number;
@@ -78,9 +76,7 @@ export default async function detectPatterns(
 			isoTime?: string;
 		}>;
 		if (!Array.isArray(candles) || candles.length < 20) {
-			return DetectPatternsOutputSchema.parse(
-				ok('insufficient data', { patterns: [] }, { pair, type, count: 0 }),
-			) as any;
+			return DetectPatternsOutputSchema.parse(ok('insufficient data', { patterns: [] }, { pair, type, count: 0 }));
 		}
 
 		// 1) Swing points（patterns/swing.ts から）
@@ -394,8 +390,8 @@ export default async function detectPatterns(
 				debug: debugTrimmed,
 			},
 		);
-		return DetectPatternsOutputSchema.parse(out) as any;
+		return DetectPatternsOutputSchema.parse(out);
 	} catch (e: unknown) {
-		return failFromError(e, { schema: DetectPatternsOutputSchema }) as any;
+		return failFromError(e, { schema: DetectPatternsOutputSchema });
 	}
 }

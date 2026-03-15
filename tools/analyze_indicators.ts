@@ -14,15 +14,16 @@ import {
 	stochRSI as rawStochRSI,
 	toNumericSeries,
 } from '../lib/indicators.js';
-import { fail, failFromValidation, ok } from '../lib/result.js';
+import { fail, failFromValidation, ok, parseAsResult } from '../lib/result.js';
 import { createMeta, ensurePair } from '../lib/validate.js';
 import type {
 	Candle,
 	CandleType,
+	FailResult,
 	GetIndicatorsData,
 	GetIndicatorsMeta,
 	NumericSeries,
-	Result,
+	OkResult,
 	TrendLabel,
 } from '../src/schemas.js';
 import { GetIndicatorsDataSchema, GetIndicatorsMetaSchema, GetIndicatorsOutputSchema } from '../src/schemas.js';
@@ -300,9 +301,9 @@ export default async function analyzeIndicators(
 	pair: string = 'btc_jpy',
 	type: CandleType | string = '1day',
 	limit: number | null = null,
-): Promise<Result<GetIndicatorsData, GetIndicatorsMeta>> {
+): Promise<OkResult<GetIndicatorsData, GetIndicatorsMeta> | FailResult> {
 	const chk = ensurePair(pair);
-	if (!chk.ok) return failFromValidation(chk) as any;
+	if (!chk.ok) return failFromValidation(chk);
 
 	const displayCount = limit || 60;
 
@@ -610,10 +611,8 @@ export default async function analyzeIndicators(
 
 	const parsedData = GetIndicatorsDataSchema.parse(data);
 	const parsedMeta = GetIndicatorsMetaSchema.parse(meta);
-	const result = GetIndicatorsOutputSchema.parse(ok(summary, parsedData, parsedMeta)) as unknown as Result<
-		GetIndicatorsData,
-		GetIndicatorsMeta
-	>;
-
-	return result;
+	return parseAsResult<GetIndicatorsData, GetIndicatorsMeta>(
+		GetIndicatorsOutputSchema,
+		ok(summary, parsedData, parsedMeta),
+	);
 }

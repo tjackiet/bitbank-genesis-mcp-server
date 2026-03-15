@@ -21,8 +21,8 @@ interface NormalizedCandle {
 	high: number;
 	low: number;
 	close: number;
-	volume: number;
-	isoTime?: string;
+	volume?: number;
+	isoTime?: string | null;
 }
 
 interface SwingPoint {
@@ -378,22 +378,20 @@ export default async function analyzeFibonacci(opts: Record<string, unknown> = {
 	const { type: timeframe, lookbackDays, mode, historyLookbackDays } = input;
 
 	const chk = ensurePair(pair);
-	if (!chk.ok) return failFromValidation(chk, AnalyzeFibonacciOutputSchema) as any;
+	if (!chk.ok) return failFromValidation(chk, AnalyzeFibonacciOutputSchema);
 
 	try {
 		// Fetch candle data for analysis period
-		const candlesRes: any = await getCandles(chk.pair, timeframe, undefined as any, lookbackDays + 10);
-		if (!candlesRes?.ok) {
+		const candlesRes = await getCandles(chk.pair, timeframe, undefined, lookbackDays + 10);
+		if (!candlesRes.ok) {
 			return AnalyzeFibonacciOutputSchema.parse(
-				fail(candlesRes?.summary || 'candles failed', (candlesRes?.meta as any)?.errorType || 'internal'),
-			) as any;
+				fail(candlesRes.summary || 'candles failed', candlesRes.meta.errorType || 'internal'),
+			);
 		}
 
 		const candles: NormalizedCandle[] = candlesRes.data.normalized || [];
 		if (candles.length < 10) {
-			return AnalyzeFibonacciOutputSchema.parse(
-				fail('ローソク足データが不足しています（最低10本必要）', 'data'),
-			) as any;
+			return AnalyzeFibonacciOutputSchema.parse(fail('ローソク足データが不足しています（最低10本必要）', 'data'));
 		}
 
 		const currentPrice = candles[candles.length - 1].close;
@@ -403,7 +401,7 @@ export default async function analyzeFibonacci(opts: Record<string, unknown> = {
 		const range = swingHigh.price - swingLow.price;
 
 		if (range <= 0) {
-			return AnalyzeFibonacciOutputSchema.parse(fail('スイングハイとスイングローの差が検出できません', 'data')) as any;
+			return AnalyzeFibonacciOutputSchema.parse(fail('スイングハイとスイングローの差が検出できません', 'data'));
 		}
 
 		// Calculate levels
@@ -429,8 +427,8 @@ export default async function analyzeFibonacci(opts: Record<string, unknown> = {
 			let historyCandles: NormalizedCandle[] = candles;
 			if (historyLookbackDays > lookbackDays) {
 				try {
-					const histRes: any = await getCandles(chk.pair, timeframe, undefined as any, historyLookbackDays + 10);
-					if (histRes?.ok && histRes.data.normalized?.length > 0) {
+					const histRes = await getCandles(chk.pair, timeframe, undefined, historyLookbackDays + 10);
+					if (histRes.ok && histRes.data.normalized?.length > 0) {
 						historyCandles = histRes.data.normalized;
 					}
 				} catch {
@@ -487,12 +485,12 @@ export default async function analyzeFibonacci(opts: Record<string, unknown> = {
 			content,
 			data,
 			meta,
-		}) as any;
+		});
 	} catch (err: unknown) {
 		return failFromError(err, {
 			schema: AnalyzeFibonacciOutputSchema,
 			defaultMessage: 'Fibonacci analysis error',
-		}) as any;
+		});
 	}
 }
 

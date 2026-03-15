@@ -94,10 +94,10 @@ export default async function analyzeStochSnapshot(
 		let normalizedLen = 0;
 
 		if (isDefault) {
-			const indRes: any = await analyzeIndicators(chk.pair, type as any, limit);
-			if (!indRes?.ok)
+			const indRes = await analyzeIndicators(chk.pair, type, limit);
+			if (!indRes.ok)
 				return AnalyzeStochSnapshotOutputSchema.parse(
-					fail(indRes?.summary || 'indicators failed', (indRes?.meta as any)?.errorType || 'internal'),
+					fail(indRes.summary || 'indicators failed', indRes.meta.errorType || 'internal'),
 				) as any;
 			const ind = indRes.data.indicators;
 			close = indRes.data.normalized.at(-1)?.close ?? null;
@@ -114,15 +114,15 @@ export default async function analyzeStochSnapshot(
 					: [];
 			normalizedLen = indRes.data.normalized.length;
 		} else {
-			const candlesResult = await getCandles(chk.pair, type as any, undefined as any, limit);
+			const candlesResult = await getCandles(chk.pair, type, undefined, limit);
 			if (!candlesResult.ok)
 				return AnalyzeStochSnapshotOutputSchema.parse(
-					fail(candlesResult.summary || 'candles failed', (candlesResult.meta as any)?.errorType || 'internal'),
+					fail(candlesResult.summary || 'candles failed', candlesResult.meta.errorType || 'internal'),
 				) as any;
 			const normalized = candlesResult.data.normalized;
-			const highs = normalized.map((c: any) => c.high);
-			const lows = normalized.map((c: any) => c.low);
-			const closes = normalized.map((c: any) => c.close);
+			const highs = normalized.map((c) => c.high);
+			const lows = normalized.map((c) => c.low);
+			const closes = normalized.map((c) => c.close);
 			close = closes.at(-1) ?? null;
 			candles = normalized;
 			normalizedLen = normalized.length;

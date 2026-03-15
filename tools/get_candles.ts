@@ -2,9 +2,9 @@ import { dayjs, daysAgo, today, toIsoTime, toIsoWithTz } from '../lib/datetime.j
 import { getErrorMessage } from '../lib/error.js';
 import { formatSummary } from '../lib/formatter.js';
 import { BITBANK_API_BASE, DEFAULT_RETRIES, fetchJson } from '../lib/http.js';
-import { fail, failFromError, failFromValidation, ok } from '../lib/result.js';
+import { fail, failFromError, failFromValidation, ok, parseAsResult } from '../lib/result.js';
 import { createMeta, ensurePair, validateDate, validateLimit } from '../lib/validate.js';
-import type { CandleType, GetCandlesData, GetCandlesMeta, Result } from '../src/schemas.js';
+import type { CandleType, FailResult, GetCandlesData, GetCandlesMeta, OkResult } from '../src/schemas.js';
 import { GetCandlesInputSchema, GetCandlesOutputSchema } from '../src/schemas.js';
 import type { ToolDefinition } from '../src/tool-definition.js';
 
@@ -99,19 +99,20 @@ function _getDateNDaysAgo(n: number): string {
 export default async function getCandles(
 	pair: string,
 	type: CandleType | string = '1day',
-	date: string = todayYyyymmdd(),
+	date: string | undefined = todayYyyymmdd(),
 	limit: number = 200,
 	tz: string = '',
-): Promise<Result<GetCandlesData, GetCandlesMeta>> {
+): Promise<OkResult<GetCandlesData, GetCandlesMeta> | FailResult> {
 	const chk = ensurePair(pair);
-	if (!chk.ok) return failFromValidation(chk) as any;
+	if (!chk.ok) return failFromValidation(chk);
 
 	if (!TYPES.has(type)) {
 		return fail(`type は ${[...TYPES].join(', ')} から選択してください（指定値: ${String(type)}）`, 'user');
 	}
 
-	const dateCheck = validateDate(date, String(type));
-	if (!dateCheck.ok) return failFromValidation(dateCheck) as any;
+	const effectiveDate = date ?? todayYyyymmdd();
+	const dateCheck = validateDate(effectiveDate, String(type));
+	if (!dateCheck.ok) return failFromValidation(dateCheck);
 
 	// 複数年取得が必要かどうかを判定
 	const isYearlyType = YEARLY_TYPES.has(type);
@@ -139,7 +140,7 @@ export default async function getCandles(
 	// 複数年/複数日取得の場合は上限を緩和
 	const maxLimit = needsMultiYear ? 5000 : needsMultiDay ? 10000 : 1000;
 	const limitCheck = validateLimit(limit, 1, maxLimit);
-	if (!limitCheck.ok) return failFromValidation(limitCheck) as any;
+	if (!limitCheck.ok) return failFromValidation(limitCheck);
 
 	let ohlcvs: unknown[] = [];
 	let json: unknown = null;
@@ -412,21 +413,22 @@ export default async function getCandles(
 			{ raw: json, normalized, keyPoints, volumeStats } as GetCandlesData,
 			createMeta(chk.pair, metaExtra) as GetCandlesMeta,
 		);
-		return GetCandlesOutputSchema.parse(result) as unknown as Result<GetCandlesData, GetCandlesMeta>;
+		return parseAsResult<GetCandlesData, GetCandlesMeta>(GetCandlesOutputSchema, result);
 	} catch (e: unknown) {
 		const rawMsg = getErrorMessage(e);
 		const t = String(type);
 		if (/404/.test(rawMsg) && ['4hour', '8hour', '12hour'].includes(t)) {
 			const hint = `${t} は YYYY 形式（例: 2025）が必要です。なお、現在この時間足がAPIで提供されていない可能性もあります。1hour または 1day での取得もお試しください。`;
-			return GetCandlesOutputSchema.parse(
+			return parseAsResult<GetCandlesData, GetCandlesMeta>(
+				GetCandlesOutputSchema,
 				fail(`HTTP 404 Not Found (${chk.pair}/${t}). ${hint}`, 'user'),
-			) as unknown as Result<GetCandlesData, GetCandlesMeta>;
+			);
 		}
 		return failFromError(e, {
 			schema: GetCandlesOutputSchema,
 			defaultType: 'network',
 			defaultMessage: 'ネットワークエラー',
-		}) as unknown as Result<GetCandlesData, GetCandlesMeta>;
+		});
 	}
 }
 

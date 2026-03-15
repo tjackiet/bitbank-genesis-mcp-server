@@ -297,8 +297,8 @@ export const toolDef: ToolDefinition = {
 		'[Technical Indicators / RSI / MACD / SMA] テクニカル指標の総合分析（indicators / RSI / MACD / SMA / BB / Ichimoku / Stochastic RSI）。十分な limit を指定（例: 日足200本）。\n\n【重要】バックテストには run_backtest を使用。',
 	inputSchema: GetIndicatorsInputSchema,
 	handler: async ({ pair, type, limit }: any) => {
-		const res: any = await analyzeIndicators(pair, type, limit);
-		if (!res?.ok) return res;
+		const res = await analyzeIndicators(pair, type, limit);
+		if (!res.ok) return res;
 		const ind: any = res?.data?.indicators ?? {};
 		const candles: any[] = Array.isArray(res?.data?.normalized) ? res.data.normalized : [];
 		const close = candles.at(-1)?.close ?? null;
@@ -368,9 +368,7 @@ export const toolDef: ToolDefinition = {
 		const trend = res?.data?.trend ?? 'unknown';
 		// Helpers: slope and last cross
 		const slopeOf = (seriesKey: string, n = 5): number | null => {
-			const arr = Array.isArray(res?.data?.indicators?.series?.[seriesKey])
-				? res.data.indicators.series[seriesKey]
-				: null;
+			const arr = Array.isArray(ind?.series?.[seriesKey]) ? ind.series[seriesKey] : null;
 			if (!arr || arr.length < 2) return null;
 			const len = Math.min(n, arr.length);
 			const a = Number(arr.at(-len) ?? NaN);
@@ -379,12 +377,8 @@ export const toolDef: ToolDefinition = {
 			return (b - a) / (len - 1);
 		};
 		const lastMacdCross = (() => {
-			const macdArr = Array.isArray(res?.data?.indicators?.series?.MACD_line)
-				? res.data.indicators.series.MACD_line
-				: null;
-			const sigArr = Array.isArray(res?.data?.indicators?.series?.MACD_signal)
-				? res.data.indicators.series.MACD_signal
-				: null;
+			const macdArr = Array.isArray(ind?.series?.MACD_line) ? ind.series.MACD_line : null;
+			const sigArr = Array.isArray(ind?.series?.MACD_signal) ? ind.series.MACD_signal : null;
 			if (!macdArr || !sigArr) return null;
 			const L = Math.min(macdArr.length, sigArr.length);
 			let lastIdx: number | null = null;
@@ -414,9 +408,7 @@ export const toolDef: ToolDefinition = {
 			if (N < 5) return null;
 			const pxA = Number(candles.at(-N)?.close ?? NaN),
 				pxB = Number(candles.at(-1)?.close ?? NaN);
-			const histSeries = Array.isArray(res?.data?.indicators?.series?.MACD_hist)
-				? res.data.indicators.series.MACD_hist
-				: null;
+			const histSeries = Array.isArray(ind?.series?.MACD_hist) ? ind.series.MACD_hist : null;
 			if (!Number.isFinite(pxA) || !Number.isFinite(pxB) || !histSeries || histSeries.length < N) return null;
 			const hA = Number(histSeries.at(-N) ?? NaN),
 				hB = Number(histSeries.at(-1) ?? NaN);
@@ -449,20 +441,20 @@ export const toolDef: ToolDefinition = {
 			s200Slope = slopeOf('SMA_200', 7);
 		// BB width trend and sigma history (last 5-7 bars)
 		const bbSeries = {
-			upper: Array.isArray(res?.data?.indicators?.series?.BB_upper)
-				? res.data.indicators.series.BB_upper
-				: Array.isArray(res?.data?.indicators?.series?.BB2_upper)
-					? res.data.indicators.series.BB2_upper
+			upper: Array.isArray(ind?.series?.BB_upper)
+				? ind.series.BB_upper
+				: Array.isArray(ind?.series?.BB2_upper)
+					? ind.series.BB2_upper
 					: null,
-			lower: Array.isArray(res?.data?.indicators?.series?.BB_lower)
-				? res.data.indicators.series.BB_lower
-				: Array.isArray(res?.data?.indicators?.series?.BB2_lower)
-					? res.data.indicators.series.BB2_lower
+			lower: Array.isArray(ind?.series?.BB_lower)
+				? ind.series.BB_lower
+				: Array.isArray(ind?.series?.BB2_lower)
+					? ind.series.BB2_lower
 					: null,
-			middle: Array.isArray(res?.data?.indicators?.series?.BB_middle)
-				? res.data.indicators.series.BB_middle
-				: Array.isArray(res?.data?.indicators?.series?.BB2_middle)
-					? res.data.indicators.series.BB2_middle
+			middle: Array.isArray(ind?.series?.BB_middle)
+				? ind.series.BB_middle
+				: Array.isArray(ind?.series?.BB2_middle)
+					? ind.series.BB2_middle
 					: null,
 		};
 		const bwTrend = (() => {
@@ -532,8 +524,8 @@ export const toolDef: ToolDefinition = {
 		})();
 		// Simple cross info (SMA 25/75)
 		const crossInfo = (() => {
-			const s25 = Array.isArray(res?.data?.indicators?.series?.SMA_25) ? res.data.indicators.series.SMA_25 : null;
-			const s75 = Array.isArray(res?.data?.indicators?.series?.SMA_75) ? res.data.indicators.series.SMA_75 : null;
+			const s25 = Array.isArray(ind?.series?.SMA_25) ? ind.series.SMA_25 : null;
+			const s75 = Array.isArray(ind?.series?.SMA_75) ? ind.series.SMA_75 : null;
 			if (!s25 || !s75) return null;
 			const L = Math.min(s25.length, s75.length);
 			let lastIdx: number | null = null;
@@ -615,6 +607,6 @@ export const toolDef: ToolDefinition = {
 			obvPrev,
 			obvUnit: String(pair).toLowerCase().includes('btc') ? 'BTC' : '',
 		});
-		return { content: [{ type: 'text', text }], structuredContent: res as Record<string, unknown> };
+		return { content: [{ type: 'text', text }], structuredContent: res as unknown as Record<string, unknown> };
 	},
 };

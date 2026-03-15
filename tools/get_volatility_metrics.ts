@@ -119,19 +119,17 @@ export default async function getVolatilityMetrics(
 	opts?: { useLogReturns?: boolean; annualize?: boolean; tz?: string; cacheTtlMs?: number },
 ) {
 	const chk = ensurePair(pair);
-	if (!chk.ok) return failFromValidation(chk, GetVolMetricsOutputSchema) as any;
+	if (!chk.ok) return failFromValidation(chk, GetVolMetricsOutputSchema);
 	const lim = validateLimit(limit, 20, 500);
-	if (!lim.ok) return failFromValidation(lim, GetVolMetricsOutputSchema) as any;
+	if (!lim.ok) return failFromValidation(lim, GetVolMetricsOutputSchema);
 
 	try {
-		const cRes: any = await getCandles(chk.pair, type, undefined as any, lim.value);
-		if (!cRes?.ok)
-			return GetVolMetricsOutputSchema.parse(
-				fail(cRes?.summary || 'failed', (cRes?.meta as any)?.errorType || 'internal'),
-			) as any;
-		const candles: Candle[] = (cRes.data?.normalized || []) as any[];
+		const cRes = await getCandles(chk.pair, type, undefined, lim.value);
+		if (!cRes.ok)
+			return GetVolMetricsOutputSchema.parse(fail(cRes.summary || 'failed', cRes.meta.errorType || 'internal'));
+		const candles: Candle[] = cRes.data.normalized;
 		if (!Array.isArray(candles) || candles.length < 20) {
-			return GetVolMetricsOutputSchema.parse(fail('データ不足（最低20本必要）', 'user')) as any;
+			return GetVolMetricsOutputSchema.parse(fail('データ不足（最低20本必要）', 'user'));
 		}
 
 		const useLog = opts?.useLogReturns ?? true;
@@ -276,8 +274,8 @@ export default async function getVolatilityMetrics(
 		});
 
 		const meta = createMeta(chk.pair, { type, count: candles.length });
-		return GetVolMetricsOutputSchema.parse(ok(summary, data as any, meta as any)) as any;
+		return GetVolMetricsOutputSchema.parse(ok(summary, data as any, meta as any));
 	} catch (e: unknown) {
-		return failFromError(e, { schema: GetVolMetricsOutputSchema }) as any;
+		return failFromError(e, { schema: GetVolMetricsOutputSchema });
 	}
 }

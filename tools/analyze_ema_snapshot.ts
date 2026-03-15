@@ -103,13 +103,13 @@ export default async function analyzeEmaSnapshot(
 		const map: Record<string, number | null> = {};
 
 		if (hasCustomPeriods) {
-			const candlesResult = await getCandles(chk.pair, type as any, undefined as any, fetchLimit);
+			const candlesResult = await getCandles(chk.pair, type, undefined, fetchLimit);
 			if (!candlesResult.ok)
 				return AnalyzeEmaSnapshotOutputSchema.parse(
-					fail(candlesResult.summary || 'candles failed', (candlesResult.meta as any)?.errorType || 'internal'),
+					fail(candlesResult.summary || 'candles failed', candlesResult.meta.errorType || 'internal'),
 				) as any;
 			const normalized = candlesResult.data.normalized;
-			const allCloses = normalized.map((c: any) => c.close);
+			const allCloses = normalized.map((c) => c.close);
 			close = allCloses.at(-1) ?? null;
 			candles = normalized;
 			normalizedLen = normalized.length;
@@ -121,10 +121,10 @@ export default async function analyzeEmaSnapshot(
 				chartInd[key] = series;
 			}
 		} else {
-			const indRes: any = await analyzeIndicators(chk.pair, type as any, fetchLimit);
-			if (!indRes?.ok)
+			const indRes = await analyzeIndicators(chk.pair, type, fetchLimit);
+			if (!indRes.ok)
 				return AnalyzeEmaSnapshotOutputSchema.parse(
-					fail(indRes?.summary || 'indicators failed', (indRes?.meta as any)?.errorType || 'internal'),
+					fail(indRes.summary || 'indicators failed', indRes.meta.errorType || 'internal'),
 				) as any;
 			close = indRes.data.normalized.at(-1)?.close ?? null;
 			chartInd = indRes?.data?.chart?.indicators || {};

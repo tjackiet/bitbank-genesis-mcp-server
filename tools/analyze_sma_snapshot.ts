@@ -88,10 +88,10 @@ export default async function analyzeSmaSnapshot(
 	const chk = ensurePair(pair);
 	if (!chk.ok) return failFromValidation(chk, AnalyzeSmaSnapshotOutputSchema) as any;
 	try {
-		const indRes: any = await analyzeIndicators(chk.pair, type as any, Math.max(Math.max(...periods, 200), limit));
-		if (!indRes?.ok)
+		const indRes = await analyzeIndicators(chk.pair, type, Math.max(Math.max(...periods, 200), limit));
+		if (!indRes.ok)
 			return AnalyzeSmaSnapshotOutputSchema.parse(
-				fail(indRes?.summary || 'indicators failed', (indRes?.meta as any)?.errorType || 'internal'),
+				fail(indRes.summary || 'indicators failed', indRes.meta.errorType || 'internal'),
 			) as any;
 
 		const close = indRes.data.normalized.at(-1)?.close ?? null;
@@ -101,7 +101,7 @@ export default async function analyzeSmaSnapshot(
 
 		// Series for slopes/crosses (prefer chart.indicators for complete arrays)
 		const chartInd: any = indRes?.data?.chart?.indicators || {};
-		const candles: Array<{ isoTime?: string }> = Array.isArray(indRes?.data?.chart?.candles)
+		const candles: Array<{ isoTime?: string | null }> = Array.isArray(indRes?.data?.chart?.candles)
 			? indRes.data.chart.candles
 			: Array.isArray(indRes?.data?.normalized)
 				? indRes.data.normalized
