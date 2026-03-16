@@ -30,7 +30,7 @@ function savgolCoefficients(windowSize: number, polyOrder: number): number[] {
 	const cols = order + 1;
 
 	// J^T * J を計算（cols × cols の正規方程式行列）
-	const JtJ: number[][] = Array.from({ length: cols }, () => new Array(cols).fill(0));
+	const JtJ: number[][] = Array.from({ length: cols }, () => Array.from<number>({ length: cols }).fill(0));
 	for (let j1 = 0; j1 < cols; j1++) {
 		for (let j2 = j1; j2 < cols; j2++) {
 			let sum = 0;
@@ -45,7 +45,7 @@ function savgolCoefficients(windowSize: number, polyOrder: number): number[] {
 
 	// (J^T * J)^{-1} を Gauss-Jordan 法で求める
 	const aug: number[][] = JtJ.map((row, i) => {
-		const extended = new Array(2 * cols).fill(0);
+		const extended = Array.from<number>({ length: 2 * cols }).fill(0);
 		for (let j = 0; j < cols; j++) extended[j] = row[j];
 		extended[cols + i] = 1;
 		return extended;
@@ -84,7 +84,7 @@ function savgolCoefficients(windowSize: number, polyOrder: number): number[] {
 
 	// 係数 = (J^T J)^{-1} J^T の第0行（平滑化＝0次の係数）
 	// c[i] = sum_j inv[0][j] * (i - m)^j
-	const coeffs = new Array(windowSize).fill(0);
+	const coeffs = Array.from<number>({ length: windowSize }).fill(0);
 	for (let i = 0; i < windowSize; i++) {
 		const x = i - m;
 		let val = 0;
@@ -122,7 +122,7 @@ export function savgolFilter(data: number[], windowSize: number = 5, polyOrder: 
 
 	const coeffs = savgolCoefficients(ws, po);
 	const half = Math.floor(ws / 2);
-	const result = new Array(n);
+	const result = Array.from<number>({ length: n });
 
 	// 中央部分: 畳み込み
 	for (let i = half; i < n - half; i++) {

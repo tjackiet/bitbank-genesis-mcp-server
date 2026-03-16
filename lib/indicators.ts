@@ -1,3 +1,6 @@
+/** Create a number[] of given length filled with NaN. */
+const nanArray = (len: number): number[] => Array.from<number>({ length: len }).fill(NaN);
+
 /**
  * lib/indicators.ts - テクニカル指標の共通計算モジュール
  *
@@ -23,10 +26,10 @@ export function sma(prices: number[], period: number): number[] {
 		throw new Error('SMA period must be positive');
 	}
 	if (prices.length < period) {
-		return new Array(prices.length).fill(NaN);
+		return nanArray(prices.length);
 	}
 
-	const result: number[] = new Array(prices.length).fill(NaN);
+	const result: number[] = nanArray(prices.length);
 
 	let sum = 0;
 	for (let i = 0; i < period; i++) {
@@ -52,7 +55,7 @@ export function sma(prices: number[], period: number): number[] {
  * @returns EMA配列（先頭 period-1 個は NaN）
  */
 export function ema(prices: number[], period: number): number[] {
-	const result: number[] = new Array(prices.length).fill(NaN);
+	const result: number[] = nanArray(prices.length);
 
 	if (prices.length < period || period < 1) {
 		return result;
@@ -81,7 +84,7 @@ export function ema(prices: number[], period: number): number[] {
  * @returns RSI配列（0–100、先頭 period 個は NaN）
  */
 export function rsi(closes: number[], period: number): number[] {
-	const result: number[] = new Array(closes.length).fill(NaN);
+	const result: number[] = nanArray(closes.length);
 
 	if (closes.length < period + 1) {
 		return result;
@@ -157,9 +160,9 @@ export function bollingerBands(
 	stdDev: number = 2,
 ): { upper: number[]; middle: number[]; lower: number[] } {
 	const n = values.length;
-	const upper: number[] = new Array(n).fill(NaN);
-	const middle: number[] = new Array(n).fill(NaN);
-	const lower: number[] = new Array(n).fill(NaN);
+	const upper: number[] = nanArray(n);
+	const middle: number[] = nanArray(n);
+	const lower: number[] = nanArray(n);
 
 	if (n < period) return { upper, middle, lower };
 
@@ -211,7 +214,7 @@ export function macd(
 	const n = values.length;
 
 	// MACD line = fast EMA - slow EMA
-	const line: number[] = new Array(n).fill(NaN);
+	const line: number[] = nanArray(n);
 	for (let i = 0; i < n; i++) {
 		if (!isNaN(emaFast[i]) && !isNaN(emaSlow[i])) {
 			line[i] = emaFast[i] - emaSlow[i];
@@ -220,7 +223,7 @@ export function macd(
 
 	// Signal EMA — 有効な MACD 値のみでシードする
 	const validStart = line.findIndex((v) => !isNaN(v));
-	const signalLine: number[] = new Array(n).fill(NaN);
+	const signalLine: number[] = nanArray(n);
 
 	if (validStart >= 0) {
 		const validLine = line.slice(validStart).filter((v) => !isNaN(v));
@@ -234,7 +237,7 @@ export function macd(
 	}
 
 	// Histogram = line - signal
-	const hist: number[] = new Array(n).fill(NaN);
+	const hist: number[] = nanArray(n);
 	for (let i = 0; i < n; i++) {
 		if (!isNaN(line[i]) && !isNaN(signalLine[i])) {
 			hist[i] = line[i] - signalLine[i];
@@ -259,10 +262,10 @@ export function ichimokuSeries(
 	closes: number[],
 ): { tenkan: number[]; kijun: number[]; spanA: number[]; spanB: number[]; chikou: number[] } {
 	const n = highs.length;
-	const tenkan: number[] = new Array(n).fill(NaN);
-	const kijun: number[] = new Array(n).fill(NaN);
-	const spanA: number[] = new Array(n).fill(NaN);
-	const spanB: number[] = new Array(n).fill(NaN);
+	const tenkan: number[] = nanArray(n);
+	const kijun: number[] = nanArray(n);
+	const spanA: number[] = nanArray(n);
+	const spanB: number[] = nanArray(n);
 
 	const tenkanP = 9;
 	const kijunP = 26;
@@ -306,7 +309,7 @@ export function ichimokuSeries(
 export function ichimokuSnapshot(
 	highs: number[],
 	lows: number[],
-	closes: number[],
+	_closes: number[],
 ): { conversion: number; base: number; spanA: number; spanB: number } | null {
 	if (highs.length < 52 || lows.length < 52) return null;
 	const conversion = (Math.max(...highs.slice(-9)) + Math.min(...lows.slice(-9))) / 2;
@@ -339,11 +342,11 @@ export function stochastic(
 ): { kSeries: number[]; dSeries: number[] } {
 	const n = Math.min(highs.length, lows.length, closes.length);
 	if (n < kPeriod + smoothK + smoothD - 2) {
-		return { kSeries: new Array(n).fill(NaN), dSeries: new Array(n).fill(NaN) };
+		return { kSeries: nanArray(n), dSeries: nanArray(n) };
 	}
 
 	// Raw %K
-	const rawK: number[] = new Array(n).fill(NaN);
+	const rawK: number[] = nanArray(n);
 	for (let i = kPeriod - 1; i < n; i++) {
 		let hi = -Infinity;
 		let lo = Infinity;
@@ -356,7 +359,7 @@ export function stochastic(
 	}
 
 	// %K = SMA(rawK, smoothK) — 手動ウィンドウ平均（NaN スキップ）
-	const kSeries: number[] = new Array(n).fill(NaN);
+	const kSeries: number[] = nanArray(n);
 	for (let i = 0; i < n; i++) {
 		if (isNaN(rawK[i])) continue;
 		let sum = 0;
@@ -371,7 +374,7 @@ export function stochastic(
 	}
 
 	// %D = SMA(%K, smoothD)
-	const dSeries: number[] = new Array(n).fill(NaN);
+	const dSeries: number[] = nanArray(n);
 	for (let i = 0; i < n; i++) {
 		if (isNaN(kSeries[i])) continue;
 		let sum = 0;
@@ -411,11 +414,11 @@ export function stochRSI(
 
 	const validCount = rsiValues.filter((v) => !isNaN(v)).length;
 	if (validCount < stochPeriod + smoothK + smoothD) {
-		return { kSeries: new Array(n).fill(NaN), dSeries: new Array(n).fill(NaN) };
+		return { kSeries: nanArray(n), dSeries: nanArray(n) };
 	}
 
 	// Raw %K over RSI window
-	const rawK: number[] = new Array(n).fill(NaN);
+	const rawK: number[] = nanArray(n);
 	for (let i = 0; i < n; i++) {
 		if (isNaN(rsiValues[i]) || i < stochPeriod - 1) continue;
 		const window: number[] = [];
@@ -430,7 +433,7 @@ export function stochRSI(
 	}
 
 	// Smooth rawK → %K
-	const kSeries: number[] = new Array(n).fill(NaN);
+	const kSeries: number[] = nanArray(n);
 	for (let i = 0; i < n; i++) {
 		if (isNaN(rawK[i])) continue;
 		let sum = 0;
@@ -445,7 +448,7 @@ export function stochRSI(
 	}
 
 	// %D = SMA(%K, smoothD)
-	const dSeries: number[] = new Array(n).fill(NaN);
+	const dSeries: number[] = nanArray(n);
 	for (let i = 0; i < n; i++) {
 		if (isNaN(kSeries[i])) continue;
 		let sum = 0;
@@ -478,9 +481,9 @@ export function stochRSI(
  */
 export function trueRange(highs: number[], lows: number[], closes: number[]): number[] {
 	const n = Math.min(highs.length, lows.length, closes.length);
-	if (n < 2) return new Array(n).fill(NaN);
+	if (n < 2) return nanArray(n);
 
-	const result: number[] = new Array(n).fill(NaN);
+	const result: number[] = nanArray(n);
 	for (let i = 1; i < n; i++) {
 		const h = highs[i];
 		const l = lows[i];
@@ -503,7 +506,7 @@ export function trueRange(highs: number[], lows: number[], closes: number[]): nu
 export function atr(highs: number[], lows: number[], closes: number[], period: number = 14): number[] {
 	const tr = trueRange(highs, lows, closes);
 	const n = tr.length;
-	const result: number[] = new Array(n).fill(NaN);
+	const result: number[] = nanArray(n);
 
 	if (n < period + 1) return result;
 

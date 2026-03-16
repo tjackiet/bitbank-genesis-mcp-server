@@ -112,7 +112,7 @@ export const macdCrossStrategy: Strategy = {
 		const p = { ...DEFAULT_PARAMS, ...params };
 		const { fast, slow, signal: signalPeriod } = p;
 		const closes = candles.map((c) => c.close);
-		const { macd, signal, histogram } = calculateMACD(closes, fast, slow, signalPeriod);
+		const { macd, signal, histogram: _histogram } = calculateMACD(closes, fast, slow, signalPeriod);
 
 		// フィルター用の指標を事前計算
 		const sma = p.sma_filter_period > 0 ? calculateSMA(closes, p.sma_filter_period) : null;

@@ -133,7 +133,7 @@ function calculateBuyHoldEquity(candles: Candle[]): number[] {
 }
 
 function calculatePositionState(candles: Candle[], trades: Trade[]): ('long' | 'none')[] {
-	const result: ('long' | 'none')[] = new Array(candles.length).fill('none');
+	const result: ('long' | 'none')[] = Array.from<'long' | 'none'>({ length: candles.length }).fill('none');
 	for (const trade of trades) {
 		const entryIdx = candles.findIndex((c) => c.time === trade.entry_time);
 		const exitIdx = candles.findIndex((c) => c.time === trade.exit_time);

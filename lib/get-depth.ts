@@ -2,7 +2,7 @@ import { GetDepthOutputSchema } from '../src/schemas.js';
 import { estimateZones } from './depth-analysis.js';
 import { formatSummary, formatTimestampJST } from './formatter.js';
 import { BITBANK_API_BASE, DEFAULT_RETRIES, fetchJson } from './http.js';
-import { fail, failFromError, failFromValidation, ok } from './result.js';
+import { failFromError, failFromValidation, ok } from './result.js';
 import { createMeta, ensurePair } from './validate.js';
 
 export interface GetDepthOptions {

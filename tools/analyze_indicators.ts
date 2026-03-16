@@ -529,7 +529,7 @@ export default async function analyzeIndicators(
 			if (!Array.isArray(arr)) return;
 			if (arr.length === len) return;
 			if (arr.length < len) {
-				const pad = new Array(len - arr.length).fill(null);
+				const pad = Array.from<null>({ length: len - arr.length }).fill(null);
 				(seriesMap[k] as NumericSeries) = [...arr, ...pad];
 			} else {
 				(seriesMap[k] as NumericSeries) = arr.slice(-len);

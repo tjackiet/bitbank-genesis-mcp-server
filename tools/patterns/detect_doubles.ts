@@ -8,7 +8,7 @@ import { clamp01, marginFromRelDev, relDev } from './regression.js';
 import { type DetectContext, type DetectResult, pushCand } from './types.js';
 
 export function detectDoubles(ctx: DetectContext): DetectResult {
-	const { candles, pivots, allPeaks, allValleys, tolerancePct, minDist, want, includeForming, near } = ctx;
+	const { candles, pivots, allPeaks, allValleys, tolerancePct, minDist: _minDist, want, includeForming, near } = ctx;
 	const pcand = (arg: Parameters<typeof pushCand>[1]) => pushCand(ctx, arg);
 	const push = (arr: any[], item: any) => {
 		arr.push(item);
