@@ -10,8 +10,8 @@
  * @see https://github.com/bitbankinc/bitbank-api-docs/blob/master/rest-api.md
  */
 
-import { describe, it, expect } from 'vitest';
-import { sign, buildGetMessage, buildPostMessage } from '../../src/private/auth.js';
+import { describe, expect, it } from 'vitest';
+import { buildGetMessage, buildPostMessage, sign } from '../../src/private/auth.js';
 
 // テストベクタ: 固定の秘密鍵から手計算した署名
 // 検証方法: echo -n "<message>" | openssl dgst -sha256 -hmac "<secret>"
@@ -22,17 +22,13 @@ describe('auth.ts 署名テストベクタ', () => {
 		it('HMAC-SHA256 で正しい署名を生成する', () => {
 			// echo -n "hello" | openssl dgst -sha256 -hmac "test_secret_key_for_signing_12345"
 			const result = sign(TEST_SECRET, 'hello');
-			expect(result).toBe(
-				'660734c3a029a8c28d20d8ba3471667e260d9eafb4cd0701ca3fc04fafc9ef29',
-			);
+			expect(result).toBe('660734c3a029a8c28d20d8ba3471667e260d9eafb4cd0701ca3fc04fafc9ef29');
 		});
 
 		it('空文字列の署名が正しい', () => {
 			// echo -n "" | openssl dgst -sha256 -hmac "test_secret_key_for_signing_12345"
 			const result = sign(TEST_SECRET, '');
-			expect(result).toBe(
-				'7ed44d7d96ada1a991bab26f803a3a87428d33741a1ffb21cd4ad7fc80d42401',
-			);
+			expect(result).toBe('7ed44d7d96ada1a991bab26f803a3a87428d33741a1ffb21cd4ad7fc80d42401');
 		});
 	});
 
