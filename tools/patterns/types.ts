@@ -71,8 +71,37 @@ export interface DetectResult {
 	found?: Record<string, boolean>;
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any -- detect_patterns が any[] で蓄積するため
-export type PatternEntry = any;
+/** 検出されたパターンのエントリ（DetectedPatternSchema の runtime 型） */
+export interface PatternEntry {
+	type: string;
+	confidence: number;
+	timeframe?: string;
+	timeframeLabel?: string;
+	range: { start: string; end: string };
+	pivots?: Array<{ idx: number; price: number }>;
+	neckline?: Array<{ x?: number; y: number }>;
+	structureDiagram?: { svg: string; artifact?: { identifier: string; title: string } };
+	status?: string;
+	breakout?: { idx: number; price: number; direction?: string } | null;
+	breakoutDirection?: 'up' | 'down';
+	outcome?: 'success' | 'failure';
+	breakoutTarget?: number;
+	targetMethod?: string;
+	targetReachedPct?: number;
+	trendlineLabel?: string;
+	poleDirection?: 'up' | 'down';
+	priorTrendDirection?: 'bullish' | 'bearish';
+	flagpoleHeight?: number;
+	retracementRatio?: number;
+	isTrendContinuation?: boolean;
+	apexDate?: string;
+	daysToApex?: number;
+	completionPct?: number;
+	breakoutDate?: string;
+	breakoutBarIndex?: number;
+	daysSinceBreakout?: number;
+	aftermath?: unknown;
+}
 
 /** pushCand ヘルパー（デバッグ候補に isoTime を付加して追加） */
 export function pushCand(ctx: DetectContext, arg: CandDebugArg): void {

@@ -32,7 +32,7 @@ export interface PromptDef {
 	// server 側 register 用: 既存 messages をそのまま移行
 	messages: Array<{
 		role: 'system' | 'assistant' | 'user';
-		content: any[];
+		content: Array<{ type: string; text: string }>;
 	}>;
 	// 表示用の引数メタ（存在しない既存もあるため任意）
 	arguments?: Array<{ name: string; description?: string; required?: boolean }>;

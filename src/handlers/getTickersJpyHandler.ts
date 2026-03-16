@@ -67,16 +67,28 @@ export const toolDef: ToolDefinition = {
 		const sortBy = (args?.sortBy ?? 'change24h') as 'change24h' | 'volume' | 'name';
 		const order = (args?.order ?? 'desc') as 'asc' | 'desc';
 		const limit = Number(args?.limit ?? 5);
-		const res: any = await getTickersJpy();
+		const res = await getTickersJpy();
 		if (!res?.ok) return res;
-		const items: any[] = Array.isArray(res?.data) ? res.data : [];
+		const items = (Array.isArray(res?.data) ? res.data : []) as Array<{
+			pair: string;
+			last?: unknown;
+			open?: unknown;
+			high?: unknown;
+			low?: unknown;
+			buy?: unknown;
+			sell?: unknown;
+			change24h?: unknown;
+			change24hPct?: unknown;
+			vol?: unknown;
+			[key: string]: unknown;
+		}>;
 
 		// フォーマット関数
 		const _formatVolume = formatVolumeJPY;
 		const _fmtPrice = formatPrice;
 
 		// normalize numeric fields（open/high/low 追加）
-		const norm = items.map((it: any) => {
+		const norm = items.map((it) => {
 			const lastN = it?.last != null ? Number(it.last) : null;
 			const openN = it?.open != null ? Number(it.open) : null;
 			const highN = it?.high != null ? Number(it.high) : null;

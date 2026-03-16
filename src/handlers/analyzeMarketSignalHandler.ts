@@ -1,3 +1,4 @@
+import type { z } from 'zod';
 import analyzeMarketSignal from '../../tools/analyze_market_signal.js';
 import { AnalyzeMarketSignalInputSchema, AnalyzeMarketSignalOutputSchema } from '../schemas.js';
 import type { ToolDefinition } from '../tool-definition.js';
@@ -200,11 +201,36 @@ export const toolDef: ToolDefinition = {
 	description:
 		'[Market Signal / Score / Triage] 市場の総合シグナル（market signal / composite score / bull-bear / triage）。5要素（板圧力・CVD・モメンタム・ボラティリティ・SMAトレンド）を-100〜+100の単一スコアで瞬時評価。分析の起点・スクリーニングに最適。\n\n詳細分析には専門ツールを併用: get_flow_metrics / get_volatility_metrics / analyze_indicators / get_orderbook / detect_patterns。',
 	inputSchema: AnalyzeMarketSignalInputSchema,
-	handler: async ({ pair, type, flowLimit, bucketMs, windows }: any) => {
-		const res: any = await analyzeMarketSignal(pair, { type, flowLimit, bucketMs, windows });
+	handler: async ({ pair, type, flowLimit, bucketMs, windows }: z.infer<typeof AnalyzeMarketSignalInputSchema>) => {
+		const res = await analyzeMarketSignal(pair, { type, flowLimit, bucketMs, windows });
 		try {
 			if (!res?.ok) return AnalyzeMarketSignalOutputSchema.parse(res);
-			const d: any = res?.data || {};
+			const d = ((res?.data as Record<string, unknown>) || {}) as Record<string, unknown> & {
+				score?: number;
+				recommendation?: string;
+				confidence?: string;
+				confidenceReason?: string;
+				scoreRange?: { displayMin?: number; displayMax?: number; neutralBandDisplay?: { min: number; max: number } };
+				topContributors?: string[];
+				sma?: {
+					current: number;
+					values: { sma25: number | null; sma75: number | null; sma200: number | null };
+					deviations: { vs25: number | null; vs75: number | null; vs200: number | null };
+					arrangement: string;
+					recentCross: { type: string; pair: string; barsAgo: number } | null;
+				};
+				breakdownArray?: Array<{
+					factor: string;
+					weight: number;
+					rawScore: number;
+					contribution: number;
+					interpretation: string;
+				}>;
+				contributions?: Record<string, number>;
+				weights?: Record<string, number>;
+				nextActions?: Array<{ priority: string; tool: string; reason: string }>;
+				refs?: { indicators?: { latest?: Record<string, number> } };
+			};
 			const refs = d?.refs?.indicators?.latest || {};
 			const text = buildMarketSignalHandlerText({
 				pair: String(pair || ''),

@@ -21,5 +21,5 @@ export interface ToolDefinition {
 	/** Zod 入力スキーマ */
 	inputSchema: z.ZodTypeAny;
 	/** MCP ハンドラ（入力を受けて結果を返す）。respond() で自動ラップされる。 */
-	handler: (args: any) => Promise<Result | McpResponse>;
+	handler(args: Record<string, unknown>): Promise<Result | McpResponse>;
 }

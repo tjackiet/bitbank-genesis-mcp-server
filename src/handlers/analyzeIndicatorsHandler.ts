@@ -1,3 +1,4 @@
+import type { z } from 'zod';
 import { nowIso, toDisplayTime } from '../../lib/datetime.js';
 import { formatPercent, formatPriceJPY } from '../../lib/formatter.js';
 import analyzeIndicators from '../../tools/analyze_indicators.js';
@@ -296,11 +297,17 @@ export const toolDef: ToolDefinition = {
 	description:
 		'[Technical Indicators / RSI / MACD / SMA] テクニカル指標の総合分析（indicators / RSI / MACD / SMA / BB / Ichimoku / Stochastic RSI）。十分な limit を指定（例: 日足200本）。\n\n【重要】バックテストには run_backtest を使用。',
 	inputSchema: GetIndicatorsInputSchema,
-	handler: async ({ pair, type, limit }: any) => {
+	handler: async ({ pair, type, limit }: z.infer<typeof GetIndicatorsInputSchema>) => {
 		const res = await analyzeIndicators(pair, type, limit);
 		if (!res.ok) return res;
-		const ind: any = res?.data?.indicators ?? {};
-		const candles: any[] = Array.isArray(res?.data?.normalized) ? res.data.normalized : [];
+		const ind = (res?.data?.indicators ?? {}) as Record<string, number | null | undefined> & {
+			series?: Record<string, number[]>;
+			OBV_trend?: string | null;
+		};
+		const candles = (Array.isArray(res?.data?.normalized) ? res.data.normalized : []) as Array<{
+			close?: number;
+			[k: string]: unknown;
+		}>;
 		const close = candles.at(-1)?.close ?? null;
 		const prev = candles.at(-2)?.close ?? null;
 		const nowJst = toDisplayTime(undefined) ?? nowIso();
@@ -323,7 +330,7 @@ export const toolDef: ToolDefinition = {
 		const rsiSeries = Array.isArray(res?.data?.indicators?.RSI_14_series) ? res.data.indicators.RSI_14_series : null;
 		const recentRsiRaw = (() => {
 			if (!Array.isArray(rsiSeries) || rsiSeries.length === 0) return [];
-			return rsiSeries.slice(-7).map((v: any) => {
+			return rsiSeries.slice(-7).map((v: unknown) => {
 				const num = Number(v);
 				return Number.isFinite(num) ? num : null;
 			});
@@ -462,8 +469,8 @@ export const toolDef: ToolDefinition = {
 				if (!bbSeries.upper || !bbSeries.lower || !bbSeries.middle) return null;
 				const L = Math.min(bbSeries.upper.length, bbSeries.lower.length, bbSeries.middle.length);
 				if (L < 6) return null;
-				const cur = (bbSeries.upper.at(-1) - bbSeries.lower.at(-1)) / Math.max(1e-12, bbSeries.middle.at(-1));
-				const prev5 = (bbSeries.upper.at(-6) - bbSeries.lower.at(-6)) / Math.max(1e-12, bbSeries.middle.at(-6));
+				const cur = (bbSeries.upper.at(-1)! - bbSeries.lower.at(-1)!) / Math.max(1e-12, bbSeries.middle.at(-1)!);
+				const prev5 = (bbSeries.upper.at(-6)! - bbSeries.lower.at(-6)!) / Math.max(1e-12, bbSeries.middle.at(-6)!);
 				if (!Number.isFinite(cur) || !Number.isFinite(prev5)) return null;
 				return cur > prev5 ? '拡大中' : cur < prev5 ? '収縮中' : '不変';
 			} catch {
@@ -478,8 +485,8 @@ export const toolDef: ToolDefinition = {
 				const idxs = [-6, -1];
 				const vals = idxs.map((off) => {
 					const c = Number(candles.at(off)?.close ?? NaN);
-					const m = Number(bbSeries.middle.at(off) ?? NaN);
-					const u = Number(bbSeries.upper.at(off) ?? NaN);
+					const m = Number(bbSeries.middle!.at(off) ?? NaN);
+					const u = Number(bbSeries.upper!.at(off) ?? NaN);
 					if (![c, m, u].every(Number.isFinite)) return null;
 					const z = Number(((2 * (c - m)) / Math.max(1e-12, u - m)).toFixed(2));
 					return { off, z };
