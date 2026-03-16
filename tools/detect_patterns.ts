@@ -14,7 +14,30 @@ import { detectWedges } from './patterns/detect_wedges.js';
 import { globalDedup } from './patterns/helpers.js';
 import { linearRegressionWithR2, near as nearFn, pct as pctFn } from './patterns/regression.js';
 import { type Candle, detectSwingPoints, filterPeaks, filterValleys } from './patterns/swing.js';
-import type { CandDebugEntry, DetectContext } from './patterns/types.js';
+import type { CandDebugEntry, DeduplicablePattern, DetectContext } from './patterns/types.js';
+
+/** Summary generation section で使う拡張型（DeduplicablePattern + パターン固有フィールド） */
+interface SummaryPattern extends DeduplicablePattern {
+	type: string;
+	confidence: number;
+	range: { start: string; end: string; current?: string };
+	status?: string;
+	breakoutDirection?: string;
+	outcome?: string;
+	neckline?: Array<{ y?: number }>;
+	trendlineLabel?: string;
+	daysToApex?: number;
+	breakoutTarget?: number;
+	targetMethod?: string;
+	targetReachedPct?: number;
+	poleDirection?: string;
+	priorTrendDirection?: string;
+	flagpoleHeight?: number;
+	retracementRatio?: number;
+	isTrendContinuation?: boolean;
+	timeframe?: string;
+	timeframeLabel?: string;
+}
 
 /**
  * detect_patterns - チャートパターン検出（完成済み＋形成中）
@@ -110,7 +133,7 @@ export default async function detectPatterns(
 		};
 
 		// --- 各パターン検出を実行 ---
-		let patterns: any[] = [];
+		let patterns: DeduplicablePattern[] = [];
 
 		// 2) Double top/bottom
 		const doubles = detectDoubles(ctx);
@@ -158,7 +181,7 @@ export default async function detectPatterns(
 					if (!Number.isFinite(t)) return Infinity;
 					return Math.abs(nowMs - t) / 86400000;
 				};
-				patterns = patterns.filter((p: any) => inDays(p?.range?.end) <= maxAgeDays);
+				patterns = patterns.filter((p) => inDays(p?.range?.end) <= maxAgeDays);
 			}
 		}
 
@@ -168,7 +191,7 @@ export default async function detectPatterns(
 		// includeForming / includeCompleted に基づくフィルタリング
 		let filteredPatterns = patterns;
 		if (!includeForming || !includeCompleted) {
-			filteredPatterns = patterns.filter((p: any) => {
+			filteredPatterns = patterns.filter((p) => {
 				const isForming = p.status === 'forming' || p.status === 'near_completion';
 				const isCompleted = p.status === 'completed' || p.status === 'invalid' || !p.status;
 				if (includeForming && isForming) return true;
@@ -178,7 +201,7 @@ export default async function detectPatterns(
 		}
 		// includeInvalid に基づくフィルタリング
 		if (!includeInvalid) {
-			filteredPatterns = filteredPatterns.filter((p: any) => p.status !== 'invalid');
+			filteredPatterns = filteredPatterns.filter((p) => p.status !== 'invalid');
 		}
 		patterns = filteredPatterns;
 
@@ -204,9 +227,12 @@ export default async function detectPatterns(
 			p.timeframeLabel = tfLabel;
 		}
 
+		// --- ここから先は SummaryPattern として扱う（検出モジュールが付与した固有フィールドにアクセスするため） ---
+		const summaryPatterns = patterns as SummaryPattern[];
+
 		// overlays: パターン範囲をそのまま帯描画できるように提供
-		const ranges = patterns.map((p: any) => ({ start: p.range.start, end: p.range.end, label: p.type }));
-		const warnings: any[] = [];
+		const ranges = summaryPatterns.map((p) => ({ start: p.range.start, end: p.range.end, label: p.type }));
+		const warnings: Array<{ type: string; message: string; suggestedParams?: Record<string, unknown> }> = [];
 		if (patterns.length <= 1) {
 			warnings.push({
 				type: 'low_detection_count',
@@ -218,10 +244,10 @@ export default async function detectPatterns(
 		// ただし accepted を優先的に残す（accepted → rejected の順で cap まで）
 		const cap = 200;
 		const swingsTrimmed = Array.isArray(debugSwings) ? debugSwings.slice(0, cap) : [];
-		let candidatesTrimmed: any[] = [];
+		let candidatesTrimmed: CandDebugEntry[] = [];
 		if (Array.isArray(debugCandidates)) {
-			const acc = debugCandidates.filter((c: any) => !!c?.accepted);
-			const rej = debugCandidates.filter((c: any) => !c?.accepted);
+			const acc = debugCandidates.filter((c) => !!c?.accepted);
+			const rej = debugCandidates.filter((c) => !c?.accepted);
 			candidatesTrimmed = [...acc, ...rej].slice(0, cap);
 		}
 		const debugTrimmed = {
@@ -230,8 +256,8 @@ export default async function detectPatterns(
 		};
 
 		// summary 生成: LLM が content から読み取れるように詳細を含める
-		const patternSummaries = patterns
-			.map((p: any, idx: number) => {
+		const patternSummaries = summaryPatterns
+			.map((p, idx) => {
 				const startDate = p.range?.start?.substring(0, 10) || '?';
 				const endDate = p.range?.end?.substring(0, 10) || '?';
 				let detail = `${idx + 1}. ${p.type}【${tfLabel}】(パターン整合度: ${p.confidence})\n   - 時間足: ${tfLabel}（${type}）\n   - 期間: ${startDate} ~ ${endDate}`;
@@ -298,7 +324,7 @@ export default async function detectPatterns(
 						pattern_height: 'パターン高さ投影',
 						neckline_projection: 'ネックライン投影',
 					};
-					detail += `\n   - ターゲット価格: ${Math.round(p.breakoutTarget).toLocaleString()}円（${methodJa[p.targetMethod] || p.targetMethod}）`;
+					detail += `\n   - ターゲット価格: ${Math.round(p.breakoutTarget).toLocaleString()}円（${(p.targetMethod && methodJa[p.targetMethod]) || p.targetMethod || '不明'}）`;
 					if (p.targetReachedPct != null) {
 						detail += `\n   - ターゲット進捗: ${p.targetReachedPct}%${p.targetReachedPct >= 100 ? '（到達済み）' : ''}`;
 					}
@@ -339,15 +365,15 @@ export default async function detectPatterns(
 		// 検出対象期間を算出
 		let detectionPeriodText = '';
 		{
-			const allStarts = patterns
-				.map((p: any) => p.range?.start)
-				.filter(Boolean)
-				.map((s: string) => Date.parse(s))
+			const allStarts = summaryPatterns
+				.map((p) => p.range?.start)
+				.filter((s): s is string => !!s)
+				.map((s) => Date.parse(s))
 				.filter(Number.isFinite);
-			const allEnds = patterns
-				.map((p: any) => p.range?.end)
-				.filter(Boolean)
-				.map((s: string) => Date.parse(s))
+			const allEnds = summaryPatterns
+				.map((p) => p.range?.end)
+				.filter((s): s is string => !!s)
+				.map((s) => Date.parse(s))
 				.filter(Number.isFinite);
 			if (allStarts.length && allEnds.length) {
 				const s = dayjs(Math.min(...allStarts))
@@ -362,7 +388,7 @@ export default async function detectPatterns(
 		}
 		// タイプ別件数を集約（例: rising_wedge×3, falling_wedge×2）
 		const typeCounts: Record<string, number> = {};
-		for (const p of patterns) {
+		for (const p of summaryPatterns) {
 			typeCounts[p.type] = (typeCounts[p.type] || 0) + 1;
 		}
 		const typeCountStr = Object.entries(typeCounts)
@@ -385,7 +411,7 @@ export default async function detectPatterns(
 				effective_params: { swingDepth, minBarsBetweenSwings: minDist, tolerancePct, autoScaled },
 				visualization_hints: {
 					preferred_style: 'line',
-					highlight_patterns: patterns.map((p: any) => p.type).slice(0, 3),
+					highlight_patterns: patterns.map((p) => p.type).slice(0, 3),
 				},
 				debug: debugTrimmed,
 			},

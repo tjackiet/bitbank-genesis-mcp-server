@@ -344,8 +344,8 @@ export default async function renderChartSvg(
 	}
 
 	const xs = displayItems.map((_, i) => i);
-	const highs = displayItems.map((d: any) => d.high as number);
-	const lows = displayItems.map((d: any) => d.low as number);
+	const highs = displayItems.map((d) => d.high as number);
+	const lows = displayItems.map((d) => d.low as number);
 	const _xMin = 0;
 	const _xMax = xs.length - 1;
 	// forwardShift は上部で meta.shift から取得済み
@@ -480,13 +480,13 @@ export default async function renderChartSvg(
 	let wantPriceLine = false;
 	if (style === 'candles') {
 		sticks = displayItems
-			.map((d: any, i: number) => {
+			.map((d, i: number) => {
 				const cx = x(i);
 				return `<line x1="${cx}" y1="${y(d.high)}" x2="${cx}" y2="${y(d.low)}" class="w"/>`;
 			})
 			.join('');
 		bodies = displayItems
-			.map((d: any, i: number) => {
+			.map((d, i: number) => {
 				const cx = x(i) - barW / 2;
 				const o = y(d.open);
 				const c = y(d.close);
@@ -581,7 +581,7 @@ export default async function renderChartSvg(
 
 	// 折れ線（終値）を必要に応じて描画
 	if (wantPriceLine) {
-		const closesFull: Array<number | null> = items.map((d: any) => (typeof d.close === 'number' ? d.close : null));
+		const closesFull: Array<number | null> = items.map((d) => (typeof d.close === 'number' ? d.close : null));
 		priceLine = createLinePath(closesFull, '#60a5fa', { width: '1.5', simplify: true, offset: 0 });
 	}
 
@@ -933,7 +933,8 @@ export default async function renderChartSvg(
 
 	// X軸 (日付) - timeframe に応じたフォーマットで表示
 	// タイムゾーンを適用してdayjsインスタンスを生成
-	const toDayjs = (d: any) => dayjs(d?.isoTime || d?.time || d?.timestamp).tz(tz);
+	const toDayjs = (d: { isoTime?: string | null; time?: string | number | null; timestamp?: string | number | null }) =>
+		dayjs(d?.isoTime || d?.time || d?.timestamp).tz(tz);
 	// 全データが同一日に収まるかを判定
 	const firstDate = toDayjs(displayItems[0]);
 	const lastDate = toDayjs(displayItems[displayItems.length - 1]);
@@ -961,7 +962,7 @@ export default async function renderChartSvg(
     ${subPanelTypes.length > 0 ? `<line x1="${padding.left}" y1="${xAxisBottom}" x2="${w - padding.right}" y2="${xAxisBottom}" stroke="#4b5563" stroke-width="1"/>` : ''}
     <g font-size="12" fill="#9ca3af">
       ${displayItems
-				.map((d: any, i: number) => {
+				.map((d, i: number) => {
 					const step = Math.max(1, Math.floor(displayItems.length / 5));
 					if (i % step !== 0) return '';
 					const xPos = x(i);
@@ -1099,7 +1100,7 @@ export default async function renderChartSvg(
 				pc += `<line x1="${padding.left + 65}" y1="${currentTop + 8}" x2="${padding.left + 77}" y2="${currentTop + 8}" stroke="#a78bfa" stroke-width="1.5"/>`;
 				pc += `<text x="${padding.left + 80}" y="${currentTop + 12}" fill="#9ca3af" font-size="9">RSI</text>`;
 			} else if (panelType === 'volume') {
-				const volumes = displayItems.map((d: any) => (d.volume as number) || 0);
+				const volumes = displayItems.map((d) => (d.volume as number) || 0);
 				const vMax = Math.max(...volumes) || 1;
 				const py = (v: number) => subPanelY(v, 0, vMax, currentTop);
 				// volume bars
@@ -1165,7 +1166,7 @@ ${priceLine}
         ${(() => {
 					if (!overlays || !overlays.ranges) return '';
 					const mkRect = (startIso: string, endIso: string, color?: string, label?: string) => {
-						const findIndexByIso = (iso: string) => displayItems.findIndex((d: any) => d.isoTime === iso);
+						const findIndexByIso = (iso: string) => displayItems.findIndex((d) => d.isoTime === iso);
 						const i0 = findIndexByIso(startIso);
 						const i1 = findIndexByIso(endIso);
 						if (i0 < 0 || i1 < 0) return '';
@@ -1179,14 +1180,18 @@ ${priceLine}
 							: '';
 						return rect + text;
 					};
-					return overlays.ranges.map((r: any) => mkRect(r.start, r.end, r.color, r.label)).join('');
+					return overlays.ranges
+						.map((r: { start: string; end: string; color?: string; label?: string }) =>
+							mkRect(r.start, r.end, r.color, r.label),
+						)
+						.join('');
 				})()}
         ${(() => {
 					if (!overlays || !overlays.annotations) return '';
 					// ピン＆テキストを上部に配置し、重なりを軽減するため縦位置を交互にずらす
 					let slot = 0;
 					const mkPin = (iso: string, text: string) => {
-						const findIndexByIso = (s: string) => displayItems.findIndex((d: any) => d.isoTime === s);
+						const findIndexByIso = (s: string) => displayItems.findIndex((d) => d.isoTime === s);
 						const i = findIndexByIso(iso);
 						if (i < 0) return '';
 						const cx = x(i);
@@ -1197,7 +1202,7 @@ ${priceLine}
 						const label = `<text x="${cx + 6}" y="${y0 + 4}" fill="#e5e7eb" font-size="10">${text}</text>`;
 						return circle + stem + label;
 					};
-					return overlays.annotations.map((a: any) => mkPin(a.isoTime, a.text)).join('');
+					return overlays.annotations.map((a: { isoTime: string; text: string }) => mkPin(a.isoTime, a.text)).join('');
 				})()}
         ${(() => {
 					if (!overlays || !overlays.depth_zones) return '';
@@ -1210,7 +1215,11 @@ ${priceLine}
 							: '';
 						return rect + text;
 					};
-					return overlays.depth_zones.map((z: any) => mkBand(z.low, z.high, z.color, z.label)).join('');
+					return overlays.depth_zones
+						.map((z: { low: number; high: number; color?: string; label?: string }) =>
+							mkBand(z.low, z.high, z.color, z.label),
+						)
+						.join('');
 				})()}
       </g>
       <g class="legend">
