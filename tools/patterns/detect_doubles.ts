@@ -5,15 +5,15 @@
 import { generatePatternDiagram } from '../../lib/pattern-diagrams.js';
 import { deduplicatePatterns, finalizeConf, periodScoreDays } from './helpers.js';
 import { clamp01, marginFromRelDev, relDev } from './regression.js';
-import { type DetectContext, type DetectResult, pushCand } from './types.js';
+import { type DetectContext, type DetectResult, type PatternEntry, pushCand } from './types.js';
 
 export function detectDoubles(ctx: DetectContext): DetectResult {
 	const { candles, pivots, allPeaks, allValleys, tolerancePct, minDist: _minDist, want, includeForming, near } = ctx;
 	const pcand = (arg: Parameters<typeof pushCand>[1]) => pushCand(ctx, arg);
-	const push = (arr: any[], item: any) => {
+	const push = (arr: PatternEntry[], item: PatternEntry) => {
 		arr.push(item);
 	};
-	let patterns: any[] = [];
+	let patterns: PatternEntry[] = [];
 
 	let foundDoubleTop = false,
 		foundDoubleBottom = false;

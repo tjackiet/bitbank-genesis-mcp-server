@@ -5,13 +5,12 @@
  */
 
 import { avg as avgRaw, median as medianRaw } from '../../lib/math.js';
-import type { CandleData, PatternEntry } from './types.js';
+import type { AftermathResult, CandleData, PatternEntry } from './types.js';
 
 // ---------------------------------------------------------------------------
 // ネックライン補間
 // ---------------------------------------------------------------------------
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function necklineValue(p: any, idx: number): number | null {
+export function necklineValue(p: PatternEntry, idx: number): number | null {
 	const nl = Array.isArray(p?.neckline) && p.neckline.length === 2 ? p.neckline : null;
 	if (!nl) return null;
 	const [a, b] = nl;
@@ -42,8 +41,11 @@ const BULLISH_TYPES = [
 const BEARISH_TYPES = ['double_top', 'head_and_shoulders', 'triangle_descending'];
 // Note: 'pennant' is intentionally excluded from both lists — its direction is determined by poleDirection field.
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function analyzeAftermath(p: any, candles: CandleData[], isoToIndex: Map<string, number>): any | null {
+export function analyzeAftermath(
+	p: PatternEntry,
+	candles: CandleData[],
+	isoToIndex: Map<string, number>,
+): AftermathResult | null {
 	try {
 		const endIso = p?.range?.end;
 		const endIdx = isoToIndex.has(String(endIso)) ? (isoToIndex.get(String(endIso)) as number) : -1;
@@ -71,8 +73,7 @@ export function analyzeAftermath(p: any, candles: CandleData[], isoToIndex: Map<
 			}
 		}
 		const horizon = [3, 7, 14];
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		const priceMove: any = {};
+		const priceMove: Record<string, { return: number; high: number; low: number }> = {};
 		for (const h of horizon) {
 			const to = Math.min(candles.length - 1, endIdx + h);
 			if (to <= endIdx) continue;
@@ -94,9 +95,8 @@ export function analyzeAftermath(p: any, candles: CandleData[], isoToIndex: Map<
 		// theoretical target
 		let theoreticalTarget = NaN;
 		const nl = nlAtEnd as number;
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		const pivotPrices = Array.isArray(p?.pivots)
-			? p.pivots.map((x: any) => Number(x?.price)).filter((x: number) => Number.isFinite(x))
+			? p.pivots.map((x: { price?: number }) => Number(x?.price)).filter((x: number) => Number.isFinite(x))
 			: [];
 		if (bullish && pivotPrices.length) {
 			const patternLow = Math.min(...pivotPrices);

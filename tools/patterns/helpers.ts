@@ -377,8 +377,8 @@ export function finalizeConf(base: number, type: string): number {
 // ---------------------------------------------------------------------------
 // 重複パターンの排除
 // ---------------------------------------------------------------------------
-export function deduplicatePatterns(arr: DeduplicablePattern[]): DeduplicablePattern[] {
-	const result: DeduplicablePattern[] = [];
+export function deduplicatePatterns<T extends DeduplicablePattern>(arr: T[]): T[] {
+	const result: T[] = [];
 	for (const pattern of arr) {
 		if (!pattern?.type || !pattern?.range?.start || !pattern?.range?.end) {
 			result.push(pattern);

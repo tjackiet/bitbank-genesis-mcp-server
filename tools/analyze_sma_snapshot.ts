@@ -106,7 +106,7 @@ export default async function analyzeSmaSnapshot(
 		for (const p of periods) map[`SMA_${p}`] = get(p);
 
 		// Series for slopes/crosses (prefer chart.indicators for complete arrays)
-		const chartInd: any = indRes?.data?.chart?.indicators || {};
+		const chartInd = (indRes?.data?.chart?.indicators ?? {}) as unknown as Record<string, unknown>;
 		const candles: Array<{ isoTime?: string | null }> = Array.isArray(indRes?.data?.chart?.candles)
 			? indRes.data.chart.candles
 			: Array.isArray(indRes?.data?.normalized)
@@ -141,8 +141,12 @@ export default async function analyzeSmaSnapshot(
 		type RecentCross = { type: 'golden_cross' | 'dead_cross'; pair: [number, number]; barsAgo: number; date: string };
 		const recentCrosses: RecentCross[] = [];
 		for (const [a, b] of crossPairs) {
-			const sa: Array<number | null> = Array.isArray(chartInd?.[`SMA_${a}`]) ? chartInd[`SMA_${a}`] : [];
-			const sb: Array<number | null> = Array.isArray(chartInd?.[`SMA_${b}`]) ? chartInd[`SMA_${b}`] : [];
+			const sa: Array<number | null> = Array.isArray(chartInd?.[`SMA_${a}`])
+				? (chartInd[`SMA_${a}`] as Array<number | null>)
+				: [];
+			const sb: Array<number | null> = Array.isArray(chartInd?.[`SMA_${b}`])
+				? (chartInd[`SMA_${b}`] as Array<number | null>)
+				: [];
 			const n = Math.min(sa.length, sb.length, candles.length);
 			if (n < 2) continue;
 			const start = Math.max(1, n - lookback);
@@ -191,7 +195,9 @@ export default async function analyzeSmaSnapshot(
 
 		// Slopes per SMA (use last ~6 bars delta percentage with 0.2% deadband)
 		function slopeOfLabel(period: number): 'rising' | 'falling' | 'flat' {
-			const s: Array<number | null> = Array.isArray(chartInd?.[`SMA_${period}`]) ? chartInd[`SMA_${period}`] : [];
+			const s: Array<number | null> = Array.isArray(chartInd?.[`SMA_${period}`])
+				? (chartInd[`SMA_${period}`] as Array<number | null>)
+				: [];
 			const n = s.length;
 			if (n < 6) return 'flat';
 			// find valid current and 5 bars ago
@@ -215,7 +221,9 @@ export default async function analyzeSmaSnapshot(
 			pctPerBar: number | null;
 			barsWindow: number | null;
 		} {
-			const s: Array<number | null> = Array.isArray(chartInd?.[`SMA_${period}`]) ? chartInd[`SMA_${period}`] : [];
+			const s: Array<number | null> = Array.isArray(chartInd?.[`SMA_${period}`])
+				? (chartInd[`SMA_${period}`] as Array<number | null>)
+				: [];
 			const n = s.length;
 			if (n < 6) return { pctTotal: null, pctPerBar: null, barsWindow: null };
 			let curIdx = n - 1;
@@ -258,7 +266,15 @@ export default async function analyzeSmaSnapshot(
 			const slopePctPerBar = rates.pctPerBar != null ? Number(rates.pctPerBar.toFixed(3)) : null;
 			const slopePctTotal = rates.pctTotal != null ? Number(rates.pctTotal.toFixed(2)) : null;
 			const barsWindow = rates.barsWindow;
-			const entry: any = { value: val, distancePct, distanceAbs, slope, slopePctPerBar, slopePctTotal, barsWindow };
+			const entry: (typeof smasExt)[string] = {
+				value: val,
+				distancePct,
+				distanceAbs,
+				slope,
+				slopePctPerBar,
+				slopePctTotal,
+				barsWindow,
+			};
 			if (type === '1day') entry.slopePctPerDay = slopePctPerBar;
 			if (close != null && val != null) entry.pricePosition = close > val ? 'above' : close < val ? 'below' : 'equal';
 			smasExt[String(p)] = entry;

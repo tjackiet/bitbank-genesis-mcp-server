@@ -102,7 +102,7 @@ export default async function analyzeEmaSnapshot(
 		const hasCustomPeriods = periods.some((p) => !(FIXED_EMA_PERIODS as readonly number[]).includes(p));
 
 		let close: number | null = null;
-		let chartInd: any = {};
+		let chartInd: Record<string, unknown> = {};
 		let candles: Array<{ isoTime?: string | null }> = [];
 		let normalizedLen = 0;
 		const map: Record<string, number | null> = {};
@@ -132,7 +132,7 @@ export default async function analyzeEmaSnapshot(
 					fail(indRes.summary || 'indicators failed', indRes.meta.errorType || 'internal'),
 				);
 			close = indRes.data.normalized.at(-1)?.close ?? null;
-			chartInd = indRes?.data?.chart?.indicators || {};
+			chartInd = (indRes?.data?.chart?.indicators ?? {}) as unknown as Record<string, unknown>;
 			candles = Array.isArray(indRes?.data?.chart?.candles)
 				? indRes.data.chart.candles
 				: Array.isArray(indRes?.data?.normalized)
@@ -176,8 +176,12 @@ export default async function analyzeEmaSnapshot(
 		type RecentCross = { type: 'golden_cross' | 'dead_cross'; pair: [number, number]; barsAgo: number; date: string };
 		const recentCrosses: RecentCross[] = [];
 		for (const [a, b] of crossPairs) {
-			const sa: Array<number | null> = Array.isArray(chartInd?.[`EMA_${a}`]) ? chartInd[`EMA_${a}`] : [];
-			const sb: Array<number | null> = Array.isArray(chartInd?.[`EMA_${b}`]) ? chartInd[`EMA_${b}`] : [];
+			const sa: Array<number | null> = Array.isArray(chartInd?.[`EMA_${a}`])
+				? (chartInd[`EMA_${a}`] as Array<number | null>)
+				: [];
+			const sb: Array<number | null> = Array.isArray(chartInd?.[`EMA_${b}`])
+				? (chartInd[`EMA_${b}`] as Array<number | null>)
+				: [];
 			const n = Math.min(sa.length, sb.length, candles.length);
 			if (n < 2) continue;
 			const start = Math.max(1, n - lookback);
@@ -226,7 +230,9 @@ export default async function analyzeEmaSnapshot(
 		}
 
 		function slopeOfLabel(period: number): 'rising' | 'falling' | 'flat' {
-			const s: Array<number | null> = Array.isArray(chartInd?.[`EMA_${period}`]) ? chartInd[`EMA_${period}`] : [];
+			const s: Array<number | null> = Array.isArray(chartInd?.[`EMA_${period}`])
+				? (chartInd[`EMA_${period}`] as Array<number | null>)
+				: [];
 			const n = s.length;
 			if (n < 6) return 'flat';
 			let curIdx = n - 1;
@@ -248,7 +254,9 @@ export default async function analyzeEmaSnapshot(
 			pctPerBar: number | null;
 			barsWindow: number | null;
 		} {
-			const s: Array<number | null> = Array.isArray(chartInd?.[`EMA_${period}`]) ? chartInd[`EMA_${period}`] : [];
+			const s: Array<number | null> = Array.isArray(chartInd?.[`EMA_${period}`])
+				? (chartInd[`EMA_${period}`] as Array<number | null>)
+				: [];
 			const n = s.length;
 			if (n < 6) return { pctTotal: null, pctPerBar: null, barsWindow: null };
 			let curIdx = n - 1;
@@ -290,7 +298,15 @@ export default async function analyzeEmaSnapshot(
 			const slopePctPerBar = rates.pctPerBar != null ? Number(rates.pctPerBar.toFixed(3)) : null;
 			const slopePctTotal = rates.pctTotal != null ? Number(rates.pctTotal.toFixed(2)) : null;
 			const barsWindow = rates.barsWindow;
-			const entry: any = { value: val, distancePct, distanceAbs, slope, slopePctPerBar, slopePctTotal, barsWindow };
+			const entry: (typeof emasExt)[string] = {
+				value: val,
+				distancePct,
+				distanceAbs,
+				slope,
+				slopePctPerBar,
+				slopePctTotal,
+				barsWindow,
+			};
 			if (type === '1day') entry.slopePctPerDay = slopePctPerBar;
 			if (close != null && val != null) entry.pricePosition = close > val ? 'above' : close < val ? 'below' : 'equal';
 			emasExt[String(p)] = entry;

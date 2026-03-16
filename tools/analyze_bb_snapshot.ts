@@ -305,8 +305,15 @@ export default async function analyzeBbSnapshot(
 		}
 
 		// extended mode
-		const bbBands: any = { '+3σ': null, '+2σ': upper, '+1σ': null, '-1σ': null, '-2σ': lower, '-3σ': null };
-		const bandWidthAll: any = { '±1σ': null, '±2σ': bandWidthPct, '±3σ': null };
+		const bbBands: Record<string, number | null> = {
+			'+3σ': null,
+			'+2σ': upper,
+			'+1σ': null,
+			'-1σ': null,
+			'-2σ': lower,
+			'-3σ': null,
+		};
+		const bandWidthAll: Record<string, number | null> = { '±1σ': null, '±2σ': bandWidthPct, '±3σ': null };
 		const current_zone =
 			zScore == null
 				? null

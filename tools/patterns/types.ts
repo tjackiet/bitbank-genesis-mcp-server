@@ -137,8 +137,35 @@ export interface DetectResult {
 	found?: Record<string, boolean>;
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any -- detect_patterns が any[] で蓄積するため
-export type PatternEntry = any;
+/** 事後分析結果 */
+export interface AftermathResult {
+	breakoutDate?: string;
+	breakoutConfirmed: boolean;
+	priceMove: Record<string, { return: number; high: number; low: number }>;
+	targetReached: boolean;
+	theoreticalTarget: number | null;
+	outcome: string;
+	daysToTarget: number | null;
+}
+
+/** パターンエントリ（検出結果の1件）— 共通フィールド＋任意拡張 */
+export interface PatternEntry extends DeduplicablePattern {
+	confidence?: number;
+	neckline?: Array<{ x: number; y: number }>;
+	status?: string;
+	trendlineLabel?: string;
+	breakoutDirection?: 'up' | 'down';
+	breakoutBarIndex?: number;
+	breakoutTarget?: number;
+	targetMethod?: string;
+	targetReachedPct?: number;
+	outcome?: string;
+	structureDiagram?: unknown;
+	completionPct?: number;
+	poleDirection?: 'up' | 'down';
+	flagpoleHeight?: number;
+	aftermath?: AftermathResult | null;
+}
 
 /** pushCand ヘルパー（デバッグ候補に isoTime を付加して追加） */
 export function pushCand(ctx: DetectContext, arg: CandDebugArg): void {
