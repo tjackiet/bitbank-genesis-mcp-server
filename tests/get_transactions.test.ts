@@ -2,81 +2,79 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import getTransactions, { toolDef } from '../tools/get_transactions.js';
 
 type TxInput = {
-  price: string;
-  amount: string;
-  side: 'buy' | 'sell';
-  executed_at: string;
+	price: string;
+	amount: string;
+	side: 'buy' | 'sell';
+	executed_at: string;
 };
 
 function buildTransactions(count: number): TxInput[] {
-  const baseTs = 1_700_000_000_000;
-  return Array.from({ length: count }, (_, i) => ({
-    price: String(5_000_000 + i),
-    amount: '0.01',
-    side: i % 2 === 0 ? 'buy' : 'sell',
-    executed_at: String(baseTs + i * 1000),
-  }));
+	const baseTs = 1_700_000_000_000;
+	return Array.from({ length: count }, (_, i) => ({
+		price: String(5_000_000 + i),
+		amount: '0.01',
+		side: i % 2 === 0 ? 'buy' : 'sell',
+		executed_at: String(baseTs + i * 1000),
+	}));
 }
 
 describe('get_transactions', () => {
-  const originalFetch = globalThis.fetch;
+	const originalFetch = globalThis.fetch;
 
-  afterEach(() => {
-    globalThis.fetch = originalFetch;
-  });
+	afterEach(() => {
+		globalThis.fetch = originalFetch;
+	});
 
-  it('inputSchema: date は YYYYMMDD 形式のみ許可する', () => {
-    const parse = () => (toolDef.inputSchema as any).parse({ pair: 'btc_jpy', date: '2024-01-01' });
-    expect(parse).toThrow();
-  });
+	it('inputSchema: date は YYYYMMDD 形式のみ許可する', () => {
+		const parse = () => (toolDef.inputSchema as any).parse({ pair: 'btc_jpy', date: '2024-01-01' });
+		expect(parse).toThrow();
+	});
 
-  it('正常系: limit 件数だけ normalized を返す', async () => {
-    const fetchMock = vi.fn().mockResolvedValue({
-      ok: true,
-      status: 200,
-      statusText: 'OK',
-      json: async () => ({
-        success: 1,
-        data: {
-          transactions: buildTransactions(8),
-        },
-      }),
-    });
-    globalThis.fetch = fetchMock as unknown as typeof fetch;
+	it('正常系: limit 件数だけ normalized を返す', async () => {
+		const fetchMock = vi.fn().mockResolvedValue({
+			ok: true,
+			status: 200,
+			statusText: 'OK',
+			json: async () => ({
+				success: 1,
+				data: {
+					transactions: buildTransactions(8),
+				},
+			}),
+		});
+		globalThis.fetch = fetchMock as unknown as typeof fetch;
 
-    const res = await getTransactions('btc_jpy', 5);
-    expect((res as any).ok).toBe(true);
-    expect((res as any).data.normalized).toHaveLength(5);
-    expect((res as any).meta.count).toBe(5);
-  });
+		const res = await getTransactions('btc_jpy', 5);
+		expect((res as any).ok).toBe(true);
+		expect((res as any).data.normalized).toHaveLength(5);
+		expect((res as any).meta.count).toBe(5);
+	});
 
-  it('仕様: デフォルトは直近60件を返すべき（現状は100件）', async () => {
-    const fetchMock = vi.fn().mockResolvedValue({
-      ok: true,
-      status: 200,
-      statusText: 'OK',
-      json: async () => ({
-        success: 1,
-        data: {
-          transactions: buildTransactions(120),
-        },
-      }),
-    });
-    globalThis.fetch = fetchMock as unknown as typeof fetch;
+	it('仕様: デフォルトは直近60件を返すべき（現状は100件）', async () => {
+		const fetchMock = vi.fn().mockResolvedValue({
+			ok: true,
+			status: 200,
+			statusText: 'OK',
+			json: async () => ({
+				success: 1,
+				data: {
+					transactions: buildTransactions(120),
+				},
+			}),
+		});
+		globalThis.fetch = fetchMock as unknown as typeof fetch;
 
-    const res = await getTransactions('btc_jpy');
-    expect((res as any).ok).toBe(true);
-    expect((res as any).data.normalized).toHaveLength(60);
-  });
+		const res = await getTransactions('btc_jpy');
+		expect((res as any).ok).toBe(true);
+		expect((res as any).data.normalized).toHaveLength(60);
+	});
 
-  it('API異常系: AbortError は timeout 分類されるべき（現状は network）', async () => {
-    const fetchMock = vi
-      .fn()
-      .mockRejectedValue(new DOMException('The operation was aborted.', 'AbortError'));
-    globalThis.fetch = fetchMock as unknown as typeof fetch;
+	it('API異常系: AbortError は timeout 分類されるべき（現状は network）', async () => {
+		const fetchMock = vi.fn().mockRejectedValue(new DOMException('The operation was aborted.', 'AbortError'));
+		globalThis.fetch = fetchMock as unknown as typeof fetch;
 
-    const res = await getTransactions('btc_jpy', 10);
-    expect((res as any).ok).toBe(false);
-    expect((res as any).meta?.errorType).toBe('timeout');
-  });
+		const res = await getTransactions('btc_jpy', 10);
+		expect((res as any).ok).toBe(false);
+		expect((res as any).meta?.errorType).toBe('timeout');
+	});
 });
