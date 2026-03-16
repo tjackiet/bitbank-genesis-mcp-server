@@ -56,12 +56,14 @@ describe('analyze_ichimoku_snapshot', () => {
 	});
 
 	it('analyze_indicators が失敗を返した場合は ok: false を返す', async () => {
-		mockedAnalyzeIndicators.mockResolvedValueOnce({
-			ok: false,
-			summary: 'indicators failed',
-			data: {},
-			meta: { errorType: 'upstream' },
-		} as any);
+		mockedAnalyzeIndicators.mockResolvedValueOnce(
+			asMockResult({
+				ok: false,
+				summary: 'indicators failed',
+				data: {},
+				meta: { errorType: 'upstream' },
+			}),
+		);
 
 		const res = await analyzeIchimokuSnapshot('btc_jpy', '1day', 120, 10);
 		expect(res.ok).toBe(false);
@@ -69,7 +71,7 @@ describe('analyze_ichimoku_snapshot', () => {
 	});
 
 	it('toolDef.handler は lookback を analyzeIchimokuSnapshot に伝搬するべき', async () => {
-		mockedAnalyzeIndicators.mockResolvedValueOnce(buildMockIndicatorSuccess() as any);
+		mockedAnalyzeIndicators.mockResolvedValueOnce(asMockResult(buildMockIndicatorSuccess()));
 
 		const res = await toolDef.handler({
 			pair: 'btc_jpy',
@@ -83,7 +85,7 @@ describe('analyze_ichimoku_snapshot', () => {
 	});
 
 	it('強い弱気条件（雲下 + 転換線<基準線 + 雲下降）では overallSignal は strong_bearish であるべき', async () => {
-		mockedAnalyzeIndicators.mockResolvedValueOnce(buildMockIndicatorSuccess() as any);
+		mockedAnalyzeIndicators.mockResolvedValueOnce(asMockResult(buildMockIndicatorSuccess()));
 
 		const res = await analyzeIchimokuSnapshot('btc_jpy', '1day', 120, 10);
 
@@ -95,7 +97,7 @@ describe('analyze_ichimoku_snapshot', () => {
 	});
 
 	it('遅行スパンは spanB の有無に依存せず ichi_series.chikou から取得されるべき', async () => {
-		const base = buildMockIndicatorSuccess() as any;
+		const base = asMockResult<Record<string, unknown>>(buildMockIndicatorSuccess());
 		base.data.indicators.ICHIMOKU_spanB = null;
 		base.data.indicators.ichi_series.chikou[39] = 777;
 		mockedAnalyzeIndicators.mockResolvedValueOnce(base);
@@ -106,7 +108,7 @@ describe('analyze_ichimoku_snapshot', () => {
 	});
 
 	it('cloudHistory は lookback とローソク足本数の小さい方まで含めるべき（off-by-one しない）', async () => {
-		const short = buildMockIndicatorSuccess() as any;
+		const short = asMockResult<Record<string, unknown>>(buildMockIndicatorSuccess());
 		short.data.normalized = [{ close: 100 }, { close: 101 }];
 		short.data.indicators.ichi_series.spanA = Array.from({ length: 40 }, () => 90);
 		short.data.indicators.ichi_series.spanB = Array.from({ length: 40 }, () => 80);
@@ -120,7 +122,7 @@ describe('analyze_ichimoku_snapshot', () => {
 	});
 
 	it('雲データ不足時の cloud.direction は null（unknown を flat にしない）であるべき', async () => {
-		const noCloudSeries = buildMockIndicatorSuccess() as any;
+		const noCloudSeries = asMockResult<Record<string, unknown>>(buildMockIndicatorSuccess());
 		noCloudSeries.data.indicators.ichi_series = {
 			tenkan: Array.from({ length: 40 }, () => 90),
 			kijun: Array.from({ length: 40 }, () => 95),

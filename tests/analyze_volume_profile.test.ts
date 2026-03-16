@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { assertOk } from './_assertResult.js';
+import { asMockResult, assertOk } from './_assertResult.js';
 
 vi.mock('../tools/get_transactions.js', () => ({
 	default: vi.fn(),
@@ -50,10 +50,10 @@ describe('analyze_volume_profile', () => {
 
 	it('正常系: VWAP・Volume Profile・約定サイズ分布を返す', async () => {
 		mockedGetTransactions.mockResolvedValue(
-			mockTxResult(buildTxs([100, 101, 102, 103, 104, 105, 106, 107, 108, 109])) as any,
+			asMockResult(mockTxResult(buildTxs([100, 101, 102, 103, 104, 105, 106, 107, 108, 109]))),
 		);
 
-		const res = await analyzeVolumeProfile('btc_jpy', 0 as any, 10, 5, 0.7);
+		const res = await analyzeVolumeProfile('btc_jpy', 0, 10, 5, 0.7);
 
 		assertOk(res);
 		expect(res.data.params.totalTrades).toBe(10);
@@ -62,14 +62,16 @@ describe('analyze_volume_profile', () => {
 	});
 
 	it('get_transactions が全件失敗時は errorType=network を保つべき', async () => {
-		mockedGetTransactions.mockResolvedValue({
-			ok: false,
-			summary: 'network failed',
-			data: {},
-			meta: { errorType: 'network' },
-		} as any);
+		mockedGetTransactions.mockResolvedValue(
+			asMockResult({
+				ok: false,
+				summary: 'network failed',
+				data: {},
+				meta: { errorType: 'network' },
+			}),
+		);
 
-		const res = await analyzeVolumeProfile('btc_jpy', 0 as any, 10, 20, 0.7);
+		const res = await analyzeVolumeProfile('btc_jpy', 0, 10, 20, 0.7);
 
 		expect(res.ok).toBe(false);
 		expect(res.meta?.errorType).toBe('network');
@@ -77,7 +79,7 @@ describe('analyze_volume_profile', () => {
 
 	it('toolDef.handler は省略パラメータ時に inputSchema の既定値で動作するべき', async () => {
 		mockedGetTransactions.mockResolvedValue(
-			mockTxResult(buildTxs([100, 101, 102, 103, 104, 105, 106, 107, 108, 109])) as any,
+			asMockResult(mockTxResult(buildTxs([100, 101, 102, 103, 104, 105, 106, 107, 108, 109]))),
 		);
 
 		const res = await toolDef.handler({ pair: 'btc_jpy' });
@@ -87,15 +89,17 @@ describe('analyze_volume_profile', () => {
 
 	it('全約定が同一価格なら POC price は実約定価格と一致するべき', async () => {
 		mockedGetTransactions.mockResolvedValue(
-			mockTxResult(
-				buildTxs(
-					Array.from({ length: 10 }, () => 100),
-					Array.from({ length: 10 }, (_, i) => i + 1),
+			asMockResult(
+				mockTxResult(
+					buildTxs(
+						Array.from({ length: 10 }, () => 100),
+						Array.from({ length: 10 }, (_, i) => i + 1),
+					),
 				),
-			) as any,
+			),
 		);
 
-		const res = await analyzeVolumeProfile('btc_jpy', 0 as any, 10, 6, 0.7);
+		const res = await analyzeVolumeProfile('btc_jpy', 0, 10, 6, 0.7);
 
 		assertOk(res);
 		expect(res.data.profile.poc.price).toBe(100);

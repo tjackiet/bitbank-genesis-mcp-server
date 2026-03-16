@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { assertOk } from './_assertResult.js';
+import { asMockResult, assertOk } from './_assertResult.js';
 
 vi.mock('../tools/get_candles.js', () => ({
 	default: vi.fn(),
@@ -77,7 +77,7 @@ describe('analyze_support_resistance', () => {
 	});
 
 	it('content の見出しは入力 pair を使うべき', async () => {
-		mockedGetCandles.mockResolvedValueOnce(candlesOk(buildFlatCandles(20)) as any);
+		mockedGetCandles.mockResolvedValueOnce(asMockResult(candlesOk(buildFlatCandles(20))));
 
 		const res = await analyzeSupportResistance('eth_jpy', { lookbackDays: 30, topN: 3, tolerance: 0.015 });
 
@@ -86,7 +86,7 @@ describe('analyze_support_resistance', () => {
 	});
 
 	it('lookbackDays 外の取得バッファにだけ存在する水準を結果へ混ぜないべき', async () => {
-		mockedGetCandles.mockResolvedValueOnce(candlesOk(buildBufferedHistoryCandles()) as any);
+		mockedGetCandles.mockResolvedValueOnce(asMockResult(candlesOk(buildBufferedHistoryCandles())));
 
 		const res = await analyzeSupportResistance('btc_jpy', { lookbackDays: 30, topN: 3, tolerance: 0.015 });
 

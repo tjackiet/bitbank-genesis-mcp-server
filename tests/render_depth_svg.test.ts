@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { asMockResult } from './_assertResult.js';
 
 vi.mock('../lib/get-depth.js', () => ({
 	default: vi.fn(),
@@ -40,10 +41,12 @@ describe('render_depth_svg', () => {
 
 	it('asks/bids が空配列のときは fail を返すべき（現状は ok=true で 0 円チャートを返す）', async () => {
 		mockedGetDepth.mockResolvedValueOnce(
-			depthOk({
-				asks: [],
-				bids: [],
-			}) as any,
+			asMockResult(
+				depthOk({
+					asks: [],
+					bids: [],
+				}),
+			),
 		);
 
 		const res = await renderDepthSvg({
@@ -69,13 +72,15 @@ describe('render_depth_svg', () => {
 
 	it('asks が空で bids のみあるときは fail を返すべき（現状は currentPrice を半値で算出する）', async () => {
 		mockedGetDepth.mockResolvedValueOnce(
-			depthOk({
-				asks: [],
-				bids: [
-					['100', '1.0'],
-					['99', '2.0'],
-				],
-			}) as any,
+			asMockResult(
+				depthOk({
+					asks: [],
+					bids: [
+						['100', '1.0'],
+						['99', '2.0'],
+					],
+				}),
+			),
 		);
 
 		const res = await renderDepthSvg({

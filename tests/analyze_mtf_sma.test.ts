@@ -22,51 +22,57 @@ describe('analyze_mtf_sma', () => {
 
 	it('requested timeframe に unknown が含まれる場合 confluence は aligned=false / direction=unknown であるべき', async () => {
 		mockedAnalyzeSmaSnapshot
-			.mockResolvedValueOnce({
-				ok: true,
-				summary: 'ok',
-				data: {
-					alignment: 'bullish',
-					summary: { position: 'above_all' },
-					latest: { close: 100 },
-					sma: { SMA_25: 90, SMA_75: 80, SMA_200: 70 },
-					smas: {},
-					crosses: [],
-					recentCrosses: [],
-					tags: ['sma_bullish_alignment'],
-				},
-				meta: {},
-			} as any)
-			.mockResolvedValueOnce({
-				ok: true,
-				summary: 'ok',
-				data: {
-					alignment: 'unknown',
-					summary: { position: 'unknown' },
-					latest: { close: 100 },
-					sma: { SMA_25: null, SMA_75: null, SMA_200: null },
-					smas: {},
-					crosses: [],
-					recentCrosses: [],
-					tags: [],
-				},
-				meta: {},
-			} as any)
-			.mockResolvedValueOnce({
-				ok: true,
-				summary: 'ok',
-				data: {
-					alignment: 'bullish',
-					summary: { position: 'above_all' },
-					latest: { close: 100 },
-					sma: { SMA_25: 90, SMA_75: 80, SMA_200: 70 },
-					smas: {},
-					crosses: [],
-					recentCrosses: [],
-					tags: ['sma_bullish_alignment'],
-				},
-				meta: {},
-			} as any);
+			.mockResolvedValueOnce(
+				asMockResult({
+					ok: true,
+					summary: 'ok',
+					data: {
+						alignment: 'bullish',
+						summary: { position: 'above_all' },
+						latest: { close: 100 },
+						sma: { SMA_25: 90, SMA_75: 80, SMA_200: 70 },
+						smas: {},
+						crosses: [],
+						recentCrosses: [],
+						tags: ['sma_bullish_alignment'],
+					},
+					meta: {},
+				}),
+			)
+			.mockResolvedValueOnce(
+				asMockResult({
+					ok: true,
+					summary: 'ok',
+					data: {
+						alignment: 'unknown',
+						summary: { position: 'unknown' },
+						latest: { close: 100 },
+						sma: { SMA_25: null, SMA_75: null, SMA_200: null },
+						smas: {},
+						crosses: [],
+						recentCrosses: [],
+						tags: [],
+					},
+					meta: {},
+				}),
+			)
+			.mockResolvedValueOnce(
+				asMockResult({
+					ok: true,
+					summary: 'ok',
+					data: {
+						alignment: 'bullish',
+						summary: { position: 'above_all' },
+						latest: { close: 100 },
+						sma: { SMA_25: 90, SMA_75: 80, SMA_200: 70 },
+						smas: {},
+						crosses: [],
+						recentCrosses: [],
+						tags: ['sma_bullish_alignment'],
+					},
+					meta: {},
+				}),
+			);
 
 		const res = await analyzeMtfSma('btc_jpy', ['1hour', '4hour', '1day'], [25, 75, 200]);
 
@@ -76,21 +82,23 @@ describe('analyze_mtf_sma', () => {
 	});
 
 	it('重複 timeframes 指定時は analyze_sma_snapshot を重複実行しないべき', async () => {
-		mockedAnalyzeSmaSnapshot.mockResolvedValue({
-			ok: true,
-			summary: 'ok',
-			data: {
-				alignment: 'bullish',
-				summary: { position: 'above_all' },
-				latest: { close: 100 },
-				sma: { SMA_25: 90, SMA_75: 80, SMA_200: 70 },
-				smas: {},
-				crosses: [],
-				recentCrosses: [],
-				tags: ['sma_bullish_alignment'],
-			},
-			meta: {},
-		} as any);
+		mockedAnalyzeSmaSnapshot.mockResolvedValue(
+			asMockResult({
+				ok: true,
+				summary: 'ok',
+				data: {
+					alignment: 'bullish',
+					summary: { position: 'above_all' },
+					latest: { close: 100 },
+					sma: { SMA_25: 90, SMA_75: 80, SMA_200: 70 },
+					smas: {},
+					crosses: [],
+					recentCrosses: [],
+					tags: ['sma_bullish_alignment'],
+				},
+				meta: {},
+			}),
+		);
 
 		const res = await analyzeMtfSma('btc_jpy', ['1hour', '1hour', '4hour'], [25, 75, 200]);
 

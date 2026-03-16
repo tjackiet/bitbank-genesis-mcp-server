@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import getTransactions, { toolDef } from '../tools/get_transactions.js';
+import { assertFail, assertOk } from './_assertResult.js';
 
 type TxInput = {
 	price: string;
@@ -45,9 +46,9 @@ describe('get_transactions', () => {
 		globalThis.fetch = fetchMock as unknown as typeof fetch;
 
 		const res = await getTransactions('btc_jpy', 5);
-		expect((res as any).ok).toBe(true);
-		expect((res as any).data.normalized).toHaveLength(5);
-		expect((res as any).meta.count).toBe(5);
+		assertOk(res);
+		expect(res.data.normalized).toHaveLength(5);
+		expect(res.meta.count).toBe(5);
 	});
 
 	it('仕様: デフォルトは直近60件を返すべき（現状は100件）', async () => {
@@ -65,8 +66,8 @@ describe('get_transactions', () => {
 		globalThis.fetch = fetchMock as unknown as typeof fetch;
 
 		const res = await getTransactions('btc_jpy');
-		expect((res as any).ok).toBe(true);
-		expect((res as any).data.normalized).toHaveLength(60);
+		assertOk(res);
+		expect(res.data.normalized).toHaveLength(60);
 	});
 
 	it('API異常系: AbortError は timeout 分類されるべき（現状は network）', async () => {
@@ -74,7 +75,7 @@ describe('get_transactions', () => {
 		globalThis.fetch = fetchMock as unknown as typeof fetch;
 
 		const res = await getTransactions('btc_jpy', 10);
-		expect((res as any).ok).toBe(false);
-		expect((res as any).meta?.errorType).toBe('timeout');
+		assertFail(res);
+		expect(res.meta?.errorType).toBe('timeout');
 	});
 });
