@@ -125,14 +125,23 @@ export async function fetchCandlesForBacktest(
 	}
 
 	// 全データをCandle形式に変換
-	const rawCandles: Candle[] = normalized.map((c: any) => ({
-		time: c.isoTime || '',
-		open: Number(c.open),
-		high: Number(c.high),
-		low: Number(c.low),
-		close: Number(c.close),
-		volume: c.volume != null ? Number(c.volume) : undefined,
-	}));
+	const rawCandles: Candle[] = normalized.map(
+		(c: {
+			isoTime?: string | null;
+			open: number;
+			high: number;
+			low: number;
+			close: number;
+			volume?: number | null;
+		}) => ({
+			time: c.isoTime || '',
+			open: Number(c.open),
+			high: Number(c.high),
+			low: Number(c.low),
+			close: Number(c.close),
+			volume: c.volume != null ? Number(c.volume) : undefined,
+		}),
+	);
 
 	// 1. バリデーション（無効データを除外）
 	const validCandles = rawCandles.filter(isValidCandle);

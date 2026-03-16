@@ -97,13 +97,15 @@ export default async function getDepth(pair: string, { timeoutMs = 3000, maxLeve
 		const textWithBoundary = buildDepthText({ timestamp: data.timestamp, summary, bids, asks, mid });
 
 		const meta = createMeta(chk.pair);
-		return GetDepthOutputSchema.parse(ok(textWithBoundary, data as any, meta as any));
+		return GetDepthOutputSchema.parse(
+			ok(textWithBoundary, data as Record<string, unknown>, meta as Record<string, unknown>),
+		);
 	} catch (err: unknown) {
 		return failFromError(err, {
 			schema: GetDepthOutputSchema,
 			timeoutMs,
 			defaultType: 'network',
 			defaultMessage: 'ネットワークエラー',
-		}) as any;
+		}) as ReturnType<typeof GetDepthOutputSchema.parse>;
 	}
 }

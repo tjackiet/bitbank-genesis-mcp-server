@@ -590,5 +590,15 @@ export const toolDef: ToolDefinition = {
 	description:
 		'[Ichimoku Cloud] 一目均衡表（Ichimoku / cloud / kumo / tenkan-kijun）の数値スナップショット。価格と雲の位置関係・転換線/基準線クロス・雲の傾きを数値で返す。',
 	inputSchema: AnalyzeIchimokuSnapshotInputSchema,
-	handler: async ({ pair, type, limit, lookback }: any) => analyzeIchimokuSnapshot(pair, type, limit, lookback),
+	handler: async ({
+		pair,
+		type,
+		limit,
+		lookback,
+	}: {
+		pair?: string;
+		type?: string;
+		limit?: number;
+		lookback?: number;
+	}) => analyzeIchimokuSnapshot(pair, type, limit, lookback),
 };

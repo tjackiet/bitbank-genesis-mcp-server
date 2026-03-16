@@ -125,5 +125,5 @@ export const toolDef: ToolDefinition = {
 	description:
 		'[Ticker / Price] 単一ペアのティッカー（ticker / price / 24h change）を取得。現在価格・出来高・24h高安。',
 	inputSchema: GetTickerInputSchema,
-	handler: async ({ pair }: any) => getTicker(pair),
+	handler: async ({ pair }: { pair?: string }) => getTicker(pair ?? 'btc_jpy'),
 };

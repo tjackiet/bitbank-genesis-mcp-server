@@ -262,5 +262,5 @@ export const toolDef: ToolDefinition = {
 		'[Currency Strength / Ranking / Screening] 通貨強弱ランキング（currency strength / relative strength / ranking / screening）。' +
 		'全JPYペアを複合スコア（変化率・RSI・SMA乖離・出来高）で判定。注目銘柄の発見・スクリーニングに。',
 	inputSchema: AnalyzeCurrencyStrengthInputSchema,
-	handler: async ({ topN, type }: any) => analyzeCurrencyStrength(Number(topN), type),
+	handler: async ({ topN, type }: { topN?: number; type?: string }) => analyzeCurrencyStrength(Number(topN), type),
 };

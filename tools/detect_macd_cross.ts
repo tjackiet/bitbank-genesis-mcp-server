@@ -619,7 +619,29 @@ screen（スクリーニング用）:
 			})
 			.optional(),
 	}),
-	handler: async (args: any) => {
+	handler: async (args: {
+		pair?: string;
+		market?: 'all' | 'jpy';
+		pairs?: string[];
+		lookback?: number;
+		view?: 'summary' | 'detailed';
+		includeForming?: boolean;
+		includeStats?: boolean;
+		historyDays?: number;
+		performanceWindows?: number[];
+		minHistogramForForming?: number;
+		screen?: {
+			minHistogramDelta?: number;
+			maxBarsAgo?: number;
+			minReturnPct?: number;
+			maxReturnPct?: number;
+			crossType?: 'golden' | 'dead' | 'both';
+			sortBy?: 'date' | 'histogram' | 'return' | 'barsAgo';
+			sortOrder?: 'asc' | 'desc';
+			limit?: number;
+			withPrice?: boolean;
+		};
+	}) => {
 		try {
 			if (args.pair) {
 				return singlePairMode(
@@ -631,7 +653,7 @@ screen（スクリーニング用）:
 					args.minHistogramForForming ?? 0.3,
 				);
 			}
-			const res: any = await screenMode(
+			const res: Awaited<ReturnType<typeof screenMode>> = await screenMode(
 				args.market ?? 'all',
 				args.lookback ?? 3,
 				args.pairs,
@@ -640,21 +662,23 @@ screen（スクリーニング用）:
 			);
 			if (!res?.ok || args.view !== 'detailed') return res;
 			try {
-				const detRaw: any[] = Array.isArray(res?.data?.screenedDetailed)
-					? res.data.screenedDetailed
+				const detRaw: CrossDetailed[] = Array.isArray(res?.data?.screenedDetailed)
+					? (res.data.screenedDetailed as CrossDetailed[])
 					: Array.isArray(res?.data?.resultsDetailed)
-						? res.data.resultsDetailed
+						? (res.data.resultsDetailed as CrossDetailed[])
 						: [];
 				if (!detRaw.length) return res;
-				const fmtDelta = (v: any) => (v == null ? 'n/a' : `${v >= 0 ? '+' : ''}${Number(v).toFixed(2)}`);
-				const fmtRet = (v: any) => (v == null ? 'n/a' : `${v >= 0 ? '+' : ''}${Number(v).toFixed(2)}%`);
+				const fmtDelta = (v: number | null | undefined) =>
+					v == null ? 'n/a' : `${v >= 0 ? '+' : ''}${Number(v).toFixed(2)}`;
+				const fmtRet = (v: number | null | undefined) =>
+					v == null ? 'n/a' : `${v >= 0 ? '+' : ''}${Number(v).toFixed(2)}%`;
 				const lines = detRaw.map((r) => {
 					const date = (r?.crossDate || '').slice(0, 10);
 					const prevDays = r?.prevCross?.barsAgo != null ? `${r.prevCross.barsAgo}日` : 'n/a';
 					return `${String(r.pair)}: ${String(r.type)}@${date} (ヒストグラム${fmtDelta(r?.histogramDelta)}, 前回クロスから${prevDays}${r?.returnSinceCrossPct != null ? `, ${fmtRet(r.returnSinceCrossPct)}` : ''})`;
 				});
 				const text = `${String(res?.summary || '')}\n${lines.join('\n')}`.trim();
-				return { content: [{ type: 'text', text }], structuredContent: res as Record<string, unknown> };
+				return { content: [{ type: 'text', text }], structuredContent: res as unknown as Record<string, unknown> };
 			} catch {
 				return res;
 			}

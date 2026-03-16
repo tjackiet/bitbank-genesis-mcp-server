@@ -305,8 +305,15 @@ export default async function analyzeBbSnapshot(
 		}
 
 		// extended mode
-		const bbBands: any = { '+3σ': null, '+2σ': upper, '+1σ': null, '-1σ': null, '-2σ': lower, '-3σ': null };
-		const bandWidthAll: any = { '±1σ': null, '±2σ': bandWidthPct, '±3σ': null };
+		const bbBands: Record<string, number | null> = {
+			'+3σ': null,
+			'+2σ': upper,
+			'+1σ': null,
+			'-1σ': null,
+			'-2σ': lower,
+			'-3σ': null,
+		};
+		const bandWidthAll: Record<string, number | null> = { '±1σ': null, '±2σ': bandWidthPct, '±3σ': null };
 		const current_zone =
 			zScore == null
 				? null
@@ -362,5 +369,15 @@ export const toolDef: ToolDefinition = {
 
 mode=default: ±2σ帯の基本情報 / mode=extended: ±1σ/±2σ/±3σの詳細分析。`,
 	inputSchema: AnalyzeBbSnapshotInputSchema,
-	handler: async ({ pair, type, limit, mode }: any) => analyzeBbSnapshot(pair, type, limit, mode),
+	handler: async ({
+		pair,
+		type,
+		limit,
+		mode,
+	}: {
+		pair?: string;
+		type?: string;
+		limit?: number;
+		mode?: 'default' | 'extended';
+	}) => analyzeBbSnapshot(pair, type, limit, mode),
 };

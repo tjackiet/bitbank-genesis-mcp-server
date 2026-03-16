@@ -532,7 +532,7 @@ export const toolDef: ToolDefinition = {
 	name: 'analyze_volume_profile',
 	description: `[Volume Profile / VWAP / POC] 出来高プロファイル分析（volume profile / VWAP / POC / value area）。VWAP±σバンド・価格帯別出来高・約定サイズ分布を算出。hours で期間指定（デフォルト4h、最大24h）。`,
 	inputSchema: AnalyzeVolumeProfileInputSchema,
-	handler: async (rawInput: any) => {
+	handler: async (rawInput: Record<string, unknown>) => {
 		const parsed = AnalyzeVolumeProfileInputSchema.parse(rawInput);
 		return analyzeVolumeProfile(
 			parsed.pair,

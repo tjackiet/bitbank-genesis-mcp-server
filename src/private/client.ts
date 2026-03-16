@@ -168,7 +168,7 @@ export class BitbankPrivateClient {
 
 				// success: 0 の場合（HTTP 200 でもエラー）
 				if (json.success !== 1) {
-					const errorCode = (json.data as any)?.code as number | undefined;
+					const errorCode = (json.data as Record<string, unknown>)?.code as number | undefined;
 
 					// レート制限エラーはリトライ
 					if (errorCode != null && RATE_LIMIT_CODES.has(errorCode)) {

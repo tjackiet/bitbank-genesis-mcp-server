@@ -148,19 +148,38 @@ export const toolDef: ToolDefinition = {
 	description:
 		'[Transactions / Trades] 市場の約定履歴（transactions / recent trades）を取得。直近60件 or 日付指定。金額・価格でフィルタ可能。',
 	inputSchema: GetTransactionsInputSchema,
-	handler: async ({ pair, limit, date, minAmount, maxAmount, minPrice, maxPrice, view }: any) => {
-		const res: any = await getTransactions(pair, limit, date);
+	handler: async ({
+		pair,
+		limit,
+		date,
+		minAmount,
+		maxAmount,
+		minPrice,
+		maxPrice,
+		view,
+	}: {
+		pair?: string;
+		limit?: number;
+		date?: string;
+		minAmount?: number;
+		maxAmount?: number;
+		minPrice?: number;
+		maxPrice?: number;
+		view?: 'summary' | 'items';
+	}) => {
+		const res = await getTransactions(pair, limit, date);
 		if (!res?.ok) return res;
 		const hasFilter = minAmount != null || maxAmount != null || minPrice != null || maxPrice != null;
-		const items = (res?.data?.normalized ?? []).filter(
-			(t: any) =>
+		type TxItem = { price: number; amount: number; side: 'buy' | 'sell'; timestampMs: number; isoTime: string };
+		const items = (res?.data?.normalized ?? ([] as TxItem[])).filter(
+			(t: TxItem) =>
 				(minAmount == null || t.amount >= minAmount) &&
 				(maxAmount == null || t.amount <= maxAmount) &&
 				(minPrice == null || t.price >= minPrice) &&
 				(maxPrice == null || t.price <= maxPrice),
 		);
 		const summary = hasFilter
-			? `${String(pair).toUpperCase().replace('_', '/')} フィルタ後 ${items.length}件 (buy=${items.filter((t: any) => t.side === 'buy').length} sell=${items.filter((t: any) => t.side === 'sell').length})`
+			? `${String(pair).toUpperCase().replace('_', '/')} フィルタ後 ${items.length}件 (buy=${items.filter((t: TxItem) => t.side === 'buy').length} sell=${items.filter((t: TxItem) => t.side === 'sell').length})`
 			: res.summary;
 		if (view === 'items') {
 			const text = JSON.stringify(items, null, 2);

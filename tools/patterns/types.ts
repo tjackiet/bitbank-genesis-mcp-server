@@ -3,6 +3,70 @@
  */
 import type { Pivot } from './swing.js';
 
+/** トレンドライン（線形回帰の結果） */
+export interface TrendLine {
+	slope: number;
+	intercept: number;
+	r2?: number;
+	valueAt: (x: number) => number;
+}
+
+/** ウェッジ検出パラメータ */
+export interface WedgeParams {
+	minSlope?: number;
+	slopeRatioMinRising?: number;
+	slopeRatioMinFalling?: number;
+	slopeRatioMin?: number;
+	minWeakerSlopeRatio?: number;
+	windowSizeMin?: number;
+	windowSizeMax?: number;
+}
+
+/** パターンスコアの各構成要素 */
+export interface PatternScoreComponents {
+	fitScore: number;
+	convergeScore: number;
+	touchScore: number;
+	alternationScore: number;
+	insideScore: number;
+	durationScore: number;
+}
+
+/** パターンスコアの重み */
+export interface PatternScoreWeights {
+	fit: number;
+	converge: number;
+	touch: number;
+	alternation: number;
+	inside: number;
+	duration: number;
+}
+
+/** タッチポイント */
+export interface TouchPoint {
+	index: number;
+	distance: number;
+	isBreak: boolean;
+}
+
+/** evaluateTouchesEx の戻り値 */
+export interface TouchResult {
+	upperTouches: TouchPoint[];
+	lowerTouches: TouchPoint[];
+	upperQuality: number;
+	lowerQuality: number;
+	score: number;
+}
+
+/** 重複排除対象のパターンエントリ（最低限のフィールド + 任意の追加フィールド） */
+export interface DeduplicablePattern {
+	type?: string;
+	confidence?: number;
+	range?: { start: string; end: string; current?: string };
+	pivots?: Array<{ idx?: number; price?: number; kind?: string }>;
+	[key: string]: unknown;
+}
+
 /** ローソク足データ（detectSwingPoints 互換） */
 export interface CandleData {
 	open: number;
@@ -29,6 +93,8 @@ export interface CandDebugEntry {
 	indices?: number[];
 	points?: Array<{ role: string; idx: number; price: number; isoTime?: string }>;
 	details?: unknown;
+	status?: string;
+	breakoutDirection?: string | null;
 }
 
 /**
@@ -71,8 +137,35 @@ export interface DetectResult {
 	found?: Record<string, boolean>;
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any -- detect_patterns が any[] で蓄積するため
-export type PatternEntry = any;
+/** 事後分析結果 */
+export interface AftermathResult {
+	breakoutDate?: string;
+	breakoutConfirmed: boolean;
+	priceMove: Record<string, { return: number; high: number; low: number }>;
+	targetReached: boolean;
+	theoreticalTarget: number | null;
+	outcome: string;
+	daysToTarget: number | null;
+}
+
+/** パターンエントリ（検出結果の1件）— 共通フィールド＋任意拡張 */
+export interface PatternEntry extends DeduplicablePattern {
+	confidence?: number;
+	neckline?: Array<{ x: number; y: number }>;
+	status?: string;
+	trendlineLabel?: string;
+	breakoutDirection?: 'up' | 'down';
+	breakoutBarIndex?: number;
+	breakoutTarget?: number;
+	targetMethod?: string;
+	targetReachedPct?: number;
+	outcome?: string;
+	structureDiagram?: unknown;
+	completionPct?: number;
+	poleDirection?: 'up' | 'down';
+	flagpoleHeight?: number;
+	aftermath?: AftermathResult | null;
+}
 
 /** pushCand ヘルパー（デバッグ候補に isoTime を付加して追加） */
 export function pushCand(ctx: DetectContext, arg: CandDebugArg): void {

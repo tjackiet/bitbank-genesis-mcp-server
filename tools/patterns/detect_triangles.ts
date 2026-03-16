@@ -17,7 +17,7 @@
 
 import { calcATR, deduplicatePatterns, finalizeConf } from './helpers.js';
 import { clamp01 } from './regression.js';
-import type { DetectContext, DetectResult } from './types.js';
+import type { DetectContext, DetectResult, PatternEntry } from './types.js';
 
 // ---------------------------------------------------------------------------
 // bars-per-day helper
@@ -165,7 +165,7 @@ function detectPole(
 export function detectTriangles(ctx: DetectContext): DetectResult {
 	const { candles, want, includeForming, debugCandidates, lrWithR2 } = ctx;
 	const type = ctx.type;
-	let patterns: any[] = [];
+	let patterns: PatternEntry[] = [];
 
 	const wantPennant = want.size === 0 || want.has('pennant');
 	const wantAsc = want.size === 0 || want.has('triangle') || want.has('triangle_ascending') || wantPennant;
