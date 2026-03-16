@@ -113,7 +113,7 @@ export const rsiStrategy: Strategy = {
 	},
 
 	getOverlays(candles: Candle[], params: Record<string, number>): Overlay[] {
-		const { period, overbought, oversold } = { ...DEFAULT_PARAMS, ...params };
+		const { period, overbought: _overbought, oversold: _oversold } = { ...DEFAULT_PARAMS, ...params };
 		const closes = candles.map((c) => c.close);
 		const rsi = calculateRSI(closes, period);
 

@@ -25,7 +25,7 @@ interface RawAsset {
 }
 
 /** ticker から取得する最低限の価格情報 */
-interface TickerPrice {
+interface _TickerPrice {
 	pair: string;
 	last: number;
 }

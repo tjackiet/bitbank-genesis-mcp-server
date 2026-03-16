@@ -66,7 +66,7 @@ export function generatePatternDiagram(
 	options?: { isForming?: boolean },
 ): PatternDiagramData {
 	const startDate = formatDateIsoShort(range.start);
-	const endDate = formatDateIsoShort(range.end);
+	const _endDate = formatDateIsoShort(range.end);
 	const identifier = `${patternType}-diagram-${startDate}`;
 	const title = `${getPatternLabel(patternType)}構造図 (${formatDateShort(range.start)}-${formatDateShort(range.end)})`;
 	const dashed = options?.isForming ? '5,5' : '';
@@ -411,7 +411,7 @@ export function generateSupportResistanceDiagram(
 	};
 
 	// ライン描画データ生成
-	const lines = allLevels.map((level, idx) => {
+	const lines = allLevels.map((level, _idx) => {
 		const y = getY(level.price);
 		const priceStr = Math.round(level.price).toLocaleString();
 		const pctStr =
@@ -494,7 +494,7 @@ export function generateSupportResistanceDiagram(
 	// SVG生成
 	const lineElements = lines
 		.map(
-			(line, idx) => `
+			(line, _idx) => `
   <line x1="${margin.left}" y1="${line.y}" x2="${width - margin.right + 30}" y2="${line.y}" 
         stroke="${line.color}" stroke-width="${line.strokeWidth}" ${line.dashArray ? `stroke-dasharray="${line.dashArray}"` : ''} />
   <text x="${width - margin.right + 40}" y="${line.y + 5}" fill="${line.color}" font-size="13" font-weight="bold">
