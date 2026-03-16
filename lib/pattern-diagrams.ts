@@ -134,11 +134,11 @@ export function generatePatternDiagram(
 		const head = pivots[2];
 		const peak2 = pivots[3];
 		const rightShoulder = pivots[4];
-		const lsDate = formatDateShort((leftShoulder as any)?.date);
-		const p1Date = formatDateShort((peak1 as any)?.date);
-		const headDate = formatDateShort((head as any)?.date);
-		const p2Date = formatDateShort((peak2 as any)?.date);
-		const rsDate = formatDateShort((rightShoulder as any)?.date);
+		const lsDate = formatDateShort(leftShoulder?.date);
+		const p1Date = formatDateShort(peak1?.date);
+		const headDate = formatDateShort(head?.date);
+		const p2Date = formatDateShort(peak2?.date);
+		const rsDate = formatDateShort(rightShoulder?.date);
 		// ネックライン: 山1/山2の平均価格（表示用）
 		const nlVal = ((peak1?.price ?? 0) + (peak2?.price ?? 0)) / 2;
 		const necklinePrice = Math.round(nlVal).toLocaleString();
@@ -175,11 +175,11 @@ export function generatePatternDiagram(
 		const head = pivots[2];
 		const valley2 = pivots[3];
 		const rightShoulder = pivots[4];
-		const lsDate = formatDateShort((leftShoulder as any)?.date);
-		const v1Date = formatDateShort((valley1 as any)?.date);
-		const headDate = formatDateShort((head as any)?.date);
-		const v2Date = formatDateShort((valley2 as any)?.date);
-		const rsDate = formatDateShort((rightShoulder as any)?.date);
+		const lsDate = formatDateShort(leftShoulder?.date);
+		const v1Date = formatDateShort(valley1?.date);
+		const headDate = formatDateShort(head?.date);
+		const v2Date = formatDateShort(valley2?.date);
+		const rsDate = formatDateShort(rightShoulder?.date);
 		// ネックライン: 谷1/谷2の平均価格（表示用）
 		const nlVal = ((valley1?.price ?? 0) + (valley2?.price ?? 0)) / 2;
 		const necklinePrice = Math.round(nlVal).toLocaleString();
@@ -216,11 +216,11 @@ export function generatePatternDiagram(
 		const valley2 = pivots[2];
 		const peak2 = pivots[3];
 		const valley3 = pivots[4];
-		const v1Date = formatDateShort((valley1 as any)?.date);
-		const p1Date = formatDateShort((peak1 as any)?.date);
-		const v2Date = formatDateShort((valley2 as any)?.date);
-		const p2Date = formatDateShort((peak2 as any)?.date);
-		const v3Date = formatDateShort((valley3 as any)?.date);
+		const v1Date = formatDateShort(valley1?.date);
+		const p1Date = formatDateShort(peak1?.date);
+		const v2Date = formatDateShort(valley2?.date);
+		const p2Date = formatDateShort(peak2?.date);
+		const v3Date = formatDateShort(valley3?.date);
 		const nlVal = ((peak1?.price ?? 0) + (peak2?.price ?? 0)) / 2;
 		const necklinePrice = Math.round(nlVal).toLocaleString();
 		const svg = `<svg width="600" height="300" xmlns="http://www.w3.org/2000/svg">
@@ -251,11 +251,11 @@ export function generatePatternDiagram(
 		const peak2 = pivots[2];
 		const valley2 = pivots[3];
 		const peak3 = pivots[4];
-		const p1Date = formatDateShort((peak1 as any)?.date);
-		const v1Date = formatDateShort((valley1 as any)?.date);
-		const p2Date = formatDateShort((peak2 as any)?.date);
-		const v2Date = formatDateShort((valley2 as any)?.date);
-		const p3Date = formatDateShort((peak3 as any)?.date);
+		const p1Date = formatDateShort(peak1?.date);
+		const v1Date = formatDateShort(valley1?.date);
+		const p2Date = formatDateShort(peak2?.date);
+		const v2Date = formatDateShort(valley2?.date);
+		const p3Date = formatDateShort(peak3?.date);
 		const nlVal = ((valley1?.price ?? 0) + (valley2?.price ?? 0)) / 2;
 		const necklinePrice = Math.round(nlVal).toLocaleString();
 		const svg = `<svg width="600" height="300" xmlns="http://www.w3.org/2000/svg">

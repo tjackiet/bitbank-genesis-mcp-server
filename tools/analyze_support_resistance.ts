@@ -441,7 +441,7 @@ export default async function analyzeSupportResistance(
 
 		// 平均出来高計算
 		const avgVolume =
-			analysisCandles.reduce((sum: number, c: any) => sum + (c.volume || 0), 0) / analysisCandles.length;
+			analysisCandles.reduce((sum: number, c: SrCandle) => sum + (c.volume || 0), 0) / analysisCandles.length;
 
 		// サポートレベルを評価
 		const supportLevels: SupportResistanceLevel[] = [];
@@ -461,7 +461,7 @@ export default async function analyzeSupportResistance(
 			if (recentBreak) continue; // 直近7日で崩壊したものは除外
 
 			const volumeBoost = touches.some((t) => {
-				const c = analysisCandles.find((c: any) => (c.isoTime ?? '').split('T')[0] === t.date);
+				const c = analysisCandles.find((c: SrCandle) => (c.isoTime ?? '').split('T')[0] === t.date);
 				return c && (c.volume || 0) > avgVolume * 1.5;
 			});
 
@@ -574,7 +574,7 @@ export default async function analyzeSupportResistance(
 			if (recentBreak) continue; // 直近7日で突破されたものは除外
 
 			const volumeBoost = touches.some((t) => {
-				const c = analysisCandles.find((c: any) => (c.isoTime ?? '').split('T')[0] === t.date);
+				const c = analysisCandles.find((c: SrCandle) => (c.isoTime ?? '').split('T')[0] === t.date);
 				return c && (c.volume || 0) > avgVolume * 1.5;
 			});
 
@@ -803,6 +803,15 @@ export const toolDef: ToolDefinition = {
 	description:
 		'[Support / Resistance / Key Levels] サポート・レジスタンス（support / resistance / key levels / price levels）を自動検出。反発/反落ポイントの接触回数・強度・崩壊実績を分析。',
 	inputSchema: AnalyzeSupportResistanceInputSchema,
-	handler: async ({ pair, lookbackDays, topN, tolerance }: any) =>
-		analyzeSupportResistance(pair, { lookbackDays, topN, tolerance }),
+	handler: async ({
+		pair,
+		lookbackDays,
+		topN,
+		tolerance,
+	}: {
+		pair?: string;
+		lookbackDays?: number;
+		topN?: number;
+		tolerance?: number;
+	}) => analyzeSupportResistance(pair, { lookbackDays, topN, tolerance }),
 };

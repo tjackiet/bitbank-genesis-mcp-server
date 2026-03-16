@@ -385,8 +385,10 @@ export default async function getCandles(
 		// テキスト summary に全ローソク足データを含める
 		// （MCP クライアントが structuredContent.data を読めない場合に対応）
 		const baseCurrency = chk.pair.split('_')[0]?.toUpperCase() ?? '';
-		const candleLines = normalized.map((c: any, i: number) => {
-			const t = c.isoTimeLocal || (c.isoTime ? (c.isoTime as string).replace(/\.000Z$/, 'Z') : '?');
+		const candleLines = normalized.map((c, i: number) => {
+			const t =
+				(c as { isoTimeLocal?: string; isoTime?: string }).isoTimeLocal ||
+				(c.isoTime ? c.isoTime.replace(/\.000Z$/, 'Z') : '?');
 			return `[${i}] ${t} O:${c.open} H:${c.high} L:${c.low} C:${c.close} V:${c.volume}`;
 		});
 		const summary =
@@ -439,8 +441,22 @@ export const toolDef: ToolDefinition = {
 
 【重要】バックテストには run_backtest を使用（データ取得〜チャート描画を一括実行）。`,
 	inputSchema: GetCandlesInputSchema,
-	handler: async ({ pair, type, date, limit, view, tz }: any) => {
-		const result: any = await getCandles(pair, type, date, limit, tz);
+	handler: async ({
+		pair,
+		type,
+		date,
+		limit,
+		view,
+		tz,
+	}: {
+		pair: string;
+		type: '1min' | '5min' | '15min' | '30min' | '1hour' | '4hour' | '8hour' | '12hour' | '1day' | '1week' | '1month';
+		date?: string;
+		limit?: number;
+		view?: 'full' | 'items';
+		tz?: string;
+	}) => {
+		const result = await getCandles(pair, type, date, limit, tz);
 		if (view === 'items') {
 			const items = result?.data?.normalized ?? [];
 			return {
@@ -453,7 +469,7 @@ export const toolDef: ToolDefinition = {
 			const sample = items.slice(0, 5);
 			const header = String(result?.summary ?? `${String(pair).toUpperCase()} [${String(type)}]`);
 			const text = `${header}\nSample (first ${sample.length}/${items.length}):\n${JSON.stringify(sample, null, 2)}`;
-			return { content: [{ type: 'text', text }], structuredContent: result as Record<string, unknown> };
+			return { content: [{ type: 'text', text }], structuredContent: result as unknown as Record<string, unknown> };
 		} catch {
 			return result;
 		}

@@ -348,7 +348,7 @@ export function formatPatternLine(p: PatternEntry, idx: number, view: string, me
 				triangle_descending: '下方',
 				pennant: p.poleDirection === 'up' ? '上方' : p.poleDirection === 'down' ? '下方' : undefined,
 			};
-			const expectedDir = expectedDirMap[p.type];
+			const expectedDir = p.type ? expectedDirMap[p.type] : undefined;
 			const meaningMap: Record<string, Record<string, string>> = {
 				falling_wedge: { success: '強気転換', failure: '弱気継続' },
 				rising_wedge: { success: '弱気転換', failure: '強気継続' },
@@ -359,7 +359,7 @@ export function formatPatternLine(p: PatternEntry, idx: number, view: string, me
 					failure: `ダマシ（${p.poleDirection === 'up' ? '弱気転換' : '強気転換'}）`,
 				},
 			};
-			const meaning = meaningMap[p.type]?.[p.outcome] || `${directionJa}ブレイク`;
+			const meaning = (p.type && p.outcome ? meaningMap[p.type]?.[p.outcome] : undefined) || `${directionJa}ブレイク`;
 			let dirLine = `   - ブレイク方向: ${directionJa}ブレイク`;
 			if (expectedDir) dirLine += `（本来は${expectedDir}ブレイクが期待されるパターン）`;
 			outcomeLine = `${dirLine}\n   - パターン結果: ${outcomeJa}（${meaning}）`;
@@ -457,7 +457,7 @@ export function formatSummaryView(
 ): McpResponse {
 	const now = Date.now();
 	const within = (ms: number) =>
-		pats.filter((p) => Number.isFinite(toTs(p?.range?.end)) && now - toTs(p.range.end) <= ms).length;
+		pats.filter((p) => Number.isFinite(toTs(p?.range?.end)) && now - toTs(p.range!.end) <= ms).length;
 	const in30 = within(30 * 86400000);
 	const in90 = within(90 * 86400000);
 	const formingHint = includeForming ? '' : '\n※形成中は includeForming=true を指定してください。';

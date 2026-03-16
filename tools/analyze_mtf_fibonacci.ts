@@ -268,5 +268,6 @@ export const toolDef: ToolDefinition = {
 	name: 'analyze_mtf_fibonacci',
 	description: `[Multi-Timeframe Fibonacci / Confluence] 複数期間フィボナッチ一括分析（MTF fibonacci / confluence zone）。複数ルックバック期間の水準を並列計算し、コンフルエンス（合流）ゾーンを自動検出。analyze_fibonacci を個別に呼ぶ必要なし。`,
 	inputSchema: AnalyzeMtfFibonacciInputSchema,
-	handler: async ({ pair, lookbackDays }: any) => analyzeMtfFibonacci(pair, lookbackDays),
+	handler: async ({ pair, lookbackDays }: { pair?: string; lookbackDays?: number[] }) =>
+		analyzeMtfFibonacci(pair, lookbackDays),
 };

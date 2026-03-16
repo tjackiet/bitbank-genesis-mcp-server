@@ -400,8 +400,26 @@ export const toolDef: ToolDefinition = {
 	name: 'get_flow_metrics',
 	description: `[Flow / CVD / Buy-Sell Pressure] 資金フロー分析（flow / CVD / aggressor ratio / buy-sell pressure）。約定データからCVD・アグレッサー比・スパイクを検出。hours（推奨）で時間範囲指定、または limit で件数指定。`,
 	inputSchema: GetFlowMetricsInputSchema,
-	handler: async ({ pair, limit, date, bucketMs, view, bucketsN, tz, hours }: any) => {
-		const res: any = await getFlowMetrics(
+	handler: async ({
+		pair,
+		limit,
+		date,
+		bucketMs,
+		view,
+		bucketsN,
+		tz,
+		hours,
+	}: {
+		pair?: string;
+		limit?: number;
+		date?: string;
+		bucketMs?: number;
+		view?: 'summary' | 'buckets' | 'full';
+		bucketsN?: number;
+		tz?: string;
+		hours?: number;
+	}) => {
+		const res = await getFlowMetrics(
 			pair,
 			Number(limit),
 			date,
@@ -412,10 +430,10 @@ export const toolDef: ToolDefinition = {
 		if (!res?.ok) return res;
 		if (view === 'summary') return res;
 		const agg = res?.data?.aggregates ?? {};
-		const buckets: any[] = res?.data?.series?.buckets ?? [];
+		const buckets = (res?.data?.series?.buckets ?? []) as FlowMetricsBucket[];
 		const n = Number(bucketsN ?? 10);
 		const last = buckets.slice(-n);
-		const fmt = (b: any) =>
+		const fmt = (b: FlowMetricsBucket) =>
 			`${b.displayTime || b.isoTime}  buy=${b.buyVolume} sell=${b.sellVolume} total=${b.totalVolume} cvd=${b.cvd}${b.spike ? ` spike=${b.spike}` : ''}`;
 		const actualRange = res?.meta?.actualRange;
 		const rangeStr = actualRange

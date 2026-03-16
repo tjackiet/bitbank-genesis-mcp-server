@@ -16,7 +16,7 @@
 
 import { calcATR, deduplicatePatterns, finalizeConf } from './helpers.js';
 import { clamp01 } from './regression.js';
-import type { DetectContext, DetectResult } from './types.js';
+import type { DetectContext, DetectResult, PatternEntry } from './types.js';
 
 // ---------------------------------------------------------------------------
 // 時間軸別パラメータ — 「日数」ベースで定義し、bars-per-day で変換
@@ -91,7 +91,7 @@ function getFlagParams(tf: string) {
 export function detectPennantsFlags(ctx: DetectContext): DetectResult {
 	const { candles, want, includeForming, debugCandidates, lrWithR2 } = ctx;
 	const type = ctx.type;
-	let patterns: any[] = [];
+	let patterns: PatternEntry[] = [];
 
 	// This module now only handles flags. Pennants are detected via detect_triangles.ts.
 	const wantFlag = want.size === 0 || want.has('flag');

@@ -520,5 +520,11 @@ export const toolDef: ToolDefinition = {
 
 複数タイムフレーム分析が必要な場合は analyze_mtf_fibonacci を使用。`,
 	inputSchema: AnalyzeFibonacciInputSchema,
-	handler: async (args: any) => analyzeFibonacci(args),
+	handler: async (args: {
+		pair?: string;
+		type?: string;
+		lookbackDays?: number;
+		mode?: 'retracement' | 'extension' | 'both';
+		historyLookbackDays?: number;
+	}) => analyzeFibonacci(args),
 };

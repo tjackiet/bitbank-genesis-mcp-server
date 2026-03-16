@@ -790,5 +790,16 @@ export const toolDef: ToolDefinition = {
 	description:
 		'[Candlestick Patterns / Doji / Engulfing] ローソク足パターン検出（candle patterns / doji / engulfing / hammer / harami）。1〜3本足パターンを検出し文脈と過去統計を付けて解説。',
 	inputSchema: AnalyzeCandlePatternsInputSchema,
-	handler: async (args: any) => analyzeCandlePatterns(args),
+	handler: async (args: {
+		pair?: 'btc_jpy';
+		timeframe?: '1day';
+		as_of?: string;
+		date?: string;
+		window_days?: number;
+		focus_last_n?: number;
+		patterns?: CandlePatternType[];
+		history_lookback_days?: number;
+		history_horizons?: number[];
+		allow_partial_patterns?: boolean;
+	}) => analyzeCandlePatterns(args),
 };

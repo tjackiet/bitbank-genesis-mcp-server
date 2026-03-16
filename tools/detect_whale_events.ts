@@ -46,11 +46,13 @@ export default async function detectWhaleEvents(
 		const dep = await getDepth(chk.pair, { maxLevels: 200 });
 		if (!dep?.ok)
 			return fail(dep?.summary || 'depth failed', (dep?.meta as { errorType?: string })?.errorType || 'internal');
-		const asks: Array<[number, number]> | undefined = dep?.data?.asks;
-		const bids: Array<[number, number]> | undefined = dep?.data?.bids;
-		if (!asks || !bids) return fail('depth response missing asks/bids', 'upstream');
-		const bestBid = bids.length ? Math.max(...bids.map(([p]) => Number(p))) : null;
-		const bestAsk = asks.length ? Math.min(...asks.map(([p]) => Number(p))) : null;
+		const rawAsks: Array<[string, string]> | undefined = dep?.data?.asks;
+		const rawBids: Array<[string, string]> | undefined = dep?.data?.bids;
+		if (!rawAsks || !rawBids) return fail('depth response missing asks/bids', 'upstream');
+		const asks: Array<[number, number]> = rawAsks.map(([p, s]) => [Number(p), Number(s)]);
+		const bids: Array<[number, number]> = rawBids.map(([p, s]) => [Number(p), Number(s)]);
+		const bestBid = bids.length ? Math.max(...bids.map(([p]) => p)) : null;
+		const bestAsk = asks.length ? Math.min(...asks.map(([p]) => p)) : null;
 		const mid = bestBid != null && bestAsk != null ? (bestBid + bestAsk) / 2 : null;
 
 		const lbMap: Record<Lookback, { type: string; limit: number }> = {
@@ -174,5 +176,6 @@ export const toolDef: ToolDefinition = {
 		lookback: z.enum(['30min', '1hour', '2hour']).default('1hour'),
 		minSize: z.number().min(0).default(0.5),
 	}),
-	handler: async ({ pair, lookback, minSize }: any) => detectWhaleEvents(pair, lookback, minSize),
+	handler: async ({ pair, lookback, minSize }: { pair: string; lookback: Lookback; minSize: number }) =>
+		detectWhaleEvents(pair, lookback, minSize),
 };

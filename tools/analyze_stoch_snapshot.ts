@@ -258,6 +258,19 @@ export const toolDef: ToolDefinition = {
 	description:
 		'[Stochastic / Overbought / Oversold] Stochastic（stochastic / %K / %D / overbought / oversold / divergence）の最新状態。ゾーン・クロス・ダイバージェンスを判定。',
 	inputSchema: AnalyzeStochSnapshotInputSchema,
-	handler: async ({ pair, type, limit, kPeriod, smoothK, smoothD }: any) =>
-		analyzeStochSnapshot(pair, type, limit, kPeriod, smoothK, smoothD),
+	handler: async ({
+		pair,
+		type,
+		limit,
+		kPeriod,
+		smoothK,
+		smoothD,
+	}: {
+		pair?: string;
+		type?: string;
+		limit?: number;
+		kPeriod?: number;
+		smoothK?: number;
+		smoothD?: number;
+	}) => analyzeStochSnapshot(pair, type, limit, kPeriod, smoothK, smoothD),
 };

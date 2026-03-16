@@ -37,7 +37,7 @@ import getCandles from './get_candles.js';
 interface IndicatorCacheComputed {
 	normalized: Candle[];
 	raw: unknown;
-	indicators: any;
+	indicators: GetIndicatorsData['indicators'];
 	allCloses: number[];
 	rsi14_series: NumericSeries;
 	sma_25_series: NumericSeries;
@@ -216,7 +216,11 @@ function ichimoku(
 	};
 }
 
-function createChartData(normalized: Candle[], indicators: any, limit: number = 50): GetIndicatorsData['chart'] {
+function createChartData(
+	normalized: Candle[],
+	indicators: GetIndicatorsData['indicators'],
+	limit: number = 50,
+): GetIndicatorsData['chart'] {
 	const fullLength = normalized.length;
 	const recent = normalized.slice(-limit);
 	const pastBuffer = fullLength - recent.length;
@@ -225,38 +229,38 @@ function createChartData(normalized: Candle[], indicators: any, limit: number = 
 	return {
 		candles: normalized,
 		indicators: {
-			SMA_5: indicators.sma_5_series,
-			SMA_20: indicators.sma_20_series,
-			SMA_25: indicators.sma_25_series,
-			SMA_50: indicators.sma_50_series,
-			SMA_75: indicators.sma_75_series,
-			SMA_200: indicators.sma_200_series,
-			EMA_12: indicators.ema_12_series,
-			EMA_26: indicators.ema_26_series,
-			EMA_50: indicators.ema_50_series,
-			EMA_200: indicators.ema_200_series,
+			SMA_5: indicators.sma_5_series ?? [],
+			SMA_20: indicators.sma_20_series ?? [],
+			SMA_25: indicators.sma_25_series ?? [],
+			SMA_50: indicators.sma_50_series ?? [],
+			SMA_75: indicators.sma_75_series ?? [],
+			SMA_200: indicators.sma_200_series ?? [],
+			EMA_12: indicators.ema_12_series ?? [],
+			EMA_26: indicators.ema_26_series ?? [],
+			EMA_50: indicators.ema_50_series ?? [],
+			EMA_200: indicators.ema_200_series ?? [],
 			RSI_14: indicators.RSI_14,
-			BB1_upper: indicators.bb1_series?.upper,
-			BB1_middle: indicators.bb1_series?.middle,
-			BB1_lower: indicators.bb1_series?.lower,
-			BB2_upper: indicators.bb2_series?.upper,
-			BB2_middle: indicators.bb2_series?.middle,
-			BB2_lower: indicators.bb2_series?.lower,
-			BB3_upper: indicators.bb3_series?.upper,
-			BB3_middle: indicators.bb3_series?.middle,
-			BB3_lower: indicators.bb3_series?.lower,
-			BB_upper: indicators.bb2_series?.upper,
-			BB_middle: indicators.bb2_series?.middle,
-			BB_lower: indicators.bb2_series?.lower,
-			ICHI_tenkan: indicators.ichi_series?.tenkan,
-			ICHI_kijun: indicators.ichi_series?.kijun,
-			ICHI_spanA: indicators.ichi_series?.spanA,
-			ICHI_spanB: indicators.ichi_series?.spanB,
-			ICHI_chikou: indicators.ichi_series?.chikou,
+			BB1_upper: indicators.bb1_series?.upper ?? [],
+			BB1_middle: indicators.bb1_series?.middle ?? [],
+			BB1_lower: indicators.bb1_series?.lower ?? [],
+			BB2_upper: indicators.bb2_series?.upper ?? [],
+			BB2_middle: indicators.bb2_series?.middle ?? [],
+			BB2_lower: indicators.bb2_series?.lower ?? [],
+			BB3_upper: indicators.bb3_series?.upper ?? [],
+			BB3_middle: indicators.bb3_series?.middle ?? [],
+			BB3_lower: indicators.bb3_series?.lower ?? [],
+			BB_upper: indicators.bb2_series?.upper ?? [],
+			BB_middle: indicators.bb2_series?.middle ?? [],
+			BB_lower: indicators.bb2_series?.lower ?? [],
+			ICHI_tenkan: indicators.ichi_series?.tenkan ?? [],
+			ICHI_kijun: indicators.ichi_series?.kijun ?? [],
+			ICHI_spanA: indicators.ichi_series?.spanA ?? [],
+			ICHI_spanB: indicators.ichi_series?.spanB ?? [],
+			ICHI_chikou: indicators.ichi_series?.chikou ?? [],
 			macd_series: indicators.macd_series,
-			RSI_14_series: indicators.RSI_14_series,
-			stoch_k_series: indicators.stoch_k_series,
-			stoch_d_series: indicators.stoch_d_series,
+			RSI_14_series: indicators.RSI_14_series ?? [],
+			stoch_k_series: indicators.stoch_k_series ?? [],
+			stoch_d_series: indicators.stoch_d_series ?? [],
 		},
 		meta: { pastBuffer, shift },
 		stats: {
@@ -268,7 +272,10 @@ function createChartData(normalized: Candle[], indicators: any, limit: number = 
 	};
 }
 
-function analyzeTrend(indicators: any, currentPrice: number | null | undefined): TrendLabel {
+function analyzeTrend(
+	indicators: GetIndicatorsData['indicators'],
+	currentPrice: number | null | undefined,
+): TrendLabel {
 	if (!indicators.SMA_25 || !indicators.SMA_75 || currentPrice == null) return 'insufficient_data';
 
 	const sma25 = indicators.SMA_25 as number | null;
@@ -358,7 +365,13 @@ export default async function analyzeIndicators(
 		const ema_50_series = ema(allCloses, 50);
 		const ema_200_series = ema(allCloses, 200);
 
-		const indicators: any = {
+		// Pre-compute values needed for the indicators object
+		const ichiSimple = ichimoku(allHighs, allLows, allCloses);
+		const stoch = computeClassicStochastic(allHighs, allLows, allCloses, 14, 3, 3);
+		const stochRsi = computeStochRSI(allCloses, 14, 14, 3, 3);
+		const obvResult = computeOBV(normalized, 20);
+
+		const indicators: GetIndicatorsData['indicators'] = {
 			SMA_5: sma_5_series.at(-1),
 			SMA_20: sma_20_series.at(-1),
 			SMA_25: sma_25_series.at(-1),
@@ -398,43 +411,37 @@ export default async function analyzeIndicators(
 			ema_26_series,
 			ema_50_series,
 			ema_200_series,
+			// MACD latest values
+			MACD_line: macdSeries.line.at(-1),
+			MACD_signal: macdSeries.signal.at(-1),
+			MACD_hist: macdSeries.hist.at(-1),
+			// Ichimoku latest values
+			...(ichiSimple
+				? {
+						ICHIMOKU_conversion: ichiSimple.conversion,
+						ICHIMOKU_base: ichiSimple.base,
+						ICHIMOKU_spanA: ichiSimple.spanA,
+						ICHIMOKU_spanB: ichiSimple.spanB,
+					}
+				: {}),
+			// Classic Stochastic Oscillator
+			STOCH_K: stoch.k,
+			STOCH_D: stoch.d,
+			STOCH_prevK: stoch.prevK,
+			STOCH_prevD: stoch.prevD,
+			stoch_k_series: stoch.kSeries,
+			stoch_d_series: stoch.dSeries,
+			// Stochastic RSI
+			STOCH_RSI_K: stochRsi.k,
+			STOCH_RSI_D: stochRsi.d,
+			STOCH_RSI_prevK: stochRsi.prevK,
+			STOCH_RSI_prevD: stochRsi.prevD,
+			// OBV (On-Balance Volume)
+			OBV: obvResult.obv,
+			OBV_SMA20: obvResult.obvSma,
+			OBV_prevObv: obvResult.prevObv,
+			OBV_trend: obvResult.trend,
 		};
-
-		// latest MACD values
-		indicators.MACD_line = macdSeries.line.at(-1) as number | null | undefined;
-		indicators.MACD_signal = macdSeries.signal.at(-1) as number | null | undefined;
-		indicators.MACD_hist = macdSeries.hist.at(-1) as number | null | undefined;
-
-		const ichiSimple = ichimoku(allHighs, allLows, allCloses);
-		if (ichiSimple) {
-			indicators.ICHIMOKU_conversion = ichiSimple.conversion;
-			indicators.ICHIMOKU_base = ichiSimple.base;
-			indicators.ICHIMOKU_spanA = ichiSimple.spanA;
-			indicators.ICHIMOKU_spanB = ichiSimple.spanB;
-		}
-
-		// Classic Stochastic Oscillator
-		const stoch = computeClassicStochastic(allHighs, allLows, allCloses, 14, 3, 3);
-		indicators.STOCH_K = stoch.k;
-		indicators.STOCH_D = stoch.d;
-		indicators.STOCH_prevK = stoch.prevK;
-		indicators.STOCH_prevD = stoch.prevD;
-		indicators.stoch_k_series = stoch.kSeries;
-		indicators.stoch_d_series = stoch.dSeries;
-
-		// Stochastic RSI
-		const stochRsi = computeStochRSI(allCloses, 14, 14, 3, 3);
-		indicators.STOCH_RSI_K = stochRsi.k;
-		indicators.STOCH_RSI_D = stochRsi.d;
-		indicators.STOCH_RSI_prevK = stochRsi.prevK;
-		indicators.STOCH_RSI_prevD = stochRsi.prevD;
-
-		// OBV (On-Balance Volume)
-		const obvResult = computeOBV(normalized, 20);
-		indicators.OBV = obvResult.obv;
-		indicators.OBV_SMA20 = obvResult.obvSma;
-		indicators.OBV_prevObv = obvResult.prevObv;
-		indicators.OBV_trend = obvResult.trend;
 
 		const warnings: string[] = [];
 		if (allCloses.length < 5) warnings.push('SMA_5: データ不足');
