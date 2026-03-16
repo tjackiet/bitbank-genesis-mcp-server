@@ -3,6 +3,69 @@
  */
 import type { Pivot } from './swing.js';
 
+/** トレンドライン（線形回帰の結果） */
+export interface TrendLine {
+	slope: number;
+	intercept: number;
+	r2?: number;
+	valueAt: (x: number) => number;
+}
+
+/** ウェッジ検出パラメータ */
+export interface WedgeParams {
+	minSlope?: number;
+	slopeRatioMinRising?: number;
+	slopeRatioMinFalling?: number;
+	slopeRatioMin?: number;
+	minWeakerSlopeRatio?: number;
+	windowSizeMin?: number;
+	windowSizeMax?: number;
+}
+
+/** パターンスコアの各構成要素 */
+export interface PatternScoreComponents {
+	fitScore: number;
+	convergeScore: number;
+	touchScore: number;
+	alternationScore: number;
+	insideScore: number;
+	durationScore: number;
+}
+
+/** パターンスコアの重み */
+export interface PatternScoreWeights {
+	fit: number;
+	converge: number;
+	touch: number;
+	alternation: number;
+	inside: number;
+	duration: number;
+}
+
+/** タッチポイント */
+export interface TouchPoint {
+	index: number;
+	distance: number;
+	isBreak: boolean;
+}
+
+/** evaluateTouchesEx の戻り値 */
+export interface TouchResult {
+	upperTouches: TouchPoint[];
+	lowerTouches: TouchPoint[];
+	upperQuality: number;
+	lowerQuality: number;
+	score: number;
+}
+
+/** 重複排除対象のパターンエントリ（最低限のフィールド） */
+export interface DeduplicablePattern {
+	type?: string;
+	confidence?: number;
+	range?: { start: string; end: string; current?: string };
+	pivots?: Array<{ price?: number }>;
+}
+
 /** ローソク足データ（detectSwingPoints 互換） */
 export interface CandleData {
 	open: number;

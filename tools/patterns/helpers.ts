@@ -7,7 +7,16 @@
 
 import { dayjs } from '../../lib/datetime.js';
 import { trueRange } from '../../lib/indicators.js';
-import type { CandleData } from './types.js';
+import type {
+	CandleData,
+	DeduplicablePattern,
+	PatternScoreComponents,
+	PatternScoreWeights,
+	TouchPoint,
+	TouchResult,
+	TrendLine,
+	WedgeParams,
+} from './types.js';
 
 // ---------------------------------------------------------------------------
 // ATR 計算（lib/indicators.ts の trueRange に委譲）
@@ -108,11 +117,10 @@ export function generateWindows(
 // ---------------------------------------------------------------------------
 // ウェッジタイプ判定
 // ---------------------------------------------------------------------------
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function determineWedgeType(
 	slopeHigh: number,
 	slopeLow: number,
-	params: any,
+	params: WedgeParams,
 ): 'rising_wedge' | 'falling_wedge' | null {
 	const minSlope = params?.minSlope ?? 0.0001;
 	const ratioMinRising = params?.slopeRatioMinRising ?? 1.2;
