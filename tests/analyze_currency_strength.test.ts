@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { assertFail, assertOk } from './_assertResult.js';
+import { asMockResult, assertFail, assertOk } from './_assertResult.js';
 
 vi.mock('../tools/get_tickers_jpy.js', () => ({
 	default: vi.fn(),
@@ -64,22 +64,24 @@ describe('analyze_currency_strength', () => {
 	});
 
 	it('inputSchema: topN は 3 以上のみ許可する', () => {
-		const parse = () => (toolDef.inputSchema as any).parse({ topN: 2, type: '1day' });
+		const parse = () => toolDef.inputSchema.parse({ topN: 2, type: '1day' });
 		expect(parse).toThrow();
 	});
 
 	it('正常系: 出来高上位 N 件をスコア順にランキングする', async () => {
 		mockedGetTickersJpy.mockResolvedValueOnce(
-			tickersOk([
-				makeTicker('btc_jpy', 100, 95, 20, 5),
-				makeTicker('eth_jpy', 80, 79, 15, 1.27),
-				makeTicker('xrp_jpy', 50, 52, 8, -3.85),
-			]) as any,
+			asMockResult(
+				tickersOk([
+					makeTicker('btc_jpy', 100, 95, 20, 5),
+					makeTicker('eth_jpy', 80, 79, 15, 1.27),
+					makeTicker('xrp_jpy', 50, 52, 8, -3.85),
+				]),
+			),
 		);
 		mockedAnalyzeIndicators
-			.mockResolvedValueOnce(indicatorsOk(75, 90, 100) as any)
-			.mockResolvedValueOnce(indicatorsOk(55, 79, 80) as any)
-			.mockResolvedValueOnce(indicatorsOk(35, 55, 50) as any);
+			.mockResolvedValueOnce(asMockResult(indicatorsOk(75, 90, 100)))
+			.mockResolvedValueOnce(asMockResult(indicatorsOk(55, 79, 80)))
+			.mockResolvedValueOnce(asMockResult(indicatorsOk(35, 55, 50)));
 
 		const res = await analyzeCurrencyStrength(3, '1day');
 
@@ -91,17 +93,19 @@ describe('analyze_currency_strength', () => {
 
 	it('重複 pair が含まれる場合は同一銘柄を重複ランキングしないべき', async () => {
 		mockedGetTickersJpy.mockResolvedValueOnce(
-			tickersOk([
-				makeTicker('btc_jpy', 100, 95, 20, 5),
-				makeTicker('btc_jpy', 100, 95, 18, 5),
-				makeTicker('eth_jpy', 80, 79, 15, 1.27),
-				makeTicker('xrp_jpy', 50, 52, 8, -3.85),
-			]) as any,
+			asMockResult(
+				tickersOk([
+					makeTicker('btc_jpy', 100, 95, 20, 5),
+					makeTicker('btc_jpy', 100, 95, 18, 5),
+					makeTicker('eth_jpy', 80, 79, 15, 1.27),
+					makeTicker('xrp_jpy', 50, 52, 8, -3.85),
+				]),
+			),
 		);
 		mockedAnalyzeIndicators
-			.mockResolvedValueOnce(indicatorsOk(75, 90, 100) as any)
-			.mockResolvedValueOnce(indicatorsOk(75, 90, 100) as any)
-			.mockResolvedValueOnce(indicatorsOk(55, 79, 80) as any);
+			.mockResolvedValueOnce(asMockResult(indicatorsOk(75, 90, 100)))
+			.mockResolvedValueOnce(asMockResult(indicatorsOk(75, 90, 100)))
+			.mockResolvedValueOnce(asMockResult(indicatorsOk(55, 79, 80)));
 
 		const res = await analyzeCurrencyStrength(3, '1day');
 
@@ -111,16 +115,18 @@ describe('analyze_currency_strength', () => {
 
 	it('全銘柄で analyze_indicators が失敗した場合は成功扱いにしないべき', async () => {
 		mockedGetTickersJpy.mockResolvedValueOnce(
-			tickersOk([
-				makeTicker('btc_jpy', 100, 95, 20, 5),
-				makeTicker('eth_jpy', 80, 79, 15, 1.27),
-				makeTicker('xrp_jpy', 50, 52, 8, -3.85),
-			]) as any,
+			asMockResult(
+				tickersOk([
+					makeTicker('btc_jpy', 100, 95, 20, 5),
+					makeTicker('eth_jpy', 80, 79, 15, 1.27),
+					makeTicker('xrp_jpy', 50, 52, 8, -3.85),
+				]),
+			),
 		);
 		mockedAnalyzeIndicators
-			.mockResolvedValueOnce({ ok: false, summary: 'failed', data: {}, meta: { errorType: 'upstream' } } as any)
-			.mockResolvedValueOnce({ ok: false, summary: 'failed', data: {}, meta: { errorType: 'upstream' } } as any)
-			.mockResolvedValueOnce({ ok: false, summary: 'failed', data: {}, meta: { errorType: 'upstream' } } as any);
+			.mockResolvedValueOnce(asMockResult({ ok: false, summary: 'failed', data: {}, meta: { errorType: 'upstream' } }))
+			.mockResolvedValueOnce(asMockResult({ ok: false, summary: 'failed', data: {}, meta: { errorType: 'upstream' } }))
+			.mockResolvedValueOnce(asMockResult({ ok: false, summary: 'failed', data: {}, meta: { errorType: 'upstream' } }));
 
 		const res = await analyzeCurrencyStrength(3, '1day');
 

@@ -1,29 +1,66 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { SYSTEM_PROMPT } from '../src/system-prompt.js';
+import type { ToolDefinition } from '../src/tool-definition.js';
+
+// ── Mock 用ローカル型 ──────────────────────────────────────────
+interface FakeToolEntry {
+	name: string;
+	options: Record<string, unknown>;
+	handler: (input: Record<string, unknown>) => Promise<Record<string, unknown>>;
+}
+interface FakePromptEntry {
+	name: string;
+	options: Record<string, unknown>;
+	handler: () => Record<string, unknown>;
+}
+interface FakeMcpServerShape {
+	info: Record<string, unknown>;
+	tools: FakeToolEntry[];
+	prompts: FakePromptEntry[];
+	requestHandlers: Record<string, (request?: Record<string, unknown>) => Promise<unknown> | unknown>;
+	connections: Array<{ kind: string }>;
+}
+interface FakeHttpTransportShape {
+	kind: string;
+	options: Record<string, unknown>;
+	expressMiddleware: () => Record<string, unknown>;
+}
+interface FakeExpressApp {
+	use: ReturnType<typeof vi.fn>;
+	listen: ReturnType<typeof vi.fn>;
+}
+interface MockPromptDef {
+	name: string;
+	description: string;
+	messages: Array<{
+		role: string;
+		content: Array<Record<string, unknown>>;
+	}>;
+}
 
 const runtime = vi.hoisted(() => ({
-	toolDefs: [] as any[],
-	promptDefs: [] as any[],
-	serverInstances: [] as any[],
-	stdioTransports: [] as any[],
-	httpTransports: [] as any[],
+	toolDefs: [] as ToolDefinition[],
+	promptDefs: [] as MockPromptDef[],
+	serverInstances: [] as FakeMcpServerShape[],
+	stdioTransports: [] as Array<{ kind: string }>,
+	httpTransports: [] as FakeHttpTransportShape[],
 	logToolRun: vi.fn(),
 	logError: vi.fn(),
 	expressFactory: vi.fn(),
 	expressJson: vi.fn(),
-	expressApp: null as any,
-	httpMiddleware: { kind: 'http-middleware' } as any,
+	expressApp: null as FakeExpressApp | null,
+	httpMiddleware: { kind: 'http-middleware' } as { kind: string },
 }));
 
 vi.mock('@modelcontextprotocol/sdk/server/mcp.js', () => {
 	class FakeMcpServer {
-		info: any;
-		tools: Array<{ name: string; options: any; handler: (input: any) => Promise<any> }>;
-		prompts: Array<{ name: string; options: any; handler: () => any }>;
-		requestHandlers: Record<string, (request?: any) => Promise<any> | any>;
-		connections: any[];
+		info: Record<string, unknown>;
+		tools: FakeToolEntry[];
+		prompts: FakePromptEntry[];
+		requestHandlers: Record<string, (request?: Record<string, unknown>) => Promise<unknown> | unknown>;
+		connections: Array<{ kind: string }>;
 
-		constructor(info: any) {
+		constructor(info: Record<string, unknown>) {
 			this.info = info;
 			this.tools = [];
 			this.prompts = [];
@@ -32,19 +69,23 @@ vi.mock('@modelcontextprotocol/sdk/server/mcp.js', () => {
 			runtime.serverInstances.push(this);
 		}
 
-		registerTool(name: string, options: any, handler: (input: any) => Promise<any>) {
+		registerTool(
+			name: string,
+			options: Record<string, unknown>,
+			handler: (input: Record<string, unknown>) => Promise<Record<string, unknown>>,
+		) {
 			this.tools.push({ name, options, handler });
 		}
 
-		registerPrompt(name: string, options: any, handler: () => any) {
+		registerPrompt(name: string, options: Record<string, unknown>, handler: () => Record<string, unknown>) {
 			this.prompts.push({ name, options, handler });
 		}
 
-		setRequestHandler(name: string, handler: (request?: any) => Promise<any> | any) {
+		setRequestHandler(name: string, handler: (request?: Record<string, unknown>) => Promise<unknown> | unknown) {
 			this.requestHandlers[name] = handler;
 		}
 
-		async connect(transport: any) {
+		async connect(transport: { kind: string }) {
 			this.connections.push(transport);
 		}
 	}
@@ -67,9 +108,9 @@ vi.mock('@modelcontextprotocol/sdk/server/stdio.js', () => {
 vi.mock('@modelcontextprotocol/sdk/server/streamableHttp.js', () => {
 	class FakeStreamableHTTPServerTransport {
 		kind = 'http';
-		options: any;
+		options: Record<string, unknown>;
 
-		constructor(options: any) {
+		constructor(options: Record<string, unknown>) {
 			this.options = options;
 			runtime.httpTransports.push(this);
 		}
@@ -88,6 +129,7 @@ vi.mock('../lib/logger.js', () => ({
 }));
 
 vi.mock('express', () => {
+	// biome-ignore lint/suspicious/noExplicitAny: express モジュールモック — 関数に .json プロパティを動的付与するため any を使用
 	const express = runtime.expressFactory as any;
 	express.json = runtime.expressJson;
 	return { default: express };
@@ -163,10 +205,12 @@ function resetRuntime() {
 	runtime.httpMiddleware = { kind: 'http-middleware' };
 }
 
-async function importServer() {
+async function importServer(): Promise<FakeMcpServerShape> {
 	vi.resetModules();
 	await import('../../src/server.js');
-	return runtime.serverInstances.at(-1);
+	const server = runtime.serverInstances.at(-1);
+	if (!server) throw new Error('importServer: no server instance created');
+	return server;
 }
 
 describe('server.ts smoke', () => {
@@ -210,8 +254,8 @@ describe('server.ts smoke', () => {
 		const server = await importServer();
 
 		expect(server.info).toEqual({ name: 'bitbank-mcp', version: '0.4.2' });
-		expect(server.tools.map((tool: any) => tool.name)).toEqual(['smoke_tool', 'second_tool']);
-		expect(server.prompts.map((prompt: any) => prompt.name)).toEqual(['smoke_prompt']);
+		expect(server.tools.map((tool) => tool.name)).toEqual(['smoke_tool', 'second_tool']);
+		expect(server.prompts.map((prompt) => prompt.name)).toEqual(['smoke_prompt']);
 		expect(Object.keys(server.requestHandlers)).toEqual(
 			expect.arrayContaining(['tools/list', 'prompts/list', 'prompts/get', 'resources/list', 'resources/read']),
 		);
@@ -405,8 +449,8 @@ describe('server.ts smoke', () => {
 		expect(typeof runtime.httpTransports[0].options.sessionIdGenerator).toBe('function');
 		expect(runtime.expressFactory).toHaveBeenCalledTimes(1);
 		expect(runtime.expressJson).toHaveBeenCalledTimes(1);
-		expect(runtime.expressApp.use).toHaveBeenNthCalledWith(1, { kind: 'json-middleware' });
-		expect(runtime.expressApp.use).toHaveBeenNthCalledWith(2, runtime.httpMiddleware);
-		expect(runtime.expressApp.listen).toHaveBeenCalledWith(3010, expect.any(Function));
+		expect(runtime.expressApp?.use).toHaveBeenNthCalledWith(1, { kind: 'json-middleware' });
+		expect(runtime.expressApp?.use).toHaveBeenNthCalledWith(2, runtime.httpMiddleware);
+		expect(runtime.expressApp?.listen).toHaveBeenCalledWith(3010, expect.any(Function));
 	});
 });

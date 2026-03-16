@@ -60,7 +60,7 @@ describe('render_candle_pattern_diagram', () => {
 
 	it('inputSchema: pattern.involvedIndices の負数は拒否するべき', () => {
 		const parse = () =>
-			(toolDef.inputSchema as any).parse({
+			toolDef.inputSchema.parse({
 				candles: buildSampleCandles(),
 				pattern: {
 					name: '陽線包み線',

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { assertOk } from './_assertResult.js';
+import { asMockResult, assertOk } from './_assertResult.js';
 
 vi.mock('../lib/get-depth.js', () => ({
 	default: vi.fn(),
@@ -52,18 +52,20 @@ describe('detect_whale_events', () => {
 	});
 
 	it('inputSchema: lookback は定義済み enum のみ許可する', () => {
-		const parse = () => (toolDef.inputSchema as any).parse({ pair: 'btc_jpy', lookback: '3hour' });
+		const parse = () => toolDef.inputSchema.parse({ pair: 'btc_jpy', lookback: '3hour' });
 		expect(parse).toThrow();
 	});
 
 	it('上流で asks/bids が欠損している場合は fail を返すべき', async () => {
-		mockedGetDepth.mockResolvedValueOnce({
-			ok: true,
-			summary: 'depth ok',
-			data: {},
-			meta: {},
-		} as any);
-		mockedGetCandles.mockResolvedValueOnce(candlesOk([{ close: 100 }, { close: 105 }]) as any);
+		mockedGetDepth.mockResolvedValueOnce(
+			asMockResult({
+				ok: true,
+				summary: 'depth ok',
+				data: {},
+				meta: {},
+			}),
+		);
+		mockedGetCandles.mockResolvedValueOnce(asMockResult(candlesOk([{ close: 100 }, { close: 105 }])));
 
 		const res = await detectWhaleEvents('btc_jpy', '1hour', 0.51);
 
@@ -72,8 +74,8 @@ describe('detect_whale_events', () => {
 	});
 
 	it('ローソク足の close が欠損していても summary に NaN を出すべきではない', async () => {
-		mockedGetDepth.mockResolvedValueOnce(depthOk() as any);
-		mockedGetCandles.mockResolvedValueOnce(candlesOk([{}, { close: 105 }]) as any);
+		mockedGetDepth.mockResolvedValueOnce(asMockResult(depthOk()));
+		mockedGetCandles.mockResolvedValueOnce(asMockResult(candlesOk([{}, { close: 105 }])));
 
 		const res = await detectWhaleEvents('btc_jpy', '1hour', 0.52);
 

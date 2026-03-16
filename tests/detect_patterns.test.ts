@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { asMockResult } from './_assertResult.js';
 
 vi.mock('../tools/detect_patterns.js', () => ({
 	default: vi.fn(),
@@ -37,22 +38,24 @@ describe('detect_patterns handler', () => {
 
 	it('データ不足時は generic な tolerance 調整ではなく insufficient data をそのまま案内するべき', async () => {
 		mockedDetectPatterns.mockResolvedValueOnce(
-			okResult({
-				summary: 'insufficient data',
-				data: {
-					patterns: [],
-					overlays: { ranges: [] },
-					warnings: [],
-					statistics: {},
-				},
-				meta: {
-					pair: 'btc_jpy',
-					type: '1day',
-					count: 0,
-					visualization_hints: { preferred_style: 'line', highlight_patterns: [] },
-					debug: { swings: [], candidates: [] },
-				},
-			}) as any,
+			asMockResult(
+				okResult({
+					summary: 'insufficient data',
+					data: {
+						patterns: [],
+						overlays: { ranges: [] },
+						warnings: [],
+						statistics: {},
+					},
+					meta: {
+						pair: 'btc_jpy',
+						type: '1day',
+						count: 0,
+						visualization_hints: { preferred_style: 'line', highlight_patterns: [] },
+						debug: { swings: [], candidates: [] },
+					},
+				}),
+			),
 		);
 
 		const res = await toolDef.handler({
@@ -69,41 +72,43 @@ describe('detect_patterns handler', () => {
 
 	it('summary view で includeForming=true のときは includeForming を再指定する案内を出すべきではない', async () => {
 		mockedDetectPatterns.mockResolvedValueOnce(
-			okResult({
-				data: {
-					patterns: [
-						{
-							type: 'triangle_symmetrical',
-							confidence: 0.82,
-							timeframe: '1day',
-							timeframeLabel: '日足',
-							range: {
-								start: '2026-01-01T00:00:00.000Z',
-								end: '2026-01-10T00:00:00.000Z',
-							},
-							status: 'forming',
-						},
-					],
-					overlays: {
-						ranges: [
+			asMockResult(
+				okResult({
+					data: {
+						patterns: [
 							{
-								start: '2026-01-01T00:00:00.000Z',
-								end: '2026-01-10T00:00:00.000Z',
-								label: 'triangle_symmetrical',
+								type: 'triangle_symmetrical',
+								confidence: 0.82,
+								timeframe: '1day',
+								timeframeLabel: '日足',
+								range: {
+									start: '2026-01-01T00:00:00.000Z',
+									end: '2026-01-10T00:00:00.000Z',
+								},
+								status: 'forming',
 							},
 						],
+						overlays: {
+							ranges: [
+								{
+									start: '2026-01-01T00:00:00.000Z',
+									end: '2026-01-10T00:00:00.000Z',
+									label: 'triangle_symmetrical',
+								},
+							],
+						},
+						warnings: [],
+						statistics: {},
 					},
-					warnings: [],
-					statistics: {},
-				},
-				meta: {
-					pair: 'btc_jpy',
-					type: '1day',
-					count: 1,
-					visualization_hints: { preferred_style: 'line', highlight_patterns: ['triangle_symmetrical'] },
-					debug: { swings: [], candidates: [] },
-				},
-			}) as any,
+					meta: {
+						pair: 'btc_jpy',
+						type: '1day',
+						count: 1,
+						visualization_hints: { preferred_style: 'line', highlight_patterns: ['triangle_symmetrical'] },
+						debug: { swings: [], candidates: [] },
+					},
+				}),
+			),
 		);
 
 		const res = await toolDef.handler({
@@ -138,44 +143,46 @@ describe('detect_patterns handler', () => {
 		};
 
 		mockedDetectPatterns.mockResolvedValueOnce(
-			okResult({
-				data: {
-					patterns: [
-						{
-							type: 'triangle_symmetrical',
-							confidence: 0.82,
-							timeframe: '1day',
-							timeframeLabel: '日足',
-							range: {
-								start: '2026-01-01T00:00:00.000Z',
-								end: '2026-01-10T00:00:00.000Z',
-							},
-							status: 'completed',
-						},
-					],
-					overlays: {
-						ranges: [
+			asMockResult(
+				okResult({
+					data: {
+						patterns: [
 							{
-								start: '2026-01-01T00:00:00.000Z',
-								end: '2026-01-10T00:00:00.000Z',
-								label: 'triangle_symmetrical',
+								type: 'triangle_symmetrical',
+								confidence: 0.82,
+								timeframe: '1day',
+								timeframeLabel: '日足',
+								range: {
+									start: '2026-01-01T00:00:00.000Z',
+									end: '2026-01-10T00:00:00.000Z',
+								},
+								status: 'completed',
 							},
 						],
+						overlays: {
+							ranges: [
+								{
+									start: '2026-01-01T00:00:00.000Z',
+									end: '2026-01-10T00:00:00.000Z',
+									label: 'triangle_symmetrical',
+								},
+							],
+						},
+						warnings,
+						statistics,
 					},
-					warnings,
-					statistics,
-				},
-				meta: {
-					pair: 'btc_jpy',
-					type: '1day',
-					count: 1,
-					visualization_hints: { preferred_style: 'line', highlight_patterns: ['triangle_symmetrical'] },
-					debug: {
-						swings: [{ idx: 1, price: 100, kind: 'H', isoTime: '2026-01-02T00:00:00.000Z' }],
-						candidates: [{ type: 'triangle_symmetrical', accepted: true }],
+					meta: {
+						pair: 'btc_jpy',
+						type: '1day',
+						count: 1,
+						visualization_hints: { preferred_style: 'line', highlight_patterns: ['triangle_symmetrical'] },
+						debug: {
+							swings: [{ idx: 1, price: 100, kind: 'H', isoTime: '2026-01-02T00:00:00.000Z' }],
+							candidates: [{ type: 'triangle_symmetrical', accepted: true }],
+						},
 					},
-				},
-			}) as any,
+				}),
+			),
 		);
 
 		const res = await toolDef.handler({

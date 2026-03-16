@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { assertOk } from './_assertResult.js';
+import { asMockResult, assertOk } from './_assertResult.js';
 
 vi.mock('../tools/analyze_indicators.js', () => ({
 	default: vi.fn(),
@@ -119,7 +119,7 @@ describe('detect_patterns fixtures', () => {
 	});
 
 	it('synthetic fixture から completed の double_top を検出できる', async () => {
-		mockedAnalyzeIndicators.mockResolvedValueOnce(indicatorsOk(buildCompletedDoubleTopCandles()) as any);
+		mockedAnalyzeIndicators.mockResolvedValueOnce(asMockResult(indicatorsOk(buildCompletedDoubleTopCandles())));
 
 		const res = await detectPatterns('btc_jpy', '1day', 26, {
 			patterns: ['double_top'],
@@ -152,7 +152,7 @@ describe('detect_patterns fixtures', () => {
 	});
 
 	it('synthetic fixture から forming の double_bottom を completed なしで返せる', async () => {
-		mockedAnalyzeIndicators.mockResolvedValueOnce(indicatorsOk(buildFormingDoubleBottomCandles()) as any);
+		mockedAnalyzeIndicators.mockResolvedValueOnce(asMockResult(indicatorsOk(buildFormingDoubleBottomCandles())));
 
 		const res = await detectPatterns('btc_jpy', '1day', 24, {
 			patterns: ['double_bottom'],
@@ -179,7 +179,7 @@ describe('detect_patterns fixtures', () => {
 
 	it('requireCurrentInPattern=true のとき古い fixture は除外される', async () => {
 		vi.setSystemTime(new Date('2026-03-01T00:00:00.000Z'));
-		mockedAnalyzeIndicators.mockResolvedValueOnce(indicatorsOk(buildCompletedDoubleTopCandles(2025)) as any);
+		mockedAnalyzeIndicators.mockResolvedValueOnce(asMockResult(indicatorsOk(buildCompletedDoubleTopCandles(2025))));
 
 		const res = await detectPatterns('btc_jpy', '1day', 26, {
 			patterns: ['double_top'],
@@ -196,7 +196,9 @@ describe('detect_patterns fixtures', () => {
 	});
 
 	it('descending triangle の逆方向ブレイクは invalid / failure として保持できる', async () => {
-		mockedAnalyzeIndicators.mockResolvedValueOnce(indicatorsOk(buildDescendingTriangleInvalidBreakoutCandles()) as any);
+		mockedAnalyzeIndicators.mockResolvedValueOnce(
+			asMockResult(indicatorsOk(buildDescendingTriangleInvalidBreakoutCandles())),
+		);
 
 		const res = await detectPatterns('btc_jpy', '1day', 24, {
 			patterns: ['triangle_descending'],
@@ -221,7 +223,9 @@ describe('detect_patterns fixtures', () => {
 	});
 
 	it('includeInvalid=false のとき invalid な triangle は結果から除外される', async () => {
-		mockedAnalyzeIndicators.mockResolvedValueOnce(indicatorsOk(buildDescendingTriangleInvalidBreakoutCandles()) as any);
+		mockedAnalyzeIndicators.mockResolvedValueOnce(
+			asMockResult(indicatorsOk(buildDescendingTriangleInvalidBreakoutCandles())),
+		);
 
 		const res = await detectPatterns('btc_jpy', '1day', 24, {
 			patterns: ['triangle_descending'],
@@ -234,7 +238,7 @@ describe('detect_patterns fixtures', () => {
 	});
 
 	it('矩形レンジの fixture を triangle として誤検出しない', async () => {
-		mockedAnalyzeIndicators.mockResolvedValueOnce(indicatorsOk(buildRectangleRangeCandles()) as any);
+		mockedAnalyzeIndicators.mockResolvedValueOnce(asMockResult(indicatorsOk(buildRectangleRangeCandles())));
 
 		const res = await detectPatterns('btc_jpy', '1day', 24, {
 			patterns: ['triangle'],
@@ -248,7 +252,7 @@ describe('detect_patterns fixtures', () => {
 	});
 
 	it('平行な上昇チャネルの fixture を wedge として誤検出しない', async () => {
-		mockedAnalyzeIndicators.mockResolvedValueOnce(indicatorsOk(buildRisingChannelCandles()) as any);
+		mockedAnalyzeIndicators.mockResolvedValueOnce(asMockResult(indicatorsOk(buildRisingChannelCandles())));
 
 		const res = await detectPatterns('btc_jpy', '1day', 30, {
 			patterns: ['rising_wedge', 'falling_wedge'],
@@ -262,7 +266,7 @@ describe('detect_patterns fixtures', () => {
 	});
 
 	it('bull flag の逆方向ブレイクは invalid / failure として保持できる', async () => {
-		mockedAnalyzeIndicators.mockResolvedValueOnce(indicatorsOk(buildBullFlagFailureCandles()) as any);
+		mockedAnalyzeIndicators.mockResolvedValueOnce(asMockResult(indicatorsOk(buildBullFlagFailureCandles())));
 
 		const res = await detectPatterns('btc_jpy', '1day', 20, {
 			patterns: ['flag'],
@@ -287,7 +291,7 @@ describe('detect_patterns fixtures', () => {
 	});
 
 	it('bull pennant の順方向ブレイクは success として保持できる', async () => {
-		mockedAnalyzeIndicators.mockResolvedValueOnce(indicatorsOk(buildBullPennantSuccessCandles()) as any);
+		mockedAnalyzeIndicators.mockResolvedValueOnce(asMockResult(indicatorsOk(buildBullPennantSuccessCandles())));
 
 		const res = await detectPatterns('btc_jpy', '1day', 22, {
 			patterns: ['pennant'],
@@ -314,7 +318,7 @@ describe('detect_patterns fixtures', () => {
 	});
 
 	it('bull pennant の逆方向ブレイクは failure として保持できる', async () => {
-		mockedAnalyzeIndicators.mockResolvedValueOnce(indicatorsOk(buildBullPennantFailureCandles()) as any);
+		mockedAnalyzeIndicators.mockResolvedValueOnce(asMockResult(indicatorsOk(buildBullPennantFailureCandles())));
 
 		const res = await detectPatterns('btc_jpy', '1day', 22, {
 			patterns: ['pennant'],

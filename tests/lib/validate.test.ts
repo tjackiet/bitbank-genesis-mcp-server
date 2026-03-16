@@ -115,13 +115,13 @@ describe('validateDate', () => {
 
 describe('createMeta', () => {
 	it('pair と fetchedAt を含む', () => {
-		const meta = createMeta('btc_jpy' as any);
+		const meta = createMeta('btc_jpy');
 		expect(meta.pair).toBe('btc_jpy');
 		expect(meta.fetchedAt).toBeDefined();
 		expect(typeof meta.fetchedAt).toBe('string');
 	});
 	it('追加フィールドをマージする', () => {
-		const meta = createMeta('btc_jpy' as any, { candleType: '1day' });
+		const meta = createMeta('btc_jpy', { candleType: '1day' });
 		expect(meta).toHaveProperty('candleType', '1day');
 	});
 });

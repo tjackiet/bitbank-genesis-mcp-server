@@ -41,6 +41,7 @@ vi.mock('../tools/trading_process/lib/svg_to_png.js', () => ({
 
 import { toolDef } from '../src/handlers/runBacktestHandler.js';
 import runBacktest from '../tools/trading_process/run_backtest.js';
+import { assertOk } from './_assertResult.js';
 
 function buildCandles(count: number) {
 	return Array.from({ length: count }, (_, i) => ({
@@ -98,7 +99,7 @@ describe('run_backtest', () => {
 
 	it('inputSchema: strategy.type は定義済み enum のみ許可する', () => {
 		const parse = () =>
-			(toolDef.inputSchema as any).parse({
+			toolDef.inputSchema.parse({
 				pair: 'btc_jpy',
 				strategy: { type: 'not_a_strategy', params: {} },
 			});
@@ -145,7 +146,7 @@ describe('run_backtest', () => {
 			savePng: false,
 		});
 
-		expect((res as any).ok).toBe(true);
+		assertOk(res);
 	});
 
 	it('includeSvg=false なら PNG 生成失敗時も svg を返すべきではない', async () => {
@@ -170,8 +171,8 @@ describe('run_backtest', () => {
 			includeSvg: false,
 		});
 
-		expect((res as any).ok).toBe(true);
-		expect((res as any).pngError).toContain('sharp failed');
-		expect((res as any).svg).toBeUndefined();
+		assertOk(res);
+		expect(res.pngError).toContain('sharp failed');
+		expect(res.svg).toBeUndefined();
 	});
 });

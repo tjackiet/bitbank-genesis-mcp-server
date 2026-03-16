@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { assertOk } from './_assertResult.js';
+import { asMockResult, assertOk } from './_assertResult.js';
 
 vi.mock('../tools/analyze_indicators.js', async (importOriginal) => {
 	const actual = await importOriginal<typeof import('../analyze_indicators.js')>();
@@ -73,17 +73,19 @@ describe('analyze_stoch_snapshot', () => {
 	});
 
 	it('inputSchema: limit は 40 以上のみ許可する', () => {
-		const parse = () => (toolDef.inputSchema as any).parse({ pair: 'btc_jpy', type: '1day', limit: 39 });
+		const parse = () => toolDef.inputSchema.parse({ pair: 'btc_jpy', type: '1day', limit: 39 });
 		expect(parse).toThrow();
 	});
 
 	it('analyze_indicators が失敗を返した場合は ok: false を返す', async () => {
-		mockedAnalyzeIndicators.mockResolvedValueOnce({
-			ok: false,
-			summary: 'indicators failed',
-			data: {},
-			meta: { errorType: 'upstream' },
-		} as any);
+		mockedAnalyzeIndicators.mockResolvedValueOnce(
+			asMockResult({
+				ok: false,
+				summary: 'indicators failed',
+				data: {},
+				meta: { errorType: 'upstream' },
+			}),
+		);
 
 		const res = await analyzeStochSnapshot('btc_jpy', '1day', 120);
 
@@ -92,15 +94,17 @@ describe('analyze_stoch_snapshot', () => {
 	});
 
 	it('カスタムパラメータ時、必要最小本数ちょうどでも %K/%D を計算できるべき', async () => {
-		mockedGetCandles.mockResolvedValueOnce({
-			ok: true,
-			summary: 'ok',
-			data: {
-				normalized: makeFlatCandles(17, 100),
-				raw: {},
-			},
-			meta: { pair: 'btc_jpy', type: '1day', count: 17 },
-		} as any);
+		mockedGetCandles.mockResolvedValueOnce(
+			asMockResult({
+				ok: true,
+				summary: 'ok',
+				data: {
+					normalized: makeFlatCandles(17, 100),
+					raw: {},
+				},
+				meta: { pair: 'btc_jpy', type: '1day', count: 17 },
+			}),
+		);
 
 		const res = await analyzeStochSnapshot('btc_jpy', '1day', 40, 14, 3, 2);
 
@@ -112,12 +116,14 @@ describe('analyze_stoch_snapshot', () => {
 
 	it('bullish cross が買われすぎ圏なら説明文はニュートラル圏ではなく現在ゾーンを反映するべき', async () => {
 		mockedAnalyzeIndicators.mockResolvedValueOnce(
-			buildIndicatorsOk({
-				stochK: 85,
-				stochD: 80,
-				prevK: 70,
-				prevD: 75,
-			}) as any,
+			asMockResult(
+				buildIndicatorsOk({
+					stochK: 85,
+					stochD: 80,
+					prevK: 70,
+					prevD: 75,
+				}),
+			),
 		);
 
 		const res = await analyzeStochSnapshot('btc_jpy', '1day', 120);

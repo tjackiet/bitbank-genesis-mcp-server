@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { assertOk } from './_assertResult.js';
+import { asMockResult, assertOk } from './_assertResult.js';
 
 vi.mock('../tools/analyze_indicators.js', () => ({
 	default: vi.fn(),
@@ -50,17 +50,19 @@ describe('analyze_sma_snapshot', () => {
 	});
 
 	it('inputSchema: limit は 200 以上のみ許可する', () => {
-		const parse = () => (toolDef.inputSchema as any).parse({ pair: 'btc_jpy', type: '1day', limit: 199 });
+		const parse = () => toolDef.inputSchema.parse({ pair: 'btc_jpy', type: '1day', limit: 199 });
 		expect(parse).toThrow();
 	});
 
 	it('analyze_indicators が失敗を返した場合は ok: false を返す', async () => {
-		mockedAnalyzeIndicators.mockResolvedValueOnce({
-			ok: false,
-			summary: 'indicators failed',
-			data: {},
-			meta: { errorType: 'upstream' },
-		} as any);
+		mockedAnalyzeIndicators.mockResolvedValueOnce(
+			asMockResult({
+				ok: false,
+				summary: 'indicators failed',
+				data: {},
+				meta: { errorType: 'upstream' },
+			}),
+		);
 
 		const res = await analyzeSmaSnapshot('btc_jpy', '1day', 220, [25, 75, 200]);
 		expect(res.ok).toBe(false);
@@ -68,7 +70,7 @@ describe('analyze_sma_snapshot', () => {
 	});
 
 	it('alignment は固定 25/75/200 ではなく指定 periods（5/20/50）で判定されるべき', async () => {
-		mockedAnalyzeIndicators.mockResolvedValueOnce(buildIndicatorsOk() as any);
+		mockedAnalyzeIndicators.mockResolvedValueOnce(asMockResult(buildIndicatorsOk()));
 
 		const res = await analyzeSmaSnapshot('btc_jpy', '1day', 220, [5, 20, 50]);
 
@@ -77,7 +79,7 @@ describe('analyze_sma_snapshot', () => {
 	});
 
 	it('指定 periods が強気整列なら sma_bullish_alignment タグが付与されるべき', async () => {
-		mockedAnalyzeIndicators.mockResolvedValueOnce(buildIndicatorsOk() as any);
+		mockedAnalyzeIndicators.mockResolvedValueOnce(asMockResult(buildIndicatorsOk()));
 
 		const res = await analyzeSmaSnapshot('btc_jpy', '1day', 220, [5, 20, 50]);
 
@@ -86,7 +88,7 @@ describe('analyze_sma_snapshot', () => {
 	});
 
 	it('periods が1つだけの場合 alignment は unknown（整列判定しない）であるべき', async () => {
-		mockedAnalyzeIndicators.mockResolvedValueOnce(buildIndicatorsOk() as any);
+		mockedAnalyzeIndicators.mockResolvedValueOnce(asMockResult(buildIndicatorsOk()));
 
 		const res = await analyzeSmaSnapshot('btc_jpy', '1day', 220, [5]);
 
@@ -97,7 +99,7 @@ describe('analyze_sma_snapshot', () => {
 	});
 
 	it('重複 periods 指定時は自己クロス（SMA_5/SMA_5）や重複クロスを出さないべき', async () => {
-		mockedAnalyzeIndicators.mockResolvedValueOnce(buildIndicatorsOk() as any);
+		mockedAnalyzeIndicators.mockResolvedValueOnce(asMockResult(buildIndicatorsOk()));
 
 		const res = await analyzeSmaSnapshot('btc_jpy', '1day', 220, [5, 5, 20]);
 

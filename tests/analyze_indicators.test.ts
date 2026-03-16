@@ -31,7 +31,7 @@ describe('analyze_indicators', () => {
 	});
 
 	it('inputSchema: limit は 1 以上のみ許可する', () => {
-		const parse = () => (toolDef.inputSchema as any).parse({ pair: 'btc_jpy', type: '1day', limit: 0 });
+		const parse = () => toolDef.inputSchema.parse({ pair: 'btc_jpy', type: '1day', limit: 0 });
 		expect(parse).toThrow();
 	});
 

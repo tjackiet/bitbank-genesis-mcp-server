@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import getOrderbook, { toolDef } from '../tools/get_orderbook.js';
+import { assertFail, assertOk } from './_assertResult.js';
 
 function depthPayload() {
 	return {
@@ -26,7 +27,7 @@ describe('get_orderbook', () => {
 	});
 
 	it('inputSchema: summary の topN は 1-200 の範囲のみ許可する', () => {
-		const parse = () => (toolDef.inputSchema as any).parse({ pair: 'btc_jpy', mode: 'summary', topN: 201 });
+		const parse = () => toolDef.inputSchema.parse({ pair: 'btc_jpy', mode: 'summary', topN: 201 });
 		expect(parse).toThrow();
 	});
 
@@ -39,10 +40,10 @@ describe('get_orderbook', () => {
 		}) as unknown as typeof fetch;
 
 		const res = await getOrderbook({ pair: 'btc_jpy', mode: 'summary', topN: 2 });
-		expect((res as any).ok).toBe(true);
-		expect((res as any).data.mode).toBe('summary');
-		expect((res as any).data.normalized.bids).toHaveLength(2);
-		expect((res as any).data.normalized.asks).toHaveLength(2);
+		assertOk(res);
+		expect(res.data.mode).toBe('summary');
+		expect(res.data.normalized.bids).toHaveLength(2);
+		expect(res.data.normalized.asks).toHaveLength(2);
 	});
 
 	it('API異常系: AbortError は timeout 分類で fail を返す', async () => {
@@ -51,8 +52,8 @@ describe('get_orderbook', () => {
 			.mockRejectedValue(new DOMException('The operation was aborted.', 'AbortError')) as unknown as typeof fetch;
 
 		const res = await getOrderbook({ pair: 'btc_jpy', mode: 'summary', timeoutMs: 100 });
-		expect((res as any).ok).toBe(false);
-		expect((res as any).meta?.errorType).toBe('timeout');
+		assertFail(res);
+		expect(res.meta?.errorType).toBe('timeout');
 	});
 
 	it('上流レスポンスで bids/asks 欠損時は fail を返すべき（現状は ok=true）', async () => {
@@ -64,7 +65,7 @@ describe('get_orderbook', () => {
 		}) as unknown as typeof fetch;
 
 		const res = await getOrderbook({ pair: 'btc_jpy', mode: 'summary' });
-		expect((res as any).ok).toBe(false);
-		expect((res as any).meta?.errorType).toBe('upstream');
+		assertFail(res);
+		expect(res.meta?.errorType).toBe('upstream');
 	});
 });
