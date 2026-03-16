@@ -58,12 +58,13 @@ export interface TouchResult {
 	score: number;
 }
 
-/** 重複排除対象のパターンエントリ（最低限のフィールド） */
+/** 重複排除対象のパターンエントリ（最低限のフィールド + 任意の追加フィールド） */
 export interface DeduplicablePattern {
 	type?: string;
 	confidence?: number;
 	range?: { start: string; end: string; current?: string };
-	pivots?: Array<{ price?: number }>;
+	pivots?: Array<{ idx?: number; price?: number; kind?: string }>;
+	[key: string]: unknown;
 }
 
 /** ローソク足データ（detectSwingPoints 互換） */
@@ -92,6 +93,8 @@ export interface CandDebugEntry {
 	indices?: number[];
 	points?: Array<{ role: string; idx: number; price: number; isoTime?: string }>;
 	details?: unknown;
+	status?: string;
+	breakoutDirection?: string | null;
 }
 
 /**

@@ -168,8 +168,7 @@ export interface ApexResult {
 	barsToApex: number;
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function calcApex(upper: any, lower: any, endIdx: number): ApexResult {
+export function calcApex(upper: TrendLine, lower: TrendLine, endIdx: number): ApexResult {
 	const slopeDiff = upper.slope - lower.slope;
 	if (Math.abs(slopeDiff) < 1e-15) {
 		// 平行 — Apex は無限遠
@@ -236,8 +235,7 @@ export function checkContainment(
  *
  * スコアは ratio と加速度で決まる。
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function checkConvergenceEx(upper: any, lower: any, startIdx: number, endIdx: number) {
+export function checkConvergenceEx(upper: TrendLine, lower: TrendLine, startIdx: number, endIdx: number) {
 	const midIdx = Math.floor((startIdx + endIdx) / 2);
 	const gapStart = upper.valueAt(startIdx) - lower.valueAt(startIdx);
 	const gapMid = upper.valueAt(midIdx) - lower.valueAt(midIdx);
@@ -263,18 +261,16 @@ export function checkConvergenceEx(upper: any, lower: any, startIdx: number, end
 	return { isConverging: true, gapStart, gapMid, gapEnd, ratio, isAccelerating, apex, score };
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function evaluateTouchesEx(
 	candles: readonly CandleData[],
-	upper: any,
-	lower: any,
+	upper: Pick<TrendLine, 'valueAt'>,
+	lower: Pick<TrendLine, 'valueAt'>,
 	startIdx: number,
 	endIdx: number,
-) {
+): TouchResult {
 	const touchThresholdPct = 0.005;
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any
-	const upperTouches: any[] = [],
-		lowerTouches: any[] = [];
+	const upperTouches: TouchPoint[] = [],
+		lowerTouches: TouchPoint[] = [];
 	for (let i = startIdx; i <= endIdx; i++) {
 		const c = candles[i];
 		if (!c) continue;
@@ -289,18 +285,16 @@ export function evaluateTouchesEx(
 		if (distL < thrLo && c.low >= l - thrLo) lowerTouches.push({ index: i, distance: distL, isBreak: false });
 		else if (c.low < l - thrLo) lowerTouches.push({ index: i, distance: distL, isBreak: true });
 	}
-	const upQ = upperTouches.filter((t: { isBreak: boolean }) => !t.isBreak).length;
-	const loQ = lowerTouches.filter((t: { isBreak: boolean }) => !t.isBreak).length;
+	const upQ = upperTouches.filter((t) => !t.isBreak).length;
+	const loQ = lowerTouches.filter((t) => !t.isBreak).length;
 	const score = Math.max(0, Math.min(1, (upQ + loQ) / 8));
 	return { upperTouches, lowerTouches, upperQuality: upQ, lowerQuality: loQ, score };
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function calcAlternationScoreEx(touches: any): number {
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function calcAlternationScoreEx(touches: TouchResult): number {
 	const all = [
-		...touches.upperTouches.map((t: any) => ({ ...t, type: 'upper' })),
-		...touches.lowerTouches.map((t: any) => ({ ...t, type: 'lower' })),
+		...touches.upperTouches.map((t) => ({ ...t, type: 'upper' as const })),
+		...touches.lowerTouches.map((t) => ({ ...t, type: 'lower' as const })),
 	].sort((a, b) => a.index - b.index);
 	if (all.length < 2) return 0;
 	let alternations = 0;
@@ -310,11 +304,10 @@ export function calcAlternationScoreEx(touches: any): number {
 	return Math.max(0, Math.min(1, alternations / Math.max(1, all.length - 1)));
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function calcInsideRatioEx(
 	candles: readonly CandleData[],
-	upper: any,
-	lower: any,
+	upper: Pick<TrendLine, 'valueAt'>,
+	lower: Pick<TrendLine, 'valueAt'>,
 	startIdx: number,
 	endIdx: number,
 ): number {
@@ -331,8 +324,10 @@ export function calcInsideRatioEx(
 	return total ? inside / total : 0;
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function calcDurationScoreEx(bars: number, params: any): number {
+export function calcDurationScoreEx(
+	bars: number,
+	params: Pick<WedgeParams, 'windowSizeMin' | 'windowSizeMax'>,
+): number {
 	const min = params?.windowSizeMin ?? 25,
 		max = params?.windowSizeMax ?? 90;
 	if (bars < min) return 0;
@@ -342,8 +337,7 @@ export function calcDurationScoreEx(bars: number, params: any): number {
 	return Math.max(0, Math.min(1, 1 - dist));
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function calculatePatternScoreEx(components: any, weights?: any): number {
+export function calculatePatternScoreEx(components: PatternScoreComponents, weights?: PatternScoreWeights): number {
 	const w = weights || { fit: 0.25, converge: 0.25, touch: 0.35, alternation: 0.07, inside: 0.05, duration: 0.03 };
 	return (
 		w.fit * components.fitScore +
@@ -383,22 +377,19 @@ export function finalizeConf(base: number, type: string): number {
 // ---------------------------------------------------------------------------
 // 重複パターンの排除
 // ---------------------------------------------------------------------------
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function deduplicatePatterns(arr: any[]): any[] {
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any
-	const result: any[] = [];
+export function deduplicatePatterns(arr: DeduplicablePattern[]): DeduplicablePattern[] {
+	const result: DeduplicablePattern[] = [];
 	for (const pattern of arr) {
 		if (!pattern?.type || !pattern?.range?.start || !pattern?.range?.end) {
 			result.push(pattern);
 			continue;
 		}
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		const overlapping = result.filter((existing: any) => {
+		const overlapping = result.filter((existing) => {
 			if (existing?.type !== pattern.type) return false;
-			const existingStart = Date.parse(existing.range.start);
-			const existingEnd = Date.parse(existing.range.end);
-			const patternStart = Date.parse(pattern.range.start);
-			const patternEnd = Date.parse(pattern.range.end);
+			const existingStart = Date.parse(existing.range?.start ?? '');
+			const existingEnd = Date.parse(existing.range?.end ?? '');
+			const patternStart = Date.parse(pattern.range?.start ?? '');
+			const patternEnd = Date.parse(pattern.range?.end ?? '');
 			if (
 				!Number.isFinite(existingStart) ||
 				!Number.isFinite(existingEnd) ||
@@ -418,15 +409,14 @@ export function deduplicatePatterns(arr: any[]): any[] {
 			result.push(pattern);
 		} else {
 			const allCandidates = [...overlapping, pattern];
-			const maxEndTime = Math.max(...allCandidates.map((p: { range: { end: string } }) => Date.parse(p.range.end)));
-			let best = allCandidates.filter((p: { range: { end: string } }) => Date.parse(p.range.end) === maxEndTime);
+			const maxEndTime = Math.max(...allCandidates.map((p) => Date.parse(p.range?.end ?? '')));
+			let best = allCandidates.filter((p) => Date.parse(p.range?.end ?? '') === maxEndTime);
 			if (best.length > 1) {
-				const maxConfidence = Math.max(...best.map((p: { confidence?: number }) => Number(p.confidence ?? 0)));
-				best = best.filter((p: { confidence?: number }) => Number(p.confidence ?? 0) === maxConfidence);
+				const maxConfidence = Math.max(...best.map((p) => Number(p.confidence ?? 0)));
+				best = best.filter((p) => Number(p.confidence ?? 0) === maxConfidence);
 			}
 			if (best.length > 1) {
-				// eslint-disable-next-line @typescript-eslint/no-explicit-any
-				const getHeight = (p: any) => {
+				const getHeight = (p: DeduplicablePattern) => {
 					const piv = Array.isArray(p?.pivots) ? p.pivots : [];
 					if (p?.type === 'double_top' && piv.length >= 3) {
 						const peak = Math.max(Number(piv[0]?.price ?? 0), Number(piv[2]?.price ?? 0));
@@ -457,8 +447,7 @@ export function deduplicatePatterns(arr: any[]): any[] {
 // ---------------------------------------------------------------------------
 // グローバル重複排除（全パターン種別横断）
 // ---------------------------------------------------------------------------
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function globalDedup(patterns: any[]): any[] {
+export function globalDedup(patterns: DeduplicablePattern[]): DeduplicablePattern[] {
 	function toMs(iso?: string): number {
 		try {
 			const t = Date.parse(String(iso));
@@ -498,8 +487,7 @@ export function globalDedup(patterns: any[]): any[] {
 	}
 
 	const dedupThreshold = 0.7;
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any
-	const out: any[] = [];
+	const out: DeduplicablePattern[] = [];
 	for (const p of patterns) {
 		const pRange = { s: String(p?.range?.start), e: String(p?.range?.end ?? p?.range?.current) };
 		const overlapIdx = out.findIndex(

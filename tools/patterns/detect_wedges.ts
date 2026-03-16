@@ -11,7 +11,7 @@
  * 4b) 回帰ベース（完成済みの主力検出）
  * 4d) 形成中ウェッジ検出（緩い条件）
  */
-import { generatePatternDiagram } from '../../lib/pattern-diagrams.js';
+import { generatePatternDiagram, type PatternDiagramData } from '../../lib/pattern-diagrams.js';
 import {
 	calcAlternationScoreEx,
 	calcApex,
@@ -28,14 +28,11 @@ import {
 	generateWindows,
 } from './helpers.js';
 import { smoothCandleExtremes } from './smoothing.js';
-import type { DetectContext, DetectResult } from './types.js';
+import type { CandDebugEntry, DeduplicablePattern, DetectContext, DetectResult } from './types.js';
 
 export function detectWedges(ctx: DetectContext): DetectResult {
 	const { candles, pivots, want, tolerancePct, minDist, swingDepth, lrWithR2, debugCandidates } = ctx;
-	const push = (arr: any[], item: any) => {
-		arr.push(item);
-	};
-	const patterns: any[] = [];
+	const patterns: DeduplicablePattern[] = [];
 
 	// --- SG フィルタによる平滑化ピボットの生成 ---
 	// 元の pivots はそのまま使い、追加で SG 平滑化ピボットも用意する。
@@ -294,11 +291,11 @@ export function detectWedges(ctx: DetectContext): DetectResult {
 				continue;
 			}
 			// タッチ間隔チェック（日足で25本以上空いていたら除外）
-			const calcMaxGap = (touchArr: any[]): number => {
+			const calcMaxGap = (touchArr: Array<{ index: number; isBreak: boolean }>): number => {
 				const validTouches = touchArr
-					.filter((t: any) => !t.isBreak)
-					.map((t: any) => t.index)
-					.sort((a: number, b: number) => a - b);
+					.filter((t) => !t.isBreak)
+					.map((t) => t.index)
+					.sort((a, b) => a - b);
 				if (validTouches.length < 2) return Infinity;
 				let maxGap = 0;
 				for (let i = 1; i < validTouches.length; i++) {
@@ -322,8 +319,8 @@ export function detectWedges(ctx: DetectContext): DetectResult {
 			}
 			// 開始日ギャップチェック
 			const maxStartGap = 10;
-			const firstUpperTouch = touches.upperTouches.find((t: any) => !t.isBreak);
-			const firstLowerTouch = touches.lowerTouches.find((t: any) => !t.isBreak);
+			const firstUpperTouch = touches.upperTouches.find((t) => !t.isBreak);
+			const firstLowerTouch = touches.lowerTouches.find((t) => !t.isBreak);
 			if (firstUpperTouch && firstLowerTouch) {
 				const startGap = Math.abs(firstUpperTouch.index - firstLowerTouch.index);
 				if (startGap > maxStartGap) {
@@ -369,7 +366,7 @@ export function detectWedges(ctx: DetectContext): DetectResult {
 			const insideRatio = calcInsideRatioEx(candles, upper, lower, w.startIdx, w.endIdx);
 			const score = calculatePatternScoreEx({
 				fitScore: (upper.r2 + lower.r2) / 2,
-				convergeScore: conv.score,
+				convergeScore: conv.score ?? 0,
 				touchScore: touches.score,
 				alternationScore: alternation,
 				insideScore: insideRatio,
@@ -460,11 +457,11 @@ export function detectWedges(ctx: DetectContext): DetectResult {
 
 			// ダイアグラム用にタッチポイントから主要点を間引きして pivots を構成
 			const upTouchPts = (touches.upperTouches || [])
-				.filter((t: any) => !t.isBreak)
-				.map((t: any) => ({ idx: t.index, kind: 'H' as const }));
+				.filter((t) => !t.isBreak)
+				.map((t) => ({ idx: t.index, kind: 'H' as const }));
 			const loTouchPts = (touches.lowerTouches || [])
-				.filter((t: any) => !t.isBreak)
-				.map((t: any) => ({ idx: t.index, kind: 'L' as const }));
+				.filter((t) => !t.isBreak)
+				.map((t) => ({ idx: t.index, kind: 'L' as const }));
 			const allPts = [...upTouchPts, ...loTouchPts].sort((a, b) => a.idx - b.idx);
 			const downsample = (pts: Array<{ idx: number; kind: 'H' | 'L' }>, maxPoints = 6) => {
 				if (pts.length <= maxPoints) return pts;
@@ -483,7 +480,7 @@ export function detectWedges(ctx: DetectContext): DetectResult {
 				kind: p.kind,
 				date: candles[p.idx]?.isoTime,
 			}));
-			let diagram: any;
+			let diagram: PatternDiagramData | undefined;
 			try {
 				diagram = generatePatternDiagram(wedgeType, pivForDiagram, { price: 0 }, { start, end });
 			} catch {
@@ -523,7 +520,7 @@ export function detectWedges(ctx: DetectContext): DetectResult {
 				outcome4b = breakoutDirection === expected ? 'success' : 'failure';
 			}
 
-			push(patterns, {
+			patterns.push({
 				type: wedgeType,
 				confidence,
 				range: { start, end },
@@ -565,7 +562,7 @@ export function detectWedges(ctx: DetectContext): DetectResult {
 	// 4d) 形成中ウェッジ検出
 	// 4b（回帰ベース）が完成済みの主力。4d は形成中向け（緩い条件）
 	{
-		const formingWedgeDebug: any[] = [];
+		const formingWedgeDebug: CandDebugEntry[] = [];
 		const fWindowSizeMin = 20;
 		const fWindowSizeMax = 120;
 		const fWindowStep = 5;
@@ -826,7 +823,7 @@ export function detectWedges(ctx: DetectContext): DetectResult {
 			if (!start || !end) continue;
 
 			// 重複チェック
-			const alreadyExists = patterns.some((p: any) => {
+			const alreadyExists = patterns.some((p) => {
 				if (p.type !== wedgeType) return false;
 				const pStart = Date.parse(p.range?.start || '');
 				const pEnd = Date.parse(p.range?.end || '');
@@ -877,7 +874,7 @@ export function detectWedges(ctx: DetectContext): DetectResult {
 				}
 			}
 
-			push(patterns, {
+			patterns.push({
 				type: wedgeType,
 				confidence,
 				range: { start, end },

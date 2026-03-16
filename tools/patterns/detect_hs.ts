@@ -5,16 +5,14 @@
 import { generatePatternDiagram } from '../../lib/pattern-diagrams.js';
 import { finalizeConf, periodScoreDays } from './helpers.js';
 import { clamp01, marginFromRelDev, relDev } from './regression.js';
+import type { DeduplicablePattern } from './types.js';
 import { type DetectContext, type DetectResult, pushCand } from './types.js';
 
 export function detectHeadAndShoulders(ctx: DetectContext): DetectResult {
 	const { candles, pivots, allPeaks, allValleys, tolerancePct, minDist, want, includeForming, near, debugCandidates } =
 		ctx;
 	const _pcand = (arg: Parameters<typeof pushCand>[1]) => pushCand(ctx, arg);
-	const push = (arr: any[], item: any) => {
-		arr.push(item);
-	};
-	const patterns: any[] = [];
+	const patterns: DeduplicablePattern[] = [];
 
 	// 3) Inverse H&S (L-H-L-H-L with head lower than both shoulders)
 	let foundInverseHS = false;
@@ -68,7 +66,7 @@ export function detectHeadAndShoulders(ctx: DetectContext): DetectResult {
 					const ihsNlAvg = (p1.price + p3.price) / 2;
 					const ihsTarget = Math.round(ihsNlAvg + (ihsNlAvg - p2.price));
 
-					push(patterns, {
+					patterns.push({
 						type: 'inverse_head_and_shoulders',
 						confidence,
 						range: { start, end },
@@ -164,7 +162,7 @@ export function detectHeadAndShoulders(ctx: DetectContext): DetectResult {
 					const hsNlAvg = (p1.price + p3.price) / 2;
 					const hsTarget = Math.round(hsNlAvg - (p2.price - hsNlAvg));
 
-					push(patterns, {
+					patterns.push({
 						type: 'head_and_shoulders',
 						confidence,
 						range: { start, end },
@@ -239,12 +237,12 @@ export function detectHeadAndShoulders(ctx: DetectContext): DetectResult {
 				const end = candles[p4.idx].isoTime;
 				if (!start || !end) continue;
 				// choose lowest valley between shoulders and after head for neckline robustness
-				const valleyBetween = allValleys.filter((v: any) => v.idx > p0.idx && v.idx < p4.idx);
-				const postValleys = allValleys.filter((v: any) => v.idx > p2.idx);
+				const valleyBetween = allValleys.filter((v: { idx: number }) => v.idx > p0.idx && v.idx < p4.idx);
+				const postValleys = allValleys.filter((v: { idx: number }) => v.idx > p2.idx);
 				const minValley = valleyBetween.length
-					? valleyBetween.reduce((m: any, v: any) => (v.price < m.price ? v : m))
+					? valleyBetween.reduce((m, v) => (v.price < m.price ? v : m))
 					: postValleys.length
-						? postValleys.reduce((m: any, v: any) => (v.price < m.price ? v : m))
+						? postValleys.reduce((m, v) => (v.price < m.price ? v : m))
 						: null;
 				const nlY = minValley ? minValley.price : Math.min(p1.price, p3.price);
 				const neckline = [
@@ -271,7 +269,7 @@ export function detectHeadAndShoulders(ctx: DetectContext): DetectResult {
 				);
 				const _hsRelNlAvg = (Number(p1.price) + Number(p3.price)) / 2;
 				const hsRelTarget = Math.round(nlY - (p2.price - nlY));
-				push(patterns, {
+				patterns.push({
 					type: 'head_and_shoulders',
 					confidence,
 					range: { start, end },
@@ -322,12 +320,12 @@ export function detectHeadAndShoulders(ctx: DetectContext): DetectResult {
 					const start = candles[p0.idx].isoTime;
 					const end = candles[p4.idx].isoTime;
 					if (!start || !end) continue;
-					const peaksBetween = allPeaks.filter((v: any) => v.idx > p0.idx && v.idx < p4.idx);
-					const postPeaks = allPeaks.filter((v: any) => v.idx > p2.idx);
+					const peaksBetween = allPeaks.filter((v: { idx: number }) => v.idx > p0.idx && v.idx < p4.idx);
+					const postPeaks = allPeaks.filter((v: { idx: number }) => v.idx > p2.idx);
 					const maxPeak = peaksBetween.length
-						? peaksBetween.reduce((m: any, v: any) => (v.price > m.price ? v : m))
+						? peaksBetween.reduce((m, v) => (v.price > m.price ? v : m))
 						: postPeaks.length
-							? postPeaks.reduce((m: any, v: any) => (v.price > m.price ? v : m))
+							? postPeaks.reduce((m, v) => (v.price > m.price ? v : m))
 							: null;
 					const nlY = maxPeak ? maxPeak.price : Math.max(p1.price, p3.price);
 					const neckline = [
@@ -353,7 +351,7 @@ export function detectHeadAndShoulders(ctx: DetectContext): DetectResult {
 						{ start, end },
 					);
 					const ihsRelTarget = Math.round(nlY + (nlY - p2.price));
-					push(patterns, {
+					patterns.push({
 						type: 'inverse_head_and_shoulders',
 						confidence,
 						range: { start, end },
@@ -465,7 +463,7 @@ export function detectHeadAndShoulders(ctx: DetectContext): DetectResult {
 								// 形成中 H&S ターゲット: ネックライン - (ヘッド - ネックライン)
 								const formHsNl = neckline[0].y;
 								const formHsTarget = Math.round(formHsNl - (head.price - formHsNl));
-								push(patterns, {
+								patterns.push({
 									type: 'head_and_shoulders',
 									confidence,
 									range: { start, end },
@@ -577,7 +575,7 @@ export function detectHeadAndShoulders(ctx: DetectContext): DetectResult {
 								// 形成中 Inverse H&S ターゲット: ネックライン + (ネックライン - ヘッド)
 								const formIhsNl = neckline[0].y;
 								const formIhsTarget = Math.round(formIhsNl + (formIhsNl - head.price));
-								push(patterns, {
+								patterns.push({
 									type: 'inverse_head_and_shoulders',
 									confidence,
 									range: { start, end },

@@ -2,19 +2,17 @@
  * Triple Top / Triple Bottom 検出（完成済み＋形成中）
  * detect_patterns.ts Section 6 / 6b から抽出
  */
-import { generatePatternDiagram } from '../../lib/pattern-diagrams.js';
+import { generatePatternDiagram, type PatternDiagramData } from '../../lib/pattern-diagrams.js';
 import { MIN_CONFIDENCE } from '../patterns/config.js';
 import { finalizeConf, periodScoreDays } from './helpers.js';
 import { clamp01, relDev } from './regression.js';
+import type { DeduplicablePattern } from './types.js';
 import { type DetectContext, type DetectResult, pushCand } from './types.js';
 
 export function detectTriples(ctx: DetectContext): DetectResult {
 	const { candles, pivots, allPeaks, allValleys, tolerancePct, minDist, want, includeForming, near } = ctx;
 	const pcand = (arg: Parameters<typeof pushCand>[1]) => pushCand(ctx, arg);
-	const push = (arr: any[], item: any) => {
-		arr.push(item);
-	};
-	const patterns: any[] = [];
+	const patterns: DeduplicablePattern[] = [];
 
 	// 6) Triple Top / Triple Bottom (厳しめの等高/等安＋等間隔に近い)
 	{
@@ -37,10 +35,10 @@ export function detectTriples(ctx: DetectContext): DetectResult {
 					const end = candles[c.idx].isoTime;
 					if (start && end) {
 						// Additional strict checks: valleys equality and neckline slope
-						const v1cands = allValleys.filter((v: any) => v.idx > a.idx && v.idx < b.idx);
-						const v2cands = allValleys.filter((v: any) => v.idx > b.idx && v.idx < c.idx);
-						const v1 = v1cands.length ? v1cands.reduce((m: any, v: any) => (v.price < m.price ? v : m)) : null;
-						const v2 = v2cands.length ? v2cands.reduce((m: any, v: any) => (v.price < m.price ? v : m)) : null;
+						const v1cands = allValleys.filter((v: { idx: number }) => v.idx > a.idx && v.idx < b.idx);
+						const v2cands = allValleys.filter((v: { idx: number }) => v.idx > b.idx && v.idx < c.idx);
+						const v1 = v1cands.length ? v1cands.reduce((m, v) => (v.price < m.price ? v : m)) : null;
+						const v2 = v2cands.length ? v2cands.reduce((m, v) => (v.price < m.price ? v : m)) : null;
 						if (!(v1 && v2)) {
 							pcand({ type: 'triple_top', accepted: false, reason: 'valleys_missing', idxs: [a.idx, b.idx, c.idx] });
 							continue;
@@ -74,7 +72,7 @@ export function detectTriples(ctx: DetectContext): DetectResult {
 							{ x: c.idx, y: nlAvg },
 						];
 						// Build 5-point pivot order for diagram if valleys exist
-						let diagram: any;
+						let diagram: PatternDiagramData | undefined;
 						diagram = generatePatternDiagram(
 							'triple_top',
 							[
@@ -91,7 +89,7 @@ export function detectTriples(ctx: DetectContext): DetectResult {
 							// --- ターゲット価格計算（neckline_projection 方式） ---
 							const ttAvgPeak = (a.price + b.price + c.price) / 3;
 							const ttTarget = nlAvg != null ? Math.round(nlAvg - (ttAvgPeak - nlAvg)) : undefined;
-							push(patterns, {
+							patterns.push({
 								type: 'triple_top',
 								confidence,
 								range: { start, end },
@@ -143,10 +141,10 @@ export function detectTriples(ctx: DetectContext): DetectResult {
 						const valleyMax = Math.max(...valleyPrices);
 						const maxValleySpread = 0.015;
 						const valleySpreadValid = (valleyMax - valleyMin) / Math.max(1, valleyMin) <= maxValleySpread;
-						const p1cands = allPeaks.filter((v: any) => v.idx > a.idx && v.idx < b.idx);
-						const p2cands = allPeaks.filter((v: any) => v.idx > b.idx && v.idx < c.idx);
-						const p1 = p1cands.length ? p1cands.reduce((m: any, v: any) => (v.price > m.price ? v : m)) : null;
-						const p2 = p2cands.length ? p2cands.reduce((m: any, v: any) => (v.price > m.price ? v : m)) : null;
+						const p1cands = allPeaks.filter((v: { idx: number }) => v.idx > a.idx && v.idx < b.idx);
+						const p2cands = allPeaks.filter((v: { idx: number }) => v.idx > b.idx && v.idx < c.idx);
+						const p1 = p1cands.length ? p1cands.reduce((m, v) => (v.price > m.price ? v : m)) : null;
+						const p2 = p2cands.length ? p2cands.reduce((m, v) => (v.price > m.price ? v : m)) : null;
 						if (!(p1 && p2)) {
 							pcand({ type: 'triple_bottom', accepted: false, reason: 'peaks_missing', idxs: [a.idx, b.idx, c.idx] });
 							continue;
@@ -185,7 +183,7 @@ export function detectTriples(ctx: DetectContext): DetectResult {
 							{ x: c.idx, y: nlAvg },
 						];
 						// Build 5-point pivot order for diagram if peaks exist
-						let diagram: any;
+						let diagram: PatternDiagramData | undefined;
 						diagram = generatePatternDiagram(
 							'triple_bottom',
 							[
@@ -202,7 +200,7 @@ export function detectTriples(ctx: DetectContext): DetectResult {
 							// --- ターゲット価格計算（neckline_projection 方式） ---
 							const tbAvgValley = (a.price + b.price + c.price) / 3;
 							const tbTarget = nlAvg != null ? Math.round(nlAvg + (nlAvg - tbAvgValley)) : undefined;
-							push(patterns, {
+							patterns.push({
 								type: 'triple_bottom',
 								confidence,
 								range: { start, end },
@@ -271,10 +269,10 @@ export function detectTriples(ctx: DetectContext): DetectResult {
 						const base = (tolMargin + symmetry + per) / 3;
 						const confidence = finalizeConf(base * 0.95, 'triple_top');
 						// valleys for neckline & diagram
-						const v1cands = allValleys.filter((v: any) => v.idx > a.idx && v.idx < b.idx);
-						const v2cands = allValleys.filter((v: any) => v.idx > b.idx && v.idx < c.idx);
-						const v1 = v1cands.length ? v1cands.reduce((m: any, v: any) => (v.price < m.price ? v : m)) : null;
-						const v2 = v2cands.length ? v2cands.reduce((m: any, v: any) => (v.price < m.price ? v : m)) : null;
+						const v1cands = allValleys.filter((v: { idx: number }) => v.idx > a.idx && v.idx < b.idx);
+						const v2cands = allValleys.filter((v: { idx: number }) => v.idx > b.idx && v.idx < c.idx);
+						const v1 = v1cands.length ? v1cands.reduce((m, v) => (v.price < m.price ? v : m)) : null;
+						const v2 = v2cands.length ? v2cands.reduce((m, v) => (v.price < m.price ? v : m)) : null;
 						const nlAvg = v1 && v2 ? (Number(v1.price) + Number(v2.price)) / 2 : null;
 						// Additional strictness in relaxed path as well
 						if (!(v1 && v2)) {
@@ -297,7 +295,7 @@ export function detectTriples(ctx: DetectContext): DetectResult {
 							});
 							continue;
 						}
-						let diagram: any;
+						let diagram: PatternDiagramData | undefined;
 						const neckline =
 							v1 && v2
 								? [
@@ -322,7 +320,7 @@ export function detectTriples(ctx: DetectContext): DetectResult {
 						if (confidence >= (MIN_CONFIDENCE.triple_top ?? 0)) {
 							const ttRelAvgPeak = (a.price + b.price + c.price) / 3;
 							const ttRelTarget = nlAvg != null ? Math.round(nlAvg - (ttRelAvgPeak - nlAvg)) : undefined;
-							push(patterns, {
+							patterns.push({
 								type: 'triple_top',
 								confidence,
 								range: { start, end },
@@ -378,10 +376,10 @@ export function detectTriples(ctx: DetectContext): DetectResult {
 						const base = (tolMargin + symmetry + per) / 3;
 						const confidence = finalizeConf(base * 0.95, 'triple_bottom');
 						// peaks for neckline & diagram
-						const p1cands = allPeaks.filter((v: any) => v.idx > a.idx && v.idx < b.idx);
-						const p2cands = allPeaks.filter((v: any) => v.idx > b.idx && v.idx < c.idx);
-						const p1 = p1cands.length ? p1cands.reduce((m: any, v: any) => (v.price > m.price ? v : m)) : null;
-						const p2 = p2cands.length ? p2cands.reduce((m: any, v: any) => (v.price > m.price ? v : m)) : null;
+						const p1cands = allPeaks.filter((v: { idx: number }) => v.idx > a.idx && v.idx < b.idx);
+						const p2cands = allPeaks.filter((v: { idx: number }) => v.idx > b.idx && v.idx < c.idx);
+						const p1 = p1cands.length ? p1cands.reduce((m, v) => (v.price > m.price ? v : m)) : null;
+						const p2 = p2cands.length ? p2cands.reduce((m, v) => (v.price > m.price ? v : m)) : null;
 						const nlAvg = p1 && p2 ? (Number(p1.price) + Number(p2.price)) / 2 : null;
 						if (!(p1 && p2)) {
 							pcand({
@@ -403,7 +401,7 @@ export function detectTriples(ctx: DetectContext): DetectResult {
 							});
 							continue;
 						}
-						let diagram: any;
+						let diagram: PatternDiagramData | undefined;
 						const neckline =
 							p1 && p2
 								? [
@@ -428,7 +426,7 @@ export function detectTriples(ctx: DetectContext): DetectResult {
 						if (confidence >= (MIN_CONFIDENCE.triple_bottom ?? 0)) {
 							const tbRelAvgValley = (a.price + b.price + c.price) / 3;
 							const tbRelTarget = nlAvg != null ? Math.round(nlAvg + (nlAvg - tbRelAvgValley)) : undefined;
-							push(patterns, {
+							patterns.push({
 								type: 'triple_bottom',
 								confidence,
 								range: { start, end },
@@ -466,7 +464,7 @@ export function detectTriples(ctx: DetectContext): DetectResult {
 
 		// 形成中 triple_top: 2つの確定ピーク + 現在価格が同レベルまで上昇中
 		if ((want.size === 0 || want.has('triple_top')) && allPeaks.length >= 2) {
-			const confirmedPeaks = allPeaks.filter((p: any) => p.idx < lastIdx - 2);
+			const confirmedPeaks = allPeaks.filter((p: { idx: number }) => p.idx < lastIdx - 2);
 
 			// 直近2つの等高ピークを探す
 			for (let i = confirmedPeaks.length - 1; i >= 1; i--) {
@@ -498,9 +496,9 @@ export function detectTriples(ctx: DetectContext): DetectResult {
 
 				if (completion >= 0.4 && confidence >= 0.5) {
 					// ネックライン（谷の平均）
-					const valleysBetween = allValleys.filter((v: any) => v.idx > peak1.idx && v.idx < lastIdx);
+					const valleysBetween = allValleys.filter((v: { idx: number }) => v.idx > peak1.idx && v.idx < lastIdx);
 					const avgValley = valleysBetween.length
-						? valleysBetween.reduce((s: number, v: any) => s + v.price, 0) / valleysBetween.length
+						? valleysBetween.reduce((s: number, v: { price: number }) => s + v.price, 0) / valleysBetween.length
 						: Math.min(peak1.price, peak2.price) * 0.95;
 					const neckline = [
 						{ x: peak1.idx, y: avgValley },
@@ -508,7 +506,7 @@ export function detectTriples(ctx: DetectContext): DetectResult {
 					];
 
 					const formTtTarget = Math.round(avgValley - ((peak1.price + peak2.price) / 2 - avgValley));
-					push(patterns, {
+					patterns.push({
 						type: 'triple_top',
 						confidence,
 						range: { start: isoAt(peak1.idx), end: isoAt(lastIdx) },
@@ -531,7 +529,7 @@ export function detectTriples(ctx: DetectContext): DetectResult {
 
 		// 形成中 triple_bottom: 2つの確定谷 + 現在価格が同レベルまで下落後反発中
 		if ((want.size === 0 || want.has('triple_bottom')) && allValleys.length >= 2) {
-			const confirmedValleys = allValleys.filter((v: any) => v.idx < lastIdx - 2);
+			const confirmedValleys = allValleys.filter((v: { idx: number }) => v.idx < lastIdx - 2);
 
 			// 直近2つの等安谷を探す
 			for (let i = confirmedValleys.length - 1; i >= 1; i--) {
@@ -550,9 +548,10 @@ export function detectTriples(ctx: DetectContext): DetectResult {
 				const avgValleyPrice = (valley1.price + valley2.price) / 2;
 
 				// ネックライン（ピークの平均）
-				const peaksBetween = allPeaks.filter((p: any) => p.idx > valley1.idx && p.idx < lastIdx);
+				const peaksBetween = allPeaks.filter((p: { idx: number }) => p.idx > valley1.idx && p.idx < lastIdx);
 				if (peaksBetween.length === 0) continue;
-				const avgPeakPrice = peaksBetween.reduce((s: number, p: any) => s + p.price, 0) / peaksBetween.length;
+				const avgPeakPrice =
+					peaksBetween.reduce((s: number, p: { price: number }) => s + p.price, 0) / peaksBetween.length;
 
 				// 現在価格が谷とネックラインの間にあるか
 				if (currentPrice < avgValleyPrice * 0.98 || currentPrice > avgPeakPrice * 1.02) continue;
@@ -575,7 +574,7 @@ export function detectTriples(ctx: DetectContext): DetectResult {
 					];
 
 					const formTbTarget = Math.round(avgPeakPrice + (avgPeakPrice - avgValleyPrice));
-					push(patterns, {
+					patterns.push({
 						type: 'triple_bottom',
 						confidence,
 						range: { start: isoAt(valley1.idx), end: isoAt(lastIdx) },
