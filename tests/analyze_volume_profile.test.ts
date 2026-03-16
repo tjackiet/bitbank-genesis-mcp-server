@@ -44,7 +44,7 @@ describe('analyze_volume_profile', () => {
 	});
 
 	it('inputSchema: valueAreaPct は 0.5 以上のみ許可する', () => {
-		const parse = () => (toolDef.inputSchema as any).parse({ pair: 'btc_jpy', valueAreaPct: 0.49 });
+		const parse = () => toolDef.inputSchema.parse({ pair: 'btc_jpy', valueAreaPct: 0.49 });
 		expect(parse).toThrow();
 	});
 

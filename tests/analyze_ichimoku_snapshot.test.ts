@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { assertOk } from './_assertResult.js';
+import { asMockResult, assertOk } from './_assertResult.js';
 
 vi.mock('../tools/analyze_indicators.js', () => ({
 	default: vi.fn(),
@@ -51,7 +51,7 @@ describe('analyze_ichimoku_snapshot', () => {
 	});
 
 	it('inputSchema: lookback は 2 以上のみ許可する', () => {
-		const parse = () => (toolDef.inputSchema as any).parse({ pair: 'btc_jpy', type: '1day', limit: 120, lookback: 1 });
+		const parse = () => toolDef.inputSchema.parse({ pair: 'btc_jpy', type: '1day', limit: 120, lookback: 1 });
 		expect(parse).toThrow();
 	});
 

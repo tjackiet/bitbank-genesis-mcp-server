@@ -26,7 +26,7 @@ describe('get_orderbook', () => {
 	});
 
 	it('inputSchema: summary の topN は 1-200 の範囲のみ許可する', () => {
-		const parse = () => (toolDef.inputSchema as any).parse({ pair: 'btc_jpy', mode: 'summary', topN: 201 });
+		const parse = () => toolDef.inputSchema.parse({ pair: 'btc_jpy', mode: 'summary', topN: 201 });
 		expect(parse).toThrow();
 	});
 

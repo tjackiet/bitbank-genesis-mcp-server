@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { assertOk } from './_assertResult.js';
+import { asMockResult, assertOk } from './_assertResult.js';
 
 vi.mock('../tools/get_flow_metrics.js', () => ({
 	default: vi.fn(),
@@ -96,15 +96,15 @@ describe('analyze_market_signal', () => {
 	});
 
 	it('inputSchema: flowLimit は整数のみ許可する', () => {
-		const parse = () => (toolDef.inputSchema as any).parse({ pair: 'btc_jpy', flowLimit: 10.5 });
+		const parse = () => toolDef.inputSchema.parse({ pair: 'btc_jpy', flowLimit: 10.5 });
 		expect(parse).toThrow();
 	});
 
 	it('中立シグナル時の nextActions は存在しない detect_forming_chart_patterns ではなく detect_patterns を案内すべき', async () => {
-		mockedGetFlowMetrics.mockResolvedValueOnce(flowOk(0.5, [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]) as any);
-		mockedGetVolatilityMetrics.mockResolvedValueOnce(volOk(0.5) as any);
+		mockedGetFlowMetrics.mockResolvedValueOnce(asMockResult(flowOk(0.5, [0, 0, 0, 0, 0, 0, 0, 0, 0, 0])));
+		mockedGetVolatilityMetrics.mockResolvedValueOnce(asMockResult(volOk(0.5)));
 		mockedAnalyzeIndicators.mockResolvedValueOnce(
-			indicatorsOk({ close: 100, rsi: 50, sma25: 100, sma75: 100, sma200: 100 }) as any,
+			asMockResult(indicatorsOk({ close: 100, rsi: 50, sma25: 100, sma75: 100, sma200: 100 })),
 		);
 
 		const res = await analyzeMarketSignal('btc_jpy');
@@ -113,10 +113,10 @@ describe('analyze_market_signal', () => {
 	});
 
 	it('主要要素が矛盾する低信頼ケースで nextActions に未登録の multiple_analysis を含めるべきではない', async () => {
-		mockedGetFlowMetrics.mockResolvedValueOnce(flowOk(0.5, [0, 5, 10, 20, 30, 40, 50, 60, 80, 100]) as any);
-		mockedGetVolatilityMetrics.mockResolvedValueOnce(volOk(0) as any);
+		mockedGetFlowMetrics.mockResolvedValueOnce(asMockResult(flowOk(0.5, [0, 5, 10, 20, 30, 40, 50, 60, 80, 100])));
+		mockedGetVolatilityMetrics.mockResolvedValueOnce(asMockResult(volOk(0)));
 		mockedAnalyzeIndicators.mockResolvedValueOnce(
-			indicatorsOk({ close: 120, rsi: 0, sma25: 110, sma75: 100, sma200: 100 }) as any,
+			asMockResult(indicatorsOk({ close: 120, rsi: 0, sma25: 110, sma75: 100, sma200: 100 })),
 		);
 
 		const res = await analyzeMarketSignal('btc_jpy');
@@ -126,10 +126,10 @@ describe('analyze_market_signal', () => {
 	});
 
 	it('aggressorRatio が最大で板圧力が極端なときは get_orderbook を深掘り候補に含めるべき', async () => {
-		mockedGetFlowMetrics.mockResolvedValueOnce(flowOk(1, [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]) as any);
-		mockedGetVolatilityMetrics.mockResolvedValueOnce(volOk(0.5) as any);
+		mockedGetFlowMetrics.mockResolvedValueOnce(asMockResult(flowOk(1, [0, 0, 0, 0, 0, 0, 0, 0, 0, 0])));
+		mockedGetVolatilityMetrics.mockResolvedValueOnce(asMockResult(volOk(0.5)));
 		mockedAnalyzeIndicators.mockResolvedValueOnce(
-			indicatorsOk({ close: 100, rsi: 50, sma25: 100, sma75: 100, sma200: 100 }) as any,
+			asMockResult(indicatorsOk({ close: 100, rsi: 50, sma25: 100, sma75: 100, sma200: 100 })),
 		);
 
 		const res = await analyzeMarketSignal('btc_jpy');

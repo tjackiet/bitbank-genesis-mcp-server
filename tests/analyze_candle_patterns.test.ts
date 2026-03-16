@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { assertOk } from './_assertResult.js';
+import { asMockResult, assertOk } from './_assertResult.js';
 
 vi.mock('../tools/get_candles.js', () => ({
 	default: vi.fn(),
@@ -72,12 +72,12 @@ describe('analyze_candle_patterns', () => {
 	});
 
 	it('inputSchema: focus_last_n は 2 以上のみ許可する', () => {
-		const parse = () => (toolDef.inputSchema as any).parse({ focus_last_n: 1 });
+		const parse = () => toolDef.inputSchema.parse({ focus_last_n: 1 });
 		expect(parse).toThrow();
 	});
 
 	it('上昇トレンド直後の doji は bearish と判定されるべき', async () => {
-		mockedGetCandles.mockResolvedValueOnce(candlesOk(buildUptrendThenDojiWindow()) as any);
+		mockedGetCandles.mockResolvedValueOnce(asMockResult(candlesOk(buildUptrendThenDojiWindow())));
 
 		const res = await analyzeCandlePatterns({
 			as_of: '2026-01-04',
@@ -95,7 +95,7 @@ describe('analyze_candle_patterns', () => {
 	});
 
 	it('as_of 指定時の history_stats は指定日より未来のローソク足を含めるべきではない', async () => {
-		mockedGetCandles.mockResolvedValueOnce(candlesOk(buildHistoryLeakCandles()) as any);
+		mockedGetCandles.mockResolvedValueOnce(asMockResult(candlesOk(buildHistoryLeakCandles())));
 
 		const res = await analyzeCandlePatterns({
 			as_of: '2026-01-21',

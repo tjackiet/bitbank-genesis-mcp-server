@@ -34,7 +34,7 @@ describe('render_depth_svg', () => {
 	});
 
 	it('inputSchema: depth.levels は 10 未満を拒否する', () => {
-		const parse = () => (toolDef.inputSchema as any).parse({ pair: 'btc_jpy', depth: { levels: 9 } });
+		const parse = () => toolDef.inputSchema.parse({ pair: 'btc_jpy', depth: { levels: 9 } });
 		expect(parse).toThrow();
 	});
 

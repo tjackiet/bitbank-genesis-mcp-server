@@ -72,7 +72,7 @@ describe('analyze_support_resistance', () => {
 	});
 
 	it('inputSchema: lookbackDays は 30 以上のみ許可する', () => {
-		const parse = () => (toolDef.inputSchema as any).parse({ pair: 'btc_jpy', lookbackDays: 29 });
+		const parse = () => toolDef.inputSchema.parse({ pair: 'btc_jpy', lookbackDays: 29 });
 		expect(parse).toThrow();
 	});
 

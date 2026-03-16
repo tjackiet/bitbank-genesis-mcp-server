@@ -98,7 +98,7 @@ describe('run_backtest', () => {
 
 	it('inputSchema: strategy.type は定義済み enum のみ許可する', () => {
 		const parse = () =>
-			(toolDef.inputSchema as any).parse({
+			toolDef.inputSchema.parse({
 				pair: 'btc_jpy',
 				strategy: { type: 'not_a_strategy', params: {} },
 			});

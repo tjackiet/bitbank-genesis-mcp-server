@@ -26,7 +26,7 @@ describe('get_transactions', () => {
 	});
 
 	it('inputSchema: date は YYYYMMDD 形式のみ許可する', () => {
-		const parse = () => (toolDef.inputSchema as any).parse({ pair: 'btc_jpy', date: '2024-01-01' });
+		const parse = () => toolDef.inputSchema.parse({ pair: 'btc_jpy', date: '2024-01-01' });
 		expect(parse).toThrow();
 	});
 

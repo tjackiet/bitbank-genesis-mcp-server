@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { assertOk } from './_assertResult.js';
+import { asMockResult, assertOk } from './_assertResult.js';
 
 vi.mock('../tools/analyze_sma_snapshot.js', () => ({
 	default: vi.fn(),
@@ -16,7 +16,7 @@ describe('analyze_mtf_sma', () => {
 	});
 
 	it('inputSchema: timeframes は 1 件以上のみ許可するべき', () => {
-		const parse = () => (toolDef.inputSchema as any).parse({ pair: 'btc_jpy', timeframes: [], periods: [25, 75, 200] });
+		const parse = () => toolDef.inputSchema.parse({ pair: 'btc_jpy', timeframes: [], periods: [25, 75, 200] });
 		expect(parse).toThrow();
 	});
 

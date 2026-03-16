@@ -41,7 +41,7 @@ describe('analyze_bb_snapshot', () => {
 	});
 
 	it('inputSchema: limit は 40 以上のみ許可する', () => {
-		const parse = () => (toolDef.inputSchema as any).parse({ pair: 'btc_jpy', type: '1day', limit: 39 });
+		const parse = () => toolDef.inputSchema.parse({ pair: 'btc_jpy', type: '1day', limit: 39 });
 		expect(parse).toThrow();
 	});
 

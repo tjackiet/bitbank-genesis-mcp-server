@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { assertOk } from './_assertResult.js';
+import { asMockResult, assertOk } from './_assertResult.js';
 
 vi.mock('../tools/analyze_indicators.js', () => ({
 	default: vi.fn(),
@@ -69,7 +69,7 @@ describe('detect_macd_cross', () => {
 	});
 
 	it('inputSchema: lookback は 1 未満を拒否する', () => {
-		const parse = () => (toolDef.inputSchema as any).parse({ lookback: 0 });
+		const parse = () => toolDef.inputSchema.parse({ lookback: 0 });
 		expect(parse).toThrow();
 	});
 
@@ -80,18 +80,20 @@ describe('detect_macd_cross', () => {
 		const signal = Array.from({ length: line.length }, () => 0);
 
 		mockedAnalyzeIndicators.mockResolvedValueOnce(
-			buildAnalyzeIndicatorsOk({
-				pair: 'btc_jpy',
-				line,
-				signal,
-				hist: line,
-				crossDates: {
-					16: '2026-02-16T00:00:00.000Z',
-					17: '2026-02-17T00:00:00.000Z',
-					18: '2026-02-18T00:00:00.000Z',
-					19: '2026-02-19T00:00:00.000Z',
-				},
-			}) as any,
+			asMockResult(
+				buildAnalyzeIndicatorsOk({
+					pair: 'btc_jpy',
+					line,
+					signal,
+					hist: line,
+					crossDates: {
+						16: '2026-02-16T00:00:00.000Z',
+						17: '2026-02-17T00:00:00.000Z',
+						18: '2026-02-18T00:00:00.000Z',
+						19: '2026-02-19T00:00:00.000Z',
+					},
+				}),
+			),
 		);
 
 		const res = await toolDef.handler({
@@ -110,25 +112,29 @@ describe('detect_macd_cross', () => {
 	it('screen.sortBy=date は barsAgo ではなく crossDate で並べるべき', async () => {
 		mockedAnalyzeIndicators.mockImplementation(async (pair: string) => {
 			if (pair === 'btc_jpy') {
-				return buildAnalyzeIndicatorsOk({
-					pair,
-					line: [0, 0, 0, 0, -1, 1],
-					signal: [0, 0, 0, 0, 0, 0],
-					crossDates: {
-						5: '2025-01-01T00:00:00.000Z',
-					},
-				}) as any;
+				return asMockResult(
+					buildAnalyzeIndicatorsOk({
+						pair,
+						line: [0, 0, 0, 0, -1, 1],
+						signal: [0, 0, 0, 0, 0, 0],
+						crossDates: {
+							5: '2025-01-01T00:00:00.000Z',
+						},
+					}),
+				);
 			}
 
 			if (pair === 'eth_jpy') {
-				return buildAnalyzeIndicatorsOk({
-					pair,
-					line: [0, 0, -1, 1, 2, 3],
-					signal: [0, 0, 0, 0, 0, 0],
-					crossDates: {
-						3: '2025-02-01T00:00:00.000Z',
-					},
-				}) as any;
+				return asMockResult(
+					buildAnalyzeIndicatorsOk({
+						pair,
+						line: [0, 0, -1, 1, 2, 3],
+						signal: [0, 0, 0, 0, 0, 0],
+						crossDates: {
+							3: '2025-02-01T00:00:00.000Z',
+						},
+					}),
+				);
 			}
 
 			throw new Error(`unexpected pair: ${pair}`);

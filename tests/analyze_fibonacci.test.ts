@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { assertOk } from './_assertResult.js';
+import { asMockResult, assertOk } from './_assertResult.js';
 
 vi.mock('../tools/get_candles.js', () => ({
 	default: vi.fn(),
@@ -79,12 +79,12 @@ describe('analyze_fibonacci', () => {
 	});
 
 	it('inputSchema: lookbackDays は 14 以上のみ許可する', () => {
-		const parse = () => (toolDef.inputSchema as any).parse({ pair: 'btc_jpy', lookbackDays: 13 });
+		const parse = () => toolDef.inputSchema.parse({ pair: 'btc_jpy', lookbackDays: 13 });
 		expect(parse).toThrow();
 	});
 
 	it('上昇トレンドの extension は swingHigh を上抜く価格になるべき', async () => {
-		mockedGetCandles.mockResolvedValueOnce(candlesOk(buildUptrendCandles()) as any);
+		mockedGetCandles.mockResolvedValueOnce(asMockResult(candlesOk(buildUptrendCandles())));
 
 		const res = await analyzeFibonacci({
 			pair: 'btc_jpy',
@@ -101,7 +101,7 @@ describe('analyze_fibonacci', () => {
 	});
 
 	it('下降トレンドの extension は swingLow を下抜く価格になるべき', async () => {
-		mockedGetCandles.mockResolvedValueOnce(candlesOk(buildDowntrendCandles()) as any);
+		mockedGetCandles.mockResolvedValueOnce(asMockResult(candlesOk(buildDowntrendCandles())));
 
 		const res = await analyzeFibonacci({
 			pair: 'btc_jpy',

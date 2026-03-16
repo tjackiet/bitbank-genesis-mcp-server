@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { assertOk } from './_assertResult.js';
+import { asMockResult, assertOk } from './_assertResult.js';
 
 vi.mock('../tools/analyze_indicators.js', async (importOriginal) => {
 	const actual = await importOriginal<typeof import('../analyze_indicators.js')>();
@@ -73,7 +73,7 @@ describe('analyze_stoch_snapshot', () => {
 	});
 
 	it('inputSchema: limit は 40 以上のみ許可する', () => {
-		const parse = () => (toolDef.inputSchema as any).parse({ pair: 'btc_jpy', type: '1day', limit: 39 });
+		const parse = () => toolDef.inputSchema.parse({ pair: 'btc_jpy', type: '1day', limit: 39 });
 		expect(parse).toThrow();
 	});
 

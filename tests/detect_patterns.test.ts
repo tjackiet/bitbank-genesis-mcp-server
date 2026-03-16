@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { asMockResult } from './_assertResult.js';
 
 vi.mock('../tools/detect_patterns.js', () => ({
 	default: vi.fn(),

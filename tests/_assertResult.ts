@@ -21,3 +21,16 @@ export function assertOk<T extends { ok: boolean }>(res: T): asserts res is Extr
 export function assertFail<T extends { ok: boolean }>(res: T): asserts res is Extract<T, { ok: false }> {
 	expect(res.ok).toBe(false);
 }
+
+/**
+ * テスト用モックキャスト。`as any` の代替。
+ *
+ * `mockResolvedValueOnce` 等に渡す部分モックオブジェクトを
+ * 関数の戻り値型に合わせてキャストする。T はコンテキストから推論される。
+ *
+ * @example
+ * mockedFn.mockResolvedValueOnce(asMockResult(buildObj()));
+ */
+export function asMockResult<T>(value: unknown): T {
+	return value as T;
+}

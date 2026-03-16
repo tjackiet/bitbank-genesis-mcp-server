@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { assertOk } from './_assertResult.js';
+import { asMockResult, assertOk } from './_assertResult.js';
 
 vi.mock('../tools/analyze_indicators.js', () => ({
 	default: vi.fn(),
@@ -81,7 +81,7 @@ describe('render_chart_svg', () => {
 
 	it('inputSchema: withIchimoku=true と withBB=true の併用は拒否する', () => {
 		const parse = () =>
-			(toolDef.inputSchema as any).parse({
+			toolDef.inputSchema.parse({
 				pair: 'btc_jpy',
 				type: '1day',
 				limit: 60,
@@ -93,7 +93,7 @@ describe('render_chart_svg', () => {
 	});
 
 	it('meta.indicators は withLegend=false でも描画した SMA を含むべき', async () => {
-		mockedAnalyzeIndicators.mockResolvedValueOnce(buildAnalyzeIndicatorsSuccess(60) as any);
+		mockedAnalyzeIndicators.mockResolvedValueOnce(asMockResult(buildAnalyzeIndicatorsSuccess(60)));
 
 		const res = await renderChartSvg({
 			pair: 'btc_jpy',
@@ -108,7 +108,7 @@ describe('render_chart_svg', () => {
 	});
 
 	it('candles-only fallback を宣言したら一目均衡表レイヤーは描画しないべき', async () => {
-		mockedAnalyzeIndicators.mockResolvedValueOnce(buildAnalyzeIndicatorsSuccess(365) as any);
+		mockedAnalyzeIndicators.mockResolvedValueOnce(asMockResult(buildAnalyzeIndicatorsSuccess(365)));
 
 		const res = await renderChartSvg({
 			pair: 'btc_jpy',
