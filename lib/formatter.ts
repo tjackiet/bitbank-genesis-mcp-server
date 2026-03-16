@@ -112,8 +112,19 @@ export function formatSummary(
 		timeframe?: string;
 		latest?: number;
 		totalItems?: number;
-		keyPoints?: any;
-		volumeStats?: any;
+		keyPoints?: {
+			today?: { date?: string | null; index: number; close: number } | null;
+			sevenDaysAgo?: { date?: string | null; index: number; close: number; changePct: number | null } | null;
+			thirtyDaysAgo?: { date?: string | null; index: number; close: number; changePct: number | null } | null;
+			ninetyDaysAgo?: { date?: string | null; index: number; close: number; changePct: number | null } | null;
+		};
+		volumeStats?: {
+			recent7DaysAvg: number;
+			previous7DaysAvg: number;
+			last30DaysAvg?: number | null;
+			changePct: number;
+			judgment: string;
+		} | null;
 		extra?: string;
 		// 追加: 全件の範囲情報
 		priceRange?: { high: number; low: number; periodStart: string; periodEnd: string };

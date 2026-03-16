@@ -139,31 +139,41 @@ export interface DetectResult {
 
 /** 事後分析結果 */
 export interface AftermathResult {
-	breakoutDate?: string;
+	breakoutDate?: string | null;
 	breakoutConfirmed: boolean;
-	priceMove: Record<string, { return: number; high: number; low: number }>;
+	priceMove?: Record<string, { return: number; high: number; low: number } | null>;
 	targetReached: boolean;
-	theoreticalTarget: number | null;
+	theoreticalTarget?: number | null;
 	outcome: string;
-	daysToTarget: number | null;
+	daysToTarget?: number | null;
 }
 
 /** パターンエントリ（検出結果の1件）— 共通フィールド＋任意拡張 */
 export interface PatternEntry extends DeduplicablePattern {
 	confidence?: number;
-	neckline?: Array<{ x: number; y: number }>;
+	timeframe?: string;
+	timeframeLabel?: string;
+	neckline?: Array<{ x?: number; y: number }>;
+	structureDiagram?: { svg: string; artifact?: { identifier: string; title: string } };
 	status?: string;
-	trendlineLabel?: string;
+	breakout?: { idx: number; price: number; direction?: string } | null;
 	breakoutDirection?: 'up' | 'down';
-	breakoutBarIndex?: number;
+	outcome?: 'success' | 'failure' | string;
 	breakoutTarget?: number;
 	targetMethod?: string;
 	targetReachedPct?: number;
-	outcome?: string;
-	structureDiagram?: unknown;
-	completionPct?: number;
+	trendlineLabel?: string;
 	poleDirection?: 'up' | 'down';
+	priorTrendDirection?: 'bullish' | 'bearish';
 	flagpoleHeight?: number;
+	retracementRatio?: number;
+	isTrendContinuation?: boolean;
+	apexDate?: string;
+	daysToApex?: number;
+	completionPct?: number;
+	breakoutDate?: string;
+	breakoutBarIndex?: number;
+	daysSinceBreakout?: number;
 	aftermath?: AftermathResult | null;
 }
 

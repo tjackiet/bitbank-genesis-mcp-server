@@ -28,21 +28,22 @@ export function log(level: 'error' | 'warn' | 'info' | 'debug', event: Record<st
 	}
 }
 
-export function logToolRun(args: { tool: string; input: unknown; result: any; ms: number }): void {
+export function logToolRun(args: { tool: string; input: unknown; result: unknown; ms: number }): void {
 	const { tool, input, result, ms } = args;
+	const r = result as Record<string, unknown> | null | undefined;
 	const safeData = {
-		ok: result?.ok,
-		summary: result?.summary,
-		meta: result?.meta,
+		ok: r?.ok,
+		summary: r?.summary,
+		meta: r?.meta,
 	};
 	log('info', { type: 'tool_run', tool, input, ms, result: safeData });
 }
 
-export function logError(tool: string, err: any, input: unknown): void {
+export function logError(tool: string, err: unknown, input: unknown): void {
 	log('error', {
 		type: 'tool_error',
 		tool,
 		input,
-		error: (err && err.message) || String(err),
+		error: (err instanceof Error ? err.message : undefined) || String(err),
 	});
 }

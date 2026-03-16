@@ -3,6 +3,51 @@
  * debug / summary / full / detailed の4モードを分離
  */
 import { toIsoTime } from '../../lib/datetime.js';
+import type { PatternEntry } from '../../tools/patterns/types.js';
+import type { McpResponse } from '../tool-definition.js';
+
+/** デバッグスイング情報 */
+interface SwingDebug {
+	kind: string;
+	idx: number;
+	price: number;
+	isoTime?: string;
+}
+
+/** デバッグ候補エントリ */
+interface CandidateDebug {
+	type: string;
+	accepted: boolean;
+	reason?: string;
+	indices?: number[];
+	points?: Array<{ role: string; idx: number; price: number }>;
+	details?: Record<string, unknown>;
+}
+
+/** パターン検出メタデータ */
+interface PatternMeta {
+	debug?: {
+		swings?: SwingDebug[];
+		candidates?: CandidateDebug[];
+	};
+	effective_params?: { tolerancePct?: number };
+	[key: string]: unknown;
+}
+
+/** パターン検出結果（res パラメータ用） */
+interface PatternResult {
+	ok?: boolean;
+	data?: { patterns?: PatternEntry[]; overlays?: unknown };
+	meta?: Record<string, unknown>;
+	summary?: string;
+	[key: string]: unknown;
+}
+
+/** fmtPointList 用のポイント */
+interface IndexedPoint {
+	index: number;
+	price: number;
+}
 
 // ── helpers ──
 
@@ -34,13 +79,13 @@ const fmtInt = (v: unknown): string => {
 	return Number.isFinite(n) ? String(n) : 'n/a';
 };
 
-const fmtPointList = (arr: any[] | undefined): string =>
-	Array.isArray(arr) ? arr.map((p: any) => `[${p.index}:${fmtRound(p.price)}]`).join(', ') : 'n/a';
+const fmtPointList = (arr: unknown): string =>
+	Array.isArray(arr) ? arr.map((p: IndexedPoint) => `[${p.index}:${fmtRound(p.price)}]`).join(', ') : 'n/a';
 
 // ── shared ──
 
 /** 検出対象期間の1行テキスト */
-export function buildPeriodLine(pats: any[]): string {
+export function buildPeriodLine(pats: PatternEntry[]): string {
 	try {
 		const ends = pats.map((p) => toTs(p?.range?.end)).filter(Number.isFinite);
 		const starts = pats.map((p) => toTs(p?.range?.start)).filter(Number.isFinite);
@@ -57,9 +102,9 @@ export function buildPeriodLine(pats: any[]): string {
 }
 
 /** 種別別件数集計 */
-export function buildTypeSummary(pats: any[]): string {
+export function buildTypeSummary(pats: PatternEntry[]): string {
 	const byType = pats.reduce(
-		(m: Record<string, number>, p: any) => {
+		(m: Record<string, number>, p: PatternEntry) => {
 			const k = String(p?.type || 'unknown');
 			m[k] = (m[k] || 0) + 1;
 			return m;
@@ -73,7 +118,7 @@ export function buildTypeSummary(pats: any[]): string {
 
 // ── debug view: candidate details ──
 
-function formatCandidateDetails(c: any): string {
+function formatCandidateDetails(c: CandidateDebug): string {
 	if (!c.details) return '\n   details: none';
 	const d = c.details;
 	const reason = String(c?.reason ?? '');
@@ -153,20 +198,24 @@ function formatCandidateDetails(c: any): string {
 	return `\n   spread: ${spreadPart}${Number.isFinite(hi) || Number.isFinite(lo) ? `, slopes: hi=${fmtNum(hi)} lo=${fmtNum(lo)}` : ''}`;
 }
 
-export function formatDebugView(hdr: string, meta: any, _pats: any[], res: any): any {
-	const swings = Array.isArray(meta?.debug?.swings) ? meta.debug.swings : [];
-	const cands = Array.isArray(meta?.debug?.candidates) ? meta.debug.candidates : [];
+export function formatDebugView(
+	hdr: string,
+	meta: PatternMeta,
+	_pats: PatternEntry[],
+	res: PatternResult,
+): McpResponse {
+	const swings: SwingDebug[] = Array.isArray(meta?.debug?.swings) ? meta.debug.swings : [];
+	const cands: CandidateDebug[] = Array.isArray(meta?.debug?.candidates) ? meta.debug.candidates : [];
 
 	const swingLines = swings.map(
-		(s: any) =>
-			`- ${s.kind} idx=${s.idx} price=${Math.round(Number(s.price)).toLocaleString()} (${s.isoTime || 'n/a'})`,
+		(s) => `- ${s.kind} idx=${s.idx} price=${Math.round(Number(s.price)).toLocaleString()} (${s.isoTime || 'n/a'})`,
 	);
 
-	const candLines = cands.map((c: any, i: number) => {
+	const candLines = cands.map((c, i: number) => {
 		const tag = c.accepted ? '✅' : '❌';
 		const reason = c.accepted ? (c.reason ? ` (${c.reason})` : '') : c.reason ? ` [${c.reason}]` : '';
 		const pts = Array.isArray(c.points)
-			? c.points.map((p: any) => `${p.role}@${p.idx}:${Math.round(Number(p.price)).toLocaleString()}`).join(', ')
+			? c.points.map((p) => `${p.role}@${p.idx}:${Math.round(Number(p.price)).toLocaleString()}`).join(', ')
 			: '';
 		const indices = Array.isArray(c.indices) ? ` indices=[${c.indices.join(',')}]` : '';
 		const detailsStr = formatCandidateDetails(c);
@@ -184,24 +233,23 @@ export function formatDebugView(hdr: string, meta: any, _pats: any[], res: any):
 	].join('\n');
 
 	try {
-		const result: any = res;
 		return {
 			content: [{ type: 'text', text }],
 			structuredContent: {
-				data: { ...result?.data, candidates: cands },
-				meta: result?.meta ?? {},
-				ok: result?.ok ?? true,
-				summary: result?.summary ?? hdr,
+				data: { ...res?.data, candidates: cands },
+				meta: res?.meta ?? {},
+				ok: res?.ok ?? true,
+				summary: res?.summary ?? hdr,
 			} as Record<string, unknown>,
 		};
 	} catch {
-		return { content: [{ type: 'text', text }], structuredContent: res };
+		return { content: [{ type: 'text', text }], structuredContent: res as unknown };
 	}
 }
 
 // ── pattern line formatter (shared by full / detailed) ──
 
-function buildIdxToIso(meta: any): Record<number, string> {
+function buildIdxToIso(meta: PatternMeta): Record<number, string> {
 	const map: Record<number, string> = {};
 	try {
 		const swings = meta?.debug?.swings;
@@ -218,7 +266,7 @@ function buildIdxToIso(meta: any): Record<number, string> {
 	return map;
 }
 
-export function formatPatternLine(p: any, idx: number, view: string, meta: any): string {
+export function formatPatternLine(p: PatternEntry, idx: number, view: string, meta: PatternMeta): string {
 	const name = String(p?.type || 'unknown');
 	const conf = p?.confidence != null ? Number(p.confidence).toFixed(2) : 'n/a';
 	const range = p?.range ? `${p.range.start} ~ ${p.range.end}` : 'n/a';
@@ -226,7 +274,7 @@ export function formatPatternLine(p: any, idx: number, view: string, meta: any):
 	// price range
 	let priceRange: string | null = null;
 	if (Array.isArray(p?.pivots) && p.pivots.length) {
-		const prices = p.pivots.map((v: any) => Number(v?.price)).filter(Number.isFinite);
+		const prices = p.pivots.map((v) => Number(v?.price)).filter(Number.isFinite);
 		if (prices.length)
 			priceRange = `${Math.min(...prices).toLocaleString()}円 - ${Math.max(...prices).toLocaleString()}円`;
 	}
@@ -300,7 +348,7 @@ export function formatPatternLine(p: any, idx: number, view: string, meta: any):
 				triangle_descending: '下方',
 				pennant: p.poleDirection === 'up' ? '上方' : p.poleDirection === 'down' ? '下方' : undefined,
 			};
-			const expectedDir = expectedDirMap[p.type];
+			const expectedDir = p.type ? expectedDirMap[p.type] : undefined;
 			const meaningMap: Record<string, Record<string, string>> = {
 				falling_wedge: { success: '強気転換', failure: '弱気継続' },
 				rising_wedge: { success: '弱気転換', failure: '強気継続' },
@@ -311,7 +359,7 @@ export function formatPatternLine(p: any, idx: number, view: string, meta: any):
 					failure: `ダマシ（${p.poleDirection === 'up' ? '弱気転換' : '強気転換'}）`,
 				},
 			};
-			const meaning = meaningMap[p.type]?.[p.outcome] || `${directionJa}ブレイク`;
+			const meaning = (p.type && p.outcome ? meaningMap[p.type]?.[p.outcome] : undefined) || `${directionJa}ブレイク`;
 			let dirLine = `   - ブレイク方向: ${directionJa}ブレイク`;
 			if (expectedDir) dirLine += `（本来は${expectedDir}ブレイクが期待されるパターン）`;
 			outcomeLine = `${dirLine}\n   - パターン結果: ${outcomeJa}（${meaning}）`;
@@ -374,7 +422,7 @@ export function formatPatternLine(p: any, idx: number, view: string, meta: any):
 			pattern_height: 'パターン高さ投影',
 			neckline_projection: 'ネックライン投影',
 		};
-		targetLine = `   - ターゲット価格: ${Math.round(Number(p.breakoutTarget)).toLocaleString()}円（${methodJa[p.targetMethod] || p.targetMethod}）`;
+		targetLine = `   - ターゲット価格: ${Math.round(Number(p.breakoutTarget)).toLocaleString()}円（${(p.targetMethod && methodJa[p.targetMethod]) || p.targetMethod}）`;
 		if (p?.targetReachedPct != null) {
 			targetLine += `\n   - ターゲット進捗: ${p.targetReachedPct}%${Number(p.targetReachedPct) >= 100 ? '（到達済み）' : ''}`;
 		}
@@ -400,33 +448,33 @@ export function formatPatternLine(p: any, idx: number, view: string, meta: any):
 
 export function formatSummaryView(
 	hdr: string,
-	pats: any[],
+	pats: PatternEntry[],
 	periodLine: string,
 	typeSummary: string,
 	patterns: string[] | undefined,
 	includeForming: boolean | undefined,
-	res: any,
-): any {
+	res: PatternResult,
+): McpResponse {
 	const now = Date.now();
 	const within = (ms: number) =>
-		pats.filter((p) => Number.isFinite(toTs(p?.range?.end)) && now - toTs(p.range.end) <= ms).length;
+		pats.filter((p) => Number.isFinite(toTs(p?.range?.end)) && now - toTs(p.range!.end) <= ms).length;
 	const in30 = within(30 * 86400000);
 	const in90 = within(90 * 86400000);
 	const formingHint = includeForming ? '' : '\n※形成中は includeForming=true を指定してください。';
 	const text = `${hdr}（${typeSummary || '分類なし'}、直近30日: ${in30}件、直近90日: ${in90}件）\n${periodLine ? `${periodLine}\n` : ''}検討パターン: ${patterns?.length ? patterns.join(', ') : '既定セット'}${formingHint}\n詳細は structuredContent.data.patterns を参照。`;
-	return { content: [{ type: 'text', text }], structuredContent: res };
+	return { content: [{ type: 'text', text }], structuredContent: res as unknown };
 }
 
 // ── full view ──
 
 export function formatFullView(
 	hdr: string,
-	pats: any[],
+	pats: PatternEntry[],
 	periodLine: string,
 	typeSummary: string,
-	meta: any,
-	res: any,
-): any {
+	meta: PatternMeta,
+	res: PatternResult,
+): McpResponse {
 	const body = pats.map((p, i) => formatPatternLine(p, i, 'full', meta)).join('\n\n');
 	const overlayNote = res?.data?.overlays
 		? '\n\nチャート連携: structuredContent.data.overlays を render_chart_svg.overlays に渡すと注釈/範囲を描画できます。'
@@ -434,21 +482,21 @@ export function formatFullView(
 	const trustNote =
 		'\n\nパターン整合度について（形状一致度・対称性・期間から算出）:\n  0.8以上 = 理想的な形状（教科書的パターン）\n  0.7-0.8 = 標準的な形状（他指標と併用推奨）\n  0.6-0.7 = やや不明瞭（慎重に判断）\n  0.6未満 = 形状不十分';
 	const text = `${hdr}（${typeSummary || '分類なし'}）\n${periodLine ? `${periodLine}\n` : ''}\n【検出パターン（全件）】\n${body}${overlayNote}${trustNote}`;
-	return { content: [{ type: 'text', text }], structuredContent: res };
+	return { content: [{ type: 'text', text }], structuredContent: res as unknown };
 }
 
 // ── detailed view (default) ──
 
 export function formatDetailedView(
 	hdr: string,
-	pats: any[],
+	pats: PatternEntry[],
 	periodLine: string,
 	typeSummary: string,
-	meta: any,
+	meta: PatternMeta,
 	tolerancePct: number | undefined,
 	patterns: string[] | undefined,
-	res: any,
-): any {
+	res: PatternResult,
+): McpResponse {
 	const top = pats.slice(0, 5);
 	const body = top.length ? top.map((p, i) => formatPatternLine(p, i, 'detailed', meta)).join('\n\n') : '';
 

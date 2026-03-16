@@ -1,3 +1,4 @@
+import type { z } from 'zod';
 import { toIsoTime } from '../../lib/datetime.js';
 import { formatCurrency, formatCurrencyShort, formatPercent, formatPriceJPY } from '../../lib/formatter.js';
 import { stddev } from '../../lib/math.js';
@@ -51,8 +52,8 @@ export function buildVolatilityBeginnerText(input: VolViewInput): string {
 /** summary ビューのテキスト組み立て */
 export function buildVolatilitySummaryText(input: VolViewInput): string {
 	const { pair, type, sampleSize, rvAnn, pkAnn, gkAnn, rsAnn, atrAbs, tagsAll } = input;
-	const fmtPct = (x: any) => formatPercent(x, { multiply: true });
-	const fmtCurrShort = (p: any, v: any) => formatCurrencyShort(v, p);
+	const fmtPct = (x: number | null) => formatPercent(x, { multiply: true });
+	const fmtCurrShort = (p: string, v: number | null) => formatCurrencyShort(v, p);
 	return `${String(pair).toUpperCase()} [${String(type)}] samples=${sampleSize ?? 'n/a'} RV=${fmtPct(rvAnn)} ATR=${fmtCurrShort(pair, atrAbs)} PK=${fmtPct(pkAnn)} GK=${fmtPct(gkAnn)} RS=${fmtPct(rsAnn)} Tags: ${tagsAll.join(', ')}`;
 }
 
@@ -68,8 +69,8 @@ export interface VolDetailedInput extends VolViewInput {
 export function buildVolatilityDetailedText(input: VolDetailedInput, view: 'detailed' | 'full'): string {
 	const { pair, type, lastClose, ann, annFactor, sampleSize, rvAnn, pkAnn, gkAnn, rsAnn, atrAbs, tagsAll, rolling } =
 		input;
-	const fmtPct = (x: any) => formatPercent(x, { multiply: true });
-	const fmtCurr = (p: any, v: any) => formatCurrency(v, p);
+	const fmtPct = (x: number | null | undefined) => formatPercent(x, { multiply: true });
+	const fmtCurr = (p: string, v: number | null) => formatCurrency(v, p);
 
 	const windowsList = rolling.map((r) => r.window).join('/');
 	const header = `${String(pair).toUpperCase()} [${String(type)}] close=${lastClose != null ? Number(lastClose).toLocaleString() : 'n/a'}\n`;
@@ -122,12 +123,20 @@ export const toolDef: ToolDefinition = {
 	description:
 		'[Volatility / ATR / RV] ボラティリティ指標（volatility / ATR / realized vol）を算出。RV・ATR・Parkinson・Garman-Klass・Rogers-Satchell。年率換算対応。',
 	inputSchema: GetVolMetricsInputSchema,
-	handler: async ({ pair, type, limit, windows, useLogReturns, annualize, view }: any) => {
-		const res: any = await getVolatilityMetrics(pair, type, limit, windows, { useLogReturns, annualize });
+	handler: async ({
+		pair,
+		type,
+		limit,
+		windows,
+		useLogReturns,
+		annualize,
+		view,
+	}: z.infer<typeof GetVolMetricsInputSchema>) => {
+		const res = await getVolatilityMetrics(pair, type, limit, windows, { useLogReturns, annualize });
 		if (!res?.ok) return res;
 		const meta = res?.data?.meta || {};
 		const a = res?.data?.aggregates || {};
-		const roll: any[] = Array.isArray(res?.data?.rolling) ? res.data.rolling : [];
+		const roll: VolViewInput['rolling'] = Array.isArray(res?.data?.rolling) ? res.data.rolling : [];
 		const closeSeries: number[] = Array.isArray(res?.data?.series?.close) ? res.data.series.close : [];
 		const lastClose = closeSeries.at(-1) ?? null;
 		const ann = !!meta.annualize;
