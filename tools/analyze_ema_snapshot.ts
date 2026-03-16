@@ -343,5 +343,15 @@ export const toolDef: ToolDefinition = {
 	description:
 		'[EMA / Exponential Moving Average] EMA（exponential moving average / trend / slope）の最新値・整列・クロス・傾きを返す（既定: 12/26/50/200）。',
 	inputSchema: AnalyzeEmaSnapshotInputSchema,
-	handler: async ({ pair, type, limit, periods }: any) => analyzeEmaSnapshot(pair, type, limit, periods),
+	handler: async ({
+		pair,
+		type,
+		limit,
+		periods,
+	}: {
+		pair?: string;
+		type?: string;
+		limit?: number;
+		periods?: number[];
+	}) => analyzeEmaSnapshot(pair, type, limit, periods),
 };

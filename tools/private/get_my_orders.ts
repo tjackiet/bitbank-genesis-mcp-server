@@ -139,5 +139,5 @@ export const toolDef: ToolDefinition = {
 	description:
 		'[My Orders / Open Orders / Active Orders] 自分の未約定注文一覧（my orders / open orders / active orders / pending）を取得。通貨ペア・期間でフィルタ可能。Private API。',
 	inputSchema: GetMyOrdersInputSchema,
-	handler: async (args: any) => getMyOrders(args ?? {}),
+	handler: async (args: { pair?: string; count?: number; since?: string; end?: string }) => getMyOrders(args ?? {}),
 };

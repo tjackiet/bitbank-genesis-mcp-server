@@ -100,5 +100,6 @@ export const toolDef: ToolDefinition = {
 	description:
 		'[Multi-Timeframe SMA / MTF] 複数タイムフレームSMA一括分析（multi-timeframe / MTF / SMA alignment / confluence）。整列方向とコンフルエンスを判定。',
 	inputSchema: AnalyzeMtfSmaInputSchema,
-	handler: async ({ pair, timeframes, periods }: any) => analyzeMtfSma(pair, timeframes, periods),
+	handler: async ({ pair, timeframes, periods }: { pair?: string; timeframes?: string[]; periods?: number[] }) =>
+		analyzeMtfSma(pair, timeframes, periods),
 };

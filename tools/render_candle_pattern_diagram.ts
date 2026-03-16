@@ -333,11 +333,30 @@ export const toolDef: ToolDefinition = {
 
 ユーザーが「図で見せて」等と明示した場合のみ使用。自発的呼び出し禁止。data.svg をHTMLに埋め込んで表示。`,
 	inputSchema: RenderCandlePatternDiagramInputSchema,
-	handler: async (args: any) => {
-		const res: any = await renderCandlePatternDiagram(args);
+	handler: async (args: {
+		candles: {
+			date: string;
+			open: number;
+			high: number;
+			low: number;
+			close: number;
+			type: 'bullish' | 'bearish';
+			isPartial?: boolean;
+		}[];
+		pattern?: {
+			name: string;
+			nameEn?: string;
+			confirmedDate: string;
+			involvedIndices: [number, number];
+			direction?: 'bullish' | 'bearish';
+		};
+		title?: string;
+		theme?: 'dark' | 'light';
+	}) => {
+		const res = await renderCandlePatternDiagram(args);
 		if (!res?.ok) return res;
-		const data: any = res.data || {};
-		const meta: any = res.meta || {};
+		const data = res.data || {};
+		const meta = res.meta || {};
 		if (data?.svg) {
 			const patternName = meta?.patternName || args?.pattern?.name || 'ローソク足パターン';
 			const identifier = `candle-pattern-${patternName.replace(/[^a-z0-9]+/gi, '-')}-${Date.now()}`;

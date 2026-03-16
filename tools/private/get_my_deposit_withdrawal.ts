@@ -487,5 +487,11 @@ export const toolDef: ToolDefinition = {
 	description:
 		'[Deposit / Withdrawal / Transfer History] 入出金・入出庫の履歴（deposit / withdrawal / transfer / funding history）を取得。JPY入出金+暗号資産入出庫に対応。全件取得可能。Private API。',
 	inputSchema: GetMyDepositWithdrawalInputSchema,
-	handler: async (args: any) => getMyDepositWithdrawal(args ?? {}),
+	handler: async (args: {
+		asset?: string;
+		type?: 'deposit' | 'withdrawal' | 'all';
+		count?: number;
+		since?: string;
+		end?: string;
+	}) => getMyDepositWithdrawal(args ?? {}),
 };

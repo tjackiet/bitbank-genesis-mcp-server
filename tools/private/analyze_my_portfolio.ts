@@ -16,5 +16,6 @@ export const toolDef: ToolDefinition = {
 	description:
 		'[Portfolio Analysis / PnL] 自分のポートフォリオ分析（portfolio / pnl / balance / return）。保有資産の評価損益・実現損益・口座リターンを一括算出。テクニカル分析統合オプション付き。Private API（要APIキー設定）。',
 	inputSchema: AnalyzeMyPortfolioInputSchema,
-	handler: async (args: any) => analyzeMyPortfolioHandler(args ?? {}),
+	handler: async (args: { include_technical?: boolean; include_pnl?: boolean; include_deposit_withdrawal?: boolean }) =>
+		analyzeMyPortfolioHandler(args ?? {}),
 };

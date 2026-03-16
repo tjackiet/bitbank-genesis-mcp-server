@@ -521,6 +521,19 @@ export const toolDef: ToolDefinition = {
 
 【mode】summary（デフォルト）: 上位N層+spread / pressure: 帯域別の買い/売り圧力 / statistics: 流動性ゾーン+大口注文 / raw: 生bids/asks+壁ゾーン推定。`,
 	inputSchema: GetOrderbookInputSchema,
-	handler: async ({ pair, mode, topN, bandsPct, ranges, priceZones }: any) =>
-		getOrderbook({ pair, mode, topN, bandsPct, ranges, priceZones }),
+	handler: async ({
+		pair,
+		mode,
+		topN,
+		bandsPct,
+		ranges,
+		priceZones,
+	}: {
+		pair?: string;
+		mode?: 'summary' | 'pressure' | 'statistics' | 'raw';
+		topN?: number;
+		bandsPct?: number[];
+		ranges?: number[];
+		priceZones?: number;
+	}) => getOrderbook({ pair, mode, topN, bandsPct, ranges, priceZones }),
 };

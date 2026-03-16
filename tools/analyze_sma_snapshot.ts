@@ -314,5 +314,15 @@ export const toolDef: ToolDefinition = {
 	description:
 		'[SMA / Moving Average / Golden Cross] SMA（simple moving average / golden cross / dead cross）の数値スナップショット。最新値・クロス検出・整列状態（bullish/bearish/mixed）。',
 	inputSchema: AnalyzeSmaSnapshotInputSchema,
-	handler: async ({ pair, type, limit, periods }: any) => analyzeSmaSnapshot(pair, type, limit, periods),
+	handler: async ({
+		pair,
+		type,
+		limit,
+		periods,
+	}: {
+		pair?: string;
+		type?: string;
+		limit?: number;
+		periods?: number[];
+	}) => analyzeSmaSnapshot(pair, type, limit, periods),
 };

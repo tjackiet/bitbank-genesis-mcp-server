@@ -362,5 +362,15 @@ export const toolDef: ToolDefinition = {
 
 mode=default: ±2σ帯の基本情報 / mode=extended: ±1σ/±2σ/±3σの詳細分析。`,
 	inputSchema: AnalyzeBbSnapshotInputSchema,
-	handler: async ({ pair, type, limit, mode }: any) => analyzeBbSnapshot(pair, type, limit, mode),
+	handler: async ({
+		pair,
+		type,
+		limit,
+		mode,
+	}: {
+		pair?: string;
+		type?: string;
+		limit?: number;
+		mode?: 'default' | 'extended';
+	}) => analyzeBbSnapshot(pair, type, limit, mode),
 };
