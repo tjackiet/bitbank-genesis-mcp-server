@@ -51,7 +51,7 @@ const respond = (result: unknown): ToolReturn => {
 				},
 				2,
 			);
-			text = json.length > 4000 ? json.slice(0, 4000) + '\n…(truncated)…' : json;
+			text = json.length > 4000 ? `${json.slice(0, 4000)}\n…(truncated)…` : json;
 		} catch {
 			text = String(result);
 		}
@@ -370,7 +370,7 @@ try {
 		const mw =
 			typeof httpTransport.expressMiddleware === 'function'
 				? httpTransport.expressMiddleware()
-				: (req: any, res: any, next: any) => next();
+				: (_req: any, _res: any, next: any) => next();
 		app.use(mw);
 		app.listen(port, () => {
 			// no stdout/stderr output to avoid STDIO transport contamination

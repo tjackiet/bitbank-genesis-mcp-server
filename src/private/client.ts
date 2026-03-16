@@ -130,7 +130,7 @@ export class BitbankPrivateClient {
 						continue;
 					}
 					throw new PrivateApiError(
-						`レート制限超過。${retryAfter ? retryAfter + '秒' : 'しばらく'}待ってから再試行してください`,
+						`レート制限超過。${retryAfter ? `${retryAfter}秒` : 'しばらく'}待ってから再試行してください`,
 						'rate_limit_error',
 						429,
 					);
