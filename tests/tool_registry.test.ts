@@ -27,6 +27,7 @@ const expectedToolNames = [
 	'detect_patterns',
 	'detect_macd_cross',
 	'detect_whale_events',
+	'prepare_chart_data',
 	'render_chart_svg',
 	'render_depth_svg',
 	'render_candle_pattern_diagram',
@@ -37,7 +38,7 @@ describe('tool-registry', () => {
 	it('期待する 28 ツール名セットと一致する', () => {
 		const actualNames = allToolDefs.map((toolDef) => toolDef.name);
 
-		expect(actualNames).toHaveLength(28);
+		expect(actualNames).toHaveLength(29);
 		expect([...actualNames].sort()).toEqual([...expectedToolNames].sort());
 	});
 
@@ -48,7 +49,7 @@ describe('tool-registry', () => {
 			actualNames.includes(name),
 		);
 
-		expect(docsToolNames).toHaveLength(28);
+		expect(docsToolNames).toHaveLength(29);
 		expect(new Set(docsToolNames).size).toBe(docsToolNames.length);
 		expect([...docsToolNames].sort()).toEqual([...actualNames].sort());
 	});

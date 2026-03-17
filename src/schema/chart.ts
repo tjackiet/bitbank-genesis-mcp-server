@@ -121,6 +121,76 @@ export const ChartPayloadSchema = z
 		}
 	});
 
+// ── prepare_chart_data ──
+
+/** 選択可能な指標グループ */
+export const ChartIndicatorGroupEnum = z.enum([
+	'SMA_5',
+	'SMA_20',
+	'SMA_25',
+	'SMA_50',
+	'SMA_75',
+	'SMA_200',
+	'EMA_12',
+	'EMA_26',
+	'EMA_50',
+	'EMA_200',
+	'BB',
+	'ICHIMOKU',
+	'RSI',
+	'MACD',
+	'STOCH',
+]);
+
+export const PrepareChartDataInputSchema = z.object({
+	pair: z.string().optional().default('btc_jpy'),
+	type: CandleTypeEnum.optional().default('1day'),
+	limit: z.number().int().min(5).max(500).optional().default(100),
+	indicators: z.array(ChartIndicatorGroupEnum).optional(),
+});
+
+/** {time, value} の時系列エントリ */
+const TimeValueSchema = z.object({
+	time: z.string(),
+	value: z.number().nullable(),
+});
+
+/** MACD のサブパネルデータ */
+const MacdSubPanelSchema = z.object({
+	line: z.array(TimeValueSchema),
+	signal: z.array(TimeValueSchema),
+	hist: z.array(TimeValueSchema),
+});
+
+export const PrepareChartDataOutputSchema = z.object({
+	ok: z.literal(true),
+	summary: z.string(),
+	data: z.object({
+		candles: z.array(
+			z.object({
+				time: z.string(),
+				open: z.number(),
+				high: z.number(),
+				low: z.number(),
+				close: z.number(),
+				volume: z.number().optional(),
+			}),
+		),
+		series: z.record(z.string(), z.array(TimeValueSchema)),
+		subPanels: z.object({
+			RSI_14: z.array(TimeValueSchema).optional(),
+			MACD: MacdSubPanelSchema.optional(),
+			STOCH_K: z.array(TimeValueSchema).optional(),
+			STOCH_D: z.array(TimeValueSchema).optional(),
+		}),
+	}),
+	meta: z.object({
+		pair: z.string(),
+		type: CandleTypeEnum.or(z.string()),
+		count: z.number(),
+	}),
+});
+
 export const RenderChartSvgInputSchema = z
 	.object({
 		pair: z.string().optional().default('btc_jpy'),
