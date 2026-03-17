@@ -168,5 +168,14 @@ export const toolDef: ToolDefinition = {
 		type?: string;
 		limit?: number;
 		indicators?: string[];
-	}) => prepareChartData(pair ?? 'btc_jpy', type ?? '1day', limit ?? 100, indicators),
+	}) => {
+		const result = await prepareChartData(pair ?? 'btc_jpy', type ?? '1day', limit ?? 100, indicators);
+		if (!result.ok) return result;
+		// LLM は structuredContent を参照できないため、content テキストにデータを含める
+		const text = `${result.summary}\n${JSON.stringify(result.data, null, 2)}`;
+		return {
+			content: [{ type: 'text', text }],
+			structuredContent: result as unknown as Record<string, unknown>,
+		};
+	},
 };
