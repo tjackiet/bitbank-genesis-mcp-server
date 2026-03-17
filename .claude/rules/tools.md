@@ -1,5 +1,5 @@
 ---
-globs: tools/**/*.ts, src/handlers/**/*.ts, src/tool-registry.ts
+globs: tools/**/*.ts, src/handlers/**/*.ts, src/tool-registry.ts, src/private/**/*.ts
 ---
 
 # MCP ツール追加・修正
@@ -7,13 +7,40 @@ globs: tools/**/*.ts, src/handlers/**/*.ts, src/tool-registry.ts
 ツールは `toolDef` エクスポート → `src/tool-registry.ts` が集約 → `src/server.ts` が自動登録。
 **server.ts を直接編集する必要はない。**
 
-## 新規追加
+## Public ツール
+
+認証不要。誰でも利用可能。
+
+### 新規追加
 
 1. `tools/<name>.ts` に `export const toolDef: ToolDefinition = { name, description, inputSchema, handler }`
    - ハンドラが100行超なら `src/handlers/<name>Handler.ts` に分離
-2. `src/tool-registry.ts` の `allToolDefs` に追加
+2. `src/tool-registry.ts` の `allToolDefs` 配列に追加
 3. `npm run gen:types && npm run typecheck`
 
-## 既存修正
+### 既存修正
 
 `tools/<name>.ts` か `src/handlers/<name>Handler.ts` の `toolDef` を編集するだけ。
+
+## Private ツール
+
+bitbank API キー（`BITBANK_API_KEY` + `BITBANK_API_SECRET`）が設定されている場合のみ有効化される。
+
+### 仕組み
+
+- `src/private/config.ts` の `isPrivateApiEnabled()` で環境変数の有無を判定
+- `src/tool-registry.ts` が条件付きで `tools/private/*.ts` を動的 import し `allToolDefs` に追加
+- キー未設定時はスキップされ、ログに `Private API tools disabled` と記録される
+
+### 新規追加
+
+1. `tools/private/<name>.ts` に `export const toolDef` を定義
+   - ハンドラが100行超なら `src/handlers/<name>Handler.ts` に分離
+   - HTTP 呼び出しは `src/private/client.ts` の `BitbankPrivateClient` を使う
+2. 入出力スキーマは `src/private/schemas.ts` に追加
+3. `src/tool-registry.ts` の `isPrivateApiEnabled()` ブロック内で動的 import → `allToolDefs.push`
+4. `npm run gen:types && npm run typecheck`
+
+### 既存修正
+
+`tools/private/<name>.ts` か `src/handlers/<name>Handler.ts` の `toolDef` を編集するだけ。
