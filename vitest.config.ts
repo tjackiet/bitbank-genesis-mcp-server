@@ -8,5 +8,16 @@ export default defineConfig({
     testTimeout: 10_000,
     // ESM 対応
     pool: 'forks',
+    // カバレッジ設定
+    coverage: {
+      provider: 'v8',
+      // CI でカバレッジ低下を検出するための閾値（現状ベースライン基準）
+      thresholds: {
+        statements: 50,
+        branches: 35,
+        functions: 50,
+        lines: 50,
+      },
+    },
   },
 });
