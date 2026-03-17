@@ -156,7 +156,7 @@ export default async function prepareChartData(
 export const toolDef: ToolDefinition = {
 	name: 'prepare_chart_data',
 	description:
-		'Visualizer / チャート描画用の時系列データを返す。全指標は計算・シフト適用済み。{time, value}[] 形式で Visualizer が直接プロット可能。指標の最新値やトレンド判定が必要な場合は analyze_indicators を使用。',
+		'[Chart / Candlestick / Visualization] チャート描画の第一選択ツール。ローソク足・指標の時系列データを {time, value}[] 形式で返す。全指標は計算・シフト適用済みで Visualizer が直接プロット可能。BB / Ichimoku / SMA / RSI / MACD 対応。\n\nSVG/PNG ファイル保存が必要な場合のみ render_chart_svg を使用。指標の最新値やトレンド判定が必要な場合は analyze_indicators を使用。',
 	inputSchema: PrepareChartDataInputSchema,
 	handler: async ({
 		pair,
