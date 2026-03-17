@@ -147,6 +147,13 @@ export const PrepareChartDataInputSchema = z.object({
 	type: CandleTypeEnum.optional().default('1day'),
 	limit: z.number().int().min(5).max(500).optional().default(100),
 	indicators: z.array(ChartIndicatorGroupEnum).optional(),
+	tz: z
+		.string()
+		.optional()
+		.default('')
+		.describe(
+			'タイムゾーン（例: Asia/Tokyo, UTC）。指定時は times をローカル時刻に変換し、labels（短縮表示文字列）も付加する',
+		),
 });
 
 /** コンパクトな数値配列（null 許容） */
@@ -165,6 +172,8 @@ export const PrepareChartDataOutputSchema = z.object({
 	data: z.object({
 		/** 共有タイムスタンプ配列 */
 		times: z.array(z.string()),
+		/** 表示用短縮ラベル（tz 指定時のみ）。例: ["17:00", "18:00", ...] or ["03/16 17:00", ...] */
+		labels: z.array(z.string()).optional(),
 		/** OHLCV タプル配列: [[open, high, low, close, volume], ...] */
 		candles: z.array(z.array(z.number())),
 		/** メインパネル指標（indicators 指定時のみ） */
