@@ -179,18 +179,9 @@ describe('prepare_chart_data', () => {
 		expect(res.data.candles.length).toBeLessThanOrEqual(30);
 	});
 
-	it('tz 未指定時は times が UTC、labels なし', async () => {
+	it('デフォルト（Asia/Tokyo）で times がローカル時刻、labels が付加される', async () => {
 		mockFetch(makeOhlcvRows(600));
 		const res = await prepareChartData('btc_jpy', '1day', 10);
-		assertOk(res);
-		// times は UTC ISO 形式 (.000Z 末尾)
-		expect(res.data.times[0]).toMatch(/Z$/);
-		expect(res.data.labels).toBeUndefined();
-	});
-
-	it('tz="Asia/Tokyo" 指定時は times がローカル時刻、labels が付加される', async () => {
-		mockFetch(makeOhlcvRows(600));
-		const res = await prepareChartData('btc_jpy', '1day', 10, undefined, 'Asia/Tokyo');
 		assertOk(res);
 		// times はローカル ISO 形式（Z なし）
 		expect(res.data.times[0]).not.toMatch(/Z$/);
@@ -200,6 +191,15 @@ describe('prepare_chart_data', () => {
 		expect(res.data.labels).toHaveLength(10);
 		// 日足なので MM/DD 形式
 		expect(res.data.labels?.[0]).toMatch(/^\d{2}\/\d{2}$/);
+	});
+
+	it('tz="" 指定時は times が UTC、labels なし', async () => {
+		mockFetch(makeOhlcvRows(600));
+		const res = await prepareChartData('btc_jpy', '1day', 10, undefined, '');
+		assertOk(res);
+		// times は UTC ISO 形式 (.000Z 末尾)
+		expect(res.data.times[0]).toMatch(/Z$/);
+		expect(res.data.labels).toBeUndefined();
 	});
 
 	it('tz="Asia/Tokyo" + 時間足の場合 labels に時刻が含まれる', async () => {

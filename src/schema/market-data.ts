@@ -106,10 +106,8 @@ export const GetCandlesInputSchema = z.object({
 	tz: z
 		.string()
 		.optional()
-		.default('')
-		.describe(
-			'タイムゾーン（例: Asia/Tokyo）。指定時は各ローソク足に isoTimeLocal フィールドを追加。未指定時はUTCのみ',
-		),
+		.default('Asia/Tokyo')
+		.describe('タイムゾーン（デフォルト: Asia/Tokyo）。各ローソク足に isoTimeLocal フィールドを追加。空文字でUTCのみ'),
 });
 
 // === Transactions ===
