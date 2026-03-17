@@ -475,10 +475,10 @@ export default async function renderChartSvg(
 	if (!Number.isFinite(barWidthRatio)) {
 		const n = xs.length;
 		if (n <= 30)
-			barWidthRatio = 0.82; // 少本数 → 太め
-		else if (n <= 45) barWidthRatio = 0.74;
-		else if (n <= 60) barWidthRatio = 0.66;
-		else barWidthRatio = 0.6; // 多本数 → 細め
+			barWidthRatio = 0.55; // 少本数 → やや細め（間延び防止）
+		else if (n <= 45) barWidthRatio = 0.6;
+		else if (n <= 60) barWidthRatio = 0.65;
+		else barWidthRatio = 0.7; // 多本数 → やや太め（隙間詰め）
 	}
 	barWidthRatio = Math.min(0.9, Math.max(0.1, barWidthRatio));
 	const barW = Math.max(2, (plotW / Math.max(1, xs.length)) * barWidthRatio);
@@ -1121,7 +1121,7 @@ export default async function renderChartSvg(
 					const bottomY = py(0);
 					const up = displayItems[i].close >= displayItems[i].open;
 					const color = up ? 'rgba(34,197,94,0.5)' : 'rgba(239,68,68,0.5)';
-					const vBarW = Math.max(1, barW * 0.7);
+					const vBarW = barW;
 					pc += `<rect x="${Number((cx - vBarW / 2).toFixed(1))}" y="${topY}" width="${Number(vBarW.toFixed(1))}" height="${Math.max(1, bottomY - topY)}" fill="${color}"/>`;
 				});
 				// Y-axis ticks
