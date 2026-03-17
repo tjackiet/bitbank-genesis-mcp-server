@@ -3,7 +3,8 @@
 自由にプロンプトを投げてもらって構いません。
 基本的には、「get_orderbook を使って〜」等、ツール名を指定する必要もありません。
 
-注: 本サーバは固定銘柄リストではなく、bitbank 公開APIが返す全銘柄に自動追随します（追加/廃止も自動反映）。参考: [bitbank 公開API仕様](https://github.com/bitbankinc/bitbank-api-docs/blob/master/public-api.md)
+> **Note:** 本サーバーは bitbank API が返す全銘柄に自動追随します（追加・廃止も即時反映）。
+参考: [bitbank API](https://github.com/bitbankinc/bitbank-api-docs)
 
 ---
 
