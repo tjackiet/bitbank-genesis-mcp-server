@@ -343,6 +343,18 @@ export default async function renderChartSvg(
 		return ticks;
 	}
 
+	// Y軸ラベルの省略表示フォーマッタ
+	const isJpyPair = pair.toLowerCase().includes('jpy');
+	const formatYLabel = (val: number): string => {
+		const abs = Math.abs(val);
+		const prefix = isJpyPair ? '¥' : '';
+		if (abs >= 1_000_000_000) return `${prefix}${(val / 1_000_000_000).toFixed(1)}B`;
+		if (abs >= 1_000_000) return `${prefix}${(val / 1_000_000).toFixed(abs >= 10_000_000 ? 1 : 2)}M`;
+		if (abs >= 10_000) return `${prefix}${(val / 1_000).toFixed(abs >= 100_000 ? 0 : 1)}K`;
+		if (abs >= 1_000) return `${prefix}${val.toLocaleString()}`;
+		return `${prefix}${val}`;
+	};
+
 	const xs = displayItems.map((_, i) => i);
 	const highs = displayItems.map((d) => d.high as number);
 	const lows = displayItems.map((d) => d.low as number);
@@ -420,17 +432,15 @@ export default async function renderChartSvg(
 	const yRange = dataYMax - dataYMin;
 	// クリップ回避用の安全ヘッドルーム（レンジの2%）
 	const autoHeadroom = yRange * 0.02;
-	// line: データレンジに対する相対パディング（変動をタイトに描画）
-	// candles/depth: 絶対価格に対する相対パディング（インジケータの余裕を確保）
-	const yAxisMinWithBuffer = style === 'line' && yRange > 0 ? dataYMin - yRange * yPad : dataYMin * (1 - yPad);
-	const yAxisMaxTarget =
-		style === 'line' && yRange > 0 ? dataYMax + yRange * yPad + autoHeadroom : dataYMax * (1 + yPad) + autoHeadroom;
+	// データレンジに対する相対パディング（値幅に比例してタイトに描画）
+	const yAxisMinWithBuffer = yRange > 0 ? dataYMin - yRange * yPad : dataYMin * (1 - yPad);
+	const yAxisMaxTarget = yRange > 0 ? dataYMax + yRange * yPad + autoHeadroom : dataYMax * (1 + yPad) + autoHeadroom;
 	const yTicks = niceTicks(yAxisMinWithBuffer, yAxisMaxTarget, 6);
 	const yMin = yTicks[0];
 	const yMax = yTicks.at(-1) as number;
 
 	// Y軸ラベルの最大幅に基づいてpadding.leftを動的に調整
-	const maxLabelWidth = Math.max(...yTicks.map((v) => v.toLocaleString().length));
+	const maxLabelWidth = Math.max(...yTicks.map((v) => formatYLabel(v).length));
 	const dynamicPaddingLeft = maxLabelWidth * 8 + 16; // 1文字8pxと仮定 + 余白
 
 	// スケール計算
@@ -925,7 +935,7 @@ export default async function renderChartSvg(
       ${yTicks
 				.map((val) => {
 					const yPos = y(val);
-					return `<text x="${padding.left - 8}" y="${yPos}" text-anchor="end" dominant-baseline="middle">${val.toLocaleString()}</text>`;
+					return `<text x="${padding.left - 8}" y="${yPos}" text-anchor="end" dominant-baseline="middle">${formatYLabel(val)}</text>`;
 				})
 				.join('')}
     </g>
@@ -1145,7 +1155,7 @@ export default async function renderChartSvg(
 	const createSvgString = (layers: { ichimoku: string; bb: string; sma: string; ema: string }) => `
     <svg width="${w}" height="${totalH}" viewBox="0 0 ${w} ${totalH}" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg" style="background-color: #1f2937; color: #e5e7eb; font-family: sans-serif; max-width: 100%; height: auto;">
       <title>${formatPair(pair)} ${type} chart</title>
-      <style>.u{fill:#16a34a}.d{fill:#ef4444}.w{stroke:#9ca3af;stroke-width:1}</style>
+      <style>.u{fill:#16a34a}.d{fill:#ef4444}.w{stroke:#9ca3af;stroke-width:${Math.max(1, Math.min(2.5, barW * 0.15)).toFixed(1)}}</style>
       <defs>
         <clipPath id="plotArea">
           <rect x="${padding.left}" y="${padding.top}" width="${plotW}" height="${plotH}"/>
