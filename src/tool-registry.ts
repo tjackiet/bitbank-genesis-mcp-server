@@ -33,6 +33,7 @@ import { toolDef as getOrderbook } from '../tools/get_orderbook.js';
 // ── Simple tools（toolDef はツールファイル内） ──
 import { toolDef as getTicker } from '../tools/get_ticker.js';
 import { toolDef as getTransactions } from '../tools/get_transactions.js';
+import { toolDef as prepareChartData } from '../tools/prepare_chart_data.js';
 import { toolDef as renderCandlePatternDiagram } from '../tools/render_candle_pattern_diagram.js';
 import { toolDef as renderDepthSvg } from '../tools/render_depth_svg.js';
 import { toolDef as analyzeFibonacci } from './handlers/analyzeFibonacciHandler.js';
@@ -81,6 +82,9 @@ export const allToolDefs: ToolDefinition[] = [
 	detectPatterns,
 	detectMacdCross,
 	detectWhaleEvents,
+
+	// Visualization data
+	prepareChartData,
 
 	// Rendering
 	renderChartSvg,

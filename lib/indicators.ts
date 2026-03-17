@@ -216,21 +216,21 @@ export function macd(
 	// MACD line = fast EMA - slow EMA
 	const line: number[] = nanArray(n);
 	for (let i = 0; i < n; i++) {
-		if (!isNaN(emaFast[i]) && !isNaN(emaSlow[i])) {
+		if (!Number.isNaN(emaFast[i]) && !Number.isNaN(emaSlow[i])) {
 			line[i] = emaFast[i] - emaSlow[i];
 		}
 	}
 
 	// Signal EMA — 有効な MACD 値のみでシードする
-	const validStart = line.findIndex((v) => !isNaN(v));
+	const validStart = line.findIndex((v) => !Number.isNaN(v));
 	const signalLine: number[] = nanArray(n);
 
 	if (validStart >= 0) {
-		const validLine = line.slice(validStart).filter((v) => !isNaN(v));
+		const validLine = line.slice(validStart).filter((v) => !Number.isNaN(v));
 		const sigEma = ema(validLine, signal);
 		let idx = 0;
 		for (let i = validStart; i < n; i++) {
-			if (!isNaN(line[i])) {
+			if (!Number.isNaN(line[i])) {
 				signalLine[i] = sigEma[idx++];
 			}
 		}
@@ -239,7 +239,7 @@ export function macd(
 	// Histogram = line - signal
 	const hist: number[] = nanArray(n);
 	for (let i = 0; i < n; i++) {
-		if (!isNaN(line[i]) && !isNaN(signalLine[i])) {
+		if (!Number.isNaN(line[i]) && !Number.isNaN(signalLine[i])) {
 			hist[i] = line[i] - signalLine[i];
 		}
 	}
@@ -284,7 +284,7 @@ export function ichimokuSeries(
 			kijun[i] = (Math.max(...hSlice) + Math.min(...lSlice)) / 2;
 		}
 
-		if (!isNaN(tenkan[i]) && !isNaN(kijun[i])) {
+		if (!Number.isNaN(tenkan[i]) && !Number.isNaN(kijun[i])) {
 			spanA[i] = (tenkan[i] + kijun[i]) / 2;
 		}
 
@@ -299,6 +299,25 @@ export function ichimokuSeries(
 	const chikou = closes.slice();
 
 	return { tenkan, kijun, spanA, spanB, chikou };
+}
+
+/**
+ * 遅行スパン（chikou）を 26 本過去方向にシフトした系列を返す。
+ *
+ * シフト後の系列長は元の系列長と同一。
+ * 末尾 `shift` 個は NaN（未来に対応するデータがないため）。
+ *
+ * @param chikou 終値配列（= ichimokuSeries().chikou）
+ * @param shift シフト量（デフォルト 26）
+ * @returns シフト適用済みの number[]（末尾 shift 個は NaN）
+ */
+export function shiftChikou(chikou: number[], shift: number = 26): number[] {
+	const n = chikou.length;
+	const result: number[] = nanArray(n);
+	for (let i = shift; i < n; i++) {
+		result[i - shift] = chikou[i];
+	}
+	return result;
 }
 
 /**
@@ -361,11 +380,11 @@ export function stochastic(
 	// %K = SMA(rawK, smoothK) — 手動ウィンドウ平均（NaN スキップ）
 	const kSeries: number[] = nanArray(n);
 	for (let i = 0; i < n; i++) {
-		if (isNaN(rawK[i])) continue;
+		if (Number.isNaN(rawK[i])) continue;
 		let sum = 0;
 		let cnt = 0;
 		for (let j = i - smoothK + 1; j <= i; j++) {
-			if (j >= 0 && !isNaN(rawK[j])) {
+			if (j >= 0 && !Number.isNaN(rawK[j])) {
 				sum += rawK[j];
 				cnt++;
 			}
@@ -376,11 +395,11 @@ export function stochastic(
 	// %D = SMA(%K, smoothD)
 	const dSeries: number[] = nanArray(n);
 	for (let i = 0; i < n; i++) {
-		if (isNaN(kSeries[i])) continue;
+		if (Number.isNaN(kSeries[i])) continue;
 		let sum = 0;
 		let cnt = 0;
 		for (let j = i - smoothD + 1; j <= i; j++) {
-			if (j >= 0 && !isNaN(kSeries[j])) {
+			if (j >= 0 && !Number.isNaN(kSeries[j])) {
 				sum += kSeries[j];
 				cnt++;
 			}
@@ -412,7 +431,7 @@ export function stochRSI(
 	const rsiValues = rsi(closes, rsiPeriod);
 	const n = rsiValues.length;
 
-	const validCount = rsiValues.filter((v) => !isNaN(v)).length;
+	const validCount = rsiValues.filter((v) => !Number.isNaN(v)).length;
 	if (validCount < stochPeriod + smoothK + smoothD) {
 		return { kSeries: nanArray(n), dSeries: nanArray(n) };
 	}
@@ -420,10 +439,10 @@ export function stochRSI(
 	// Raw %K over RSI window
 	const rawK: number[] = nanArray(n);
 	for (let i = 0; i < n; i++) {
-		if (isNaN(rsiValues[i]) || i < stochPeriod - 1) continue;
+		if (Number.isNaN(rsiValues[i]) || i < stochPeriod - 1) continue;
 		const window: number[] = [];
 		for (let j = i - stochPeriod + 1; j <= i; j++) {
-			if (!isNaN(rsiValues[j])) window.push(rsiValues[j]);
+			if (!Number.isNaN(rsiValues[j])) window.push(rsiValues[j]);
 		}
 		if (window.length < stochPeriod) continue;
 		const lo = Math.min(...window);
@@ -435,11 +454,11 @@ export function stochRSI(
 	// Smooth rawK → %K
 	const kSeries: number[] = nanArray(n);
 	for (let i = 0; i < n; i++) {
-		if (isNaN(rawK[i])) continue;
+		if (Number.isNaN(rawK[i])) continue;
 		let sum = 0;
 		let cnt = 0;
 		for (let j = i - smoothK + 1; j <= i; j++) {
-			if (j >= 0 && !isNaN(rawK[j])) {
+			if (j >= 0 && !Number.isNaN(rawK[j])) {
 				sum += rawK[j];
 				cnt++;
 			}
@@ -450,11 +469,11 @@ export function stochRSI(
 	// %D = SMA(%K, smoothD)
 	const dSeries: number[] = nanArray(n);
 	for (let i = 0; i < n; i++) {
-		if (isNaN(kSeries[i])) continue;
+		if (Number.isNaN(kSeries[i])) continue;
 		let sum = 0;
 		let cnt = 0;
 		for (let j = i - smoothD + 1; j <= i; j++) {
-			if (j >= 0 && !isNaN(kSeries[j])) {
+			if (j >= 0 && !Number.isNaN(kSeries[j])) {
 				sum += kSeries[j];
 				cnt++;
 			}
@@ -514,14 +533,14 @@ export function atr(highs: number[], lows: number[], closes: number[], period: n
 	// 最初の ATR = SMA of TR[1..period]
 	let sum = 0;
 	for (let i = 1; i <= period; i++) {
-		if (isNaN(tr[i])) return result;
+		if (Number.isNaN(tr[i])) return result;
 		sum += tr[i];
 	}
 	result[period] = sum / period;
 
 	// 以降は SMA スライディングウィンドウ
 	for (let i = period + 1; i < n; i++) {
-		if (isNaN(tr[i])) continue;
+		if (Number.isNaN(tr[i])) continue;
 		sum = sum - tr[i - period] + tr[i];
 		result[i] = sum / period;
 	}

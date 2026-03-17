@@ -9,6 +9,7 @@ import {
 	macd as rawMacd,
 	obv as rawObv,
 	rsi as rawRsi,
+	shiftChikou as rawShiftChikou,
 	sma as rawSma,
 	stochastic as rawStochastic,
 	stochRSI as rawStochRSI,
@@ -256,7 +257,15 @@ function createChartData(
 			ICHI_kijun: indicators.ichi_series?.kijun ?? [],
 			ICHI_spanA: indicators.ichi_series?.spanA ?? [],
 			ICHI_spanB: indicators.ichi_series?.spanB ?? [],
-			ICHI_chikou: indicators.ichi_series?.chikou ?? [],
+			ICHI_chikou: indicators.ichi_series?.chikou
+				? toNumericSeries(
+						rawShiftChikou(
+							indicators.ichi_series.chikou.map((v) => v ?? NaN),
+							shift,
+						),
+						2,
+					)
+				: [],
 			macd_series: indicators.macd_series,
 			RSI_14_series: indicators.RSI_14_series ?? [],
 			stoch_k_series: indicators.stoch_k_series ?? [],
