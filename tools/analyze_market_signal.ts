@@ -47,7 +47,7 @@ export type BuildMarketSignalTextInput = {
 	rsi: number | null;
 	rvNum: number;
 	buyRatio: number;
-	nextActions: Array<{ priority: string; tool: string; reason: string; suggestedParams?: Record<string, any> }>;
+	nextActions: Array<{ priority: string; tool: string; reason: string; suggestedParams?: Record<string, unknown> }>;
 	alerts: Array<{ level: string; message: string }>;
 };
 
@@ -466,7 +466,7 @@ export default async function analyzeMarketSignal(pair: string = 'btc_jpy', opts
 				priority: 'high' | 'medium' | 'low';
 				tool: string;
 				reason: string;
-				suggestedParams?: Record<string, any>;
+				suggestedParams?: Record<string, unknown>;
 			}> = [];
 			const cvdContribAbs = Math.abs(breakdown.cvdTrend.contribution);
 			if (cvdContribAbs < 0.1) {
