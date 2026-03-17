@@ -87,7 +87,7 @@ describe('prepare_chart_data', () => {
 		expect(chikou).toBeDefined();
 		expect(chikou).toHaveLength(100);
 		// 末尾 26 要素は null
-		const tail26 = chikou!.slice(-26);
+		const tail26 = chikou?.slice(-26) ?? [];
 		for (const v of tail26) {
 			expect(v).toBeNull();
 		}
@@ -134,7 +134,7 @@ describe('prepare_chart_data', () => {
 		assertOk(res);
 		const sma = res.data.series?.SMA_20;
 		expect(sma).toBeDefined();
-		for (const v of sma!) {
+		for (const v of sma ?? []) {
 			if (v !== null) {
 				expect(Number.isInteger(v)).toBe(true);
 			}
