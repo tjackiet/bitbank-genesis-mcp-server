@@ -149,45 +149,41 @@ export const PrepareChartDataInputSchema = z.object({
 	indicators: z.array(ChartIndicatorGroupEnum).optional(),
 });
 
-/** {time, value} の時系列エントリ */
-const TimeValueSchema = z.object({
-	time: z.string(),
-	value: z.number().nullable(),
-});
+/** コンパクトな数値配列（null 許容） */
+const CompactSeriesSchema = z.array(z.union([z.number(), z.null()]));
 
-/** MACD のサブパネルデータ */
-const MacdSubPanelSchema = z.object({
-	line: z.array(TimeValueSchema),
-	signal: z.array(TimeValueSchema),
-	hist: z.array(TimeValueSchema),
+/** MACD サブパネル（コンパクト形式） */
+const CompactMacdSubPanelSchema = z.object({
+	line: CompactSeriesSchema,
+	signal: CompactSeriesSchema,
+	hist: CompactSeriesSchema,
 });
 
 export const PrepareChartDataOutputSchema = z.object({
 	ok: z.literal(true),
 	summary: z.string(),
 	data: z.object({
-		candles: z.array(
-			z.object({
-				time: z.string(),
-				open: z.number(),
-				high: z.number(),
-				low: z.number(),
-				close: z.number(),
-				volume: z.number().optional(),
-			}),
-		),
-		series: z.record(z.string(), z.array(TimeValueSchema)),
-		subPanels: z.object({
-			RSI_14: z.array(TimeValueSchema).optional(),
-			MACD: MacdSubPanelSchema.optional(),
-			STOCH_K: z.array(TimeValueSchema).optional(),
-			STOCH_D: z.array(TimeValueSchema).optional(),
-		}),
+		/** 共有タイムスタンプ配列 */
+		times: z.array(z.string()),
+		/** OHLCV タプル配列: [[open, high, low, close, volume], ...] */
+		candles: z.array(z.array(z.number())),
+		/** メインパネル指標（indicators 指定時のみ） */
+		series: z.record(z.string(), CompactSeriesSchema).optional(),
+		/** サブパネル指標（indicators 指定時のみ） */
+		subPanels: z
+			.object({
+				RSI_14: CompactSeriesSchema.optional(),
+				MACD: CompactMacdSubPanelSchema.optional(),
+				STOCH_K: CompactSeriesSchema.optional(),
+				STOCH_D: CompactSeriesSchema.optional(),
+			})
+			.optional(),
 	}),
 	meta: z.object({
 		pair: z.string(),
 		type: CandleTypeEnum.or(z.string()),
 		count: z.number(),
+		indicators: z.array(z.string()),
 	}),
 });
 

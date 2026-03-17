@@ -7,6 +7,31 @@ globs: tools/**/*.ts, src/handlers/**/*.ts, src/tool-registry.ts, src/private/**
 ツールは `toolDef` エクスポート → `src/tool-registry.ts` が集約 → `src/server.ts` が自動登録。
 **server.ts を直接編集する必要はない。**
 
+## content テキストにデータを含める（重要）
+
+LLM は `structuredContent` を参照できない。`content[0].text` だけが LLM に見える。
+`ok(summary, data, meta)` をそのまま返すと `toToolResult`（`src/server.ts`）が `summary` 一行だけを `content` に入れるため、LLM はデータを一切受け取れずハルシネーションを起こす。
+
+**対策**: handler で `content` テキストにデータを明示的に含める。
+
+```ts
+// NG: LLM には summary しか見えない
+handler: async (args) => myTool(args),
+
+// OK: content にデータを含める（get_candles, prepare_chart_data 等と同じパターン）
+handler: async (args) => {
+  const result = await myTool(args);
+  if (!result.ok) return result;
+  const text = `${result.summary}\n${JSON.stringify(result.data, null, 2)}`;
+  return {
+    content: [{ type: 'text', text }],
+    structuredContent: result as unknown as Record<string, unknown>,
+  };
+},
+```
+
+新規ツール作成・既存ツール修正時は、LLM が受け取る `content` テキストに十分な情報が含まれているか必ず確認する。
+
 ## Public ツール
 
 認証不要。誰でも利用可能。
