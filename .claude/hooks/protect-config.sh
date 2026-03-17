@@ -5,7 +5,7 @@ input="$(cat)"
 file="$(jq -r '.tool_input.file_path // .tool_input.path // empty' <<< "$input")"
 
 # 保護対象の設定ファイル
-PROTECTED="biome.json tsconfig.json lefthook.yml .claude/settings.json"
+PROTECTED="biome.json tsconfig.json lefthook.yml .claude/settings.json package.json .github/workflows/ci.yml"
 
 for p in $PROTECTED; do
   case "$file" in
