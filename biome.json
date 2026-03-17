@@ -34,6 +34,21 @@
 			"semicolons": "always"
 		}
 	},
+	"overrides": [
+		{
+			"includes": [
+				"src/server.ts",
+				"src/http.ts"
+			],
+			"linter": {
+				"rules": {
+					"suspicious": {
+						"noExplicitAny": "warn"
+					}
+				}
+			}
+		}
+	],
 	"assist": {
 		"enabled": true,
 		"actions": {
