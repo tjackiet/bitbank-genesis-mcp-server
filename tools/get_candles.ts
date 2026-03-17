@@ -101,7 +101,7 @@ export default async function getCandles(
 	type: CandleType | string = '1day',
 	date: string | undefined = todayYyyymmdd(),
 	limit: number = 200,
-	tz: string = '',
+	tz: string = 'Asia/Tokyo',
 ): Promise<OkResult<GetCandlesData, GetCandlesMeta> | FailResult> {
 	const chk = ensurePair(pair);
 	if (!chk.ok) return failFromValidation(chk);

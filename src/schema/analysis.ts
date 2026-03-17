@@ -16,7 +16,7 @@ export const GetVolMetricsInputSchema = z.object({
 	windows: z.array(z.number().int().min(2)).optional().default([14, 20, 30]),
 	useLogReturns: z.boolean().optional().default(true),
 	annualize: z.boolean().optional().default(true),
-	tz: z.string().optional().default('UTC'),
+	tz: z.string().optional().default('Asia/Tokyo'),
 	cacheTtlMs: z.number().int().optional().default(60_000),
 	view: z.enum(['summary', 'detailed', 'full', 'beginner']).optional().default('summary'),
 });

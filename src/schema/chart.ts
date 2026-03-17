@@ -150,9 +150,9 @@ export const PrepareChartDataInputSchema = z.object({
 	tz: z
 		.string()
 		.optional()
-		.default('')
+		.default('Asia/Tokyo')
 		.describe(
-			'タイムゾーン（例: Asia/Tokyo, UTC）。指定時は times をローカル時刻に変換し、labels（短縮表示文字列）も付加する',
+			'タイムゾーン（デフォルト: Asia/Tokyo）。times をローカル時刻に変換し、labels（短縮表示文字列）も付加する。空文字でUTCのみ',
 		),
 });
 

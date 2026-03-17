@@ -105,7 +105,7 @@ export default async function prepareChartData(
 	type: string = '1day',
 	limit: number = 100,
 	indicators?: string[],
-	tz?: string,
+	tz: string = 'Asia/Tokyo',
 ): Promise<OkResult<PrepareChartDataResult, PrepareChartDataMeta> | FailResult> {
 	const chk = ensurePair(pair);
 	if (!chk.ok) return fail(chk.error.message, chk.error.type);
