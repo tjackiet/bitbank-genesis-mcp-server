@@ -35,11 +35,15 @@ app.get(ENDPOINT, (_req: Request, res: Response) => {
 });
 
 // 最小サーバ（必要に応じて既存の登録ロジックに差し替え可）
+// biome-ignore lint/suspicious/noExplicitAny: MCP SDK の型定義が不十分なため
 const server: any = new McpServer({ name: 'bb-mcp', version: '1.0.0' }) as any;
 server.registerTool(
 	'ping',
+	// biome-ignore lint/suspicious/noExplicitAny: MCP SDK の型定義が不十分なため
 	{ description: 'Return a ping response', inputSchema: {} as any },
+	// biome-ignore lint/suspicious/noExplicitAny: MCP SDK の型定義が不十分なため
 	async (args: Record<string, unknown>, _extra: any) => {
+		// biome-ignore lint/suspicious/noExplicitAny: MCP SDK の型定義が不十分なため
 		return { content: [{ type: 'text', text: `pong: ${String((args as any)?.message ?? '')}` }] } as any;
 	},
 );
@@ -54,13 +58,16 @@ const allowedOrigins = (process.env.ALLOWED_ORIGINS ?? '')
 	.map((s) => s.trim())
 	.filter(Boolean);
 
+// biome-ignore lint/suspicious/noExplicitAny: MCP SDK の型定義が不十分なため
 const transport: any = new (StreamableHTTPServerTransport as any)({
 	path: ENDPOINT, // 一部SDKは endpoint ではなく path を使用
 	sessionIdGenerator: () => randomUUID(),
 	enableDnsRebindingProtection: true,
 	...(allowedHosts.length ? { allowedHosts } : {}),
 	...(allowedOrigins.length ? { allowedOrigins } : {}),
+	// biome-ignore lint/suspicious/noExplicitAny: MCP SDK の型定義が不十分なため
 } as any);
+// biome-ignore lint/suspicious/noExplicitAny: MCP SDK の型定義が不十分なため
 await server.connect(transport as any);
 
 const mw: RequestHandler =

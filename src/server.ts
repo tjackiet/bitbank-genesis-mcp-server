@@ -11,6 +11,7 @@ import { allToolDefs } from './tool-registry.js';
 
 const server = new McpServer({ name: 'bitbank-mcp', version: '0.4.2' });
 // Explicit registries for tools/prompts to improve STDIO inspector compatibility
+// biome-ignore lint/suspicious/noExplicitAny: MCP SDK の型定義が不十分なため
 const registeredTools: Array<{ name: string; description: string; inputSchema: any }> = [];
 const registeredPrompts: Array<{ name: string; description: string }> = [];
 
@@ -25,9 +26,11 @@ const respond = (result: unknown): ToolReturn => {
 	// 優先順位: custom content > summary > safe JSON fallback
 	let text = '';
 	if (isPlainObject(result)) {
+		// biome-ignore lint/suspicious/noExplicitAny: MCP SDK の型定義が不十分なため
 		const r: any = result as any;
 		// ツールが content を提供している場合（配列 or 文字列）を優先
 		if (Array.isArray(r.content)) {
+			// biome-ignore lint/suspicious/noExplicitAny: MCP SDK の型定義が不十分なため
 			const first = r.content.find((c: any) => c && c.type === 'text' && typeof c.text === 'string');
 			if (first) {
 				text = String(first.text);
@@ -68,6 +71,7 @@ function registerToolWithLog<S extends z.ZodTypeAny, R = unknown>(
 	handler: (input: z.infer<S>) => Promise<R>,
 ) {
 	// Convert Zod schema → JSON Schema (subset) for MCP inspector
+	// biome-ignore lint/suspicious/noExplicitAny: Zod の内部構造（_def, _type）を直接操作するため
 	const unwrapZod = (s: any): any => {
 		let cur = s;
 		for (let i = 0; i < 6; i++) {
@@ -85,21 +89,27 @@ function registerToolWithLog<S extends z.ZodTypeAny, R = unknown>(
 		}
 		return cur;
 	};
+	// biome-ignore lint/suspicious/noExplicitAny: Zod の内部構造（_def, _type）を直接操作するため
 	const toJsonSchema = (s: any): any => {
 		s = unwrapZod(s);
 		const t = s?._def?.typeName;
 		switch (t) {
 			case 'ZodString': {
+				// biome-ignore lint/suspicious/noExplicitAny: JSON Schema の動的構築のため
 				const out: any = { type: 'string' };
 				const checks = s?._def?.checks || [];
+				// biome-ignore lint/suspicious/noExplicitAny: Zod の内部構造を直接操作するため
 				const rex = checks.find((c: any) => c.kind === 'regex')?.regex;
 				if (rex) out.pattern = String(rex.source);
 				return out;
 			}
 			case 'ZodNumber': {
+				// biome-ignore lint/suspicious/noExplicitAny: JSON Schema の動的構築のため
 				const out: any = { type: 'number' };
 				const checks = s?._def?.checks || [];
+				// biome-ignore lint/suspicious/noExplicitAny: Zod の内部構造を直接操作するため
 				const min = checks.find((c: any) => c.kind === 'min')?.value;
+				// biome-ignore lint/suspicious/noExplicitAny: Zod の内部構造を直接操作するため
 				const max = checks.find((c: any) => c.kind === 'max')?.value;
 				if (Number.isFinite(min)) out.minimum = min;
 				if (Number.isFinite(max)) out.maximum = max;
@@ -112,19 +122,24 @@ function registerToolWithLog<S extends z.ZodTypeAny, R = unknown>(
 			case 'ZodArray':
 				return { type: 'array', items: toJsonSchema(s?._def?.type) };
 			case 'ZodTuple': {
+				// biome-ignore lint/suspicious/noExplicitAny: Zod の内部構造を直接操作するため
 				const items = (s?._def?.items || []).map((it: any) => toJsonSchema(it));
 				return { type: 'array', items, minItems: items.length, maxItems: items.length };
 			}
 			case 'ZodRecord':
 				return { type: 'object', additionalProperties: toJsonSchema(s?._def?.valueType) };
 			case 'ZodObject': {
+				// biome-ignore lint/suspicious/noExplicitAny: Zod の内部構造を直接操作するため
 				const shape = (s as any).shape || (typeof s?._def?.shape === 'function' ? s._def.shape() : undefined) || {};
+				// biome-ignore lint/suspicious/noExplicitAny: JSON Schema の動的構築のため
 				const properties: Record<string, any> = {};
 				const required: string[] = [];
 				for (const [key, zodProp] of Object.entries(shape)) {
 					// detect defaults and optional
+					// biome-ignore lint/suspicious/noExplicitAny: Zod の内部構造を直接操作するため
 					let defVal: any;
 					let isOptional = false;
+					// biome-ignore lint/suspicious/noExplicitAny: Zod の内部構造を直接操作するため
 					let cur: any = zodProp as any;
 					for (let i = 0; i < 6; i++) {
 						const def = cur?._def;
@@ -155,6 +170,7 @@ function registerToolWithLog<S extends z.ZodTypeAny, R = unknown>(
 					if (defVal !== undefined) properties[key].default = defVal;
 					if (!isOptional && defVal === undefined) required.push(key);
 				}
+				// biome-ignore lint/suspicious/noExplicitAny: JSON Schema の動的構築のため
 				const obj: any = { type: 'object', properties };
 				if (required.length) obj.required = required;
 				return obj;
@@ -170,6 +186,7 @@ function registerToolWithLog<S extends z.ZodTypeAny, R = unknown>(
 
 	// For actual registration, the SDK expects a Zod raw shape (not JSON schema)
 	const getRawShape = (s: z.ZodTypeAny): z.ZodRawShape => {
+		// biome-ignore lint/suspicious/noExplicitAny: Zod の内部構造を直接操作するため
 		let cur: any = s as any;
 		for (let i = 0; i < 6; i++) {
 			if (cur?.shape) break;
@@ -191,7 +208,9 @@ function registerToolWithLog<S extends z.ZodTypeAny, R = unknown>(
 
 	server.registerTool(
 		name,
+		// biome-ignore lint/suspicious/noExplicitAny: MCP SDK の型定義が不十分なため
 		{ description: schema.description, inputSchema: getRawShape(schema.inputSchema) } as any,
+		// biome-ignore lint/suspicious/noExplicitAny: MCP SDK の型定義が不十分なため
 		async (input: any) => {
 			const t0 = Date.now();
 			try {
@@ -218,18 +237,23 @@ function registerToolWithLog<S extends z.ZodTypeAny, R = unknown>(
 
 // === Auto-register all tools from registry ===
 for (const def of allToolDefs) {
+	// biome-ignore lint/suspicious/noExplicitAny: MCP SDK の型定義が不十分なため
 	registerToolWithLog(def.name, { description: def.description, inputSchema: def.inputSchema }, def.handler as any);
 }
 
 // === Register prompts (SDK 形式に寄せた最小導入) ===
+// biome-ignore lint/suspicious/noExplicitAny: MCP SDK の型定義が不十分なため
 function registerPromptSafe(name: string, def: { description: string; messages: any[] }) {
+	// biome-ignore lint/suspicious/noExplicitAny: MCP SDK の型定義が不十分なため
 	const s: any = server as any;
 	if (typeof s.registerPrompt === 'function') {
 		// Inspector 互換: tool_code をテキストに変換し、role=system は user 扱いにする
+		// biome-ignore lint/suspicious/noExplicitAny: MCP SDK の型定義が不十分なため
 		const toSdkMessages = (msgs: any[]) =>
 			msgs.map((msg) => {
 				const blocks = Array.isArray(msg.content) ? msg.content : [];
 				const text = blocks
+					// biome-ignore lint/suspicious/noExplicitAny: MCP SDK の型定義が不十分なため
 					.map((b: any) => {
 						if (b?.type === 'text' && typeof b.text === 'string') return b.text;
 						if (b?.type === 'tool_code') {
@@ -254,6 +278,7 @@ function registerPromptSafe(name: string, def: { description: string; messages: 
 }
 
 // === Register prompts from src/prompts.ts ===
+// biome-ignore lint/suspicious/noExplicitAny: MCP SDK の型定義が不十分なため
 for (const p of promptDefs as any[]) {
 	registerPromptSafe(p.name, { description: p.description, messages: p.messages });
 }
@@ -264,13 +289,16 @@ await server.connect(transport);
 
 // Fallback handlers to ensure list operations work over STDIO
 try {
+	// biome-ignore lint/suspicious/noExplicitAny: MCP SDK の型定義が不十分なため
 	(server as any).setRequestHandler?.('tools/list', async () => ({
 		tools: registeredTools.map((t) => ({ name: t.name, description: t.description, inputSchema: t.inputSchema })),
 	}));
+	// biome-ignore lint/suspicious/noExplicitAny: MCP SDK の型定義が不十分なため
 	(server as any).setRequestHandler?.('prompts/list', async () => ({
 		prompts: registeredPrompts.map((p) => ({ name: p.name, description: p.description })),
 	}));
 	// prompts/get: convert content arrays to single TextContent objects per MCP spec
+	// biome-ignore lint/suspicious/noExplicitAny: MCP SDK の型定義が不十分なため
 	(server as any).setRequestHandler?.('prompts/get', async (request: any) => {
 		try {
 			console.error('[prompts/get] Request received:', safeJson(request));
@@ -280,17 +308,22 @@ try {
 				console.error('[prompts/get] ERROR: No name provided');
 				throw new Error('Prompt name is required');
 			}
+			// biome-ignore lint/suspicious/noExplicitAny: MCP SDK の型定義が不十分なため
 			console.error('[prompts/get] Available prompts:', (promptDefs as any[]).map((p) => p.name).join(', '));
+			// biome-ignore lint/suspicious/noExplicitAny: MCP SDK の型定義が不十分なため
 			const promptDef = (promptDefs as any[]).find((p) => p.name === name);
 			if (!promptDef) {
 				console.error('[prompts/get] ERROR: Prompt not found:', name);
 				throw new Error(`Prompt not found: ${name}`);
 			}
+			// biome-ignore lint/suspicious/noExplicitAny: MCP SDK の型定義が不十分なため
 			console.error('[prompts/get] Found prompt:', name, 'with', (promptDef as any)?.messages?.length ?? 0, 'messages');
 			// Convert messages: flatten content arrays to single TextContent, fix roles for MCP spec
+			// biome-ignore lint/suspicious/noExplicitAny: MCP SDK の型定義が不十分なため
 			const messages = ((promptDef as any).messages ?? []).map((msg: any) => {
 				const blocks = Array.isArray(msg.content) ? msg.content : [msg.content];
 				const text = blocks
+					// biome-ignore lint/suspicious/noExplicitAny: MCP SDK の型定義が不十分なため
 					.map((b: any) => (b?.type === 'text' && typeof b.text === 'string' ? b.text : ''))
 					.filter(Boolean)
 					.join('\n');
@@ -299,7 +332,9 @@ try {
 					content: { type: 'text' as const, text },
 				};
 			});
+			// biome-ignore lint/suspicious/noExplicitAny: MCP SDK の型定義が不十分なため
 			const result = { description: (promptDef as any).description, messages };
+			// biome-ignore lint/suspicious/noExplicitAny: MCP SDK の型定義が不十分なため
 			console.error('[prompts/get] Returning result with', (result as any).messages?.length ?? 0, 'messages');
 			return result;
 		} catch (error: unknown) {
@@ -321,6 +356,7 @@ function safeJson(v: unknown) {
 
 // Resources: provide system-level prompt as MCP resource
 try {
+	// biome-ignore lint/suspicious/noExplicitAny: MCP SDK の型定義が不十分なため
 	(server as any).setRequestHandler?.('resources/list', async () => ({
 		resources: [
 			{
@@ -331,6 +367,7 @@ try {
 			},
 		],
 	}));
+	// biome-ignore lint/suspicious/noExplicitAny: MCP SDK の型定義が不十分なため
 	(server as any).setRequestHandler?.('resources/read', async (request: any) => {
 		const uri = request?.params?.uri;
 		if (uri === 'prompt://system') {
@@ -359,18 +396,22 @@ try {
 			.split(',')
 			.map((s) => s.trim())
 			.filter(Boolean);
+		// biome-ignore lint/suspicious/noExplicitAny: MCP SDK の型定義が不十分なため
 		const httpTransport: any = new (StreamableHTTPServerTransport as any)({
 			path: '/mcp', // some SDKs use 'path' instead of 'endpoint'
 			sessionIdGenerator: () => randomUUID(),
 			enableDnsRebindingProtection: true,
 			...(allowedHosts.length ? { allowedHosts } : {}),
 			...(allowedOrigins.length ? { allowedOrigins } : {}),
+			// biome-ignore lint/suspicious/noExplicitAny: MCP SDK の型定義が不十分なため
 		} as any);
+		// biome-ignore lint/suspicious/noExplicitAny: MCP SDK の型定義が不十分なため
 		await server.connect(httpTransport as any);
 		const mw =
 			typeof httpTransport.expressMiddleware === 'function'
 				? httpTransport.expressMiddleware()
-				: (_req: any, _res: any, next: any) => next();
+				: // biome-ignore lint/suspicious/noExplicitAny: MCP SDK の型定義が不十分なため
+					(_req: any, _res: any, next: any) => next();
 		app.use(mw);
 		app.listen(port, () => {
 			// no stdout/stderr output to avoid STDIO transport contamination
@@ -378,5 +419,6 @@ try {
 	}
 } catch (e) {
 	// eslint-disable-next-line no-console
+	// biome-ignore lint/suspicious/noExplicitAny: MCP SDK の型定義が不十分なため
 	console.warn('HTTP transport setup skipped:', (e as any)?.message || e);
 }

@@ -6,7 +6,7 @@ export function formatSummary(args?: {
 	timeframe?: string;
 	latest?: number;
 	totalItems?: number;
-	keyPoints?: any;
-	volumeStats?: any;
+	keyPoints?: unknown;
+	volumeStats?: unknown;
 	extra?: string;
 }): string;
