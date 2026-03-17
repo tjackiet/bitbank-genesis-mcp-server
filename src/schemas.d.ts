@@ -2,14 +2,14 @@
 // Keep declarations minimal to avoid drift; use z.infer for consumer types.
 import type { z } from 'zod';
 
-export declare const GetTickerInputSchema: z.ZodObject<any>;
-export declare const GetOrderbookInputSchema: z.ZodObject<any>;
-export declare const GetCandlesInputSchema: z.ZodObject<any>;
-export declare const GetIndicatorsInputSchema: z.ZodObject<any>;
+export declare const GetTickerInputSchema: z.ZodObject<z.ZodRawShape>;
+export declare const GetOrderbookInputSchema: z.ZodObject<z.ZodRawShape>;
+export declare const GetCandlesInputSchema: z.ZodObject<z.ZodRawShape>;
+export declare const GetIndicatorsInputSchema: z.ZodObject<z.ZodRawShape>;
 
 export declare const CandleTypeEnum: z.ZodTypeAny;
-export declare const RenderChartSvgInputSchema: z.ZodObject<any>;
-export declare const RenderChartSvgOutputSchema: z.ZodObject<any>;
+export declare const RenderChartSvgInputSchema: z.ZodObject<z.ZodRawShape>;
+export declare const RenderChartSvgOutputSchema: z.ZodObject<z.ZodRawShape>;
 
 export type RenderChartSvgInput = z.infer<typeof RenderChartSvgInputSchema>;
 export type RenderChartSvgOutput = z.infer<typeof RenderChartSvgOutputSchema>;
