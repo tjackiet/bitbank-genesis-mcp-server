@@ -17,6 +17,9 @@ import { PrepareChartDataInputSchema } from '../src/schemas.js';
 import type { ToolDefinition } from '../src/tool-definition.js';
 import analyzeIndicators from './analyze_indicators.js';
 
+// ── candles 配列の各要素の意味 ──
+const CANDLE_FORMAT = ['open', 'high', 'low', 'close', 'volume'] as const;
+
 // ── 指標グループ → chart.indicators キーのマッピング ──
 
 const MAIN_SERIES_KEYS: Record<string, string[]> = {
@@ -73,6 +76,7 @@ interface CompactSubPanels {
 interface PrepareChartDataResult {
 	times: string[];
 	labels?: string[];
+	candleFormat: readonly string[];
 	candles: CompactCandle['ohlcv'][];
 	series?: Record<string, (number | null)[]>;
 	subPanels?: CompactSubPanels;
@@ -83,6 +87,7 @@ interface PrepareChartDataMeta {
 	type: string;
 	count: number;
 	indicators: string[];
+	volumeUnit: string;
 }
 
 /**
@@ -215,16 +220,21 @@ export default async function prepareChartData(
 		const data: PrepareChartDataResult = {
 			times,
 			...(labels ? { labels } : {}),
+			candleFormat: CANDLE_FORMAT,
 			candles: compactCandles,
 			...(hasSeries ? { series } : {}),
 			...(hasSubPanels ? { subPanels } : {}),
 		};
+
+		// 出来高の単位はペアのベース通貨（例: btc_jpy → BTC）
+		const volumeUnit = chk.pair.split('_')[0].toUpperCase();
 
 		const meta: PrepareChartDataMeta = {
 			...createMeta(chk.pair),
 			type,
 			count: candles.length,
 			indicators: indicatorNames,
+			volumeUnit,
 		};
 
 		const seriesNote = indicatorNames.length > 0 ? `, indicators: ${indicatorNames.join(', ')}` : '';
