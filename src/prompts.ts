@@ -1600,14 +1600,29 @@ MACD（中央が0、左が弱気・右が強気）:
 	},
 	{
 		name: '🌅 おはようレポート',
-		description: '【検証用】直近8時間の価格動向を HTML ダッシュボードで視覚化。Claude Desktop 推奨。',
+		description: '直近8時間の価格動向を視覚化。Visualizer（デフォルト）または HTML ファイルで出力。',
+		arguments: [
+			{
+				name: 'mode',
+				description: '出力モード: "visualizer"（デフォルト）または "html"',
+				required: false,
+			},
+		],
 		messages: [
 			{
 				role: 'user',
 				content: [
 					{
 						type: 'text',
-						text: `直近8時間で何が起きたかを **HTML ファイル** で視覚化してください。
+						text: `直近8時間で何が起きたかを視覚化してください。
+
+【出力モード】
+- \`visualizer\`（デフォルト）: Visualizer（show_widget）でチャット内にインライン表示。
+  sendPrompt() ボタンによる深掘り導線あり
+- \`html\`: HTML ファイルとして create_file → present_files で出力。
+  従来の Tailwind ダークテーマ版
+
+※ ユーザーが明示しない場合は \`visualizer\` を使用する
 
 【使用ツール】
 1. get_ticker(pair="btc_jpy") → リアルタイム現在価格
@@ -1624,12 +1639,23 @@ MACD（中央が0、左が弱気・右が強気）:
 ※ 上記7ツールのみ使用すること。追加のツール呼び出しは行わない
 
 【出力形式】
-取得したデータを使って、以下の構成の **HTML ファイル** を生成してください。
+
+## visualizer モードの場合
+- Visualizer の show_widget で出力する
+- CSS は Visualizer のデザインシステム（CSS変数）に準拠
+- 各セクションの末尾に sendPrompt() ボタンを配置（後述の導線定義を参照）
+- ダークモード/ライトモードはホスト環境に自動追従
+
+## html モードの場合
+- create_file で /mnt/user-data/outputs/morning-report-visual.html を作成
+- present_files で提示
+- Tailwind CSS（jsdelivr pre-built CSS）+ カスタムダークテーマ
+- sendPrompt() ボタンは配置しない
 
 ## 必須コンポーネント
 
 ### 1. ヘッダー部
-- タイトル: 「🌅 直近8時間レポート」
+- タイトル: 「直近8時間レポート」
 - 取得時刻（YYYY-MM-DD HH:MM JST）
 
 ### 2. 価格サマリーカード
@@ -1721,15 +1747,107 @@ MACD（中央が0、左が弱気・右が強気）:
 ### 9. 免責事項フッター
 - 「この分析は参考情報です。投資判断はご自身で行ってください。」
 
+## sendPrompt 導線定義（visualizer モードのみ）
+
+各セクションの末尾に以下の sendPrompt() ボタンを配置する。
+html モードでは sendPrompt 関連の記述をすべて無視する。
+
+### セクション 2: 価格サマリーカード
+| ボタンラベル | sendPrompt テキスト |
+|---|---|
+| 1h足チャート ↗ | 直近24時間の1時間足チャートを表示して |
+| ローソク足パターン ↗ | 直近のローソク足パターンを分析して |
+
+### セクション 3: イベントタイムライン
+| ボタンラベル | sendPrompt テキスト |
+|---|---|
+| 売買フロー詳細 ↗ | 直近の売買フロー（CVD）を詳しく分析して |
+| ボラティリティ ↗ | 直近8時間のボラティリティを分析して |
+
+### セクション 4: 売買バランス（出来高 + 売買比率）
+| ボタンラベル | sendPrompt テキスト |
+|---|---|
+| 総合シグナル ↗ | マーケットシグナル（総合スコア）を出して |
+| 市場全体 ↗ | アルトコインも含めた市場全体の変動率を見せて |
+
+### セクション 5: 重要ラインとの関係
+| ボタンラベル | sendPrompt テキスト |
+|---|---|
+| フィボナッチ ↗ | フィボナッチリトレースメントの合流ゾーンを教えて |
+| BB分析 ↗ | ボリンジャーバンドの状態を教えて |
+
+### セクション 6: 板状況カード
+| ボタンラベル | sendPrompt テキスト |
+|---|---|
+| 板の詳細 ↗ | 板情報の詳細（大口注文や流動性ゾーン）を教えて |
+| デプスチャート ↗ | 板の深さチャート（デプスチャート）を表示して |
+
+### セクション 7: トレンド方向チェック（MTF）
+| ボタンラベル | sendPrompt テキスト |
+|---|---|
+| 一目チャート ↗ | 日足の一目均衡表チャートを表示して |
+| EMA分析 ↗ | EMA（指数移動平均）の状態も教えて |
+
+### ボタンを配置しないセクション
+- セクション 1（ヘッダー）: 情報表示のみ
+- セクション 8（ポイント）: まとめテキストのみ
+- セクション 9（免責事項）: 定型文のみ
+
+### sendPrompt テキストのルール
+- ツール名やパラメータを含めない（ユーザーの自然な質問文にする）
+- Claude が質問文から適切なツールを推論できる程度に具体的にする
+- 日本語で記述
+
+### 深掘り先の出力仕様
+sendPrompt() で飛んだ先の応答も Visualizer で表示する。
+各深掘り先にも「さらに深掘り」ボタンを 2〜4 個配置し、連鎖を可能にする。
+
+深掘り先の共通構造:
+1. データ取得（該当ツールを呼び出し）
+2. Visualizer で結果を表示
+3. 末尾に「さらに深掘り」ボタンを配置（関連する別角度の分析ツールへの導線）
+
+深掘り先のボタン例:
+
+**板の詳細 → さらに深掘り:**
+- 直近の売買フロー（CVD）を分析して
+- サポートとレジスタンスのラインを教えて
+- ボラティリティの状態を教えて
+- マーケットシグナル（総合スコア）を出して
+
+**ローソク足パターン → さらに深掘り:**
+- 直近24時間の1時間足チャートを表示して
+- ボリンジャーバンドの状態を教えて
+- サポートとレジスタンスのラインを教えて
+- マーケットシグナル（総合スコア）を出して
+
 ## デザイン要件
 
+### visualizer モード
+- 背景: transparent（ホスト環境に追従）
+- カード背景: var(--color-background-secondary)
+- ボーダー: 0.5px solid var(--color-border-tertiary)
+- 角丸: var(--border-radius-lg)
+- テキスト: var(--color-text-primary), var(--color-text-secondary)
+- フォント: var(--font-sans), var(--font-mono)
+
+- 色の意味（ハードコード OK）
+  - 緑系 (#4ade80): ポジティブ/上昇/買い
+  - 赤系 (#f87171): ネガティブ/下落/売り
+  - 黄系 (#fbbf24): 中立/注意
+
+- ボタン: Visualizer のプリセットスタイル（自動適用）を使用
+  - sendPrompt() を onclick に設定
+  - ラベル末尾に ↗ を付与
+
+### html モード
 \`\`\`
 - ダークテーマ
   - 背景: #1a1a2e
   - カード背景: #16213e
   - テキスト: #eaeaea
   - アクセント: #0f3460
-  
+
 - 色の意味
   - 緑系 (#4ade80): ポジティブ/上昇/買い
   - 赤系 (#f87171): ネガティブ/下落/売り
@@ -1746,12 +1864,18 @@ MACD（中央が0、左が弱気・右が強気）:
   - 最大幅: 800px
   - カード: 角丸(8px)、影あり
   - フォント: システムフォント
-  
+
 - Tailwind CSS（jsdelivr の pre-built CSS）を使用
   - カスタムカラーは \`<style>\` ブロックで定義（arbitrary value 構文 \`bg-[#xxx]\` は使わない）
 \`\`\`
 
-## 出力テンプレート
+## Visualizer の制約（visualizer モード）
+- show_widget は 1回の tool call で完結する必要がある（途中編集不可）
+- CSS 変数でダーク/ライトモード両対応にする
+- emoji は使用可（テキストノードとして許容）
+- SVG アイコンや CSS シェイプも使用可
+
+## 出力テンプレート（html モード用）
 
 \`\`\`html
 <!DOCTYPE html>
@@ -1769,13 +1893,13 @@ MACD（中央が0、左が弱気・右が強気）:
 </head>
 <body class="bg-dark text-gray-100 min-h-screen p-6">
   <div class="max-w-3xl mx-auto space-y-6">
-    
+
     <!-- ヘッダー -->
     <header class="text-center">
       <h1 class="text-2xl font-bold">🌅 直近8時間レポート</h1>
       <p class="text-gray-400 text-sm">取得時刻: {timestamp}</p>
     </header>
-    
+
     <!-- 価格サマリー -->
     <section class="bg-card rounded-lg p-6">
       <h2 class="font-bold mb-4">📊 BTC/JPY 価格の動き</h2>
@@ -1800,7 +1924,7 @@ MACD（中央が0、左が弱気・右が強気）:
         <span>高値: {high}円 ({high_time})</span>
       </div>
     </section>
-    
+
     <!-- イベントタイムライン -->
     <section class="bg-card rounded-lg p-6">
       <h2 class="font-bold mb-4">⚡ 主なイベント</h2>
@@ -1808,7 +1932,7 @@ MACD（中央が0、左が弱気・右が強気）:
         <!-- イベント項目 or 「大きな急変動なし」 -->
       </div>
     </section>
-    
+
     <!-- 出来高（棒グラフ: 取得した24本分のみ。未来の空枠は作らない） -->
     <section class="bg-card rounded-lg p-6">
       <h2 class="font-bold mb-4">📈 出来高（直近24時間）</h2>
@@ -1826,13 +1950,13 @@ MACD（中央が0、左が弱気・右が強気）:
       <p class="text-xs text-gray-500 mt-1">※ 時刻はJST。■ 直近8時間 / ■ それ以前</p>
       <p class="text-sm text-gray-400 mt-2">直近8時間合計: XXX BTC</p>
     </section>
-    
+
     <!-- 売買比率 -->
     <section class="bg-card rounded-lg p-6">
       <h2 class="font-bold mb-4">⚖️ 売買比率</h2>
       <!-- 買い/売りの比率バー -->
     </section>
-    
+
     <!-- 重要ライン（縦型構造図） -->
     <section class="bg-card rounded-lg p-6">
       <h2 class="font-bold mb-4">📍 重要ラインとの関係</h2>
@@ -1841,13 +1965,13 @@ MACD（中央が0、左が弱気・右が強気）:
         <!-- 各ラインを縦に並べる（横型は数字が重なるためNG） -->
       </div>
     </section>
-    
+
     <!-- 板状況 -->
     <section class="bg-card rounded-lg p-6">
       <h2 class="font-bold mb-4">🔮 板状況（HH:MM JST 時点）</h2>
       <!-- ±1%帯域の買い/売り圧力バー -->
     </section>
-    
+
     <!-- トレンド方向チェック（MTF） -->
     <section class="bg-card rounded-lg p-6">
       <h2 class="font-bold mb-1">🔀 トレンド方向チェック（MTF）</h2>
@@ -1902,18 +2026,18 @@ MACD（中央が0、左が弱気・右が強気）:
       <h2 class="font-bold mb-3">💡 ポイント</h2>
       <p class="text-gray-300">{summary_text}</p>
     </section>
-    
+
     <!-- 免責事項 -->
     <footer class="text-center text-gray-500 text-xs">
       ⚠️ この分析は参考情報です。投資判断はご自身で行ってください。
     </footer>
-    
+
   </div>
 </body>
 </html>
 \`\`\`
 
-**重要**:
+**html モードの場合**:
 - \`create_file\` で \`/mnt/user-data/outputs/morning-report-visual.html\` を作成
 - \`present_files\` で提示
 - コードブロックでの出力やテキスト説明は不要
@@ -1933,7 +2057,7 @@ MACD（中央が0、左が弱気・右が強気）:
 			level: PromptLevel.INTERMEDIATE,
 			category: PromptCategory.ANALYSIS,
 			estimatedTime: '30秒',
-			tags: ['intermediate', 'btc', 'overnight', 'visual', 'html', 'artifact', 'experimental'],
+			tags: ['intermediate', 'btc', 'overnight', 'visual', 'visualizer', 'html'],
 		},
 	},
 	{
