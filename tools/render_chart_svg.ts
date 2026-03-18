@@ -59,45 +59,42 @@ type RenderMeta = {
 export default async function renderChartSvg(
 	args: RenderChartSvgInternalOpts = {},
 ): Promise<Result<RenderData, RenderMeta>> {
-	// --- パラメータの解決（強制排他ルール） ---
-	const style = (args.style === 'line' ? 'line' : 'candles') as 'candles' | 'line';
-	// depth は特別扱い（ローソクを描かない）
-	const isDepth = args.style === 'depth';
-	let withIchimoku = args.withIchimoku ?? false;
-	const ichimokuOpt = args.ichimoku || {};
-	// モード正規化: light→default, full→extended（後方互換）
-	const normalizeIchimokuMode = (m: unknown): 'default' | 'extended' => {
-		const s = String(m ?? '').toLowerCase();
-		if (s === 'full' || s === 'extended') return 'extended';
-		if (s === 'light' || s === 'default') return 'default';
-		return 'default';
-	};
-	const ichimokuMode = normalizeIchimokuMode(ichimokuOpt.mode || (withIchimoku ? 'default' : 'default'));
-	const drawChikou = ichimokuMode === 'extended' || ichimokuOpt.withChikou === true;
+	// --- パラメータの解決 ---
+	// indicators 配列 + legacy with* を統合して内部フラグに変換
+	const indSet = new Set<string>(args.indicators ?? []);
 
-	// デフォルト: 明示されない限りSMAは描画しない
-	// 互換: 以前の仕様からの流入に備え、withIchimoku時は引き続きBB/SMAをオフ
-	let withSMA = args.withSMA ?? [];
-	let withEMA = args.withEMA ?? [];
-	let withBB = args.withBB ?? false;
-	const svgPrecision = Math.max(0, Math.min(3, Number(args.svgPrecision ?? 1)));
-	const effectivePrecision = Math.max(1, svgPrecision);
-	const svgMinify = args.svgMinify !== false;
-	const simplifyTolerance = Math.max(0, Number(args.simplifyTolerance ?? 0.5));
-	const viewBoxTight = args.viewBoxTight !== false;
-	// BBモード正規化: light→default, full→extended（後方互換）
-	const normalizeBbMode = (m: unknown): 'default' | 'extended' => {
-		const s = String(m ?? '').toLowerCase();
-		if (s === 'full' || s === 'extended') return 'extended';
-		if (s === 'light' || s === 'default') return 'default';
-		return 'default';
-	};
-	const bbMode: 'default' | 'extended' = normalizeBbMode(args.bbMode || 'default');
+	// legacy with* → indSet にマージ（後方互換）
+	if (args.withIchimoku) indSet.add(args.ichimoku?.mode === 'extended' ? 'ICHIMOKU_EXTENDED' : 'ICHIMOKU');
+	if (args.withBB) {
+		const rawBb = String(args.bbMode ?? '').toLowerCase();
+		indSet.add(rawBb === 'extended' || rawBb === 'full' ? 'BB_EXTENDED' : 'BB');
+	}
+	for (const p of args.withSMA ?? []) indSet.add(`SMA_${p}`);
+	for (const p of args.withEMA ?? []) indSet.add(`EMA_${p}`);
+
+	// 内部フラグの導出（一箇所で集約）
+	let withIchimoku = indSet.has('ICHIMOKU') || indSet.has('ICHIMOKU_EXTENDED');
+	const ichimokuMode: 'default' | 'extended' = indSet.has('ICHIMOKU_EXTENDED') ? 'extended' : 'default';
+	const drawChikou = ichimokuMode === 'extended' || args.ichimoku?.withChikou === true;
+	let withBB = indSet.has('BB') || indSet.has('BB_EXTENDED');
+	const bbMode: 'default' | 'extended' = indSet.has('BB_EXTENDED') ? 'extended' : 'default';
+	let withSMA = [...indSet].filter((k) => k.startsWith('SMA_')).map((k) => Number(k.split('_')[1]));
+	let withEMA = [...indSet].filter((k) => k.startsWith('EMA_')).map((k) => Number(k.split('_')[1]));
+
+	// 排他制御: 一目均衡表使用時は SMA/BB をオフ
 	if (withIchimoku) {
 		withSMA = [];
 		withEMA = [];
 		withBB = false;
 	}
+
+	const style = (args.style === 'line' ? 'line' : 'candles') as 'candles' | 'line';
+	const isDepth = args.style === 'depth';
+	const svgPrecision = Math.max(0, Math.min(3, Number(args.svgPrecision ?? 1)));
+	const effectivePrecision = Math.max(1, svgPrecision);
+	const svgMinify = args.svgMinify !== false;
+	const simplifyTolerance = Math.max(0, Number(args.simplifyTolerance ?? 0.5));
+	const viewBoxTight = args.viewBoxTight !== false;
 
 	const {
 		pair = 'btc_jpy',
@@ -236,26 +233,16 @@ export default async function renderChartSvg(
 	}
 
 	// --- 事前見積もりヒューリスティクス（重そうなら candles-only にフォールバック） ---
+	// 一目均衡表は雲＋転換線＋基準線＋先行スパン2本で実質5レイヤー
 	const estimatedLayers =
-		(withIchimoku ? 1 : 0) +
-		(withBB ? (bbMode === 'extended' ? 3 : 1) : 0) +
-		(Array.isArray(withSMA) ? withSMA.length : 0) +
-		(Array.isArray(withEMA) ? withEMA.length : 0) +
-		1; // +1 for base series
+		(withIchimoku ? 5 : 0) + (withBB ? (bbMode === 'extended' ? 3 : 1) : 0) + withSMA.length + withEMA.length + 1; // +1 for base series
 	const summaryNotes: string[] = [];
 	if (!forceLayers && limit * estimatedLayers > 500) {
-		if (withBB || (withSMA && withSMA.length > 0) || (withEMA && withEMA.length > 0) || withIchimoku) {
+		if (withBB || withSMA.length > 0 || withEMA.length > 0 || withIchimoku) {
 			withBB = false;
 			withSMA = [];
 			withEMA = [];
-			if (withIchimoku) {
-				// keep user intent for ichimoku unless very heavy
-				if (limit * (1 + (bbMode === 'extended' ? 3 : 1)) > 800) {
-					// fallback to candles only if still heavy
-					withIchimoku = false;
-					args.withIchimoku = false;
-				}
-			}
+			withIchimoku = false;
 			summaryNotes.push('heavy chart detected → fallback to candles-only to avoid oversized SVG');
 		}
 	}
@@ -363,67 +350,25 @@ export default async function renderChartSvg(
 	// forwardShift は上部で meta.shift から取得済み
 
 	// Y軸の範囲を、表示されるすべての要素から計算
-	const allYValues: number[] = [...highs, ...lows];
-	if (withIchimoku) {
-		allYValues.push(...(indicators.ICHI_tenkan?.slice(pastBuffer).filter((v: number | null) => v !== null) || []));
-		allYValues.push(...(indicators.ICHI_kijun?.slice(pastBuffer).filter((v: number | null) => v !== null) || []));
-		allYValues.push(...(indicators.ICHI_spanA?.slice(pastBuffer).filter((v: number | null) => v !== null) || []));
-		allYValues.push(...(indicators.ICHI_spanB?.slice(pastBuffer).filter((v: number | null) => v !== null) || []));
-	}
+	// 描画対象のインジケーター系列キーを一箇所で列挙
+	const yRangeKeys: string[] = [];
+	if (withIchimoku) yRangeKeys.push('ICHI_tenkan', 'ICHI_kijun', 'ICHI_spanA', 'ICHI_spanB');
 	if (withBB) {
 		if (bbMode === 'extended') {
-			['BB1_upper', 'BB1_lower', 'BB2_upper', 'BB2_lower', 'BB3_upper', 'BB3_lower'].forEach((key) => {
-				const series = indicatorSeries(key)?.slice(pastBuffer) || [];
-				allYValues.push(...series.filter((v: number | null) => v !== null));
-			});
+			yRangeKeys.push('BB1_upper', 'BB1_lower', 'BB2_upper', 'BB2_lower', 'BB3_upper', 'BB3_lower');
 		} else {
-			allYValues.push(...(indicators.BB_upper?.slice(pastBuffer).filter((v: number | null) => v !== null) || []));
-			allYValues.push(...(indicators.BB_lower?.slice(pastBuffer).filter((v: number | null) => v !== null) || []));
+			yRangeKeys.push('BB_upper', 'BB_lower');
 		}
 	}
-	if (withSMA && withSMA.length > 0) {
-		const pickSmaSeries = (p: number) => {
-			switch (p) {
-				case 5:
-					return indicators.SMA_5 as number[] | undefined;
-				case 20:
-					return indicators.SMA_20 as number[] | undefined;
-				case 25:
-					return indicators.SMA_25 as number[] | undefined;
-				case 50:
-					return indicators.SMA_50 as number[] | undefined;
-				case 75:
-					return indicators.SMA_75 as number[] | undefined;
-				case 200:
-					return indicators.SMA_200 as number[] | undefined;
-				default:
-					return undefined;
-			}
-		};
-		withSMA.forEach((period) => {
-			const series = pickSmaSeries(period) || [];
-			allYValues.push(...series.slice(pastBuffer).filter((v: number | null) => v !== null));
-		});
-	}
-	if (withEMA && withEMA.length > 0) {
-		const pickEmaSeries = (p: number) => {
-			switch (p) {
-				case 12:
-					return indicators.EMA_12 as number[] | undefined;
-				case 26:
-					return indicators.EMA_26 as number[] | undefined;
-				case 50:
-					return indicators.EMA_50 as number[] | undefined;
-				case 200:
-					return indicators.EMA_200 as number[] | undefined;
-				default:
-					return indicatorSeries(`EMA_${p}`) as number[] | undefined;
-			}
-		};
-		withEMA.forEach((period: number) => {
-			const series = pickEmaSeries(period) || [];
-			allYValues.push(...series.slice(pastBuffer).filter((v: number | null) => v !== null));
-		});
+	for (const p of withSMA) yRangeKeys.push(`SMA_${p}`);
+	for (const p of withEMA) yRangeKeys.push(`EMA_${p}`);
+
+	const allYValues: number[] = [...highs, ...lows];
+	for (const key of yRangeKeys) {
+		const series = indicatorSeries(key)?.slice(pastBuffer) ?? [];
+		for (const v of series) {
+			if (v !== null) allYValues.push(v);
+		}
 	}
 
 	const dataYMin = Math.min(...allYValues);
@@ -623,46 +568,21 @@ export default async function renderChartSvg(
 	} as const;
 
 	// SMAレイヤー
-	const sma5 = (indicators?.SMA_5 || []) as Array<number | null>;
-	const sma20 = (indicators?.SMA_20 || []) as Array<number | null>;
-	const sma25 = (indicators?.SMA_25 || []) as Array<number | null>;
-	const sma50 = (indicators?.SMA_50 || []) as Array<number | null>;
-	const sma75 = (indicators?.SMA_75 || []) as Array<number | null>;
-	const sma200 = (indicators?.SMA_200 || []) as Array<number | null>;
 	let smaLayers = '';
-	// インジケーターは簡略化しない（見た目の忠実度を優先）
-	if (withSMA?.includes(5) && sma5.length > 0) smaLayers += createLinePath(sma5, smaColors[5], { simplify: false });
-	if (withSMA?.includes(20) && sma20.length > 0) smaLayers += createLinePath(sma20, smaColors[20], { simplify: false });
-	if (withSMA?.includes(25) && sma25.length > 0) smaLayers += createLinePath(sma25, smaColors[25], { simplify: false });
-	if (withSMA?.includes(50) && sma50.length > 0) smaLayers += createLinePath(sma50, smaColors[50], { simplify: false });
-	if (withSMA?.includes(75) && sma75.length > 0) smaLayers += createLinePath(sma75, smaColors[75], { simplify: false });
-	if (withSMA?.includes(200) && sma200.length > 0)
-		smaLayers += createLinePath(sma200, smaColors[200], { simplify: false });
+	for (const p of withSMA) {
+		const series = indicatorSeries(`SMA_${p}`);
+		if (series && series.length > 0) {
+			smaLayers += createLinePath(series, smaColors[p] || '#e5e7eb', { simplify: false });
+		}
+	}
 
 	// EMAレイヤー（SMAと区別するため暖色系・破線）
 	const emaColors: Record<number, string> = { 12: '#ff6b35', 26: '#ffd166', 50: '#ef476f', 200: '#06d6a0' };
 	let emaLayers = '';
-	if (withEMA && withEMA.length > 0) {
-		const pickEmaSeries = (p: number) => {
-			switch (p) {
-				case 12:
-					return indicators.EMA_12 as number[] | undefined;
-				case 26:
-					return indicators.EMA_26 as number[] | undefined;
-				case 50:
-					return indicators.EMA_50 as number[] | undefined;
-				case 200:
-					return indicators.EMA_200 as number[] | undefined;
-				default:
-					return indicatorSeries(`EMA_${p}`) as number[] | undefined;
-			}
-		};
-		for (const period of withEMA) {
-			const series = (pickEmaSeries(period) || []) as Array<number | null>;
-			if (series.length > 0) {
-				const color = emaColors[period] || '#ff9f1c';
-				emaLayers += createLinePath(series, color, { simplify: false, dash: '6,3' });
-			}
+	for (const p of withEMA) {
+		const series = indicatorSeries(`EMA_${p}`);
+		if (series && series.length > 0) {
+			emaLayers += createLinePath(series, emaColors[p] || '#ff9f1c', { simplify: false, dash: '6,3' });
 		}
 	}
 
@@ -862,57 +782,34 @@ export default async function renderChartSvg(
     `;
 	}
 
-	// --- インジケータメタデータの構築（withLegend に依存しない） ---
-	if (withSMA?.length > 0) {
-		withSMA.forEach((p) => {
-			legendMeta[`SMA_${p}`] = `SMA ${p} (${smaColors[p]})`;
-		});
+	// --- インジケータメタデータ＋凡例（統一構築） ---
+	const legendItems: Array<{ key: string; text: string; color: string }> = [];
+	for (const p of withSMA) {
+		const c = smaColors[p] || '#e5e7eb';
+		legendItems.push({ key: `SMA_${p}`, text: `SMA ${p}`, color: c });
 	}
-	if (withEMA?.length > 0) {
-		withEMA.forEach((p: number) => {
-			legendMeta[`EMA_${p}`] = `EMA ${p} (${emaColors[p] || '#ff9f1c'})`;
-		});
+	for (const p of withEMA) {
+		const c = emaColors[p] || '#ff9f1c';
+		legendItems.push({ key: `EMA_${p}`, text: `EMA ${p}`, color: c });
 	}
 	if (withBB) {
 		if (bbMode === 'extended') {
-			legendMeta.BB1 = 'BB ±1σ';
-			legendMeta.BB2 = 'BB ±2σ';
-			legendMeta.BB3 = 'BB ±3σ';
+			legendItems.push({ key: 'BB1', text: 'BB ±1σ', color: bbColors.line1 });
+			legendItems.push({ key: 'BB2', text: 'BB ±2σ', color: bbColors.line2 });
+			legendItems.push({ key: 'BB3', text: 'BB ±3σ', color: bbColors.line3 });
 		} else {
-			legendMeta.BB = 'Bollinger Bands (±2σ)';
+			legendItems.push({ key: 'BB', text: 'BB ±2σ', color: bbColors.line2 });
 		}
 	}
 	if (withIchimoku) {
-		legendMeta.Ichimoku = '一目均衡表';
+		legendItems.push({ key: 'Ichimoku', text: '転換線', color: '#00a3ff' });
+		legendItems.push({ key: 'Ichimoku_kijun', text: '基準線', color: '#ff4d4d' });
 	}
+	// メタデータ（withLegend に依存しない）
+	for (const item of legendItems) legendMeta[item.key] = `${item.text} (${item.color})`;
 
-	// --- 凡例の動的構築 ---
+	// 凡例SVG
 	if (withLegend) {
-		const legendItems: Array<{ text: string; color: string }> = [];
-		if (withSMA?.length > 0) {
-			withSMA.forEach((p) => {
-				legendItems.push({ text: `SMA ${p}`, color: smaColors[p] || '#e5e7eb' });
-			});
-		}
-		if (withEMA?.length > 0) {
-			withEMA.forEach((p: number) => {
-				legendItems.push({ text: `EMA ${p}`, color: emaColors[p] || '#ff9f1c' });
-			});
-		}
-		if (withBB) {
-			if (bbMode === 'extended') {
-				legendItems.push({ text: 'BB ±1σ', color: bbColors.line1 });
-				legendItems.push({ text: 'BB ±2σ', color: bbColors.line2 });
-				legendItems.push({ text: 'BB ±3σ', color: bbColors.line3 });
-			} else {
-				legendItems.push({ text: 'BB ±2σ', color: bbColors.line2 });
-			}
-		}
-		if (withIchimoku) {
-			legendItems.push({ text: '転換線', color: '#00a3ff' });
-			legendItems.push({ text: '基準線', color: '#ff4d4d' });
-		}
-
 		const yOffset = Math.max(14, padding.top - 18);
 		legendLayers =
 			`<g font-size="12" fill="#e5e7eb">` +

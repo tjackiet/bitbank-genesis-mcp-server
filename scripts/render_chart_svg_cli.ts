@@ -1,5 +1,5 @@
 #!/usr/bin/env tsx
-import type { BbMode, ChartStyle, IchimokuMode, Pair, RenderChartSvgOptions } from '../src/schemas.js';
+import type { ChartStyle, Pair, RenderChartSvgOptions } from '../src/schemas.js';
 import renderChartSvg from '../tools/render_chart_svg.js';
 import { intArg, parseArgs } from './cli-utils.js';
 
@@ -10,33 +10,57 @@ async function main() {
 	const type = positional[1] || '1day';
 	const limit = intArg(positional[2], 60);
 
-	const withIchimoku = flags['with-ichimoku'] === true;
-	const noSma = flags['no-sma'] === true;
-	const noBb = flags['no-bb'] === true;
-	const smaOnly = flags['sma-only'] === true;
-	const bbOnly = flags['bb-only'] === true;
-	const ichimokuOnly = flags['ichimoku-only'] === true;
-	const candlesOnly = flags['candles-only'] === true;
+	// indicators を CLI フラグから構築
+	const indicators: string[] = [];
 
-	// forceLayers / depth は型定義外だが render_chart_svg が内部で参照する
+	// --sma=5,20,50
+	if (typeof flags.sma === 'string' && flags.sma.length > 0) {
+		for (const v of flags.sma.split(',')) {
+			const n = parseInt(v.trim(), 10);
+			if (Number.isFinite(n) && n > 0) indicators.push(`SMA_${n}`);
+		}
+	}
+
+	// --with-ichimoku / --ichimoku-mode=default|extended
+	if (flags['with-ichimoku'] === true || typeof flags['ichimoku-mode'] === 'string') {
+		const mode = String(flags['ichimoku-mode'] ?? 'default').toLowerCase();
+		indicators.push(mode === 'extended' ? 'ICHIMOKU_EXTENDED' : 'ICHIMOKU');
+	}
+
+	// --bb-mode=default|extended (後方互換: light→default, full→extended)
+	if (typeof flags['bb-mode'] === 'string') {
+		const raw = flags['bb-mode'].toLowerCase();
+		const ext = raw === 'extended' || raw === 'full';
+		indicators.push(ext ? 'BB_EXTENDED' : 'BB');
+	}
+
+	// 単独表示フラグ（排他的に上書き）
+	if (flags['candles-only'] === true) indicators.length = 0;
+	if (flags['ichimoku-only'] === true) {
+		indicators.length = 0;
+		indicators.push('ICHIMOKU');
+	}
+	if (flags['bb-only'] === true) {
+		indicators.length = 0;
+		indicators.push('BB');
+	}
+	if (flags['sma-only'] === true) {
+		// SMA 以外を除去
+		const smaOnly = indicators.filter((i) => i.startsWith('SMA_'));
+		indicators.length = 0;
+		indicators.push(...smaOnly);
+	}
+
 	const options: RenderChartSvgOptions & Record<string, unknown> = {
 		pair,
 		type,
 		limit,
-		// 既定はロウソクのみ（インジケータは明示されたときだけ）
-		withSMA: noSma ? [] : [],
-		withBB: false,
-		withIchimoku,
+		indicators,
 	};
 
-	// Heuristic override flags
+	// forceLayers
 	if (flags['force-layers'] === true || flags['no-auto-lighten'] === true) {
 		options.forceLayers = true;
-	}
-
-	if (typeof flags['ichimoku-mode'] === 'string') {
-		options.ichimoku = { mode: flags['ichimoku-mode'] as IchimokuMode };
-		options.withIchimoku = true;
 	}
 
 	// Style: --style=candles|line|depth
@@ -53,62 +77,6 @@ async function main() {
 		if (Number.isFinite(levels)) {
 			options.depth = { levels };
 		}
-	}
-
-	// BollingerBands モード: --bb-mode=default|extended（後方互換で light/full も受け付け）
-	if (typeof flags['bb-mode'] === 'string') {
-		const bbMode = flags['bb-mode'];
-		const normalized = bbMode === 'light' ? 'default' : bbMode === 'full' ? 'extended' : bbMode;
-		if (normalized === 'default' || normalized === 'extended') {
-			options.bbMode = normalized as BbMode;
-		}
-	}
-
-	if (typeof flags.sma === 'string' && flags.sma.length > 0) {
-		const periods = flags.sma
-			.split(',')
-			.map((v) => parseInt(v.trim(), 10))
-			.filter((n) => Number.isFinite(n) && n > 0);
-		if (periods.length > 0) {
-			options.withSMA = periods;
-		}
-	}
-
-	// --- 単独表示フラグの処理 ---
-	if (smaOnly) {
-		options.withBB = false;
-		options.withIchimoku = false;
-	}
-	if (bbOnly) {
-		options.withBB = true;
-		options.withSMA = [];
-		options.withIchimoku = false;
-	}
-	if (ichimokuOnly) {
-		options.withIchimoku = true;
-		options.withBB = false;
-		options.withSMA = [];
-		if (!options.ichimoku) options.ichimoku = { mode: 'default' };
-	}
-	if (candlesOnly) {
-		options.withBB = false;
-		options.withSMA = [];
-		options.withIchimoku = false;
-	}
-
-	// --- 自動判定 ---
-	const hasSmaFlag = typeof flags.sma === 'string';
-	const hasBbMode = typeof flags['bb-mode'] === 'string';
-	if (options.withIchimoku) {
-		options.withBB = false;
-		options.withSMA = [];
-	} else if (hasBbMode) {
-		if (!hasSmaFlag && !noSma) {
-			options.withSMA = [];
-		}
-		options.withBB = true;
-	} else if (hasSmaFlag && !noBb) {
-		options.withBB = false;
 	}
 
 	const result = await renderChartSvg(options);
