@@ -147,6 +147,17 @@ describe('rsi', () => {
 		expect(result[14]).toBe(100);
 	});
 
+	it('avgGain === 0 かつ avgLoss === 0（完全フラット）のとき RSI = 100', () => {
+		// 全て同一価格: avgGain=0, avgLoss=0 → 0/0 未定義だが仕様として 100 を返す
+		const closes = Array.from({ length: 20 }, () => 100);
+		const result = rsi(closes, 14);
+		expect(result[14]).toBe(100);
+		// Wilder smoothing 後も同様（変化がないため avgLoss=0 のまま）
+		for (let i = 14; i < result.length; i++) {
+			expect(result[i]).toBe(100);
+		}
+	});
+
 	it('Wilder smoothing が正しく適用される', () => {
 		// 具体的な値で検算
 		const closes = [
@@ -475,6 +486,16 @@ describe('atr', () => {
 
 	it('データ不足のとき全て NaN', () => {
 		const result = atr([110, 115], [100, 105], [105, 110], 14);
+		expect(result.every((v) => Number.isNaN(v))).toBe(true);
+	});
+
+	it('seed 区間に NaN（非有限値）が含まれる場合、全 ATR が NaN になる', () => {
+		// TR[0] は常に NaN。TR[1] は有効だが TR[2] の high が Infinity → NaN。
+		// seed 区間 TR[1..3] に NaN が混在 → 早期リターンで全 NaN。
+		const highs = [110, 115, Infinity, 118, 120];
+		const lows = [100, 105, 108, 110, 112];
+		const closes = [105, 110, 109, 115, 118];
+		const result = atr(highs, lows, closes, 3);
 		expect(result.every((v) => Number.isNaN(v))).toBe(true);
 	});
 });
