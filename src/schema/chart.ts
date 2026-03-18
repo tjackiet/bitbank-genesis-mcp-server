@@ -210,8 +210,18 @@ export const RenderChartSvgInputSchema = z
 		style: z.enum(['candles', 'line', 'depth']).optional().default('candles'),
 		depth: z.object({ levels: z.number().int().min(10).max(500).optional().default(200) }).optional(),
 		// デフォルトは描画しない（明示時のみ描画）
-		withSMA: z.array(z.number().int()).optional().default([]),
-		withEMA: z.array(z.number().int()).optional().default([]),
+		withSMA: z
+			.array(z.number().int())
+			.optional()
+			.default([])
+			.describe(
+				'SMA periods (e.g. [5,20,50]). Do NOT set unless the user explicitly requests SMA. Default: [] (none).',
+			),
+		withEMA: z
+			.array(z.number().int())
+			.optional()
+			.default([])
+			.describe('EMA periods. Do NOT set unless the user explicitly requests EMA. Default: [] (none).'),
 		// 既定でBBはオフ（必要時のみ指定）
 		withBB: z.boolean().optional().default(false),
 		// backward-compat: accept legacy values and normalize in implementation
