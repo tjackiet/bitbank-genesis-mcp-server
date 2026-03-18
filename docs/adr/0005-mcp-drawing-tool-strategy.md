@@ -110,10 +110,17 @@ Visualizer パスと分析パスの責務を description で明確化。
 ### フェーズ 4: テストカバレッジ強化 — 現時点では見送り
 
 既存テストの評価:
-- `lib/indicators.ts`: 51 テスト（SMA / EMA / RSI / BB / MACD / Ichimoku / Stochastic 等を網羅）
+- `lib/indicators.ts`: 53 テスト（SMA / EMA / RSI / BB / MACD / Ichimoku / Stochastic 等を網羅）
 - `prepare_chart_data`: 17 統合テスト（系列長一致、null/NaN 処理、TZ、JPY 丸め等）
 
 主要パスはカバーされているが、以下の具体的なギャップが存在する。
+
+#### テスト追加済み（仕様の明文化）
+
+| 関数 | 追加テスト | 確定した仕様 |
+|---|---|---|
+| `rsi()` | avgGain=0 かつ avgLoss=0（完全フラット相場） | 0/0 は **RSI=100** として扱う（avgLoss=0 分岐に合流） |
+| `atr()` | seed 区間に NaN（非有限値）が含まれる場合 | **全 ATR が NaN** になる早期リターン（意図的設計） |
 
 #### 既知の未テスト領域
 
@@ -121,8 +128,6 @@ Visualizer パスと分析パスの責務を description で明確化。
 
 | 関数 | 未テストのシナリオ | リスク |
 |---|---|---|
-| `rsi()` | avgGain=0 かつ avgLoss=0（完全フラット相場） | 0/0 未定義。現状は 100 を返すが、この仕様が暗黙的 |
-| `atr()` | seed 区間（先頭 period 本）に NaN が含まれる場合 | NaN 1 つで全 ATR が NaN になる早期リターン設計 |
 | `stochRSI()` | RSI の有効値がスパース（NaN 混在）な場合 | グローバル count とローカル window 判定の不整合リスク |
 | `macd()` | 非単調データでの signal line seed index | 線形データでは隠れる off-by-one リスク |
 | `stochastic()` | smoothK > kPeriod 等の極端なパラメータ | cnt !== smoothK で全 K が NaN になるパス未検証 |
@@ -147,7 +152,7 @@ Visualizer パスと分析パスの責務を description で明確化。
 #### 再検討トリガー
 
 指標ロジックの大規模リファクタを実施する際に、上記ギャップのテスト追加と合わせて導入を再検討する。
-特に `rsi()` の 0/0 仕様と `atr()` の NaN 早期リターンは、リファクタの有無に関わらず仕様を明確化しておくことが望ましい。
+`rsi()` の 0/0 仕様と `atr()` の NaN 早期リターンはテスト追加により仕様を明文化済み。
 
 ## 参考
 
