@@ -8,7 +8,7 @@ type ChartOutput = z.infer<typeof RenderChartSvgOutputSchema>;
 export const toolDef: ToolDefinition = {
 	name: 'render_chart_svg',
 	description:
-		'[SVG file / PNG save] ローソク足・ラインチャートを SVG/PNG ファイルとして生成。BB / Ichimoku / SMA 対応。\n\nファイル保存・HTML 埋め込みが必要な場合に使用。Visualizer でインライン描画する場合は prepare_chart_data を優先すること。\nユーザーが SVG/PNG 保存を明示した場合のみ使用。自発的呼び出し禁止。\ndetect_patterns の overlays を渡してパターン描画可能。',
+		'[SVG file / PNG save] ローソク足・ラインチャートをサーバー側で SVG/PNG に生成。BB / Ichimoku / SMA 対応。\nクライアント側で描画可能な場合は prepare_chart_data を優先。\nユーザーが SVG/PNG 保存を明示した場合のみ使用。自発的呼び出し禁止。\ndetect_patterns の overlays を渡してパターン描画可能。',
 	inputSchema: RenderChartSvgInputSchema,
 	handler: async (args: Record<string, unknown>) => {
 		const raw = await renderChartSvg(args as z.infer<typeof RenderChartSvgInputSchema>);

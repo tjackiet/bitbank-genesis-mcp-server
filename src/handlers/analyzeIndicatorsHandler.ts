@@ -295,7 +295,7 @@ export function buildIndicatorsText(input: BuildIndicatorsTextInput): string {
 export const toolDef: ToolDefinition = {
 	name: 'analyze_indicators',
 	description:
-		'[Technical Indicators / RSI / MACD / SMA] テクニカル指標の総合分析（indicators / RSI / MACD / SMA / BB / Ichimoku / Stochastic RSI）。十分な limit を指定（例: 日足200本）。\n\n【重要】バックテストには run_backtest を使用。',
+		'[Technical Indicators / RSI / MACD / SMA] テクニカル指標の総合分析。最新値・トレンド判定・シグナルをテキストで返す。十分な limit を指定（例: 日足200本）。\n\n描画 → prepare_chart_data / render_chart_svg。バックテスト → run_backtest。',
 	inputSchema: GetIndicatorsInputSchema,
 	handler: async ({ pair, type, limit }: z.infer<typeof GetIndicatorsInputSchema>) => {
 		const res = await analyzeIndicators(pair, type, limit);
