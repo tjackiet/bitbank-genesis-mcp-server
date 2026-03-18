@@ -174,6 +174,8 @@ export const PrepareChartDataOutputSchema = z.object({
 		times: z.array(z.string()),
 		/** 表示用短縮ラベル（tz 指定時のみ）。例: ["17:00", "18:00", ...] or ["03/16 17:00", ...] */
 		labels: z.array(z.string()).optional(),
+		/** candles 配列の各要素の意味: ["open","high","low","close","volume"] */
+		candleFormat: z.array(z.string()),
 		/** OHLCV タプル配列: [[open, high, low, close, volume], ...] */
 		candles: z.array(z.array(z.number())),
 		/** メインパネル指標（indicators 指定時のみ） */
@@ -193,6 +195,8 @@ export const PrepareChartDataOutputSchema = z.object({
 		type: CandleTypeEnum.or(z.string()),
 		count: z.number(),
 		indicators: z.array(z.string()),
+		/** 出来高の単位（ペアのベース通貨。例: btc_jpy → "BTC"） */
+		volumeUnit: z.string(),
 	}),
 });
 

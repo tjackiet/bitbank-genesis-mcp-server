@@ -47,8 +47,12 @@ describe('prepare_chart_data', () => {
 		expect(res.data.candles).toHaveLength(100);
 		// candles は [o, h, l, c, v] タプル
 		expect(res.data.candles[0]).toHaveLength(5);
+		// candleFormat でフィールド名を明示
+		expect(res.data.candleFormat).toEqual(['open', 'high', 'low', 'close', 'volume']);
 		expect(res.meta.pair).toBe('btc_jpy');
 		expect(res.meta.count).toBe(100);
+		// 出来高の単位はベース通貨
+		expect(res.meta.volumeUnit).toBe('BTC');
 	});
 
 	it('indicators 未指定時は series / subPanels を返さない', async () => {
