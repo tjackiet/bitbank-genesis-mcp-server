@@ -200,6 +200,24 @@ export const PrepareChartDataOutputSchema = z.object({
 	}),
 });
 
+/** render_chart_svg で使用可能なインジケーター */
+export const RenderChartSvgIndicatorEnum = z.enum([
+	'SMA_5',
+	'SMA_20',
+	'SMA_25',
+	'SMA_50',
+	'SMA_75',
+	'SMA_200',
+	'EMA_12',
+	'EMA_26',
+	'EMA_50',
+	'EMA_200',
+	'BB',
+	'BB_EXTENDED',
+	'ICHIMOKU',
+	'ICHIMOKU_EXTENDED',
+]);
+
 export const RenderChartSvgInputSchema = z
 	.object({
 		pair: z.string().optional().default('btc_jpy'),
@@ -209,19 +227,24 @@ export const RenderChartSvgInputSchema = z
 		// main series style: candles (default) or line (close-only)
 		style: z.enum(['candles', 'line', 'depth']).optional().default('candles'),
 		depth: z.object({ levels: z.number().int().min(10).max(500).optional().default(200) }).optional(),
-		// デフォルトは描画しない（明示時のみ描画）
+		// ── 統一インジケーター指定（推奨） ──
+		indicators: z
+			.array(RenderChartSvgIndicatorEnum)
+			.optional()
+			.default([])
+			.describe(
+				'Indicators to overlay. Do NOT set unless the user explicitly requests them. Default: [] (none).\n' +
+					'Available: SMA_5, SMA_20, SMA_25, SMA_50, SMA_75, SMA_200, EMA_12, EMA_26, EMA_50, EMA_200, BB, BB_EXTENDED, ICHIMOKU, ICHIMOKU_EXTENDED',
+			),
+		// ── 後方互換（deprecated: 新規利用は indicators を使用） ──
 		withSMA: z.array(z.number().int()).optional().default([]),
 		withEMA: z.array(z.number().int()).optional().default([]),
-		// 既定でBBはオフ（必要時のみ指定）
 		withBB: z.boolean().optional().default(false),
-		// backward-compat: accept legacy values and normalize in implementation
 		bbMode: z.enum(['default', 'extended', 'light', 'full']).optional().default('default'),
 		withIchimoku: z.boolean().optional().default(false),
 		ichimoku: z
 			.object({
-				// mode: default=転換線/基準線/雲, extended=+遅行スパン
 				mode: z.enum(['default', 'extended']).optional().default('default'),
-				// implementation optionally respects this when true
 				withChikou: z.boolean().optional(),
 			})
 			.optional(),
@@ -270,19 +293,26 @@ export const RenderChartSvgInputSchema = z
 			.optional(),
 	})
 	.superRefine((val, ctx) => {
-		if (val.withIchimoku) {
-			if (Array.isArray(val.withSMA) && val.withSMA.length > 0) {
+		// indicators 配列から一目均衡表の有無を判定
+		const hasIchimokuViaIndicators =
+			val.indicators?.includes('ICHIMOKU') || val.indicators?.includes('ICHIMOKU_EXTENDED');
+		const hasIchimoku = val.withIchimoku || hasIchimokuViaIndicators;
+		const hasBBViaIndicators = val.indicators?.includes('BB') || val.indicators?.includes('BB_EXTENDED');
+		const hasSMAViaIndicators = val.indicators?.some((i: string) => i.startsWith('SMA_'));
+
+		if (hasIchimoku) {
+			if ((Array.isArray(val.withSMA) && val.withSMA.length > 0) || hasSMAViaIndicators) {
 				ctx.addIssue({
 					code: z.ZodIssueCode.custom,
-					path: ['withSMA'],
-					message: 'withIchimoku=true の場合、withSMA は空配列でなければなりません',
+					path: ['indicators'],
+					message: 'ICHIMOKU と SMA は同時に指定できません',
 				});
 			}
-			if (val.withBB === true) {
+			if (val.withBB === true || hasBBViaIndicators) {
 				ctx.addIssue({
 					code: z.ZodIssueCode.custom,
-					path: ['withBB'],
-					message: 'withIchimoku=true の場合、withBB は false でなければなりません',
+					path: ['indicators'],
+					message: 'ICHIMOKU と BB は同時に指定できません',
 				});
 			}
 		}

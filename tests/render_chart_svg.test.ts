@@ -40,7 +40,16 @@ function buildAnalyzeIndicatorsSuccess(length: number) {
 			chart: {
 				candles: buildCandles(length),
 				indicators: {
+					SMA_5: buildSeries(length, -1),
+					SMA_20: buildSeries(length, -2),
 					SMA_25: buildSeries(length, -3),
+					SMA_50: buildSeries(length, -4),
+					SMA_75: buildSeries(length, -5),
+					SMA_200: buildSeries(length, -6),
+					EMA_12: buildSeries(length, -1),
+					EMA_26: buildSeries(length, -2),
+					EMA_50: buildSeries(length, -3),
+					EMA_200: buildSeries(length, -4),
 					BB_upper: buildSeries(length, 8),
 					BB_middle: buildSeries(length, 2),
 					BB_lower: buildSeries(length, -8),
@@ -79,20 +88,45 @@ describe('render_chart_svg', () => {
 		vi.clearAllMocks();
 	});
 
-	it('inputSchema: withIchimoku=true と withBB=true の併用は拒否する', () => {
-		const parse = () =>
+	it('inputSchema: ICHIMOKU と BB の併用は拒否する', () => {
+		// indicators 配列経由
+		expect(() =>
+			toolDef.inputSchema.parse({
+				pair: 'btc_jpy',
+				type: '1day',
+				limit: 60,
+				indicators: ['ICHIMOKU', 'BB'],
+			}),
+		).toThrow();
+
+		// legacy with* 経由（後方互換）
+		expect(() =>
 			toolDef.inputSchema.parse({
 				pair: 'btc_jpy',
 				type: '1day',
 				limit: 60,
 				withIchimoku: true,
 				withBB: true,
-			});
-
-		expect(parse).toThrow();
+			}),
+		).toThrow();
 	});
 
-	it('meta.indicators は withLegend=false でも描画した SMA を含むべき', async () => {
+	it('meta.indicators は indicators 配列で指定した SMA を含むべき', async () => {
+		mockedAnalyzeIndicators.mockResolvedValueOnce(asMockResult(buildAnalyzeIndicatorsSuccess(60)));
+
+		const res = await renderChartSvg({
+			pair: 'btc_jpy',
+			type: '1day',
+			limit: 60,
+			withLegend: false,
+			indicators: ['SMA_25'],
+		});
+
+		assertOk(res);
+		expect(res.meta.indicators).toContain('SMA_25');
+	});
+
+	it('legacy withSMA も引き続き動作する（後方互換）', async () => {
 		mockedAnalyzeIndicators.mockResolvedValueOnce(asMockResult(buildAnalyzeIndicatorsSuccess(60)));
 
 		const res = await renderChartSvg({
@@ -114,9 +148,7 @@ describe('render_chart_svg', () => {
 			pair: 'btc_jpy',
 			type: '1day',
 			limit: 365,
-			withIchimoku: true,
-			ichimoku: { mode: 'extended' },
-			bbMode: 'extended',
+			indicators: ['ICHIMOKU_EXTENDED'],
 		});
 
 		assertOk(res);
