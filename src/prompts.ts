@@ -1896,8 +1896,8 @@ sendPrompt() で飛んだ先の応答も Visualizer で表示する。
 
     <!-- ヘッダー -->
     <header class="text-center">
-      <h1 class="text-2xl font-bold">🌅 直近8時間レポート</h1>
-      <p class="text-gray-400 text-sm">取得時刻: {timestamp}</p>
+      <h1 class="text-3xl font-bold">🌅 直近8時間レポート</h1>
+      <p class="text-gray-400 text-base">取得時刻: {timestamp}</p>
     </header>
 
     <!-- 価格サマリー -->
@@ -1905,21 +1905,21 @@ sendPrompt() で飛んだ先の応答も Visualizer で表示する。
       <h2 class="font-bold mb-4">📊 BTC/JPY 価格の動き</h2>
       <div class="flex justify-between items-center mb-4">
         <div>
-          <p class="text-gray-400 text-sm">8時間前</p>
-          <p class="text-xl">{price_before}円</p>
+          <p class="text-gray-400 text-base">8時間前</p>
+          <p class="text-2xl">{price_before}円</p>
         </div>
-        <div class="text-3xl">{direction_icon}</div>
+        <div class="text-4xl">{direction_icon}</div>
         <div class="text-right">
-          <p class="text-gray-400 text-sm">現在</p>
-          <p class="text-xl font-bold">{price_now}円</p>
+          <p class="text-gray-400 text-base">現在</p>
+          <p class="text-2xl font-bold">{price_now}円</p>
         </div>
       </div>
       <div class="text-center mb-4">
-        <span class="{change_color} text-lg font-bold">{change_pct}%</span>
+        <span class="{change_color} text-xl font-bold">{change_pct}%</span>
       </div>
       <!-- 価格折れ線チャート（render_chart_svg の data URI を埋め込み） -->
       <img src="{chart_data_uri}" alt="直近8時間の価格推移" class="w-full rounded" />
-      <div class="flex justify-between text-sm text-gray-400 mt-1">
+      <div class="flex justify-between text-base text-gray-400 mt-1">
         <span>安値: {low}円 ({low_time})</span>
         <span>高値: {high}円 ({high_time})</span>
       </div>
@@ -1947,8 +1947,8 @@ sendPrompt() で飛んだ先の応答も Visualizer で表示する。
         <div class="rounded-t" style="flex:1; min-width:0; height: 72px; background:#4ade80;"></div>
         <div class="rounded-t" style="flex:1; min-width:0; height: 96px; background:#4ade80;"></div>
       </div>
-      <p class="text-xs text-gray-500 mt-1">※ 時刻はJST。■ 直近8時間 / ■ それ以前</p>
-      <p class="text-sm text-gray-400 mt-2">直近8時間合計: XXX BTC</p>
+      <p class="text-sm text-gray-500 mt-1">※ 時刻はJST。■ 直近8時間 / ■ それ以前</p>
+      <p class="text-base text-gray-400 mt-2">直近8時間合計: XXX BTC</p>
     </section>
 
     <!-- 売買比率 -->
@@ -1961,7 +1961,7 @@ sendPrompt() で飛んだ先の応答も Visualizer で表示する。
     <section class="bg-card rounded-lg p-6">
       <h2 class="font-bold mb-4">📍 重要ラインとの関係</h2>
       <!-- 縦型で上から下へ: レジスタンス → 現在価格 → サポート -->
-      <div class="font-mono text-sm space-y-2">
+      <div class="font-mono text-base space-y-2">
         <!-- 各ラインを縦に並べる（横型は数字が重なるためNG） -->
       </div>
     </section>
@@ -1975,14 +1975,14 @@ sendPrompt() で飛んだ先の応答も Visualizer で表示する。
     <!-- トレンド方向チェック（MTF） -->
     <section class="bg-card rounded-lg p-6">
       <h2 class="font-bold mb-1">🔀 トレンド方向チェック（MTF）</h2>
-      <p class="text-sm text-gray-400 mb-4">→ 移動平均線（SMA）を用いて短期〜長期の方向が揃っているかを確認</p>
+      <p class="text-base text-gray-400 mb-4">→ 移動平均線（SMA）を用いて短期〜長期の方向が揃っているかを確認</p>
       <div class="grid grid-cols-3 gap-4 mb-4">
         <!-- 1時間足 -->
         <div class="bg-accent rounded-lg p-4 text-center">
-          <p class="text-xs text-gray-400 mb-1">1時間足</p>
-          <p class="text-2xl mb-1">{1h_alignment_icon}</p>
-          <p class="text-sm font-bold mb-2">{1h_alignment_label}</p>
-          <div class="text-xs text-gray-400 space-y-1">
+          <p class="text-sm text-gray-400 mb-1">1時間足</p>
+          <p class="text-3xl mb-1">{1h_alignment_icon}</p>
+          <p class="text-base font-bold mb-2">{1h_alignment_label}</p>
+          <div class="text-sm text-gray-400 space-y-1">
             <p>価格はSMA25の{1h_sma25_position}</p>
             <p>価格はSMA75の{1h_sma75_position}</p>
             <p>{1h_recent_cross}</p>
@@ -1990,10 +1990,10 @@ sendPrompt() で飛んだ先の応答も Visualizer で表示する。
         </div>
         <!-- 4時間足 -->
         <div class="bg-accent rounded-lg p-4 text-center">
-          <p class="text-xs text-gray-400 mb-1">4時間足</p>
-          <p class="text-2xl mb-1">{4h_alignment_icon}</p>
-          <p class="text-sm font-bold mb-2">{4h_alignment_label}</p>
-          <div class="text-xs text-gray-400 space-y-1">
+          <p class="text-sm text-gray-400 mb-1">4時間足</p>
+          <p class="text-3xl mb-1">{4h_alignment_icon}</p>
+          <p class="text-base font-bold mb-2">{4h_alignment_label}</p>
+          <div class="text-sm text-gray-400 space-y-1">
             <p>価格はSMA25の{4h_sma25_position}</p>
             <p>価格はSMA75の{4h_sma75_position}</p>
             <p>{4h_recent_cross}</p>
@@ -2001,15 +2001,15 @@ sendPrompt() で飛んだ先の応答も Visualizer で表示する。
         </div>
         <!-- 日足 -->
         <div class="bg-accent rounded-lg p-4 text-center">
-          <p class="text-xs text-gray-400 mb-1">日足</p>
-          <p class="text-2xl mb-1">{1d_alignment_icon}</p>
-          <p class="text-sm font-bold mb-2">{1d_alignment_label}</p>
-          <div class="text-xs text-gray-400 space-y-1">
+          <p class="text-sm text-gray-400 mb-1">日足</p>
+          <p class="text-3xl mb-1">{1d_alignment_icon}</p>
+          <p class="text-base font-bold mb-2">{1d_alignment_label}</p>
+          <div class="text-sm text-gray-400 space-y-1">
             <p>価格はSMA25の{1d_sma25_position}</p>
             <p>価格はSMA75の{1d_sma75_position}</p>
             <p>{1d_recent_cross}</p>
           </div>
-          <div class="border-t border-gray-600 mt-2 pt-2 text-xs text-gray-400">
+          <div class="border-t border-gray-600 mt-2 pt-2 text-sm text-gray-400">
             <p>一目: 雲の{cloud_position}</p>
             <p>{sanpuku_label}</p>
           </div>
@@ -2017,7 +2017,7 @@ sendPrompt() で飛んだ先の応答も Visualizer で表示する。
       </div>
       <!-- 総合判定 -->
       <div class="bg-accent rounded-lg p-3 text-center">
-        <p class="text-sm font-bold">{confluence_judgment}</p>
+        <p class="text-base font-bold">{confluence_judgment}</p>
       </div>
     </section>
 
@@ -2028,7 +2028,7 @@ sendPrompt() で飛んだ先の応答も Visualizer で表示する。
     </section>
 
     <!-- 免責事項 -->
-    <footer class="text-center text-gray-500 text-xs">
+    <footer class="text-center text-gray-500 text-sm">
       ⚠️ この分析は参考情報です。投資判断はご自身で行ってください。
     </footer>
 
