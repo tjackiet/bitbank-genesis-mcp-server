@@ -10,8 +10,14 @@
  * @see https://github.com/bitbankinc/bitbank-api-docs/blob/master/rest-api.md
  */
 
-import { describe, expect, it } from 'vitest';
-import { buildGetMessage, buildPostMessage, sign } from '../../src/private/auth.js';
+import { afterEach, describe, expect, it } from 'vitest';
+import {
+	buildGetMessage,
+	buildPostMessage,
+	createGetAuthHeaders,
+	createPostAuthHeaders,
+	sign,
+} from '../../src/private/auth.js';
 
 // テストベクタ: 固定の秘密鍵から手計算した署名
 // 検証方法: echo -n "<message>" | openssl dgst -sha256 -hmac "<secret>"
@@ -106,6 +112,32 @@ describe('auth.ts 署名テストベクタ', () => {
 			const sig1 = sign('secret_a', message);
 			const sig2 = sign('secret_b', message);
 			expect(sig1).not.toBe(sig2);
+		});
+	});
+
+	describe('createGetAuthHeaders / createPostAuthHeaders', () => {
+		afterEach(() => {
+			delete process.env.BITBANK_API_KEY;
+			delete process.env.BITBANK_API_SECRET;
+		});
+
+		it('固定 requestTime を注入すると決定的な出力を返す', () => {
+			process.env.BITBANK_API_KEY = 'test_key';
+			process.env.BITBANK_API_SECRET = 'test_secret';
+			const h1 = createGetAuthHeaders('/v1/user/assets', '1709000000000');
+			const h2 = createGetAuthHeaders('/v1/user/assets', '1709000000000');
+			expect(h1['ACCESS-SIGNATURE']).toBe(h2['ACCESS-SIGNATURE']);
+			expect(h1['ACCESS-REQUEST-TIME']).toBe('1709000000000');
+		});
+
+		it('POST 用ヘッダーで固定 requestTime が反映される', () => {
+			process.env.BITBANK_API_KEY = 'test_key';
+			process.env.BITBANK_API_SECRET = 'test_secret';
+			const h = createPostAuthHeaders('{"pair":"btc_jpy"}', '1709000000000');
+			expect(h['ACCESS-KEY']).toBe('test_key');
+			expect(h['ACCESS-REQUEST-TIME']).toBe('1709000000000');
+			expect(h['ACCESS-TIME-WINDOW']).toBe('5000');
+			expect(h['ACCESS-SIGNATURE']).toBeTruthy();
 		});
 	});
 });
