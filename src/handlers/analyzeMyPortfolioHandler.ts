@@ -1322,7 +1322,7 @@ export default async function analyzeMyPortfolioHandler(args: {
 			.map((h) => h.asset.toUpperCase());
 		const hasMissingPrices = missingPriceAssets.length > 0;
 
-		// 銘柄別パフォーマンス（月初比・年初比の価格騰落率）
+		// 保有銘柄のパフォーマンス（月次・年次の価格騰落率）
 		let holdingsPerformance:
 			| Array<{
 					asset: string;
@@ -1620,16 +1620,17 @@ export default async function analyzeMyPortfolioHandler(args: {
 		lines.push('※ 評価損益は当年（1/1〜）の約定ベース。年初以前の取得原価は含みません');
 		lines.push('');
 
-		// 銘柄別パフォーマンス（月初比・年初比の価格騰落率）
+		// 保有銘柄のパフォーマンス（月次・年次の価格騰落率）
 		if (holdingsPerformance && holdingsPerformance.length > 0) {
-			lines.push('銘柄別パフォーマンス:');
+			lines.push('保有銘柄のパフォーマンス:');
 			for (const hp of holdingsPerformance) {
 				const assetUpper = hp.asset.toUpperCase();
 				const parts = [`${assetUpper}`];
 				if (hp.jpy_value != null) parts.push(formatPriceJPY(hp.jpy_value));
 				if (hp.monthly_change_pct != null)
-					parts.push(`月初比: ${formatPercent(hp.monthly_change_pct, { sign: true })}`);
-				if (hp.yearly_change_pct != null) parts.push(`年初比: ${formatPercent(hp.yearly_change_pct, { sign: true })}`);
+					parts.push(`月次騰落率: ${formatPercent(hp.monthly_change_pct, { sign: true })}`);
+				if (hp.yearly_change_pct != null)
+					parts.push(`年次騰落率: ${formatPercent(hp.yearly_change_pct, { sign: true })}`);
 				lines.push(`  ${parts.join(' / ')}`);
 			}
 		}
