@@ -1322,6 +1322,44 @@ export default async function analyzeMyPortfolioHandler(args: {
 			.map((h) => h.asset.toUpperCase());
 		const hasMissingPrices = missingPriceAssets.length > 0;
 
+		// 銘柄別パフォーマンス（月初比・年初比の価格騰落率）
+		let holdingsPerformance:
+			| Array<{
+					asset: string;
+					pair: string;
+					current_price: number | undefined;
+					monthly_change_pct: number | undefined;
+					yearly_change_pct: number | undefined;
+					jpy_value: number | undefined;
+					amount: string;
+			  }>
+			| undefined;
+		if (include_pnl) {
+			const candlePriceData = await candlePricePromise;
+			const periodPrices = candlePriceData.boundaryPrices;
+			holdingsPerformance = cryptoHoldings.map((h) => {
+				const currentPrice = prices.get(h.asset);
+				const bp = periodPrices.get(h.asset);
+				const monthlyChangePct =
+					currentPrice != null && bp?.monthStart != null && bp.monthStart > 0
+						? Math.round(((currentPrice - bp.monthStart) / bp.monthStart) * 10000) / 100
+						: undefined;
+				const yearlyChangePct =
+					currentPrice != null && bp?.yearStart != null && bp.yearStart > 0
+						? Math.round(((currentPrice - bp.yearStart) / bp.yearStart) * 10000) / 100
+						: undefined;
+				return {
+					asset: h.asset,
+					pair: h.pair,
+					current_price: h.current_price,
+					monthly_change_pct: monthlyChangePct,
+					yearly_change_pct: yearlyChangePct,
+					jpy_value: h.jpy_value,
+					amount: h.amount,
+				};
+			});
+		}
+
 		// 4. 入出金ベースのリターン計算（Phase 4）
 		let dwSummary: DepositWithdrawalSummary | undefined;
 		let yearlyDWSummary: PeriodDWSummary | undefined;
@@ -1582,24 +1620,18 @@ export default async function analyzeMyPortfolioHandler(args: {
 		lines.push('※ 評価損益は当年（1/1〜）の約定ベース。年初以前の取得原価は含みません');
 		lines.push('');
 
-		// 銘柄別サマリー（暗号資産のみ。JPY は口座合計に含む）
-		for (const h of cryptoHoldings) {
-			const assetUpper = h.asset.toUpperCase();
-			let line = `${assetUpper}: ${h.amount}`;
-			if (h.jpy_value != null) {
-				line += ` (${formatPriceJPY(h.jpy_value)})`;
+		// 銘柄別パフォーマンス（月初比・年初比の価格騰落率）
+		if (holdingsPerformance && holdingsPerformance.length > 0) {
+			lines.push('銘柄別パフォーマンス:');
+			for (const hp of holdingsPerformance) {
+				const assetUpper = hp.asset.toUpperCase();
+				const parts = [`${assetUpper}`];
+				if (hp.jpy_value != null) parts.push(formatPriceJPY(hp.jpy_value));
+				if (hp.monthly_change_pct != null)
+					parts.push(`月初比: ${formatPercent(hp.monthly_change_pct, { sign: true })}`);
+				if (hp.yearly_change_pct != null) parts.push(`年初比: ${formatPercent(hp.yearly_change_pct, { sign: true })}`);
+				lines.push(`  ${parts.join(' / ')}`);
 			}
-			if (h.unrealized_pnl != null) {
-				const sign = h.unrealized_pnl >= 0 ? '+' : '';
-				line += ` 損益: ${sign}${formatPriceJPY(h.unrealized_pnl)}`;
-				if (h.unrealized_pnl_pct != null) {
-					line += ` (${formatPercent(h.unrealized_pnl_pct, { sign: true })})`;
-				}
-			}
-			if (h.avg_buy_price != null) {
-				line += ` 取得単価: ${formatPrice(h.avg_buy_price)}`;
-			}
-			lines.push(line);
 		}
 
 		// ticker 未取得警告
@@ -1680,6 +1712,7 @@ export default async function analyzeMyPortfolioHandler(args: {
 			deposit_withdrawal_summary: depositWithdrawalSummary,
 			yearly_dw_summary: yearlyDWSummary,
 			monthly_dw_summary: monthlyDWSummary,
+			holdings_performance: holdingsPerformance && holdingsPerformance.length > 0 ? holdingsPerformance : undefined,
 			technical: technical && technical.length > 0 ? technical : undefined,
 			timestamp,
 		};

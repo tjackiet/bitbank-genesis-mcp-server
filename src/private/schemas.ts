@@ -167,6 +167,22 @@ const HoldingPnlSchema = z.object({
 	trade_count: z.number().optional().describe('約定件数'),
 });
 
+const HoldingPerformanceSchema = z.object({
+	asset: z.string().describe('通貨コード'),
+	pair: z.string().describe('通貨ペア（例: btc_jpy）'),
+	current_price: z.number().optional().describe('現在価格（JPY）'),
+	monthly_change_pct: z
+		.number()
+		.optional()
+		.describe('月初比騰落率（%）。月初始値 → 現在価格の変動率。月初の価格データがない場合は undefined'),
+	yearly_change_pct: z
+		.number()
+		.optional()
+		.describe('年初比騰落率（%）。年初始値 → 現在価格の変動率。年初の価格データがない場合は undefined'),
+	jpy_value: z.number().optional().describe('現在の評価額（JPY）'),
+	amount: z.string().describe('保有数量'),
+});
+
 const TechnicalSummarySchema = z.object({
 	pair: z.string().describe('通貨ペア'),
 	trend: z.string().optional().describe('トレンド判定'),
@@ -298,6 +314,10 @@ export const AnalyzeMyPortfolioDataSchema = z.object({
 	deposit_withdrawal_summary: DepositWithdrawalSummarySchema,
 	yearly_dw_summary: PeriodDWSummarySchema.describe('年初来の入出金サマリー（当年1/1 00:00 JST〜現在）'),
 	monthly_dw_summary: PeriodDWSummarySchema.describe('月初来の入出金サマリー（当月1日 00:00 JST〜現在）'),
+	holdings_performance: z
+		.array(HoldingPerformanceSchema)
+		.optional()
+		.describe('保有銘柄の月初比・年初比の価格騰落率（暗号資産のみ。JPY評価額降順）'),
 	technical: z.array(TechnicalSummarySchema).optional().describe('テクニカル分析サマリー'),
 	timestamp: z.string(),
 });
