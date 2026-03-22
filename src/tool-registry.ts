@@ -106,7 +106,24 @@ if (isPrivateApiEnabled()) {
 	const { toolDef: getMyOrders } = await import('../tools/private/get_my_orders.js');
 	const { toolDef: analyzeMyPortfolio } = await import('../tools/private/analyze_my_portfolio.js');
 	const { toolDef: getMyDepositWithdrawal } = await import('../tools/private/get_my_deposit_withdrawal.js');
-	allToolDefs.push(getMyAssets, getMyTradeHistory, getMyOrders, analyzeMyPortfolio, getMyDepositWithdrawal);
+	// Trading tools
+	const { toolDef: createOrder } = await import('../tools/private/create_order.js');
+	const { toolDef: cancelOrder } = await import('../tools/private/cancel_order.js');
+	const { toolDef: cancelOrders } = await import('../tools/private/cancel_orders.js');
+	const { toolDef: getOrder } = await import('../tools/private/get_order.js');
+	const { toolDef: getOrdersInfo } = await import('../tools/private/get_orders_info.js');
+	allToolDefs.push(
+		getMyAssets,
+		getMyTradeHistory,
+		getMyOrders,
+		analyzeMyPortfolio,
+		getMyDepositWithdrawal,
+		createOrder,
+		cancelOrder,
+		cancelOrders,
+		getOrder,
+		getOrdersInfo,
+	);
 	log('info', {
 		type: 'private_api',
 		message: 'Private API tools enabled',
@@ -116,6 +133,11 @@ if (isPrivateApiEnabled()) {
 			'get_my_orders',
 			'analyze_my_portfolio',
 			'get_my_deposit_withdrawal',
+			'create_order',
+			'cancel_order',
+			'cancel_orders',
+			'get_order',
+			'get_orders_info',
 		],
 	});
 } else {

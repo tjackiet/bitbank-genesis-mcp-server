@@ -411,3 +411,190 @@ export const GetMyDepositWithdrawalOutputSchema = z.union([
 	}),
 	PrivateFailResultSchema,
 ]);
+
+// ── Trading: 注文レスポンス共通スキーマ ──
+
+/** bitbank 注文ステータス */
+export const OrderStatusEnum = z.enum([
+	'INACTIVE',
+	'UNFILLED',
+	'PARTIALLY_FILLED',
+	'FULLY_FILLED',
+	'CANCELED_UNFILLED',
+	'CANCELED_PARTIALLY_FILLED',
+]);
+
+/** 現物注文タイプ（margin 系の take_profit / stop_loss / losscut は除外） */
+export const SpotOrderTypeEnum = z.enum(['limit', 'market', 'stop', 'stop_limit']);
+
+/** 注文レスポンス（単一） — bitbank API が返す注文オブジェクト */
+const OrderResponseSchema = z.object({
+	order_id: z.number().describe('注文ID'),
+	pair: z.string().describe('通貨ペア'),
+	side: z.enum(['buy', 'sell']).describe('売買方向'),
+	type: z.string().describe('注文タイプ'),
+	start_amount: z.string().nullable().describe('注文数量'),
+	remaining_amount: z.string().nullable().describe('未約定数量'),
+	executed_amount: z.string().describe('約定済み数量'),
+	price: z.string().optional().describe('指値価格'),
+	post_only: z.boolean().optional().describe('Post Only フラグ'),
+	user_cancelable: z.boolean().optional().describe('キャンセル可能か'),
+	average_price: z.string().describe('平均約定価格'),
+	ordered_at: z.number().describe('注文日時（unix ms）'),
+	expire_at: z.number().nullable().optional().describe('有効期限（unix ms）'),
+	triggered_at: z.number().optional().describe('トリガー発動日時（unix ms）'),
+	trigger_price: z.string().optional().describe('トリガー価格'),
+	canceled_at: z.number().optional().describe('キャンセル日時（unix ms）'),
+	status: z.string().describe('注文ステータス'),
+});
+
+export type OrderResponse = z.infer<typeof OrderResponseSchema>;
+
+// ── create_order（注文発注） ──
+
+export const CreateOrderInputSchema = z
+	.object({
+		pair: z.string().describe('通貨ペア（例: btc_jpy）'),
+		amount: z.string().describe('注文数量'),
+		price: z.string().optional().describe('指値価格。limit / stop_limit で必須'),
+		side: z.enum(['buy', 'sell']).describe('売買方向'),
+		type: SpotOrderTypeEnum.describe('注文タイプ（limit / market / stop / stop_limit）'),
+		post_only: z.boolean().optional().describe('Post Only（limit のみ有効。Maker 手数料を確保）'),
+		trigger_price: z.string().optional().describe('トリガー価格。stop / stop_limit で必須'),
+	})
+	.describe('現物注文を発注する。金額を伴う操作のため、発注前にユーザーへの確認を推奨');
+
+export const CreateOrderDataSchema = z.object({
+	order: OrderResponseSchema,
+	timestamp: z.string(),
+});
+
+export const CreateOrderMetaSchema = z.object({
+	fetchedAt: z.string(),
+	orderId: z.number(),
+	pair: z.string(),
+	side: z.enum(['buy', 'sell']),
+	type: z.string(),
+});
+
+export const CreateOrderOutputSchema = z.union([
+	z.object({
+		ok: z.literal(true),
+		summary: z.string(),
+		data: CreateOrderDataSchema,
+		meta: CreateOrderMetaSchema,
+	}),
+	PrivateFailResultSchema,
+]);
+
+// ── cancel_order（注文キャンセル・単一） ──
+
+export const CancelOrderInputSchema = z.object({
+	pair: z.string().describe('通貨ペア（例: btc_jpy）'),
+	order_id: z.number().describe('キャンセルする注文ID'),
+});
+
+export const CancelOrderDataSchema = z.object({
+	order: OrderResponseSchema,
+	timestamp: z.string(),
+});
+
+export const CancelOrderMetaSchema = z.object({
+	fetchedAt: z.string(),
+	orderId: z.number(),
+	pair: z.string(),
+});
+
+export const CancelOrderOutputSchema = z.union([
+	z.object({
+		ok: z.literal(true),
+		summary: z.string(),
+		data: CancelOrderDataSchema,
+		meta: CancelOrderMetaSchema,
+	}),
+	PrivateFailResultSchema,
+]);
+
+// ── cancel_orders（注文キャンセル・複数） ──
+
+export const CancelOrdersInputSchema = z.object({
+	pair: z.string().describe('通貨ペア（例: btc_jpy）'),
+	order_ids: z.array(z.number()).min(1).max(30).describe('キャンセルする注文IDの配列（最大30件）'),
+});
+
+export const CancelOrdersDataSchema = z.object({
+	orders: z.array(OrderResponseSchema),
+	timestamp: z.string(),
+});
+
+export const CancelOrdersMetaSchema = z.object({
+	fetchedAt: z.string(),
+	canceledCount: z.number().int(),
+	pair: z.string(),
+});
+
+export const CancelOrdersOutputSchema = z.union([
+	z.object({
+		ok: z.literal(true),
+		summary: z.string(),
+		data: CancelOrdersDataSchema,
+		meta: CancelOrdersMetaSchema,
+	}),
+	PrivateFailResultSchema,
+]);
+
+// ── get_order（注文照会・単一） ──
+
+export const GetOrderInputSchema = z.object({
+	pair: z.string().describe('通貨ペア（例: btc_jpy）'),
+	order_id: z.number().describe('照会する注文ID'),
+});
+
+export const GetOrderDataSchema = z.object({
+	order: OrderResponseSchema,
+	timestamp: z.string(),
+});
+
+export const GetOrderMetaSchema = z.object({
+	fetchedAt: z.string(),
+	orderId: z.number(),
+	pair: z.string(),
+});
+
+export const GetOrderOutputSchema = z.union([
+	z.object({
+		ok: z.literal(true),
+		summary: z.string(),
+		data: GetOrderDataSchema,
+		meta: GetOrderMetaSchema,
+	}),
+	PrivateFailResultSchema,
+]);
+
+// ── get_orders_info（注文照会・複数） ──
+
+export const GetOrdersInfoInputSchema = z.object({
+	pair: z.string().describe('通貨ペア（例: btc_jpy）'),
+	order_ids: z.array(z.number()).min(1).describe('照会する注文IDの配列'),
+});
+
+export const GetOrdersInfoDataSchema = z.object({
+	orders: z.array(OrderResponseSchema),
+	timestamp: z.string(),
+});
+
+export const GetOrdersInfoMetaSchema = z.object({
+	fetchedAt: z.string(),
+	orderCount: z.number().int(),
+	pair: z.string(),
+});
+
+export const GetOrdersInfoOutputSchema = z.union([
+	z.object({
+		ok: z.literal(true),
+		summary: z.string(),
+		data: GetOrdersInfoDataSchema,
+		meta: GetOrdersInfoMetaSchema,
+	}),
+	PrivateFailResultSchema,
+]);
