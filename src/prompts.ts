@@ -2361,7 +2361,7 @@ include_technical=true で返ってくる technical 配列を使用する。
 - SMA乖離率（sma_deviation_pct）— プラスなら上方乖離、マイナスなら下方乖離
 - トレンド（trend）— strong_uptrend 🟢強い上昇 / uptrend 🟢上昇 / sideways 🟡横ばい / downtrend 🔴下落 / strong_downtrend 🔴強い下落
   - HTML 上では日本語ラベルに変換してよい（例: strong_uptrend → 「強い上昇トレンド」、sideways → 「横ばい」）
-- シグナル（signal）— bullish 🟢 / bearish 🔴 / neutral 🟡
+- 総合判定（signal）— bullish 🟢強気 / bearish 🔴弱気 / overbought 🔴過熱 / oversold 🟢売られすぎ / neutral 🟡中立
 
 ### 8. 入出金サマリー（available 時のみ）
 **全期間の詳細履歴は不要。** 年次・月次の入出金サマリーをカードで表示する。
@@ -2700,9 +2700,9 @@ html モードでは sendPrompt 関連の記述をすべて無視する。
               <!-- trend: strong_uptrend→強い上昇 / uptrend→上昇 / sideways→横ばい / downtrend→下落 / strong_downtrend→強い下落 -->
             </div>
             <div>
-              <p class="text-gray-400 text-sm">シグナル</p>
+              <p class="text-gray-400 text-sm">総合判定</p>
               <p>{signal_icon} {signal}</p>
-              <!-- signal: bullish→🟢 / bearish→🔴 / neutral→🟡 -->
+              <!-- signal: bullish→🟢強気 / bearish→🔴弱気 / overbought→🔴過熱 / oversold→🟢売られすぎ / neutral→🟡中立 -->
             </div>
           </div>
         </div>

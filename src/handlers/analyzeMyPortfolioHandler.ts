@@ -956,17 +956,24 @@ async function fetchTechnical(pairs: string[]): Promise<TechnicalSummary[]> {
 			// trend は analyzeIndicators の data に含まれる
 			const trend = data.trend;
 
-			// シグナル判定
+			// 総合判定: RSI とトレンドを組み合わせて判定
 			// analyzeIndicators の trend は uptrend/strong_uptrend/downtrend/strong_downtrend/sideways
-			let signal = 'neutral';
-			if (rsi14 != null) {
-				if (rsi14 >= 70) signal = 'overbought';
-				else if (rsi14 <= 30) signal = 'oversold';
-			}
 			const isBullish = trend === 'uptrend' || trend === 'strong_uptrend';
 			const isBearish = trend === 'downtrend' || trend === 'strong_downtrend';
-			if (isBullish && signal === 'neutral') signal = 'bullish';
-			if (isBearish && signal === 'neutral') signal = 'bearish';
+			let signal = 'neutral';
+			if (rsi14 != null) {
+				if (rsi14 >= 70) {
+					// RSI 買われすぎ: 上昇トレンド中なら強気維持、それ以外は過熱警告
+					signal = isBullish ? 'bullish' : 'overbought';
+				} else if (rsi14 <= 30) {
+					// RSI 売られすぎ: 下落トレンド中は弱気継続（落ちるナイフ）、それ以外は反発期待
+					signal = isBearish ? 'bearish' : 'oversold';
+				}
+			}
+			if (signal === 'neutral') {
+				if (isBullish) signal = 'bullish';
+				else if (isBearish) signal = 'bearish';
+			}
 
 			return {
 				pair,
@@ -1650,7 +1657,7 @@ export default async function analyzeMyPortfolioHandler(args: {
 				if (t.trend) parts.push(`トレンド: ${t.trend}`);
 				if (t.rsi_14 != null) parts.push(`RSI: ${t.rsi_14}`);
 				if (t.sma_deviation_pct != null) parts.push(`SMA乖離: ${formatPercent(t.sma_deviation_pct, { sign: true })}`);
-				if (t.signal) parts.push(`シグナル: ${t.signal}`);
+				if (t.signal) parts.push(`総合判定: ${t.signal}`);
 				lines.push(`  ${parts.join(' / ')}`);
 			}
 		}

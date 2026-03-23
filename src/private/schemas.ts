@@ -188,7 +188,7 @@ const TechnicalSummarySchema = z.object({
 	trend: z.string().optional().describe('トレンド判定'),
 	rsi_14: z.number().optional().describe('RSI(14)'),
 	sma_deviation_pct: z.number().optional().describe('SMA(25)乖離率（%）'),
-	signal: z.string().optional().describe('総合シグナル'),
+	signal: z.string().optional().describe('総合判定'),
 });
 
 const DepositWithdrawalSummarySchema = z
