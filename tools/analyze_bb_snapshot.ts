@@ -367,7 +367,9 @@ export const toolDef: ToolDefinition = {
 	name: 'analyze_bb_snapshot',
 	description: `[Bollinger Bands / BB / Squeeze] ボリンジャーバンド（BB / squeeze / bandwidth / zScore）の数値スナップショット。軽量・BB特化。
 
-mode=default: ±2σ帯の基本情報 / mode=extended: ±1σ/±2σ/±3σの詳細分析。`,
+mode=default: ±2σ帯の基本情報 / mode=extended: ±1σ/±2σ/±3σの詳細分析。
+
+⚠️ 最新値のみ。時系列チャート描画 → prepare_chart_data（indicators: ["BB"]）。`,
 	inputSchema: AnalyzeBbSnapshotInputSchema,
 	handler: async ({
 		pair,

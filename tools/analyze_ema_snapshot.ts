@@ -357,7 +357,7 @@ export default async function analyzeEmaSnapshot(
 export const toolDef: ToolDefinition = {
 	name: 'analyze_ema_snapshot',
 	description:
-		'[EMA / Exponential Moving Average] EMA（exponential moving average / trend / slope）の最新値・整列・クロス・傾きを返す（既定: 12/26/50/200）。',
+		'[EMA / Exponential Moving Average] EMA（exponential moving average / trend / slope）の最新値・整列・クロス・傾きを返す（既定: 12/26/50/200）。\n\n⚠️ 最新値のみ。時系列チャート描画 → prepare_chart_data（indicators: ["EMA_12","EMA_26"] 等）。',
 	inputSchema: AnalyzeEmaSnapshotInputSchema,
 	handler: async ({
 		pair,

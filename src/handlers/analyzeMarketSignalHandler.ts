@@ -199,7 +199,7 @@ export function buildMarketSignalHandlerText(input: BuildMarketSignalHandlerText
 export const toolDef: ToolDefinition = {
 	name: 'analyze_market_signal',
 	description:
-		'[Market Signal / Score / Triage] 市場の総合シグナル（market signal / composite score / bull-bear / triage）。5要素（板圧力・CVD・モメンタム・ボラティリティ・SMAトレンド）を-100〜+100の単一スコアで瞬時評価。分析の起点・スクリーニングに最適。\n\n詳細分析には専門ツールを併用: get_flow_metrics / get_volatility_metrics / analyze_indicators / get_orderbook / detect_patterns。',
+		'[Market Signal / Score / Triage] 市場の総合シグナル（market signal / composite score / bull-bear / triage）。5要素（板圧力・CVD・モメンタム・ボラティリティ・SMAトレンド）を-100〜+100の単一スコアで瞬時評価。分析の起点・スクリーニングに最適。\n\n⚠️ 最新値スナップショットのみ。時系列チャート描画 → prepare_chart_data（indicators 指定）。\n\n詳細分析には専門ツールを併用: get_flow_metrics / get_volatility_metrics / analyze_indicators / get_orderbook / detect_patterns。',
 	inputSchema: AnalyzeMarketSignalInputSchema,
 	handler: async ({ pair, type, flowLimit, bucketMs, windows }: z.infer<typeof AnalyzeMarketSignalInputSchema>) => {
 		const res = await analyzeMarketSignal(pair, { type, flowLimit, bucketMs, windows });
