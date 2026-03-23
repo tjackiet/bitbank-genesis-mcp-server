@@ -2366,6 +2366,39 @@ include_technical=true で返ってくる technical 配列を使用する。
   - HTML 上では日本語ラベルに変換してよい（例: strong_uptrend → 「強い上昇トレンド」、sideways → 「横ばい」）
 - 総合判定（signal）— bullish 🟢強気 / bearish 🔴弱気 / overbought 🔴過熱 / oversold 🟢売られすぎ / neutral 🟡中立
 
+**レイアウト（重要・両モード共通）:**
+- 銘柄カードは **1列（縦並び）** で配置する（grid-cols-1）。2列グリッドにしない
+- 各カード内の指標（RSI / SMA乖離 / トレンド / 総合判定）は **横4列（grid-cols-4）** で並べる
+- この「1カード＝1行、指標4列横並び」のレイアウトを必ず守ること
+
+テクニカル分析セクションの HTML 構造（visualizer / html 共通）:
+\`\`\`html
+<div style="display:grid;grid-template-columns:1fr;gap:12px;">
+  <!-- 銘柄ごとに繰り返し -->
+  <div style="background:...;border-radius:8px;padding:16px;">
+    <p style="font-weight:bold;margin-bottom:8px;">{pair_name}</p>
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;">
+      <div>
+        <p style="color:gray;font-size:14px;">RSI</p>
+        <p>{rsi_icon} {rsi_value}</p>
+      </div>
+      <div>
+        <p style="color:gray;font-size:14px;">SMA乖離</p>
+        <p>{sma_deviation}</p>
+      </div>
+      <div>
+        <p style="color:gray;font-size:14px;">トレンド</p>
+        <p>{trend_icon} {trend_label}</p>
+      </div>
+      <div>
+        <p style="color:gray;font-size:14px;">総合判定</p>
+        <p>{signal_icon} {signal_label}</p>
+      </div>
+    </div>
+  </div>
+</div>
+\`\`\`
+
 ### 8. 入出金サマリー（available 時のみ）
 **全期間の詳細履歴は不要。** 年次・月次の入出金サマリーをカードで表示する。
 
