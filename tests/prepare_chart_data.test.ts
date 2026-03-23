@@ -85,11 +85,11 @@ describe('prepare_chart_data', () => {
 
 	it('ICHIMOKU 指定時に chikou が部分的に値を持つ場合は含まれる', async () => {
 		mockFetch(makeOhlcvRows(600));
-		const res = await prepareChartData('btc_jpy', '1day', 100, ['ICHIMOKU']);
+		const res = await prepareChartData('btc_jpy', '1day', 60, ['ICHIMOKU']);
 		assertOk(res);
 		const chikou = res.data.series?.ICHI_chikou;
 		expect(chikou).toBeDefined();
-		expect(chikou).toHaveLength(100);
+		expect(chikou).toHaveLength(res.data.candles.length);
 		// 末尾 26 要素は null
 		const tail26 = chikou?.slice(-26) ?? [];
 		for (const v of tail26) {
@@ -163,6 +163,15 @@ describe('prepare_chart_data', () => {
 		assertOk(res);
 		expect(res.meta.indicators).toContain('SMA_20');
 		expect(res.meta.indicators).toContain('RSI_14');
+	});
+
+	it('limit × indicators 数がしきい値を超える場合 limit が自動切り詰めされる', async () => {
+		mockFetch(makeOhlcvRows(600));
+		// limit=90, indicators=5 → seriesMultiplier=6, 90*6=540 > 150 → effectiveLimit=25
+		const res = await prepareChartData('btc_jpy', '1day', 90, ['SMA_25', 'SMA_75', 'BB', 'RSI', 'MACD']);
+		assertOk(res);
+		expect(res.data.candles.length).toBeLessThanOrEqual(30);
+		expect(res.summary).toContain('limit was capped');
 	});
 
 	it('不正な pair で fail を返す', async () => {

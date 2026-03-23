@@ -108,21 +108,30 @@ function labelFormat(candleType: string): string {
 export default async function prepareChartData(
 	pair: string = 'btc_jpy',
 	type: string = '1day',
-	limit: number = 100,
+	limit: number = 30,
 	indicators?: string[],
 	tz: string = 'Asia/Tokyo',
 ): Promise<OkResult<PrepareChartDataResult, PrepareChartDataMeta> | FailResult> {
 	const chk = ensurePair(pair);
 	if (!chk.ok) return fail(chk.error.message, chk.error.type);
 
+	// サーバー側ガード: limit × インジケーター系列数がしきい値を超える場合、limit を自動切り詰め
+	const MAX_TOTAL_SERIES = 150; // limit × (1 + indicatorCount) の上限
+	const indicatorCount = indicators?.length ?? 0;
+	const seriesMultiplier = 1 + indicatorCount; // 1 = OHLCV 本体
+	let effectiveLimit = limit;
+	if (seriesMultiplier > 1 && limit * seriesMultiplier > MAX_TOTAL_SERIES) {
+		effectiveLimit = Math.max(5, Math.floor(MAX_TOTAL_SERIES / seriesMultiplier));
+	}
+
 	const jpyPair = isJpyPair(chk.pair);
 
 	try {
-		const res = await analyzeIndicators(chk.pair, type, limit);
+		const res = await analyzeIndicators(chk.pair, type, effectiveLimit);
 		if (!res.ok) return fail(res.summary.replace(/^Error: /, ''), res.meta.errorType);
 
 		const chart = res.data.chart;
-		const candles = chart.candles.slice(-limit);
+		const candles = chart.candles.slice(-effectiveLimit);
 		const chartIndicators = chart.indicators as Record<string, unknown>;
 
 		// 指標フィルタ: 指定がなければ空（ローソク足のみ）
@@ -162,7 +171,7 @@ export default async function prepareChartData(
 			for (const key of keys) {
 				const arr = chartIndicators[key];
 				if (!Array.isArray(arr)) continue;
-				const sliced = (arr as NumericSeries).slice(-limit);
+				const sliced = (arr as NumericSeries).slice(-effectiveLimit);
 				const rounded = toRoundedArray(sliced, jpyPair);
 				if (rounded) {
 					series[key] = rounded;
@@ -176,7 +185,7 @@ export default async function prepareChartData(
 		if (selectedGroups.has('RSI')) {
 			const rsiArr = chartIndicators.RSI_14_series;
 			if (Array.isArray(rsiArr)) {
-				const sliced = (rsiArr as NumericSeries).slice(-limit);
+				const sliced = (rsiArr as NumericSeries).slice(-effectiveLimit);
 				const rounded = toRoundedArray(sliced, false); // RSI は 0-100 なので小数2桁を維持
 				if (rounded) subPanels.RSI_14 = rounded;
 			}
@@ -187,14 +196,14 @@ export default async function prepareChartData(
 				| { line: NumericSeries; signal: NumericSeries; hist: NumericSeries }
 				| undefined;
 			if (macdData) {
-				const line = toRoundedArray(macdData.line.slice(-limit), jpyPair);
-				const signal = toRoundedArray(macdData.signal.slice(-limit), jpyPair);
-				const hist = toRoundedArray(macdData.hist.slice(-limit), jpyPair);
+				const line = toRoundedArray(macdData.line.slice(-effectiveLimit), jpyPair);
+				const signal = toRoundedArray(macdData.signal.slice(-effectiveLimit), jpyPair);
+				const hist = toRoundedArray(macdData.hist.slice(-effectiveLimit), jpyPair);
 				if (line || signal || hist) {
 					subPanels.MACD = {
-						line: line ?? macdData.line.slice(-limit),
-						signal: signal ?? macdData.signal.slice(-limit),
-						hist: hist ?? macdData.hist.slice(-limit),
+						line: line ?? macdData.line.slice(-effectiveLimit),
+						signal: signal ?? macdData.signal.slice(-effectiveLimit),
+						hist: hist ?? macdData.hist.slice(-effectiveLimit),
 					};
 				}
 			}
@@ -204,11 +213,11 @@ export default async function prepareChartData(
 			const stochK = chartIndicators.stoch_k_series;
 			const stochD = chartIndicators.stoch_d_series;
 			if (Array.isArray(stochK)) {
-				const rounded = toRoundedArray((stochK as NumericSeries).slice(-limit), false);
+				const rounded = toRoundedArray((stochK as NumericSeries).slice(-effectiveLimit), false);
 				if (rounded) subPanels.STOCH_K = rounded;
 			}
 			if (Array.isArray(stochD)) {
-				const rounded = toRoundedArray((stochD as NumericSeries).slice(-limit), false);
+				const rounded = toRoundedArray((stochD as NumericSeries).slice(-effectiveLimit), false);
 				if (rounded) subPanels.STOCH_D = rounded;
 			}
 		}
@@ -238,7 +247,9 @@ export default async function prepareChartData(
 		};
 
 		const seriesNote = indicatorNames.length > 0 ? `, indicators: ${indicatorNames.join(', ')}` : '';
-		return ok(`${chk.pair} ${type} chart data (${candles.length} candles${seriesNote})`, data, meta);
+		const truncNote =
+			effectiveLimit < limit ? ` ⚠️ limit was capped from ${limit} to ${effectiveLimit} to reduce context size` : '';
+		return ok(`${chk.pair} ${type} chart data (${candles.length} candles${seriesNote})${truncNote}`, data, meta);
 	} catch (err: unknown) {
 		return failFromError(err);
 	}
@@ -248,6 +259,9 @@ export const toolDef: ToolDefinition = {
 	name: 'prepare_chart_data',
 	description:
 		'[Chart / Candlestick / Visualization] チャート描画の第一選択ツール。\n\n' +
+		'⚠️ limit はデフォルト 30 を推奨。ユーザーが期間を明示した場合のみ増やすこと。\n' +
+		'indicators はユーザーが明示的に要求した指標のみ指定すること。分析のついでに追加しない。\n' +
+		'indicators の同時指定はコンテキストを大幅に消費するため、必要最小限に留めること。\n\n' +
 		'デフォルトはローソク足（OHLCV）のみ返す。indicators 未指定 = ローソク足のみ。\n' +
 		'指標が必要な場合は indicators に明示指定: SMA_5, SMA_20, SMA_25, SMA_50, SMA_75, SMA_200, EMA_12, EMA_26, EMA_50, EMA_200, BB, ICHIMOKU, RSI, MACD, STOCH\n\n' +
 		'レスポンス形式: { times[], labels?[], candles: [[o,h,l,c,v],...], series?: {指標名: values[]}, subPanels?: {...} }\n' +
@@ -268,7 +282,7 @@ export const toolDef: ToolDefinition = {
 		indicators?: string[];
 		tz?: string;
 	}) => {
-		const result = await prepareChartData(pair ?? 'btc_jpy', type ?? '1day', limit ?? 100, indicators, tz);
+		const result = await prepareChartData(pair ?? 'btc_jpy', type ?? '1day', limit ?? 30, indicators, tz);
 		if (!result.ok) return result;
 		// LLM は structuredContent を参照できないため、content テキストにデータを含める
 		const text = `${result.summary}\n${JSON.stringify(result.data)}`;
