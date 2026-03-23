@@ -157,6 +157,19 @@ describe('get_my_deposit_withdrawal', () => {
 		expect(result.data.withdrawals.length).toBeGreaterThan(0);
 	});
 
+	it('uuid をサマリーに含む', async () => {
+		setupFetchMock({});
+
+		const { default: getMyDepositWithdrawal } = await import('../../tools/private/get_my_deposit_withdrawal.js');
+		const result = await getMyDepositWithdrawal({});
+
+		assertOk(result);
+		expect(result.summary).toContain('[dep-001]');
+		expect(result.summary).toContain('[dep-002]');
+		expect(result.summary).toContain('[wd-001]');
+		expect(result.summary).toContain('[wd-002]');
+	});
+
 	it('type=deposit で出金 API を呼ばない', async () => {
 		setupFetchMock({});
 

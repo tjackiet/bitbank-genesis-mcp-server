@@ -92,4 +92,16 @@ describe('get_my_trade_history', () => {
 		expect(result.summary).toContain('買 2件');
 		expect(result.summary).toContain('売 1件');
 	});
+
+	it('trade_id と order_id をサマリーに含む', async () => {
+		setupFetchMock(mockBitbankSuccess(rawTradeHistoryResponse));
+
+		const { default: getMyTradeHistory } = await import('../../tools/private/get_my_trade_history.js');
+		const result = await getMyTradeHistory({});
+
+		assertOk(result);
+		expect(result.summary).toContain('[trade: 101 / order: 1001]');
+		expect(result.summary).toContain('[trade: 102 / order: 1002]');
+		expect(result.summary).toContain('[trade: 103 / order: 1003]');
+	});
 });
