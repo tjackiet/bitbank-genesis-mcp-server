@@ -145,7 +145,7 @@ export const ChartIndicatorGroupEnum = z.enum([
 export const PrepareChartDataInputSchema = z.object({
 	pair: z.string().optional().default('btc_jpy'),
 	type: CandleTypeEnum.optional().default('1day'),
-	limit: z.number().int().min(5).max(500).optional().default(100),
+	limit: z.number().int().min(5).max(500).optional().default(30),
 	indicators: z.array(ChartIndicatorGroupEnum).optional(),
 	tz: z
 		.string()
