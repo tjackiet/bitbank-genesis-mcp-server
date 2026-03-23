@@ -96,7 +96,7 @@ export default async function getMyOrders(args: { pair?: string; count?: number;
 				const price = o.price ? (isJpy ? formatPrice(Number(o.price)) : o.price) : '成行';
 				const remaining = o.remaining_amount ?? '?';
 				lines.push(
-					`${formatPair(o.pair)} ${sideLabel}${o.type} ${remaining} @ ${price} [${o.status}] (${o.ordered_at})`,
+					`[ID: ${o.order_id}] ${formatPair(o.pair)} ${sideLabel}${o.type} ${remaining} @ ${price} [${o.status}] (${o.ordered_at})`,
 				);
 			}
 

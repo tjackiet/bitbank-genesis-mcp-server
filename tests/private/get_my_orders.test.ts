@@ -63,6 +63,17 @@ describe('get_my_orders', () => {
 		expect(result.summary).toContain('売 1件');
 	});
 
+	it('order_id をサマリーに含む', async () => {
+		setupFetchMock(mockBitbankSuccess(rawActiveOrdersResponse));
+
+		const { default: getMyOrders } = await import('../../tools/private/get_my_orders.js');
+		const result = await getMyOrders({});
+
+		assertOk(result);
+		expect(result.summary).toContain('[ID: 2001]');
+		expect(result.summary).toContain('[ID: 2002]');
+	});
+
 	it('不正な since 日付で validation_error を返す', async () => {
 		const { default: getMyOrders } = await import('../../tools/private/get_my_orders.js');
 		const result = await getMyOrders({ since: 'bad-date' });

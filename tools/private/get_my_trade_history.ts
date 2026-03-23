@@ -101,7 +101,9 @@ export default async function getMyTradeHistory(args: {
 				const sideLabel = t.side === 'buy' ? '買' : '売';
 				const isJpy = t.pair.includes('jpy');
 				const price = isJpy ? formatPrice(Number(t.price)) : t.price;
-				lines.push(`${t.executed_at} ${formatPair(t.pair)} ${sideLabel} ${t.amount} @ ${price} (${t.maker_taker})`);
+				lines.push(
+					`[trade: ${t.trade_id} / order: ${t.order_id}] ${t.executed_at} ${formatPair(t.pair)} ${sideLabel} ${t.amount} @ ${price} (${t.maker_taker})`,
+				);
 			}
 
 			if (trades.length > 10) {
