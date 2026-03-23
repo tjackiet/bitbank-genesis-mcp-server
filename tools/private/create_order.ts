@@ -18,6 +18,7 @@
 
 import { nowIso } from '../../lib/datetime.js';
 import { formatPair, formatPrice } from '../../lib/formatter.js';
+import { BITBANK_API_BASE, fetchJson } from '../../lib/http.js';
 import { log } from '../../lib/logger.js';
 import { fail, ok } from '../../lib/result.js';
 import { getDefaultClient, PrivateApiError } from '../../src/private/client.js';
@@ -67,6 +68,46 @@ function isPositiveNumericString(s: string): boolean {
 	return Number.isFinite(n) && n > 0;
 }
 
+/**
+ * stop / stop_limit 注文のトリガー価格妥当性チェック。
+ * bitbank の仕様:
+ *   - stop sell: 価格がトリガー以下に下落したとき発動（損切り用）→ trigger_price < 現在価格
+ *   - stop buy:  価格がトリガー以上に上昇したとき発動（ブレイクアウト用）→ trigger_price > 現在価格
+ * 条件を満たさない場合、発注時点で即時発動してしまうため事前にブロックする。
+ */
+async function validateTriggerPrice(pair: string, side: 'buy' | 'sell', triggerPrice: number): Promise<string | null> {
+	try {
+		const url = `${BITBANK_API_BASE}/${pair}/ticker`;
+		const json = (await fetchJson(url, { timeoutMs: 5000 })) as {
+			success?: number;
+			data?: { last?: string };
+		};
+		if (json?.success !== 1 || !json.data?.last) return null; // ticker 取得失敗時はブロックしない
+		const currentPrice = Number(json.data.last);
+		if (!Number.isFinite(currentPrice)) return null;
+
+		if (side === 'sell' && triggerPrice >= currentPrice) {
+			return [
+				`stop sell のトリガー価格（${formatPrice(triggerPrice)}）が現在価格（${formatPrice(currentPrice)}）以上のため、即時発動してしまいます。`,
+				'stop sell は「価格がトリガー以下に下落したとき」に発動します（損切り・ストップロス用）。',
+				'R1 上抜けで利確したい場合は limit sell を使用してください。',
+			].join('\n');
+		}
+
+		if (side === 'buy' && triggerPrice <= currentPrice) {
+			return [
+				`stop buy のトリガー価格（${formatPrice(triggerPrice)}）が現在価格（${formatPrice(currentPrice)}）以下のため、即時発動してしまいます。`,
+				'stop buy は「価格がトリガー以上に上昇したとき」に発動します（ブレイクアウト買い用）。',
+				'指定価格以下で買いたい場合は limit buy を使用してください。',
+			].join('\n');
+		}
+	} catch {
+		// ticker 取得失敗時はバリデーションをスキップし発注を続行
+		return null;
+	}
+	return null;
+}
+
 export default async function createOrder(args: {
 	pair: string;
 	amount: string;
@@ -93,6 +134,14 @@ export default async function createOrder(args: {
 	}
 	if (trigger_price && !isPositiveNumericString(trigger_price)) {
 		return CreateOrderOutputSchema.parse(fail('trigger_price は正の数値を指定してください', 'validation_error'));
+	}
+
+	// stop / stop_limit: トリガー価格の妥当性チェック（即時発動を防止）
+	if ((type === 'stop' || type === 'stop_limit') && trigger_price) {
+		const triggerError = await validateTriggerPrice(pair, side, Number(trigger_price));
+		if (triggerError) {
+			return CreateOrderOutputSchema.parse(fail(triggerError, 'validation_error'));
+		}
 	}
 
 	const client = getDefaultClient();
@@ -179,6 +228,9 @@ export const toolDef: ToolDefinition = {
 	description: [
 		'[Create Order / Place Order / Buy / Sell] 現物注文を発注する。Private API。',
 		'注文タイプ: limit（指値）, market（成行）, stop（逆指値）, stop_limit（逆指値指値）。',
+		'stop sell: 価格がトリガー以下に下落したとき発動（損切り・ストップロス用）。',
+		'stop buy: 価格がトリガー以上に上昇したとき発動（ブレイクアウト買い用）。',
+		'※ R1上抜けで利確したい場合は limit sell を使用すること。',
 		'⚠️ 実際に取引が実行されます。発注前にユーザーへの確認を必ず行ってください。',
 	].join(' '),
 	inputSchema: CreateOrderInputSchema,

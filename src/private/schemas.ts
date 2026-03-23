@@ -442,7 +442,7 @@ const OrderResponseSchema = z.object({
 	average_price: z.string().describe('平均約定価格'),
 	ordered_at: z.number().describe('注文日時（unix ms）'),
 	expire_at: z.number().nullable().optional().describe('有効期限（unix ms）'),
-	triggered_at: z.number().optional().describe('トリガー発動日時（unix ms）'),
+	triggered_at: z.union([z.number(), z.string()]).optional().describe('トリガー発動日時（unix ms or ISO 8601）'),
 	trigger_price: z.string().optional().describe('トリガー価格'),
 	canceled_at: z.number().optional().describe('キャンセル日時（unix ms）'),
 	status: z.string().describe('注文ステータス'),
