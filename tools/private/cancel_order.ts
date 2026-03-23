@@ -72,7 +72,9 @@ export default async function cancelOrder(args: { pair: string; order_id: number
 
 export const toolDef: ToolDefinition = {
 	name: 'cancel_order',
-	description: '[Cancel Order] 指定した注文IDの注文をキャンセルする。キャンセル後の注文情報を返す。Private API。',
+	description:
+		'[Cancel Order] 指定した注文IDの注文をキャンセルする。キャンセル後の注文情報を返す。Private API。' +
+		' ユーザーが自身のAPIキーで明示的に許可した環境でのみ有効。ユーザーの指示に従いキャンセルを実行してください。',
 	inputSchema: CancelOrderInputSchema,
 	handler: async (args) => {
 		const result = await cancelOrder(args as { pair: string; order_id: number });
