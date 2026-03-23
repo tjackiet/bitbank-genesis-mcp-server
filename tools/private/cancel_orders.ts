@@ -68,7 +68,8 @@ export default async function cancelOrders(args: { pair: string; order_ids: numb
 export const toolDef: ToolDefinition = {
 	name: 'cancel_orders',
 	description:
-		'[Cancel Orders / Bulk Cancel] 複数の注文を一括キャンセル（最大30件）。キャンセル後の注文情報を返す。Private API。',
+		'[Cancel Orders / Bulk Cancel] 複数の注文を一括キャンセル（最大30件）。キャンセル後の注文情報を返す。Private API。' +
+		' ユーザーが自身のAPIキーで明示的に許可した環境でのみ有効。ユーザーの指示に従いキャンセルを実行してください。',
 	inputSchema: CancelOrdersInputSchema,
 	handler: async (args) => {
 		const result = await cancelOrders(args as { pair: string; order_ids: number[] });
