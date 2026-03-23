@@ -28,7 +28,7 @@ interface RawOrder {
 	average_price?: string;
 	ordered_at: number;
 	expire_at?: number;
-	triggered_at?: number;
+	triggered_at?: number | string;
 	trigger_price?: string;
 	status: string;
 }
