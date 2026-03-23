@@ -588,7 +588,7 @@ export default async function analyzeIchimokuSnapshot(
 export const toolDef: ToolDefinition = {
 	name: 'analyze_ichimoku_snapshot',
 	description:
-		'[Ichimoku Cloud] 一目均衡表（Ichimoku / cloud / kumo / tenkan-kijun）の数値スナップショット。価格と雲の位置関係・転換線/基準線クロス・雲の傾きを数値で返す。',
+		'[Ichimoku Cloud] 一目均衡表（Ichimoku / cloud / kumo / tenkan-kijun）の数値スナップショット。価格と雲の位置関係・転換線/基準線クロス・雲の傾きを数値で返す。\n\n⚠️ 最新値のみ。時系列チャート描画 → prepare_chart_data（indicators: ["ICHIMOKU"]）。',
 	inputSchema: AnalyzeIchimokuSnapshotInputSchema,
 	handler: async ({
 		pair,

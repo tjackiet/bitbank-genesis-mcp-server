@@ -328,7 +328,7 @@ export default async function analyzeSmaSnapshot(
 export const toolDef: ToolDefinition = {
 	name: 'analyze_sma_snapshot',
 	description:
-		'[SMA / Moving Average / Golden Cross] SMA（simple moving average / golden cross / dead cross）の数値スナップショット。最新値・クロス検出・整列状態（bullish/bearish/mixed）。',
+		'[SMA / Moving Average / Golden Cross] SMA（simple moving average / golden cross / dead cross）の数値スナップショット。最新値・クロス検出・整列状態（bullish/bearish/mixed）。\n\n⚠️ 最新値のみ。時系列チャート描画 → prepare_chart_data（indicators: ["SMA_25","SMA_75"] 等）。',
 	inputSchema: AnalyzeSmaSnapshotInputSchema,
 	handler: async ({
 		pair,
