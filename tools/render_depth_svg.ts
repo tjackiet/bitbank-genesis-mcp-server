@@ -5,7 +5,8 @@ import { z } from 'zod';
 import { nowIso, toDisplayTime } from '../lib/datetime.js';
 import { formatPair } from '../lib/formatter.js';
 import getDepth from '../lib/get-depth.js';
-import { fail, failFromError, ok } from '../lib/result.js';
+import { fail, failFromError, failFromValidation, ok } from '../lib/result.js';
+import { ensurePair } from '../lib/validate.js';
 import type { FailResult, OkResult, Pair } from '../src/schemas.js';
 import type { ToolDefinition } from '../src/tool-definition.js';
 
@@ -27,7 +28,9 @@ export default async function renderDepthSvg(
 	} = {},
 ): Promise<OkResult<RenderData, RenderMeta> | FailResult> {
 	try {
-		const pair = (args.pair || 'btc_jpy') as Pair;
+		const chk = ensurePair(args.pair || 'btc_jpy');
+		if (!chk.ok) return failFromValidation(chk);
+		const pair = chk.pair;
 		const type = String(args.type || '1day');
 		const levels = Math.max(10, Number(args?.depth?.levels ?? 200));
 

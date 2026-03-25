@@ -87,7 +87,7 @@ export const GetCandlesDataSchemaOut = z.object({
 	volumeStats: VolumeStatsSchema.nullable().optional(),
 });
 export const GetCandlesMetaSchemaOut = BaseMetaSchema.extend({
-	type: CandleTypeEnum.or(z.string()),
+	type: CandleTypeEnum,
 	count: z.number(),
 });
 export const GetCandlesOutputSchema = toolResultSchema(GetCandlesDataSchemaOut, GetCandlesMetaSchemaOut);

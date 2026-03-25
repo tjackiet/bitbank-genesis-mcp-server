@@ -64,4 +64,28 @@ describe('fetchJson', () => {
 		await expect(fetchJson('https://example.com/api', { retries: 1 })).rejects.toThrow('persistent error');
 		expect(globalThis.fetch).toHaveBeenCalledTimes(2); // 初回 + 1リトライ
 	});
+
+	it('schema 指定時にレスポンスをバリデーションする', async () => {
+		const mockData = { success: 1, value: 42 };
+		globalThis.fetch = vi.fn().mockResolvedValue({
+			ok: true,
+			json: () => Promise.resolve(mockData),
+		});
+		const schema = { parse: (d: unknown) => d as typeof mockData };
+		const result = await fetchJson('https://example.com/api', { schema });
+		expect(result).toEqual(mockData);
+	});
+
+	it('schema バリデーション失敗時にエラーを投げる', async () => {
+		globalThis.fetch = vi.fn().mockResolvedValue({
+			ok: true,
+			json: () => Promise.resolve({ bad: 'data' }),
+		});
+		const schema = {
+			parse: () => {
+				throw new Error('validation failed');
+			},
+		};
+		await expect(fetchJson('https://example.com/api', { retries: 0, schema })).rejects.toThrow('validation failed');
+	});
 });

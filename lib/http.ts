@@ -7,11 +7,13 @@ export const DEFAULT_RETRIES = 2;
 export interface FetchJsonOptions {
 	timeoutMs?: number;
 	retries?: number;
+	/** Zod スキーマ等の parse 互換オブジェクト。指定時はレスポンスをランタイム検証する。 */
+	schema?: { parse: (data: unknown) => unknown };
 }
 
 export async function fetchJson<T = unknown>(
 	url: string,
-	{ timeoutMs = 2500, retries = DEFAULT_RETRIES }: FetchJsonOptions = {},
+	{ timeoutMs = 2500, retries = DEFAULT_RETRIES, schema }: FetchJsonOptions = {},
 ): Promise<T> {
 	let lastErr: unknown;
 	for (let i = 0; i <= retries; i++) {
@@ -21,7 +23,9 @@ export async function fetchJson<T = unknown>(
 			const res = await fetch(url, { signal: ctrl.signal });
 			clearTimeout(t);
 			if (!res.ok) throw new Error(`HTTP ${res.status} ${res.statusText}`);
-			return (await res.json()) as T;
+			const json: unknown = await res.json();
+			if (schema) return schema.parse(json) as T;
+			return json as T;
 		} catch (e) {
 			clearTimeout(t);
 			lastErr = e;

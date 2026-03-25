@@ -111,7 +111,7 @@ export const GetIndicatorsDataSchema = z.object({
 });
 
 export const GetIndicatorsMetaSchema = BaseMetaSchema.extend({
-	type: CandleTypeEnum.or(z.string()),
+	type: CandleTypeEnum,
 	count: z.number(),
 	requiredCount: z.number(),
 	warnings: z.array(z.string()).optional(),

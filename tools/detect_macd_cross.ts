@@ -1,8 +1,8 @@
 import { z } from 'zod';
 import { dayjs } from '../lib/datetime.js';
 import { formatSummary } from '../lib/formatter.js';
-import { fail, failFromError, ok } from '../lib/result.js';
-import { ALLOWED_PAIRS } from '../lib/validate.js';
+import { fail, failFromError, failFromValidation, ok } from '../lib/result.js';
+import { ALLOWED_PAIRS, ensurePair } from '../lib/validate.js';
 import type { Pair } from '../src/schemas.js';
 import type { ToolDefinition } from '../src/tool-definition.js';
 import analyzeIndicators from './analyze_indicators.js';
@@ -644,8 +644,10 @@ screen（スクリーニング用）:
 	}) => {
 		try {
 			if (args.pair) {
+				const chk = ensurePair(args.pair);
+				if (!chk.ok) return failFromValidation(chk);
 				return singlePairMode(
-					args.pair,
+					chk.pair,
 					args.includeForming ?? true,
 					args.includeStats ?? true,
 					args.historyDays ?? 90,
