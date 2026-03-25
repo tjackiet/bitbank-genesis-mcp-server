@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Purpose: Auto-fix formatting/lint issues after .ts file edits, then collect
+# remaining diagnostics (oxlint, tsc, banned patterns) as feedback for the AI.
 input="$(cat)"
 file="$(jq -r '.tool_input.file_path // .tool_input.path // empty' <<< "$input")"
 

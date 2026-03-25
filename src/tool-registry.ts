@@ -25,19 +25,15 @@ import { toolDef as analyzeSupportResistance } from '../tools/analyze_support_re
 import { toolDef as analyzeVolumeProfile } from '../tools/analyze_volume_profile.js';
 import { toolDef as detectMacdCross } from '../tools/detect_macd_cross.js';
 import { toolDef as detectWhaleEvents } from '../tools/detect_whale_events.js';
-
-// ── Medium tools（toolDef + inline handler はツールファイル内） ──
 import { toolDef as getCandles } from '../tools/get_candles.js';
 import { toolDef as getFlowMetrics } from '../tools/get_flow_metrics.js';
 import { toolDef as getOrderbook } from '../tools/get_orderbook.js';
-// ── Simple tools（toolDef はツールファイル内） ──
 import { toolDef as getTicker } from '../tools/get_ticker.js';
 import { toolDef as getTransactions } from '../tools/get_transactions.js';
 import { toolDef as prepareChartData } from '../tools/prepare_chart_data.js';
 import { toolDef as renderCandlePatternDiagram } from '../tools/render_candle_pattern_diagram.js';
 import { toolDef as renderDepthSvg } from '../tools/render_depth_svg.js';
 import { toolDef as analyzeFibonacci } from './handlers/analyzeFibonacciHandler.js';
-// ── Complex tools（toolDef + handler は src/handlers/ に分離） ──
 import { toolDef as analyzeIndicators } from './handlers/analyzeIndicatorsHandler.js';
 import { toolDef as analyzeMarketSignal } from './handlers/analyzeMarketSignalHandler.js';
 import { toolDef as detectPatterns } from './handlers/detectPatternsHandler.js';
@@ -49,11 +45,19 @@ import { isPrivateApiEnabled } from './private/config.js';
 import type { ToolDefinition } from './tool-definition.js';
 
 /**
- * 全 MCP ツール定義の配列。
- * server.ts はこの配列をイテレートして registerToolWithLog を呼ぶ。
+ * Public ツール一覧（カテゴリ別）
+ *
+ * | カテゴリ             | ツール数 | 概要                                     |
+ * |---------------------|---------|------------------------------------------|
+ * | Data Retrieval      | 7       | ticker, orderbook, candles, transactions |
+ * | Technical Analysis  | 13      | BB, 一目, SMA, EMA, Stoch, Fibonacci 等  |
+ * | Signal & Detection  | 4       | 総合シグナル, パターン, MACD, クジラ       |
+ * | Visualization       | 4       | SVG チャート, 板チャート, データ整形       |
+ * | Backtesting         | 1       | SMA/MACD/BB/RSI 戦略バックテスト          |
+ * | **Private**         | **10**  | 残高, 注文, 約定, ポートフォリオ（要 API キー）|
  */
 export const allToolDefs: ToolDefinition[] = [
-	// Data retrieval
+	// ── Data Retrieval (7) ──
 	getTicker,
 	getOrderbook,
 	getCandles,
@@ -62,7 +66,7 @@ export const allToolDefs: ToolDefinition[] = [
 	getVolatilityMetrics,
 	getTickersJpy,
 
-	// Analysis
+	// ── Technical Analysis (13) ──
 	analyzeIndicators,
 	analyzeBbSnapshot,
 	analyzeIchimokuSnapshot,
@@ -72,26 +76,24 @@ export const allToolDefs: ToolDefinition[] = [
 	analyzeMtfSma,
 	analyzeSupportResistance,
 	analyzeCandlePatterns,
-	analyzeMarketSignal,
 	analyzeVolumeProfile,
 	analyzeCurrencyStrength,
 	analyzeFibonacci,
 	analyzeMtfFibonacci,
 
-	// Detection
+	// ── Signal & Detection (4) ──
+	analyzeMarketSignal,
 	detectPatterns,
 	detectMacdCross,
 	detectWhaleEvents,
 
-	// Visualization data
+	// ── Visualization (4) ──
 	prepareChartData,
-
-	// Rendering
 	renderChartSvg,
 	renderDepthSvg,
 	renderCandlePatternDiagram,
 
-	// Trading
+	// ── Backtesting (1) ──
 	runBacktest,
 ];
 

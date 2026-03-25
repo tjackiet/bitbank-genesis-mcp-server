@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
+# Purpose: Prevent accidental edits to protected config files (biome.json,
+# tsconfig.json, etc). If code has lint/type errors, fix the code — not the config.
 
 input="$(cat)"
 file="$(jq -r '.tool_input.file_path // .tool_input.path // empty' <<< "$input")"
