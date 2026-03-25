@@ -22,3 +22,14 @@ pre-commit:
         done
       glob: "*.ts"
       exclude: "*.test.ts"
+    secrets-check:
+      run: |
+        for f in {staged_files}; do
+          base="$(basename "$f")"
+          case "$base" in
+            .env|.env.*|*.pem|*.key|credentials.json)
+              echo "ERROR: Potential secret file staged: $f"
+              exit 1
+              ;;
+          esac
+        done
