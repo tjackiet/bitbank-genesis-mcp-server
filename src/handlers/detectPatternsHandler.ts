@@ -1,5 +1,7 @@
 import type { z } from 'zod';
 import { timeframeLabel } from '../../lib/formatter.js';
+import { failFromValidation } from '../../lib/result.js';
+import { ensurePair } from '../../lib/validate.js';
 import detectPatterns from '../../tools/detect_patterns.js';
 import { DetectPatternsInputSchema, DetectPatternsOutputSchema } from '../schemas.js';
 import type { ToolDefinition } from '../tool-definition.js';
@@ -35,7 +37,9 @@ export const toolDef: ToolDefinition = {
 		includeCompleted,
 		includeInvalid,
 	}: DetectPatternsInput) => {
-		const out = await detectPatterns(pair, type, limit, {
+		const chk = ensurePair(pair);
+		if (!chk.ok) return failFromValidation(chk);
+		const out = await detectPatterns(chk.pair, type, limit, {
 			patterns,
 			swingDepth,
 			tolerancePct,

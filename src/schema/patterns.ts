@@ -56,7 +56,7 @@ export const DetectedPatternSchema = z.object({
 	type: PatternTypeEnum,
 	confidence: z.number().min(0).max(1),
 	/** 検出に使用した時間足（例: '1day', '4hour', '1week'） */
-	timeframe: CandleTypeEnum.or(z.string()).optional(),
+	timeframe: CandleTypeEnum.optional(),
 	/** 人間可読な時間足ラベル（例: '日足', '4時間足', '週足'） */
 	timeframeLabel: z.string().optional(),
 	range: z.object({ start: z.string(), end: z.string() }),
@@ -156,7 +156,7 @@ export const DetectPatternsOutputSchema = z.union([
 		}),
 		meta: z.object({
 			pair: z.string(),
-			type: CandleTypeEnum.or(z.string()),
+			type: CandleTypeEnum,
 			count: z.number().int(),
 			visualization_hints: z
 				.object({

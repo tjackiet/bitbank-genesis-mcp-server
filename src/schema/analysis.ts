@@ -65,7 +65,7 @@ export const GetVolMetricsDataSchemaOut = z.object({
 });
 
 export const GetVolMetricsMetaSchemaOut = BaseMetaSchema.extend({
-	type: CandleTypeEnum.or(z.string()),
+	type: CandleTypeEnum,
 	count: z.number().int(),
 });
 
@@ -184,7 +184,7 @@ export const AnalyzeMarketSignalDataSchemaOut = z.object({
 	}),
 });
 export const AnalyzeMarketSignalMetaSchemaOut = BaseMetaSchema.extend({
-	type: CandleTypeEnum.or(z.string()),
+	type: CandleTypeEnum,
 	windows: z.array(z.number()),
 	bucketMs: z.number().int(),
 	flowLimit: z.number().int(),
@@ -304,7 +304,7 @@ export const AnalyzeIchimokuSnapshotDataSchemaOut = z.object({
 });
 
 export const AnalyzeIchimokuSnapshotMetaSchemaOut = BaseMetaSchema.extend({
-	type: CandleTypeEnum.or(z.string()),
+	type: CandleTypeEnum,
 	count: z.number().int(),
 });
 
@@ -368,7 +368,7 @@ export const AnalyzeBbSnapshotDataSchemaOut = z.union([
 ]);
 
 export const AnalyzeBbSnapshotMetaSchemaOut = BaseMetaSchema.extend({
-	type: CandleTypeEnum.or(z.string()),
+	type: CandleTypeEnum,
 	count: z.number().int(),
 	mode: z.enum(['default', 'extended']),
 	// allow additional meta injected by implementation
@@ -431,7 +431,7 @@ export const AnalyzeSmaSnapshotDataSchemaOut = z
 	.passthrough();
 
 export const AnalyzeSmaSnapshotMetaSchemaOut = BaseMetaSchema.extend({
-	type: CandleTypeEnum.or(z.string()),
+	type: CandleTypeEnum,
 	count: z.number().int(),
 	periods: z.array(z.number().int()),
 });
@@ -491,7 +491,7 @@ export const AnalyzeEmaSnapshotDataSchemaOut = z
 	.passthrough();
 
 export const AnalyzeEmaSnapshotMetaSchemaOut = BaseMetaSchema.extend({
-	type: CandleTypeEnum.or(z.string()),
+	type: CandleTypeEnum,
 	count: z.number().int(),
 	periods: z.array(z.number().int()),
 });
@@ -541,7 +541,7 @@ export const AnalyzeStochSnapshotDataSchemaOut = z
 	.passthrough();
 
 export const AnalyzeStochSnapshotMetaSchemaOut = BaseMetaSchema.extend({
-	type: CandleTypeEnum.or(z.string()),
+	type: CandleTypeEnum,
 	count: z.number().int(),
 	params: z.object({ kPeriod: z.number().int(), smoothK: z.number().int(), smoothD: z.number().int() }),
 });

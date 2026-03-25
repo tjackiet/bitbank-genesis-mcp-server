@@ -1,4 +1,6 @@
 import type { z } from 'zod';
+import { failFromValidation } from '../../lib/result.js';
+import { ensurePair } from '../../lib/validate.js';
 import renderChartSvg from '../../tools/render_chart_svg.js';
 import { RenderChartSvgInputSchema, RenderChartSvgOutputSchema } from '../schemas.js';
 import type { ToolDefinition } from '../tool-definition.js';
@@ -11,7 +13,9 @@ export const toolDef: ToolDefinition = {
 		'[SVG file / PNG save] ローソク足・ラインチャートをサーバー側で SVG/PNG に生成。\nクライアント側で描画可能な場合は prepare_chart_data を優先。\nユーザーが SVG/PNG 保存を明示した場合のみ使用。自発的呼び出し禁止。\ndetect_patterns の overlays を渡してパターン描画可能。\nオプションのインジケーター（SMA/EMA/BB/一目均衡表）はユーザーが明示的に要求した場合のみ指定すること。デフォルトではすべてオフ。',
 	inputSchema: RenderChartSvgInputSchema,
 	handler: async (args: Record<string, unknown>) => {
-		const raw = await renderChartSvg(args as z.infer<typeof RenderChartSvgInputSchema>);
+		const chk = ensurePair(args.pair || 'btc_jpy');
+		if (!chk.ok) return failFromValidation(chk);
+		const raw = await renderChartSvg({ ...args, pair: chk.pair } as z.infer<typeof RenderChartSvgInputSchema>);
 		const parsed: ChartOutput = RenderChartSvgOutputSchema.parse(raw);
 
 		const data = ((parsed as Record<string, unknown>).data as Record<string, unknown>) ?? {};

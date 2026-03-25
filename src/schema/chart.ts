@@ -192,7 +192,7 @@ export const PrepareChartDataOutputSchema = z.object({
 	}),
 	meta: z.object({
 		pair: z.string(),
-		type: CandleTypeEnum.or(z.string()),
+		type: CandleTypeEnum,
 		count: z.number(),
 		indicators: z.array(z.string()),
 		/** 出来高の単位（ペアのベース通貨。例: btc_jpy → "BTC"） */
@@ -331,7 +331,7 @@ export const RenderChartSvgOutputSchema = z.object({
 	meta: z
 		.object({
 			pair: z.string(),
-			type: CandleTypeEnum.or(z.string()),
+			type: CandleTypeEnum,
 			limit: z.number().optional(),
 			indicators: z.array(z.string()).optional(),
 			bbMode: z.enum(['default', 'extended']).optional(),
