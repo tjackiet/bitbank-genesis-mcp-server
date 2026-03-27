@@ -37,15 +37,25 @@
 
 ---
 
-### 2. SessionStart — セッション開始ヘルスチェック
+### 2. SessionStart — セッション開始ヘルスチェック（差分最適化付き）
 
 | 項目 | 内容 |
 |------|------|
 | **タイミング** | セッション開始時 |
 | **目的** | コードベースが壊れた状態のまま作業を開始しない |
-| **手段** | `.claude/hooks/session-start.sh` が順番に実行: `npm run gen:types` → `npm run typecheck` → `npm test` |
+| **手段** | `.claude/hooks/session-start.sh` が `npm run gen:types` → `npm run typecheck` → テスト（最適化付き）の順に実行 |
 | **強度** | **ブロック** — `set -euo pipefail` により途中で失敗すると hook 全体が失敗し、エージェントにエラーが通知される |
 | **補足** | CLAUDE.md の「セッション開始時」セクションと同じ内容を hook として強制実行。CLAUDE.md だけでは AI が従わない可能性があるため、hook で機械的に担保 |
+
+**テスト実行の最適化（3モード）:**
+
+| モード | 条件 | 動作 | 所要時間 |
+|--------|------|------|---------|
+| **skip** | HEAD = main かつ uncommitted changes なし | テストスキップ（型生成・型チェックのみ） | ~8s |
+| **changed** | main との差分あり | `vitest --changed` で関連テストのみ実行 | ~1-3s |
+| **full** | git 外、main 参照不能 | 全テスト実行（従来動作） | ~16s |
+
+`gen:types` と `typecheck` は全モードで常に実行（Zod スキーマと型の整合性は差分に依存しないため）。
 
 ---
 
