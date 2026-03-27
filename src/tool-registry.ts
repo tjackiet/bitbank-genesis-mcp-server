@@ -54,7 +54,7 @@ import type { ToolDefinition } from './tool-definition.js';
  * | Signal & Detection  | 4       | 総合シグナル, パターン, MACD, クジラ       |
  * | Visualization       | 4       | SVG チャート, 板チャート, データ整形       |
  * | Backtesting         | 1       | SMA/MACD/BB/RSI 戦略バックテスト          |
- * | **Private**         | **10**  | 残高, 注文, 約定, ポートフォリオ（要 API キー）|
+ * | **Private**         | **13**  | 残高, 注文, 約定, ポートフォリオ, HITL確認（要 API キー）|
  */
 export const allToolDefs: ToolDefinition[] = [
 	// ── Data Retrieval (7) ──
@@ -108,9 +108,12 @@ if (isPrivateApiEnabled()) {
 	const { toolDef: getMyOrders } = await import('../tools/private/get_my_orders.js');
 	const { toolDef: analyzeMyPortfolio } = await import('../tools/private/analyze_my_portfolio.js');
 	const { toolDef: getMyDepositWithdrawal } = await import('../tools/private/get_my_deposit_withdrawal.js');
-	// Trading tools
+	// Trading tools (preview → execute の2ステップ確認)
+	const { toolDef: previewOrder } = await import('../tools/private/preview_order.js');
 	const { toolDef: createOrder } = await import('../tools/private/create_order.js');
+	const { toolDef: previewCancelOrder } = await import('../tools/private/preview_cancel_order.js');
 	const { toolDef: cancelOrder } = await import('../tools/private/cancel_order.js');
+	const { toolDef: previewCancelOrders } = await import('../tools/private/preview_cancel_orders.js');
 	const { toolDef: cancelOrders } = await import('../tools/private/cancel_orders.js');
 	const { toolDef: getOrder } = await import('../tools/private/get_order.js');
 	const { toolDef: getOrdersInfo } = await import('../tools/private/get_orders_info.js');
@@ -120,8 +123,11 @@ if (isPrivateApiEnabled()) {
 		getMyOrders,
 		analyzeMyPortfolio,
 		getMyDepositWithdrawal,
+		previewOrder,
 		createOrder,
+		previewCancelOrder,
 		cancelOrder,
+		previewCancelOrders,
 		cancelOrders,
 		getOrder,
 		getOrdersInfo,
@@ -135,8 +141,11 @@ if (isPrivateApiEnabled()) {
 			'get_my_orders',
 			'analyze_my_portfolio',
 			'get_my_deposit_withdrawal',
+			'preview_order',
 			'create_order',
+			'preview_cancel_order',
 			'cancel_order',
+			'preview_cancel_orders',
 			'cancel_orders',
 			'get_order',
 			'get_orders_info',

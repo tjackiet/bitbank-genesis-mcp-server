@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import fs from 'fs';
 import path from 'path';
 import { nowIso, today } from './datetime.js';
@@ -14,6 +15,20 @@ function ensureDir(dir: string) {
 function writeJsonl(file: string, obj: unknown) {
 	ensureDir(path.dirname(file));
 	fs.appendFileSync(file, JSON.stringify(obj) + '\n');
+}
+
+// ── チェーンハッシュ（取引操作ログ専用） ──
+
+let lastTradeHash = '0'.repeat(64);
+
+/** チェーンハッシュ付きで取引操作ログを書き込む */
+function writeTradeJsonl(file: string, record: Record<string, unknown>) {
+	ensureDir(path.dirname(file));
+	const withChain = { ...record, _prevHash: lastTradeHash };
+	const json = JSON.stringify(withChain);
+	lastTradeHash = createHash('sha256').update(json).digest('hex');
+	const finalRecord = { ...withChain, _hash: lastTradeHash };
+	fs.appendFileSync(file, JSON.stringify(finalRecord) + '\n');
 }
 
 export function log(level: 'error' | 'warn' | 'info' | 'debug', event: Record<string, unknown>): void {
@@ -46,4 +61,34 @@ export function logError(tool: string, err: unknown, input: unknown): void {
 		input,
 		error: (err instanceof Error ? err.message : undefined) || String(err),
 	});
+}
+
+// ── 取引操作ログ（チェーンハッシュ付き） ──
+
+export function logTradeAction(action: {
+	type: 'create_order' | 'cancel_order' | 'cancel_orders';
+	orderId?: number;
+	orderIds?: number[];
+	pair: string;
+	side?: string;
+	orderType?: string;
+	amount?: string;
+	price?: string | null;
+	triggerPrice?: string | null;
+	status: string;
+	confirmed: boolean;
+}) {
+	const date = today('YYYY-MM-DD');
+	const file = path.join(LOG_DIR, `${date}.jsonl`);
+	const record: Record<string, unknown> = {
+		ts: nowIso(),
+		level: 'info',
+		category: 'trade_action',
+		...action,
+	};
+	try {
+		writeTradeJsonl(file, record);
+	} catch {
+		// best-effort
+	}
 }

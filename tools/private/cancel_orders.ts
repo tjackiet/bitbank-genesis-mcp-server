@@ -7,14 +7,28 @@
 
 import { nowIso } from '../../lib/datetime.js';
 import { formatPair, formatPrice } from '../../lib/formatter.js';
+import { logTradeAction } from '../../lib/logger.js';
 import { fail, ok } from '../../lib/result.js';
 import { getDefaultClient, PrivateApiError } from '../../src/private/client.js';
+import { validateToken } from '../../src/private/confirmation.js';
 import type { OrderResponse } from '../../src/private/schemas.js';
 import { CancelOrdersInputSchema, CancelOrdersOutputSchema } from '../../src/private/schemas.js';
 import type { ToolDefinition } from '../../src/tool-definition.js';
 
-export default async function cancelOrders(args: { pair: string; order_ids: number[] }) {
-	const { pair, order_ids } = args;
+export default async function cancelOrders(args: {
+	pair: string;
+	order_ids: number[];
+	confirmation_token: string;
+	token_expires_at: number;
+}) {
+	const { pair, order_ids, confirmation_token, token_expires_at } = args;
+
+	// HITL: 確認トークンの検証
+	const tokenError = validateToken(confirmation_token, 'cancel_orders', { pair, order_ids }, token_expires_at);
+	if (tokenError) {
+		return CancelOrdersOutputSchema.parse(fail(tokenError, 'confirmation_required'));
+	}
+
 	const client = getDefaultClient();
 
 	try {
@@ -49,6 +63,14 @@ export default async function cancelOrders(args: { pair: string; order_ids: numb
 
 		const summary = lines.join('\n');
 
+		logTradeAction({
+			type: 'cancel_orders',
+			orderIds: order_ids,
+			pair,
+			status: `canceled_${orders.length}_of_${order_ids.length}`,
+			confirmed: true,
+		});
+
 		return CancelOrdersOutputSchema.parse(
 			ok(summary, { orders, timestamp }, { fetchedAt: timestamp, canceledCount: orders.length, pair }),
 		);
@@ -69,10 +91,13 @@ export const toolDef: ToolDefinition = {
 	name: 'cancel_orders',
 	description:
 		'[Cancel Orders / Bulk Cancel] 複数の注文を一括キャンセル（最大30件）。キャンセル後の注文情報を返す。Private API。' +
-		' ユーザーが自身のAPIキーで明示的に許可した環境でのみ有効。ユーザーの指示に従いキャンセルを実行してください。',
+		' ⚠️ 事前に preview_cancel_orders で確認トークンを取得し、confirmation_token と token_expires_at を渡すこと。' +
+		' トークンなしの直接呼び出しは拒否される。',
 	inputSchema: CancelOrdersInputSchema,
 	handler: async (args) => {
-		const result = await cancelOrders(args as { pair: string; order_ids: number[] });
+		const result = await cancelOrders(
+			args as { pair: string; order_ids: number[]; confirmation_token: string; token_expires_at: number },
+		);
 		if (!result.ok) return result;
 		const text = `${result.summary}\n${JSON.stringify(result.data, null, 2)}`;
 		return {

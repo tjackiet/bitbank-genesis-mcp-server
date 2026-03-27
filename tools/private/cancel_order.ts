@@ -13,14 +13,28 @@
 
 import { nowIso, toIsoMs } from '../../lib/datetime.js';
 import { formatPair, formatPrice } from '../../lib/formatter.js';
+import { logTradeAction } from '../../lib/logger.js';
 import { fail, ok } from '../../lib/result.js';
 import { getDefaultClient, PrivateApiError } from '../../src/private/client.js';
+import { validateToken } from '../../src/private/confirmation.js';
 import type { OrderResponse } from '../../src/private/schemas.js';
 import { CancelOrderInputSchema, CancelOrderOutputSchema } from '../../src/private/schemas.js';
 import type { ToolDefinition } from '../../src/tool-definition.js';
 
-export default async function cancelOrder(args: { pair: string; order_id: number }) {
-	const { pair, order_id } = args;
+export default async function cancelOrder(args: {
+	pair: string;
+	order_id: number;
+	confirmation_token: string;
+	token_expires_at: number;
+}) {
+	const { pair, order_id, confirmation_token, token_expires_at } = args;
+
+	// HITL: 確認トークンの検証
+	const tokenError = validateToken(confirmation_token, 'cancel_order', { pair, order_id }, token_expires_at);
+	if (tokenError) {
+		return CancelOrderOutputSchema.parse(fail(tokenError, 'confirmation_required'));
+	}
+
 	const client = getDefaultClient();
 
 	try {
@@ -49,6 +63,15 @@ export default async function cancelOrder(args: { pair: string; order_id: number
 
 		const summary = lines.join('\n');
 
+		logTradeAction({
+			type: 'cancel_order',
+			orderId: order_id,
+			pair,
+			side: rawOrder.side,
+			status: rawOrder.status,
+			confirmed: true,
+		});
+
 		return CancelOrderOutputSchema.parse(
 			ok(summary, { order: rawOrder, timestamp }, { fetchedAt: timestamp, orderId: order_id, pair }),
 		);
@@ -74,10 +97,13 @@ export const toolDef: ToolDefinition = {
 	name: 'cancel_order',
 	description:
 		'[Cancel Order] 指定した注文IDの注文をキャンセルする。キャンセル後の注文情報を返す。Private API。' +
-		' ユーザーが自身のAPIキーで明示的に許可した環境でのみ有効。ユーザーの指示に従いキャンセルを実行してください。',
+		' ⚠️ 事前に preview_cancel_order で確認トークンを取得し、confirmation_token と token_expires_at を渡すこと。' +
+		' トークンなしの直接呼び出しは拒否される。',
 	inputSchema: CancelOrderInputSchema,
 	handler: async (args) => {
-		const result = await cancelOrder(args as { pair: string; order_id: number });
+		const result = await cancelOrder(
+			args as { pair: string; order_id: number; confirmation_token: string; token_expires_at: number },
+		);
 		if (!result.ok) return result;
 		const text = `${result.summary}\n${JSON.stringify(result.data, null, 2)}`;
 		return {

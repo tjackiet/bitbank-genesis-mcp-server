@@ -450,6 +450,48 @@ const OrderResponseSchema = z.object({
 
 export type OrderResponse = z.infer<typeof OrderResponseSchema>;
 
+// ── preview_order（注文プレビュー・確認トークン発行） ──
+
+export const PreviewOrderInputSchema = z
+	.object({
+		pair: z.string().describe('通貨ペア（例: btc_jpy）'),
+		amount: z.string().describe('注文数量'),
+		price: z.string().optional().describe('指値価格。limit / stop_limit で必須'),
+		side: z.enum(['buy', 'sell']).describe('売買方向'),
+		type: SpotOrderTypeEnum.describe('注文タイプ（limit / market / stop / stop_limit）'),
+		post_only: z.boolean().optional().describe('Post Only（limit のみ有効。Maker 手数料を確保）'),
+		trigger_price: z.string().optional().describe('トリガー価格。stop / stop_limit で必須'),
+	})
+	.describe('注文内容をプレビューし、確認トークンを発行する。実際の発注は行わない');
+
+export const PreviewOrderDataSchema = z.object({
+	confirmation_token: z.string().describe('create_order に渡す確認トークン'),
+	expires_at: z.number().describe('トークン有効期限（unix ms）'),
+	preview: z.object({
+		pair: z.string(),
+		amount: z.string(),
+		side: z.enum(['buy', 'sell']),
+		type: z.string(),
+		price: z.string().optional(),
+		trigger_price: z.string().optional(),
+		post_only: z.boolean().optional(),
+	}),
+});
+
+export const PreviewOrderMetaSchema = z.object({
+	action: z.literal('create_order'),
+});
+
+export const PreviewOrderOutputSchema = z.union([
+	z.object({
+		ok: z.literal(true),
+		summary: z.string(),
+		data: PreviewOrderDataSchema,
+		meta: PreviewOrderMetaSchema,
+	}),
+	PrivateFailResultSchema,
+]);
+
 // ── create_order（注文発注） ──
 
 export const CreateOrderInputSchema = z
@@ -461,8 +503,12 @@ export const CreateOrderInputSchema = z
 		type: SpotOrderTypeEnum.describe('注文タイプ（limit / market / stop / stop_limit）'),
 		post_only: z.boolean().optional().describe('Post Only（limit のみ有効。Maker 手数料を確保）'),
 		trigger_price: z.string().optional().describe('トリガー価格。stop / stop_limit で必須'),
+		confirmation_token: z.string().describe('preview_order が発行した確認トークン'),
+		token_expires_at: z
+			.number()
+			.describe('確認トークンの有効期限（unix ms）。preview_order の expires_at をそのまま渡す'),
 	})
-	.describe('現物注文を発注する。金額を伴う操作のため、発注前にユーザーへの確認を推奨');
+	.describe('現物注文を発注する。事前に preview_order で確認トークンを取得すること');
 
 export const CreateOrderDataSchema = z.object({
 	order: OrderResponseSchema,
@@ -487,11 +533,43 @@ export const CreateOrderOutputSchema = z.union([
 	PrivateFailResultSchema,
 ]);
 
+// ── preview_cancel_order（キャンセルプレビュー・確認トークン発行） ──
+
+export const PreviewCancelOrderInputSchema = z.object({
+	pair: z.string().describe('通貨ペア（例: btc_jpy）'),
+	order_id: z.number().describe('キャンセルする注文ID'),
+});
+
+export const PreviewCancelOrderDataSchema = z.object({
+	confirmation_token: z.string().describe('cancel_order に渡す確認トークン'),
+	expires_at: z.number().describe('トークン有効期限（unix ms）'),
+	preview: z.object({
+		pair: z.string(),
+		order_id: z.number(),
+	}),
+});
+
+export const PreviewCancelOrderMetaSchema = z.object({
+	action: z.literal('cancel_order'),
+});
+
+export const PreviewCancelOrderOutputSchema = z.union([
+	z.object({
+		ok: z.literal(true),
+		summary: z.string(),
+		data: PreviewCancelOrderDataSchema,
+		meta: PreviewCancelOrderMetaSchema,
+	}),
+	PrivateFailResultSchema,
+]);
+
 // ── cancel_order（注文キャンセル・単一） ──
 
 export const CancelOrderInputSchema = z.object({
 	pair: z.string().describe('通貨ペア（例: btc_jpy）'),
 	order_id: z.number().describe('キャンセルする注文ID'),
+	confirmation_token: z.string().describe('preview_cancel_order が発行した確認トークン'),
+	token_expires_at: z.number().describe('確認トークンの有効期限（unix ms）'),
 });
 
 export const CancelOrderDataSchema = z.object({
@@ -515,11 +593,43 @@ export const CancelOrderOutputSchema = z.union([
 	PrivateFailResultSchema,
 ]);
 
+// ── preview_cancel_orders（一括キャンセルプレビュー・確認トークン発行） ──
+
+export const PreviewCancelOrdersInputSchema = z.object({
+	pair: z.string().describe('通貨ペア（例: btc_jpy）'),
+	order_ids: z.array(z.number()).min(1).max(30).describe('キャンセルする注文IDの配列（最大30件）'),
+});
+
+export const PreviewCancelOrdersDataSchema = z.object({
+	confirmation_token: z.string().describe('cancel_orders に渡す確認トークン'),
+	expires_at: z.number().describe('トークン有効期限（unix ms）'),
+	preview: z.object({
+		pair: z.string(),
+		order_ids: z.array(z.number()),
+	}),
+});
+
+export const PreviewCancelOrdersMetaSchema = z.object({
+	action: z.literal('cancel_orders'),
+});
+
+export const PreviewCancelOrdersOutputSchema = z.union([
+	z.object({
+		ok: z.literal(true),
+		summary: z.string(),
+		data: PreviewCancelOrdersDataSchema,
+		meta: PreviewCancelOrdersMetaSchema,
+	}),
+	PrivateFailResultSchema,
+]);
+
 // ── cancel_orders（注文キャンセル・複数） ──
 
 export const CancelOrdersInputSchema = z.object({
 	pair: z.string().describe('通貨ペア（例: btc_jpy）'),
 	order_ids: z.array(z.number()).min(1).max(30).describe('キャンセルする注文IDの配列（最大30件）'),
+	confirmation_token: z.string().describe('preview_cancel_orders が発行した確認トークン'),
+	token_expires_at: z.number().describe('確認トークンの有効期限（unix ms）'),
 });
 
 export const CancelOrdersDataSchema = z.object({

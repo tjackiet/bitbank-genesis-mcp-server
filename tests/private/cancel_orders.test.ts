@@ -1,9 +1,10 @@
 /**
  * cancel_orders ツールのユニットテスト。
- * 一括キャンセルの成功・部分失敗・エラーハンドリングを検証する。
+ * 確認トークン検証 + 一括キャンセルの成功・部分失敗・エラーハンドリングを検証する。
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { generateToken } from '../../src/private/confirmation.js';
 import { assertFail, assertOk } from '../_assertResult.js';
 import { mockBitbankError, mockBitbankSuccess } from '../fixtures/private-api.js';
 
@@ -46,16 +47,28 @@ function canceledOrder(id: number, side: 'buy' | 'sell' = 'buy', overrides: Reco
 	};
 }
 
+/** 有効な確認トークンを生成するヘルパー */
+function validToken(params: { pair: string; order_ids: number[] }) {
+	const { token, expiresAt } = generateToken('cancel_orders', params);
+	return { confirmation_token: token, token_expires_at: expiresAt };
+}
+
 describe('cancel_orders', () => {
-	it('複数注文の一括キャンセル成功', async () => {
+	it('有効なトークンで複数注文の一括キャンセル成功', async () => {
 		setupFetchMock(
 			mockBitbankSuccess({
 				orders: [canceledOrder(3001), canceledOrder(3002, 'sell')],
 			}),
 		);
+		const { confirmation_token, token_expires_at } = validToken({ pair: 'btc_jpy', order_ids: [3001, 3002] });
 
 		const { default: cancelOrders } = await import('../../tools/private/cancel_orders.js');
-		const result = await cancelOrders({ pair: 'btc_jpy', order_ids: [3001, 3002] });
+		const result = await cancelOrders({
+			pair: 'btc_jpy',
+			order_ids: [3001, 3002],
+			confirmation_token,
+			token_expires_at,
+		});
 
 		assertOk(result);
 		expect(result.summary).toContain('一括キャンセル完了');
@@ -64,16 +77,37 @@ describe('cancel_orders', () => {
 		expect(result.meta.canceledCount).toBe(2);
 	});
 
+	it('不正トークンで拒否される', async () => {
+		const { default: cancelOrders } = await import('../../tools/private/cancel_orders.js');
+		const result = await cancelOrders({
+			pair: 'btc_jpy',
+			order_ids: [3001],
+			confirmation_token: 'invalid',
+			token_expires_at: Date.now() + 60000,
+		});
+
+		assertFail(result);
+		expect(result.meta.errorType).toBe('confirmation_required');
+	});
+
 	it('一部の注文がキャンセルできなかった場合に警告メッセージを含む', async () => {
-		// 3件リクエストしたが2件のみ返却
 		setupFetchMock(
 			mockBitbankSuccess({
 				orders: [canceledOrder(3001)],
 			}),
 		);
+		const { confirmation_token, token_expires_at } = validToken({
+			pair: 'btc_jpy',
+			order_ids: [3001, 3002, 3003],
+		});
 
 		const { default: cancelOrders } = await import('../../tools/private/cancel_orders.js');
-		const result = await cancelOrders({ pair: 'btc_jpy', order_ids: [3001, 3002, 3003] });
+		const result = await cancelOrders({
+			pair: 'btc_jpy',
+			order_ids: [3001, 3002, 3003],
+			confirmation_token,
+			token_expires_at,
+		});
 
 		assertOk(result);
 		expect(result.summary).toContain('2件はキャンセルできませんでした');
@@ -85,9 +119,15 @@ describe('cancel_orders', () => {
 				orders: [canceledOrder(3001, 'buy', { price: '14000000' }), canceledOrder(3002, 'sell', { price: '15000000' })],
 			}),
 		);
+		const { confirmation_token, token_expires_at } = validToken({ pair: 'btc_jpy', order_ids: [3001, 3002] });
 
 		const { default: cancelOrders } = await import('../../tools/private/cancel_orders.js');
-		const result = await cancelOrders({ pair: 'btc_jpy', order_ids: [3001, 3002] });
+		const result = await cancelOrders({
+			pair: 'btc_jpy',
+			order_ids: [3001, 3002],
+			confirmation_token,
+			token_expires_at,
+		});
 
 		assertOk(result);
 		expect(result.summary).toContain('#3001');
@@ -98,9 +138,15 @@ describe('cancel_orders', () => {
 
 	it('PrivateApiError で fail を返す', async () => {
 		setupFetchMock(mockBitbankError(20001), 400);
+		const { confirmation_token, token_expires_at } = validToken({ pair: 'btc_jpy', order_ids: [3001] });
 
 		const { default: cancelOrders } = await import('../../tools/private/cancel_orders.js');
-		const result = await cancelOrders({ pair: 'btc_jpy', order_ids: [3001] });
+		const result = await cancelOrders({
+			pair: 'btc_jpy',
+			order_ids: [3001],
+			confirmation_token,
+			token_expires_at,
+		});
 
 		assertFail(result);
 		expect(result.meta.errorType).toBe('authentication_error');
@@ -108,9 +154,15 @@ describe('cancel_orders', () => {
 
 	it('空の注文リストが返った場合も正常に処理', async () => {
 		setupFetchMock(mockBitbankSuccess({ orders: [] }));
+		const { confirmation_token, token_expires_at } = validToken({ pair: 'btc_jpy', order_ids: [9999] });
 
 		const { default: cancelOrders } = await import('../../tools/private/cancel_orders.js');
-		const result = await cancelOrders({ pair: 'btc_jpy', order_ids: [9999] });
+		const result = await cancelOrders({
+			pair: 'btc_jpy',
+			order_ids: [9999],
+			confirmation_token,
+			token_expires_at,
+		});
 
 		assertOk(result);
 		expect(result.summary).toContain('0件');
