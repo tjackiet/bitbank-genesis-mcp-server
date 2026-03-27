@@ -22,8 +22,8 @@ import { logTradeAction } from '../../lib/logger.js';
 import { fail, ok } from '../../lib/result.js';
 import { getDefaultClient, PrivateApiError } from '../../src/private/client.js';
 import { validateToken } from '../../src/private/confirmation.js';
-import { CreateOrderInputSchema, CreateOrderOutputSchema } from '../../src/private/schemas.js';
 import type { OrderResponse } from '../../src/private/schemas.js';
+import { CreateOrderInputSchema, CreateOrderOutputSchema } from '../../src/private/schemas.js';
 import type { ToolDefinition } from '../../src/tool-definition.js';
 
 export default async function createOrder(args: {

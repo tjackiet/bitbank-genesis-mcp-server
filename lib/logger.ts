@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
-import fs from 'fs';
-import path from 'path';
+import fs from 'node:fs';
+import path from 'node:path';
 import { nowIso, today } from './datetime.js';
 
 const LOG_DIR = process.env.LOG_DIR || './logs';
@@ -14,7 +14,7 @@ function ensureDir(dir: string) {
 
 function writeJsonl(file: string, obj: unknown) {
 	ensureDir(path.dirname(file));
-	fs.appendFileSync(file, JSON.stringify(obj) + '\n');
+	fs.appendFileSync(file, `${JSON.stringify(obj)}\n`);
 }
 
 // ── チェーンハッシュ（取引操作ログ専用） ──
@@ -28,7 +28,7 @@ function writeTradeJsonl(file: string, record: Record<string, unknown>) {
 	const json = JSON.stringify(withChain);
 	lastTradeHash = createHash('sha256').update(json).digest('hex');
 	const finalRecord = { ...withChain, _hash: lastTradeHash };
-	fs.appendFileSync(file, JSON.stringify(finalRecord) + '\n');
+	fs.appendFileSync(file, `${JSON.stringify(finalRecord)}\n`);
 }
 
 export function log(level: 'error' | 'warn' | 'info' | 'debug', event: Record<string, unknown>): void {

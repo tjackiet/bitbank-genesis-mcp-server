@@ -10,8 +10,8 @@
  */
 
 import { createHash } from 'node:crypto';
-import fs from 'fs';
-import path from 'path';
+import fs from 'node:fs';
+import path from 'node:path';
 
 function computeHash(record: Record<string, unknown>): string {
 	// _hash を除いた残りで JSON 化し SHA-256
