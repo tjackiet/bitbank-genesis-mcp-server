@@ -1,7 +1,21 @@
 {
-  "name": "bitbank-genesis-mcp-server",
-  "private": true,
+  "name": "@tjackiet/bitbank-mcp",
+  "version": "0.0.0",
+  "description": "MCP server for bitbank cryptocurrency exchange — market data, technical analysis, and trading tools",
   "type": "module",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/tjackiet/bitbank-genesis-mcp-server.git"
+  },
+  "files": [
+    "src/",
+    "tools/",
+    "lib/",
+    "assets/",
+    "package.json",
+    "tsconfig.json"
+  ],
   "scripts": {
     "start": "tsx src/server.ts",
     "http": "tsx src/http.ts",
