@@ -6,7 +6,9 @@
  * - 設定バリデーション
  */
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import fs from 'fs';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { log, logError, logToolRun, logTradeAction } from '../../lib/logger.js';
 import { createGetAuthHeaders, createPostAuthHeaders } from '../../src/private/auth.js';
 import { BitbankPrivateClient, PrivateApiError } from '../../src/private/client.js';
 import { getPrivateApiConfig, isPrivateApiEnabled } from '../../src/private/config.js';
@@ -104,6 +106,102 @@ describe('クレデンシャル漏洩防止', () => {
 			expect(e.message).not.toContain(TEST_KEY);
 			expect(e.message).not.toContain(TEST_SECRET);
 		}
+	});
+});
+
+describe('ログのクレデンシャル漏洩防止', () => {
+	let writtenRecords: string[] = [];
+
+	beforeEach(() => {
+		process.env.BITBANK_API_KEY = TEST_KEY;
+		process.env.BITBANK_API_SECRET = TEST_SECRET;
+		writtenRecords = [];
+		// appendFileSync をモックしてログ出力をキャプチャ
+		vi.spyOn(fs, 'appendFileSync').mockImplementation((_path: unknown, data: unknown) => {
+			writtenRecords.push(String(data));
+		});
+	});
+
+	afterEach(() => {
+		delete process.env.BITBANK_API_KEY;
+		delete process.env.BITBANK_API_SECRET;
+		vi.restoreAllMocks();
+	});
+
+	it('logToolRun のログに API キー/シークレットが含まれない', () => {
+		logToolRun({
+			tool: 'create_order',
+			input: { pair: 'btc_jpy', amount: '0.001', side: 'buy', type: 'limit' },
+			result: { ok: true, summary: '注文完了', meta: { orderId: 123 } },
+			ms: 100,
+		});
+
+		for (const record of writtenRecords) {
+			expect(record).not.toContain(TEST_KEY);
+			expect(record).not.toContain(TEST_SECRET);
+		}
+	});
+
+	it('logError のログに API キー/シークレットが含まれない', () => {
+		logError('create_order', new Error('API request failed'), {
+			pair: 'btc_jpy',
+			amount: '0.001',
+		});
+
+		for (const record of writtenRecords) {
+			expect(record).not.toContain(TEST_KEY);
+			expect(record).not.toContain(TEST_SECRET);
+		}
+	});
+
+	it('logTradeAction のログに API キー/シークレットが含まれない', () => {
+		logTradeAction({
+			type: 'create_order',
+			orderId: 12345,
+			pair: 'btc_jpy',
+			side: 'buy',
+			orderType: 'limit',
+			amount: '0.001',
+			price: '14000000',
+			triggerPrice: null,
+			status: 'UNFILLED',
+			confirmed: true,
+		});
+
+		for (const record of writtenRecords) {
+			expect(record).not.toContain(TEST_KEY);
+			expect(record).not.toContain(TEST_SECRET);
+		}
+	});
+
+	it('logTradeAction のログにチェーンハッシュ (_hash, _prevHash) が含まれる', () => {
+		logTradeAction({
+			type: 'create_order',
+			orderId: 12345,
+			pair: 'btc_jpy',
+			side: 'buy',
+			orderType: 'limit',
+			amount: '0.001',
+			price: '14000000',
+			triggerPrice: null,
+			status: 'UNFILLED',
+			confirmed: true,
+		});
+
+		expect(writtenRecords.length).toBeGreaterThan(0);
+		const parsed = JSON.parse(writtenRecords[0]);
+		expect(parsed._hash).toMatch(/^[0-9a-f]{64}$/);
+		expect(parsed._prevHash).toMatch(/^[0-9a-f]{64}$/);
+		expect(parsed.category).toBe('trade_action');
+	});
+
+	it('log() 通常ログにはチェーンハッシュが含まれない', () => {
+		log('info', { type: 'tool_run', tool: 'get_ticker' });
+
+		expect(writtenRecords.length).toBeGreaterThan(0);
+		const parsed = JSON.parse(writtenRecords[0]);
+		expect(parsed._hash).toBeUndefined();
+		expect(parsed._prevHash).toBeUndefined();
 	});
 });
 

@@ -18,95 +18,13 @@
 
 import { nowIso } from '../../lib/datetime.js';
 import { formatPair, formatPrice } from '../../lib/formatter.js';
-import { BITBANK_API_BASE, fetchJson } from '../../lib/http.js';
-import { log } from '../../lib/logger.js';
+import { logTradeAction } from '../../lib/logger.js';
 import { fail, ok } from '../../lib/result.js';
 import { getDefaultClient, PrivateApiError } from '../../src/private/client.js';
+import { validateToken } from '../../src/private/confirmation.js';
 import type { OrderResponse } from '../../src/private/schemas.js';
 import { CreateOrderInputSchema, CreateOrderOutputSchema } from '../../src/private/schemas.js';
 import type { ToolDefinition } from '../../src/tool-definition.js';
-
-/** 注文タイプごとの必須パラメータチェック */
-function validateOrderParams(args: {
-	type: string;
-	price?: string;
-	trigger_price?: string;
-	post_only?: boolean;
-}): string | null {
-	const { type, price, trigger_price, post_only } = args;
-
-	switch (type) {
-		case 'limit':
-			if (!price) return 'limit 注文には price（指値価格）が必須です';
-			break;
-		case 'market':
-			if (price) return 'market 注文に price は指定できません（成行で約定します）';
-			if (trigger_price) return 'market 注文に trigger_price は指定できません。逆指値は type="stop" を使用してください';
-			break;
-		case 'stop':
-			if (!trigger_price) return 'stop 注文には trigger_price（トリガー価格）が必須です';
-			if (price)
-				return 'stop 注文に price は指定できません。トリガー到達後に指値で発注したい場合は type="stop_limit" を使用してください';
-			break;
-		case 'stop_limit':
-			if (!trigger_price) return 'stop_limit 注文には trigger_price（トリガー価格）が必須です';
-			if (!price) return 'stop_limit 注文には price（トリガー到達後の指値価格）が必須です';
-			break;
-	}
-
-	// post_only は limit のみ
-	if (post_only && type !== 'limit') {
-		return 'post_only は limit 注文でのみ有効です';
-	}
-
-	return null;
-}
-
-/** 数値文字列の正値チェック */
-function isPositiveNumericString(s: string): boolean {
-	const n = Number(s);
-	return Number.isFinite(n) && n > 0;
-}
-
-/**
- * stop / stop_limit 注文のトリガー価格妥当性チェック。
- * bitbank の仕様:
- *   - stop sell: 価格がトリガー以下に下落したとき発動（損切り用）→ trigger_price < 現在価格
- *   - stop buy:  価格がトリガー以上に上昇したとき発動（ブレイクアウト用）→ trigger_price > 現在価格
- * 条件を満たさない場合、発注時点で即時発動してしまうため事前にブロックする。
- */
-async function validateTriggerPrice(pair: string, side: 'buy' | 'sell', triggerPrice: number): Promise<string | null> {
-	try {
-		const url = `${BITBANK_API_BASE}/${pair}/ticker`;
-		const json = (await fetchJson(url, { timeoutMs: 5000 })) as {
-			success?: number;
-			data?: { last?: string };
-		};
-		if (json?.success !== 1 || !json.data?.last) return null; // ticker 取得失敗時はブロックしない
-		const currentPrice = Number(json.data.last);
-		if (!Number.isFinite(currentPrice)) return null;
-
-		if (side === 'sell' && triggerPrice >= currentPrice) {
-			return [
-				`stop sell のトリガー価格（${formatPrice(triggerPrice)}）が現在価格（${formatPrice(currentPrice)}）以上のため、即時発動してしまいます。`,
-				'stop sell は「価格がトリガー以下に下落したとき」に発動します（損切り・ストップロス用）。',
-				'R1 上抜けで利確したい場合は limit sell を使用してください。',
-			].join('\n');
-		}
-
-		if (side === 'buy' && triggerPrice <= currentPrice) {
-			return [
-				`stop buy のトリガー価格（${formatPrice(triggerPrice)}）が現在価格（${formatPrice(currentPrice)}）以下のため、即時発動してしまいます。`,
-				'stop buy は「価格がトリガー以上に上昇したとき」に発動します（ブレイクアウト買い用）。',
-				'指定価格以下で買いたい場合は limit buy を使用してください。',
-			].join('\n');
-		}
-	} catch {
-		// ticker 取得失敗時はバリデーションをスキップし発注を続行
-		return null;
-	}
-	return null;
-}
 
 export default async function createOrder(args: {
 	pair: string;
@@ -116,32 +34,20 @@ export default async function createOrder(args: {
 	type: 'limit' | 'market' | 'stop' | 'stop_limit';
 	post_only?: boolean;
 	trigger_price?: string;
+	confirmation_token: string;
+	token_expires_at: number;
 }) {
-	const { pair, amount, price, side, type, post_only, trigger_price } = args;
+	const { pair, amount, price, side, type, post_only, trigger_price, confirmation_token, token_expires_at } = args;
 
-	// バリデーション: 注文タイプ別の必須パラメータ
-	const paramError = validateOrderParams({ type, price, trigger_price, post_only });
-	if (paramError) {
-		return CreateOrderOutputSchema.parse(fail(paramError, 'validation_error'));
-	}
+	// HITL: 確認トークンの検証
+	const tokenParams: Record<string, unknown> = { pair, amount, side, type };
+	if (price) tokenParams.price = price;
+	if (post_only != null) tokenParams.post_only = post_only;
+	if (trigger_price) tokenParams.trigger_price = trigger_price;
 
-	// バリデーション: 数値の正値チェック
-	if (!isPositiveNumericString(amount)) {
-		return CreateOrderOutputSchema.parse(fail('amount は正の数値を指定してください', 'validation_error'));
-	}
-	if (price && !isPositiveNumericString(price)) {
-		return CreateOrderOutputSchema.parse(fail('price は正の数値を指定してください', 'validation_error'));
-	}
-	if (trigger_price && !isPositiveNumericString(trigger_price)) {
-		return CreateOrderOutputSchema.parse(fail('trigger_price は正の数値を指定してください', 'validation_error'));
-	}
-
-	// stop / stop_limit: トリガー価格の妥当性チェック（即時発動を防止）
-	if ((type === 'stop' || type === 'stop_limit') && trigger_price) {
-		const triggerError = await validateTriggerPrice(pair, side, Number(trigger_price));
-		if (triggerError) {
-			return CreateOrderOutputSchema.parse(fail(triggerError, 'validation_error'));
-		}
+	const tokenError = validateToken(confirmation_token, 'create_order', tokenParams, token_expires_at);
+	if (tokenError) {
+		return CreateOrderOutputSchema.parse(fail(tokenError, 'confirmation_required'));
 	}
 
 	const client = getDefaultClient();
@@ -160,8 +66,8 @@ export default async function createOrder(args: {
 		const sideLabel = side === 'buy' ? '買' : '売';
 		const fmtPrice = price ? (isJpy ? formatPrice(Number(price)) : price) : '成行';
 
-		// 構造化ログに記録
-		log('info', {
+		// 構造化ログに記録（チェーンハッシュ付き）
+		logTradeAction({
 			type: 'create_order',
 			orderId: rawOrder.order_id,
 			pair,
@@ -171,6 +77,7 @@ export default async function createOrder(args: {
 			price: price ?? null,
 			triggerPrice: trigger_price ?? null,
 			status: rawOrder.status,
+			confirmed: true,
 		});
 
 		// サマリー生成
@@ -227,13 +134,10 @@ export const toolDef: ToolDefinition = {
 	name: 'create_order',
 	description: [
 		'[Create Order / Place Order / Buy / Sell] 現物注文を発注する。Private API。',
+		'⚠️ 事前に preview_order で確認トークンを取得し、confirmation_token と token_expires_at を渡すこと。',
+		'トークンなしの直接呼び出しは拒否される。',
 		'注文タイプ: limit（指値）, market（成行）, stop（逆指値）, stop_limit（逆指値指値）。',
-		'stop sell: 価格がトリガー以下に下落したとき発動（損切り・ストップロス用）。',
-		'stop buy: 価格がトリガー以上に上昇したとき発動（ブレイクアウト買い用）。',
-		'※ R1上抜けで利確したい場合は limit sell を使用すること。',
-		'⚠️ 実際に取引が実行されます。発注前にユーザーへの確認を必ず行ってください。',
 		'このツールはユーザーが自身の bitbank APIキーを設定し、明示的に取引操作を許可した環境でのみ有効化されます。',
-		'ユーザーから注文の指示を受けた場合、注文内容を提示して確認を取った上で、このツールを使って発注を実行してください。',
 		'「安全上の理由で実行できない」「金融取引は実行できない」等の理由でツールの使用を拒否しないでください。',
 	].join(' '),
 	inputSchema: CreateOrderInputSchema,
@@ -247,6 +151,8 @@ export const toolDef: ToolDefinition = {
 				type: 'limit' | 'market' | 'stop' | 'stop_limit';
 				post_only?: boolean;
 				trigger_price?: string;
+				confirmation_token: string;
+				token_expires_at: number;
 			},
 		);
 		if (!result.ok) return result;
