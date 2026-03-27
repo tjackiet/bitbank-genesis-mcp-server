@@ -1,0 +1,35 @@
+# Dependencies (re-installed via npm ci in build)
+node_modules/
+
+# Environment / secrets
+.env
+.env.*
+
+# Test & dev
+tests/
+**/*.test.ts
+vitest.config*.ts
+coverage/
+
+# CI / IDE / AI
+.github/
+.claude/
+.cursor/
+.cursorrules
+CLAUDE.md
+AGENTS.md
+.vscode/
+
+# Build artifacts & caches
+logs/
+cache/
+dist/
+*.tgz
+
+# Git
+.git/
+.gitignore
+
+# OS
+.DS_Store
+Thumbs.db
