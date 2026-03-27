@@ -37,15 +37,25 @@
 
 ---
 
-### 2. SessionStart — セッション開始ヘルスチェック
+### 2. SessionStart — セッション開始ヘルスチェック（差分最適化付き）
 
 | 項目 | 内容 |
 |------|------|
 | **タイミング** | セッション開始時 |
 | **目的** | コードベースが壊れた状態のまま作業を開始しない |
-| **手段** | `.claude/hooks/session-start.sh` が順番に実行: `npm run gen:types` → `npm run typecheck` → `npm test` |
+| **手段** | `.claude/hooks/session-start.sh` が `npm run gen:types` → `npm run typecheck` → テスト（最適化付き）の順に実行 |
 | **強度** | **ブロック** — `set -euo pipefail` により途中で失敗すると hook 全体が失敗し、エージェントにエラーが通知される |
 | **補足** | CLAUDE.md の「セッション開始時」セクションと同じ内容を hook として強制実行。CLAUDE.md だけでは AI が従わない可能性があるため、hook で機械的に担保 |
+
+**テスト実行の最適化（3モード）:**
+
+| モード | 条件 | 動作 | 所要時間 |
+|--------|------|------|---------|
+| **skip** | HEAD = main かつ uncommitted changes なし | テストスキップ（型生成・型チェックのみ） | ~8s |
+| **changed** | main との差分あり | `vitest --changed` で関連テストのみ実行 | ~1-3s |
+| **full** | git 外、main 参照不能 | 全テスト実行（従来動作） | ~16s |
+
+`gen:types` と `typecheck` は全モードで常に実行（Zod スキーマと型の整合性は差分に依存しないため）。
 
 ---
 
@@ -74,8 +84,13 @@
 |-------|------|------|
 | Phase 1 | Biome format + Oxlint 自動修正 | サイレントに `--write` / `--fix` 適用 |
 | Phase 2 | Oxlint 残存エラー収集 | 修正できなかった違反を収集 |
-| Phase 3 | TypeScript 型チェック | `tsc --noEmit` で型エラーを抽出 |
+| Phase 3 | TypeScript 型チェック（最適化付き） | `tsc --noEmit --incremental` + 30 秒スロットリング |
 | Phase 4 | Banned pattern チェック | `new Date` の使用を検出 (`// allow-date` コメント付きは除外) |
+
+**Phase 3 の最適化:**
+- `--incremental --tsBuildInfoFile` で 2 回目以降を高速化（~6s → ~1.5s）
+- 前回成功から 30 秒以内はスキップ（連続編集時 ~6s → 0s）
+- Lefthook pre-commit が最終的な型チェックのゲートキーパーとなるため安全
 
 | 項目 | 内容 |
 |------|------|
@@ -83,14 +98,28 @@
 
 ---
 
-### 5. Stop (プロジェクト) — テスト自動実行
+### 5. Stop (プロジェクト) — テスト自動実行 + 完了条件チェックリスト
 
 | 項目 | 内容 |
 |------|------|
 | **タイミング** | エージェントが「タスク完了」と判断して停止する直前 |
-| **目的** | コード変更があるのにテストを実行せず完了とする事態を防ぐ |
-| **手段** | `.claude/hooks/stop-test.sh` が `.ts` / `.tsx` の変更有無を検出し、変更があれば `vitest run` を実行。テスト失敗があれば `additionalContext` で通知 |
-| **強度** | **警告（フィードバック → 再作業）** — テスト失敗をフィードバックすると、エージェントは停止せず修正作業を再開する |
+| **目的** | コード変更時のテスト未実行、および明示的な完了条件の未達を防ぐ |
+| **手段** | `.claude/hooks/stop-test.sh` が以下を順に実行: (1) `.claude/completion-checklist` が存在すれば `checklist-verify.sh` で全チェック実行、(2) `.ts`/`.tsx` 変更があれば `vitest run` 実行。いずれかの失敗を `additionalContext` で通知 |
+| **強度** | **警告（フィードバック → 再作業）** — 失敗をフィードバックすると、エージェントは停止せず修正作業を再開する |
+
+**Completion Checklist（Sprint Contract）**:
+
+タスク着手前に `.claude/completion-checklist` を作成し、機械的に検証可能な完了条件を定義できる。全条件通過でファイルは自動削除される。
+
+| チェックタイプ | 書式 | 用途 |
+|--------------|------|------|
+| `file_exists` | `file_exists <path>` | ファイルの存在確認 |
+| `file_not_empty` | `file_not_empty <path>` | ファイルが空でないこと |
+| `no_type_errors` | `no_type_errors` | `tsc --noEmit` でエラー 0 |
+| `test_passes` | `test_passes [filter]` | `vitest run` が成功 |
+| `grep_in` | `grep_in <pattern> <path>` | パターンの存在確認 |
+| `grep_not_in` | `grep_not_in <pattern> <path>` | パターンの不在確認 |
+| `cmd` | `cmd <command>` | 任意コマンドの成功 |
 
 ---
 

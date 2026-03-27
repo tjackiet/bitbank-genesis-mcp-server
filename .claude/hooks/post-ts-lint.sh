@@ -3,6 +3,11 @@ set -euo pipefail
 
 # Purpose: Auto-fix formatting/lint issues after .ts file edits, then collect
 # remaining diagnostics (oxlint, tsc, banned patterns) as feedback for the AI.
+#
+# Phase 3 (tsc) 最適化:
+#   - --incremental + tsBuildInfoFile で 2 回目以降を高速化 (~6s → ~1.5s)
+#   - 前回成功から 30 秒以内はスキップ（連続編集時のオーバーヘッド削減）
+#   - Lefthook pre-commit が最終的な型チェックのゲートキーパーとなる
 input="$(cat)"
 file="$(jq -r '.tool_input.file_path // .tool_input.path // empty' <<< "$input")"
 
@@ -23,15 +28,34 @@ npx oxlint --fix "$file" >/dev/null 2>&1 || true
 
 # Phase 2: 残った lint 違反を収集
 lint_out="$(npx oxlint "$file" 2>&1 | head -30)" || true
-if echo "$lint_out" | grep -q 'Found .* warning\|Found .* error'; then
+if echo "$lint_out" | grep -qE 'Found [1-9][0-9]* (warning|error)'; then
   diag="[Oxlint] $lint_out"
 fi
 
-# Phase 3: 型チェック（対象ファイルのエラーのみ抽出）
-tsc_out="$(npx tsc --noEmit -p tsconfig.json 2>&1 | grep -F "$file" | head -10)" || true
-if [ -n "$tsc_out" ]; then
-  diag="${diag:+${diag}
+# Phase 3: 型チェック（incremental + スロットリング）
+TSC_STAMP="/tmp/.claude-tsc-last-ok"
+TSC_BUILDINFO="/tmp/.claude-tsc-buildinfo"
+TSC_THROTTLE_SEC=30
+
+run_tsc=true
+if [ -f "$TSC_STAMP" ]; then
+  last_ok="$(cat "$TSC_STAMP" 2>/dev/null || echo 0)"
+  now="$(date +%s)"
+  elapsed=$(( now - last_ok ))
+  if [ "$elapsed" -lt "$TSC_THROTTLE_SEC" ]; then
+    run_tsc=false
+  fi
+fi
+
+if [ "$run_tsc" = true ]; then
+  tsc_out="$(npx tsc --noEmit --incremental --tsBuildInfoFile "$TSC_BUILDINFO" -p tsconfig.json 2>&1 | grep -F "$file" | head -10)" || true
+  if [ -n "$tsc_out" ]; then
+    diag="${diag:+${diag}
 }[TypeScript] $tsc_out"
+  else
+    # 対象ファイルにエラーなし → タイムスタンプ更新
+    date +%s > "$TSC_STAMP"
+  fi
 fi
 
 # Phase 4: banned patterns チェック
