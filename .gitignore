@@ -5,6 +5,7 @@ reports/
 cache/
 *.mcpb
 .claude/worktrees/
+.claude/completion-checklist
 output/
 coverage/
 .cursor/

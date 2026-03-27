@@ -83,14 +83,28 @@
 
 ---
 
-### 5. Stop (プロジェクト) — テスト自動実行
+### 5. Stop (プロジェクト) — テスト自動実行 + 完了条件チェックリスト
 
 | 項目 | 内容 |
 |------|------|
 | **タイミング** | エージェントが「タスク完了」と判断して停止する直前 |
-| **目的** | コード変更があるのにテストを実行せず完了とする事態を防ぐ |
-| **手段** | `.claude/hooks/stop-test.sh` が `.ts` / `.tsx` の変更有無を検出し、変更があれば `vitest run` を実行。テスト失敗があれば `additionalContext` で通知 |
-| **強度** | **警告（フィードバック → 再作業）** — テスト失敗をフィードバックすると、エージェントは停止せず修正作業を再開する |
+| **目的** | コード変更時のテスト未実行、および明示的な完了条件の未達を防ぐ |
+| **手段** | `.claude/hooks/stop-test.sh` が以下を順に実行: (1) `.claude/completion-checklist` が存在すれば `checklist-verify.sh` で全チェック実行、(2) `.ts`/`.tsx` 変更があれば `vitest run` 実行。いずれかの失敗を `additionalContext` で通知 |
+| **強度** | **警告（フィードバック → 再作業）** — 失敗をフィードバックすると、エージェントは停止せず修正作業を再開する |
+
+**Completion Checklist（Sprint Contract）**:
+
+タスク着手前に `.claude/completion-checklist` を作成し、機械的に検証可能な完了条件を定義できる。全条件通過でファイルは自動削除される。
+
+| チェックタイプ | 書式 | 用途 |
+|--------------|------|------|
+| `file_exists` | `file_exists <path>` | ファイルの存在確認 |
+| `file_not_empty` | `file_not_empty <path>` | ファイルが空でないこと |
+| `no_type_errors` | `no_type_errors` | `tsc --noEmit` でエラー 0 |
+| `test_passes` | `test_passes [filter]` | `vitest run` が成功 |
+| `grep_in` | `grep_in <pattern> <path>` | パターンの存在確認 |
+| `grep_not_in` | `grep_not_in <pattern> <path>` | パターンの不在確認 |
+| `cmd` | `cmd <command>` | 任意コマンドの成功 |
 
 ---
 
