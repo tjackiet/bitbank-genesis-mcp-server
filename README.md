@@ -111,9 +111,30 @@ BTCの今の市場状況を分析して
   - currentRelevanceDays（int, 既定 7）: 直近とみなす日数
   - 形成中パターンは3ヶ月以内に制限
 
+## Private API（取引機能）
+
+環境変数 `BITBANK_API_KEY` と `BITBANK_API_SECRET` を設定すると、以下の取引ツールが有効化されます。
+
+| カテゴリ | ツール | 説明 |
+|---|---|---|
+| 資産 | `get_my_assets` | 保有資産一覧 |
+| 注文照会 | `get_my_orders`, `get_order`, `get_orders_info` | 注文の照会 |
+| 約定履歴 | `get_my_trade_history` | 約定履歴の取得 |
+| ポートフォリオ | `analyze_my_portfolio` | 損益分析・パフォーマンス |
+| 入出金 | `get_my_deposit_withdrawal` | 入出金履歴 |
+| 発注 | `preview_order` → `create_order` | 2ステップ確認付き発注 |
+| キャンセル | `preview_cancel_order` → `cancel_order` | 2ステップ確認付きキャンセル |
+| 一括キャンセル | `preview_cancel_orders` → `cancel_orders` | 2ステップ確認付き一括キャンセル |
+
+取引操作（発注・キャンセル）は **preview → execute の2ステップ確認**が必須です。preview ツールが発行する確認トークン（HMAC-SHA256、60秒有効）なしでは実行できません。
+
+詳細: [docs/private-api.md](docs/private-api.md) | セキュリティ設計: [docs/security.md](docs/security.md)
+
 ## 詳細ドキュメント
 - プロンプト集（初心者〜中級者向け）: [docs/prompts-table.md](docs/prompts-table.md)
 - ツール一覧と使い分け: [docs/tools.md](docs/tools.md)
+- Private API ガイド: [docs/private-api.md](docs/private-api.md)
+- セキュリティ設計: [docs/security.md](docs/security.md)
 - 開発者向けガイド（型生成・CI など）: [CLAUDE.md](CLAUDE.md)
 - 運用・監視（ログ集計／Docker起動 ほか）: [docs/ops.md](docs/ops.md)
 
@@ -122,7 +143,7 @@ BTCの今の市場状況を分析して
 
 **Q. Docker は必須？** いいえ。Node 18+ でローカル実行できます（最短は Claude Desktop 登録）。
 
-**Q. API キーは必要？** いいえ。現状 bitbank の公開 API のみ使用します。
+**Q. API キーは必要？** 公開データの取得・分析には不要です。自分の資産確認や注文操作（Private API）を使う場合は `BITBANK_API_KEY` と `BITBANK_API_SECRET` を環境変数に設定してください。設定方法は [docs/private-api.md](docs/private-api.md) を参照。
 
 **Q. どのツールを使えばよい？** まず `analyze_market_signal` で全体を把握 → 必要に応じて各専門ツールへ。
 
