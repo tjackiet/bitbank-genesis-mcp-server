@@ -18,6 +18,7 @@ import {
 	tickersJpy,
 	transactionsBtcJpy,
 } from '../fixtures/bitbank-api.js';
+import { assertDescriptionQuality, assertFailQuality, assertOkQuality } from './_qualityAssertions.js';
 
 const ENTRY = new URL('./mock-server-entry.ts', import.meta.url).pathname;
 
@@ -41,11 +42,6 @@ function extractText(result: Awaited<ReturnType<Client['callTool']>>): string {
 		.filter((c) => c.type === 'text')
 		.map((c) => c.text)
 		.join('\n');
-}
-
-/** structuredContent を取得するヘルパー */
-function sc(result: Awaited<ReturnType<Client['callTool']>>): Record<string, unknown> | undefined {
-	return result.structuredContent as Record<string, unknown> | undefined;
 }
 
 // ============================================================
@@ -75,6 +71,11 @@ describe('MCP stdio E2E', () => {
 				expect(actual, `ツール "${name}" が tools/list に含まれていない`).toContain(name);
 			}
 		});
+
+		it('全ツールの description が十分に具体的である', async () => {
+			const result = await client.listTools();
+			assertDescriptionQuality(result.tools);
+		});
 	});
 
 	// ============================================================
@@ -96,12 +97,12 @@ describe('MCP stdio E2E', () => {
 			const text = extractText(result);
 			expect(text).toContain('BTC/JPY');
 			expect(text).toContain('15,500,000');
-			if (sc(result)) expect(sc(result)?.ok).toBe(true);
+			assertOkQuality(result);
 		});
 
 		it('バリデーションエラー: 未対応ペア', async () => {
 			const result = await client.callTool({ name: 'get_ticker', arguments: { pair: 'unknown_jpy' } });
-			expect(extractText(result).length).toBeGreaterThan(0);
+			assertFailQuality(result);
 		});
 	});
 
@@ -118,8 +119,7 @@ describe('MCP stdio E2E', () => {
 
 		it('success:0 で ok:false を返す', async () => {
 			const result = await client.callTool({ name: 'get_ticker', arguments: { pair: 'btc_jpy' } });
-			expect(extractText(result).length).toBeGreaterThan(0);
-			if (sc(result)) expect(sc(result)?.ok).toBe(false);
+			assertFailQuality(result);
 		});
 	});
 
@@ -143,20 +143,19 @@ describe('MCP stdio E2E', () => {
 			expect(text).toContain('買い板');
 			expect(text).toContain('売り板');
 			expect(text).toContain('スプレッド');
-			if (sc(result)) expect(sc(result)?.ok).toBe(true);
+			assertOkQuality(result);
 		});
 
 		it('pressure モード: 圧力分析が返る', async () => {
 			const result = await client.callTool({ name: 'get_orderbook', arguments: { pair: 'btc_jpy', mode: 'pressure' } });
 			const text = extractText(result);
 			expect(text).toContain('板圧力分析');
-			if (sc(result)) expect(sc(result)?.ok).toBe(true);
+			assertOkQuality(result);
 		});
 
 		it('バリデーションエラー: 未対応ペア', async () => {
 			const result = await client.callTool({ name: 'get_orderbook', arguments: { pair: 'unknown_jpy' } });
-			const text = extractText(result);
-			expect(text.length).toBeGreaterThan(0);
+			assertFailQuality(result);
 		});
 	});
 
@@ -183,6 +182,7 @@ describe('MCP stdio E2E', () => {
 			// OHLCV データがテキストに含まれる
 			expect(text).toContain('BTC/JPY');
 			expect(text).toContain('OHLCV');
+			assertOkQuality(result);
 		});
 
 		it('バリデーションエラー: 不正な type は SDK 側で弾かれる', async () => {
@@ -218,7 +218,7 @@ describe('MCP stdio E2E', () => {
 			const text = extractText(result);
 			expect(text).toContain('BTC/JPY');
 			expect(text).toContain('取引');
-			if (sc(result)) expect(sc(result)?.ok).toBe(true);
+			assertOkQuality(result);
 		});
 
 		it('買い/売り件数が正しくカウントされる', async () => {
@@ -252,6 +252,7 @@ describe('MCP stdio E2E', () => {
 			const text = extractText(result);
 			expect(text).toContain('BTC/JPY');
 			expect(text).toContain('ETH/JPY');
+			assertOkQuality(result);
 		});
 	});
 
@@ -278,6 +279,7 @@ describe('MCP stdio E2E', () => {
 			// CVD やアグレッサー比率がテキストに含まれる
 			expect(text).toContain('CVD');
 			expect(text).toContain('BTC/JPY');
+			assertOkQuality(result);
 		});
 	});
 
@@ -304,6 +306,8 @@ describe('MCP stdio E2E', () => {
 			expect(text).toMatch(/BTC[_/]JPY/);
 			expect(text).toContain('RV');
 			expect(text).toContain('ATR');
+			// デフォルト view=summary は意図的に1行凝縮フォーマット
+			assertOkQuality(result, { minLines: 1 });
 		});
 	});
 
@@ -330,6 +334,7 @@ describe('MCP stdio E2E', () => {
 			expect(text).toMatch(/BTC[_/]JPY/);
 			// RSI, MACD, SMA のいずれかが含まれる
 			expect(text).toMatch(/RSI|MACD|SMA/);
+			assertOkQuality(result);
 		});
 	});
 
@@ -355,6 +360,7 @@ describe('MCP stdio E2E', () => {
 			const text = extractText(result);
 			expect(text).toMatch(/BTC[_/]JPY/);
 			expect(text.length).toBeGreaterThan(30);
+			assertOkQuality(result);
 		});
 	});
 
@@ -380,6 +386,7 @@ describe('MCP stdio E2E', () => {
 			const text = extractText(result);
 			expect(text).toMatch(/BTC[_/]JPY|MACD/i);
 			expect(text.length).toBeGreaterThan(30);
+			assertOkQuality(result);
 		});
 	});
 
@@ -410,6 +417,7 @@ describe('MCP stdio E2E', () => {
 			const text = extractText(result);
 			expect(text).toMatch(/BTC[_/]JPY/i);
 			expect(text.length).toBeGreaterThan(30);
+			assertOkQuality(result);
 		});
 	});
 
@@ -440,6 +448,7 @@ describe('MCP stdio E2E', () => {
 			const text = extractText(result);
 			expect(text).toMatch(/BTC[_/]JPY/);
 			expect(text.length).toBeGreaterThan(50);
+			assertOkQuality(result);
 		});
 	});
 });
