@@ -84,8 +84,13 @@
 |-------|------|------|
 | Phase 1 | Biome format + Oxlint 自動修正 | サイレントに `--write` / `--fix` 適用 |
 | Phase 2 | Oxlint 残存エラー収集 | 修正できなかった違反を収集 |
-| Phase 3 | TypeScript 型チェック | `tsc --noEmit` で型エラーを抽出 |
+| Phase 3 | TypeScript 型チェック（最適化付き） | `tsc --noEmit --incremental` + 30 秒スロットリング |
 | Phase 4 | Banned pattern チェック | `new Date` の使用を検出 (`// allow-date` コメント付きは除外) |
+
+**Phase 3 の最適化:**
+- `--incremental --tsBuildInfoFile` で 2 回目以降を高速化（~6s → ~1.5s）
+- 前回成功から 30 秒以内はスキップ（連続編集時 ~6s → 0s）
+- Lefthook pre-commit が最終的な型チェックのゲートキーパーとなるため安全
 
 | 項目 | 内容 |
 |------|------|
