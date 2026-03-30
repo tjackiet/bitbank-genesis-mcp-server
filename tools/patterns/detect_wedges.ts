@@ -880,7 +880,7 @@ export function detectWedges(ctx: DetectContext): DetectResult {
 				range: { start, end },
 				status,
 				daysToApex: fApex.isValid ? fApex.barsToApex : undefined,
-				breakoutDirection,
+				breakoutDirection: breakoutDirection ?? undefined,
 				outcome,
 				breakoutDate,
 				breakoutBarIndex: breakoutIdx !== -1 ? breakoutIdx : undefined,
