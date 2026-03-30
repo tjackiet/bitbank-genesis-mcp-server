@@ -1,7 +1,7 @@
 import { GetDepthOutputSchema } from '../src/schemas.js';
 import { estimateZones } from './depth-analysis.js';
 import { formatSummary, formatTimestampJST } from './formatter.js';
-import { BITBANK_API_BASE, DEFAULT_RETRIES, fetchJson } from './http.js';
+import { BITBANK_API_BASE, DEFAULT_RETRIES, fetchJsonWithRateLimit } from './http.js';
 import { failFromError, failFromValidation, ok } from './result.js';
 import { createMeta, ensurePair } from './validate.js';
 
@@ -51,7 +51,7 @@ export default async function getDepth(pair: string, { timeoutMs = 3000, maxLeve
 
 	const url = `${BITBANK_API_BASE}/${chk.pair}/depth`;
 	try {
-		const json: unknown = await fetchJson(url, { timeoutMs, retries: DEFAULT_RETRIES });
+		const { data: json, rateLimit } = await fetchJsonWithRateLimit(url, { timeoutMs, retries: DEFAULT_RETRIES });
 		const jsonObj = json as { data?: Record<string, unknown> };
 		const d = jsonObj?.data ?? {};
 		const asks = Array.isArray(d.asks) ? d.asks.slice(0, maxLevels) : [];
@@ -96,7 +96,7 @@ export default async function getDepth(pair: string, { timeoutMs = 3000, maxLeve
 		// タイムスタンプ付きテキスト出力（全板データを含める: LLM が structuredContent.data を読めない対策）
 		const textWithBoundary = buildDepthText({ timestamp: data.timestamp, summary, bids, asks, mid });
 
-		const meta = createMeta(chk.pair);
+		const meta = createMeta(chk.pair, rateLimit ? { rateLimit } : {});
 		return GetDepthOutputSchema.parse(
 			ok(textWithBoundary, data as Record<string, unknown>, meta as Record<string, unknown>),
 		);

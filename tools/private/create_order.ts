@@ -101,7 +101,14 @@ export default async function createOrder(args: {
 			ok(
 				summary,
 				{ order: rawOrder, timestamp },
-				{ fetchedAt: timestamp, orderId: rawOrder.order_id, pair, side, type },
+				{
+					fetchedAt: timestamp,
+					orderId: rawOrder.order_id,
+					pair,
+					side,
+					type,
+					...(client.lastRateLimit ? { rateLimit: client.lastRateLimit } : {}),
+				},
 			),
 		);
 	} catch (err) {

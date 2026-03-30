@@ -128,6 +128,7 @@ export default async function getMyTradeHistory(args: {
 			fetchedAt: timestamp,
 			tradeCount: trades.length,
 			pair: pair || undefined,
+			...(client.lastRateLimit ? { rateLimit: client.lastRateLimit } : {}),
 		};
 
 		return GetMyTradeHistoryOutputSchema.parse(ok(summary, data, meta));

@@ -173,6 +173,7 @@ export default async function getMyAssets(args: { include_jpy_valuation?: boolea
 			fetchedAt: timestamp,
 			assetCount: assets.length,
 			hasJpyValuation,
+			...(client.lastRateLimit ? { rateLimit: client.lastRateLimit } : {}),
 		};
 
 		const result = ok(summary, data, meta);

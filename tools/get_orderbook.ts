@@ -14,7 +14,7 @@
 import { toIsoTime } from '../lib/datetime.js';
 import { estimateZones } from '../lib/depth-analysis.js';
 import { formatSummary, formatTimestampJST } from '../lib/formatter.js';
-import { BITBANK_API_BASE, DEFAULT_RETRIES, fetchJson } from '../lib/http.js';
+import { BITBANK_API_BASE, DEFAULT_RETRIES, fetchJsonWithRateLimit } from '../lib/http.js';
 import { fail, failFromError, failFromValidation, ok } from '../lib/result.js';
 import { createMeta, ensurePair, validateLimit } from '../lib/validate.js';
 import type { OrderbookLevelWithCum } from '../src/schemas.js';
@@ -470,7 +470,7 @@ export default async function getOrderbook(params: GetOrderbookParams | string =
 	// ─── 単一 API 呼出し ───
 	const url = `${BITBANK_API_BASE}/${chk.pair}/depth`;
 	try {
-		const json: unknown = await fetchJson(url, { timeoutMs, retries: DEFAULT_RETRIES });
+		const { data: json, rateLimit } = await fetchJsonWithRateLimit(url, { timeoutMs, retries: DEFAULT_RETRIES });
 		const jsonObj = json as { data?: Record<string, unknown> };
 		const d = jsonObj?.data ?? {};
 		if (!Array.isArray(d.asks) || !Array.isArray(d.bids)) {
@@ -507,7 +507,7 @@ export default async function getOrderbook(params: GetOrderbookParams | string =
 			`\n📌 補完ツール: get_flow_metrics（出来高フロー・CVD）, get_transactions（約定履歴）, analyze_indicators（指標）`;
 		result.text += boundary;
 
-		const meta = createMeta(chk.pair, { mode, topN });
+		const meta = createMeta(chk.pair, { mode, topN, ...(rateLimit ? { rateLimit } : {}) });
 		return ok(result.text, result.data, meta);
 	} catch (err: unknown) {
 		return failFromError(err, { timeoutMs, defaultType: 'network', defaultMessage: 'ネットワークエラー' });

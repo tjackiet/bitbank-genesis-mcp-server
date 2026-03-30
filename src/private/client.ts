@@ -10,6 +10,7 @@
  * @see https://github.com/bitbankinc/bitbank-api-docs/blob/master/errors.md
  */
 
+import { extractRateLimit, type RateLimitInfo } from '../../lib/http.js';
 import { createGetAuthHeaders, createPostAuthHeaders } from './auth.js';
 
 /** テスト時に差し替え可能な HTTP fetcher 型 */
@@ -56,6 +57,9 @@ export class BitbankPrivateClient {
 	private readonly fetcher: HttpFetcher;
 	private readonly timeoutMs: number;
 	private readonly maxRetries: number;
+
+	/** 直近の成功レスポンスから抽出したレートリミット情報（ヘッダ未提供時は null） */
+	lastRateLimit: RateLimitInfo | null = null;
 
 	constructor(opts: PrivateClientOptions = {}) {
 		this.fetcher = opts.fetcher ?? globalThis.fetch.bind(globalThis);
@@ -165,6 +169,9 @@ export class BitbankPrivateClient {
 				} catch {
 					throw new PrivateApiError('レスポンスの JSON パースに失敗しました', 'upstream_error');
 				}
+
+				// レートリミット情報を抽出（成功時）
+				this.lastRateLimit = extractRateLimit(res.headers);
 
 				// success: 0 の場合（HTTP 200 でもエラー）
 				if (json.success !== 1) {

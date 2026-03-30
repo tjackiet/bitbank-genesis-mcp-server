@@ -1,7 +1,7 @@
 import { dayjs, daysAgo, today, toIsoTime, toIsoWithTz } from '../lib/datetime.js';
 import { getErrorMessage } from '../lib/error.js';
 import { formatSummary } from '../lib/formatter.js';
-import { BITBANK_API_BASE, DEFAULT_RETRIES, fetchJson } from '../lib/http.js';
+import { BITBANK_API_BASE, DEFAULT_RETRIES, fetchJsonWithRateLimit, type RateLimitInfo } from '../lib/http.js';
 import { fail, failFromError, failFromValidation, ok, parseAsResult } from '../lib/result.js';
 import { createMeta, ensurePair, validateDate, validateLimit } from '../lib/validate.js';
 import type { CandleType, FailResult, GetCandlesData, GetCandlesMeta, OkResult } from '../src/schemas.js';
@@ -54,6 +54,7 @@ function todayYyyymmdd(): string {
 type OhlcvRow = [unknown, unknown, unknown, unknown, unknown, unknown];
 interface FetchChunkResult {
 	rows: OhlcvRow[];
+	rateLimit: RateLimitInfo | null;
 	error?: unknown;
 }
 
@@ -61,14 +62,14 @@ interface FetchChunkResult {
 async function fetchSingleYear(pair: string, type: string, year: number): Promise<FetchChunkResult> {
 	const url = `${BITBANK_API_BASE}/${pair}/candlestick/${type}/${year}`;
 	try {
-		const json: unknown = await fetchJson(url, { timeoutMs: 8000, retries: DEFAULT_RETRIES });
+		const { data: json, rateLimit } = await fetchJsonWithRateLimit(url, { timeoutMs: 8000, retries: DEFAULT_RETRIES });
 		const jsonObj = json as { data?: { candlestick?: Array<{ ohlcv?: unknown[] }> } };
 		const cs = jsonObj?.data?.candlestick?.[0];
 		const ohlcvs = cs?.ohlcv ?? [];
-		return { rows: ohlcvs as OhlcvRow[] };
+		return { rows: ohlcvs as OhlcvRow[], rateLimit };
 	} catch (e) {
 		// 存在しない年や取得失敗は空配列を返す（エラーも保持）
-		return { rows: [], error: e };
+		return { rows: [], rateLimit: null, error: e };
 	}
 }
 
@@ -80,14 +81,14 @@ async function fetchSingleDay(
 ): Promise<FetchChunkResult> {
 	const url = `${BITBANK_API_BASE}/${pair}/candlestick/${type}/${dateStr}`;
 	try {
-		const json: unknown = await fetchJson(url, { timeoutMs: 8000, retries: DEFAULT_RETRIES });
+		const { data: json, rateLimit } = await fetchJsonWithRateLimit(url, { timeoutMs: 8000, retries: DEFAULT_RETRIES });
 		const jsonObj = json as { data?: { candlestick?: Array<{ ohlcv?: unknown[] }> } };
 		const cs = jsonObj?.data?.candlestick?.[0];
 		const ohlcvs = cs?.ohlcv ?? [];
-		return { rows: ohlcvs as OhlcvRow[] };
+		return { rows: ohlcvs as OhlcvRow[], rateLimit };
 	} catch (e) {
 		// 存在しない日や取得失敗は空配列を返す（エラーも保持）
-		return { rows: [], error: e };
+		return { rows: [], rateLimit: null, error: e };
 	}
 }
 
@@ -145,6 +146,7 @@ export default async function getCandles(
 	let ohlcvs: unknown[] = [];
 	let json: unknown = null;
 	let fetchWarning: string | undefined;
+	let lastRateLimit: RateLimitInfo | null = null;
 
 	try {
 		if (needsMultiYear) {
@@ -153,6 +155,10 @@ export default async function getCandles(
 			const years = Array.from({ length: yearsNeeded }, (_, i) => currentYear - i);
 
 			const results = await Promise.all(years.map((year) => fetchSingleYear(chk.pair, type, year)));
+			// 最後に成功したレスポンスの rateLimit を採用
+			for (const r of results) {
+				if (r.rateLimit) lastRateLimit = r.rateLimit;
+			}
 
 			// 部分失敗を追跡
 			const failedChunks = results.filter((r) => r.error);
@@ -215,6 +221,7 @@ export default async function getCandles(
 				for (const result of results) {
 					allOhlcvs.push(...result.rows);
 					allDayResults.push(result);
+					if (result.rateLimit) lastRateLimit = result.rateLimit;
 				}
 			}
 
@@ -251,7 +258,9 @@ export default async function getCandles(
 		} else {
 			// 従来の単一リクエスト
 			const url = `${BITBANK_API_BASE}/${chk.pair}/candlestick/${type}/${dateCheck.value}`;
-			json = await fetchJson(url, { timeoutMs: 5000, retries: DEFAULT_RETRIES });
+			const fetchResult = await fetchJsonWithRateLimit(url, { timeoutMs: 5000, retries: DEFAULT_RETRIES });
+			json = fetchResult.data;
+			lastRateLimit = fetchResult.rateLimit;
 			const jsonObj = json as { data?: { candlestick?: Array<{ ohlcv?: unknown[] }> } };
 			const cs = jsonObj?.data?.candlestick?.[0];
 			ohlcvs = cs?.ohlcv ?? [];
@@ -401,6 +410,7 @@ export default async function getCandles(
 			`\n📌 補完ツール: get_flow_metrics（売買内訳・CVD）, get_transactions（個別約定）, get_orderbook（板情報）`;
 
 		const metaExtra: Record<string, unknown> = { type, count: normalized.length };
+		if (lastRateLimit) metaExtra.rateLimit = lastRateLimit;
 		if (fetchWarning) metaExtra.warning = fetchWarning;
 		if (needsMultiYear) {
 			metaExtra.multiYear = {

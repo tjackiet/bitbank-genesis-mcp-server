@@ -72,7 +72,16 @@ export default async function cancelOrders(args: {
 		});
 
 		return CancelOrdersOutputSchema.parse(
-			ok(summary, { orders, timestamp }, { fetchedAt: timestamp, canceledCount: orders.length, pair }),
+			ok(
+				summary,
+				{ orders, timestamp },
+				{
+					fetchedAt: timestamp,
+					canceledCount: orders.length,
+					pair,
+					...(client.lastRateLimit ? { rateLimit: client.lastRateLimit } : {}),
+				},
+			),
 		);
 	} catch (err) {
 		if (err instanceof PrivateApiError) {

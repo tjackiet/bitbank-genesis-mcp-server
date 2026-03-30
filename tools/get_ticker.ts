@@ -1,6 +1,6 @@
 import { toDisplayTime, toIsoTime } from '../lib/datetime.js';
 import { formatPair, formatPercent, formatPrice } from '../lib/formatter.js';
-import { BITBANK_API_BASE, DEFAULT_RETRIES, fetchJson } from '../lib/http.js';
+import { BITBANK_API_BASE, DEFAULT_RETRIES, fetchJsonWithRateLimit } from '../lib/http.js';
 import { fail, failFromError, failFromValidation, ok, parseAsResult } from '../lib/result.js';
 import { createMeta, ensurePair } from '../lib/validate.js';
 import type { FailResult, GetTickerData, GetTickerMeta, OkResult } from '../src/schemas.js';
@@ -81,7 +81,7 @@ export default async function getTicker(
 	const url = `${BITBANK_API_BASE}/${chk.pair}/ticker`;
 
 	try {
-		const json: unknown = await fetchJson(url, { timeoutMs, retries: DEFAULT_RETRIES });
+		const { data: json, rateLimit } = await fetchJsonWithRateLimit(url, { timeoutMs, retries: DEFAULT_RETRIES });
 		const jsonObj = json as { success?: number; data?: Record<string, unknown> };
 
 		// 上流レスポンスの構造バリデーション
@@ -108,7 +108,8 @@ export default async function getTicker(
 			},
 		};
 
-		return parseAsResult<GetTickerData, GetTickerMeta>(GetTickerOutputSchema, ok(summary, data, createMeta(chk.pair)));
+		const meta = createMeta(chk.pair, rateLimit ? { rateLimit } : {});
+		return parseAsResult<GetTickerData, GetTickerMeta>(GetTickerOutputSchema, ok(summary, data, meta));
 	} catch (err: unknown) {
 		return failFromError(err, {
 			schema: GetTickerOutputSchema,
