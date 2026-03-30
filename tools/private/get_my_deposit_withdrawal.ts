@@ -432,6 +432,7 @@ export default async function getMyDepositWithdrawal(args: {
 			isComplete,
 			hasWarnings: warnings.length > 0,
 			warnings,
+			...(client.lastRateLimit ? { rateLimit: client.lastRateLimit } : {}),
 		};
 
 		return GetMyDepositWithdrawalOutputSchema.parse(ok(summary, data, meta));

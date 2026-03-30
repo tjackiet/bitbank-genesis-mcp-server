@@ -1,7 +1,7 @@
 import type { z } from 'zod';
 import { dayjs, toIsoMs } from '../lib/datetime.js';
 import { formatPair, formatPrice } from '../lib/formatter.js';
-import { BITBANK_API_BASE, DEFAULT_RETRIES, fetchJson } from '../lib/http.js';
+import { BITBANK_API_BASE, DEFAULT_RETRIES, fetchJsonWithRateLimit } from '../lib/http.js';
 import { failFromError, failFromValidation, ok } from '../lib/result.js';
 import { createMeta, ensurePair, validateLimit } from '../lib/validate.js';
 import {
@@ -88,7 +88,7 @@ export default async function getTransactions(pair: string = 'btc_jpy', limit: n
 			: `${BITBANK_API_BASE}/${chk.pair}/transactions`;
 
 	try {
-		const json: unknown = await fetchJson(url, { timeoutMs: 4000, retries: DEFAULT_RETRIES });
+		const { data: json, rateLimit } = await fetchJsonWithRateLimit(url, { timeoutMs: 4000, retries: DEFAULT_RETRIES });
 		const jsonObj = json as { data?: { transactions?: TxnRaw[] } };
 		const arr: TxnRaw[] = (jsonObj?.data?.transactions ?? []) as TxnRaw[];
 
@@ -124,7 +124,11 @@ export default async function getTransactions(pair: string = 'btc_jpy', limit: n
 			`\n📌 補完ツール: get_flow_metrics（集計フロー・CVD・スパイク検出）, get_candles（OHLCV）, get_orderbook（板情報）`;
 
 		const data = { raw: json, normalized: latest };
-		const meta = createMeta(chk.pair, { count: latest.length, source: date ? 'by_date' : 'latest' });
+		const meta = createMeta(chk.pair, {
+			count: latest.length,
+			source: date ? 'by_date' : 'latest',
+			...(rateLimit ? { rateLimit } : {}),
+		});
 		return GetTransactionsOutputSchema.parse(
 			ok<z.infer<typeof GetTransactionsDataSchemaOut>, z.infer<typeof GetTransactionsMetaSchemaOut>>(
 				summary,

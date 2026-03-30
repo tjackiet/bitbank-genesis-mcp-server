@@ -57,7 +57,16 @@ export default async function getOrder(args: { pair: string; order_id: number })
 		const summary = formatOrderSummary(rawOrder, pair);
 
 		return GetOrderOutputSchema.parse(
-			ok(summary, { order: rawOrder, timestamp }, { fetchedAt: timestamp, orderId: order_id, pair }),
+			ok(
+				summary,
+				{ order: rawOrder, timestamp },
+				{
+					fetchedAt: timestamp,
+					orderId: order_id,
+					pair,
+					...(client.lastRateLimit ? { rateLimit: client.lastRateLimit } : {}),
+				},
+			),
 		);
 	} catch (err) {
 		if (err instanceof PrivateApiError) {

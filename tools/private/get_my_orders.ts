@@ -120,6 +120,7 @@ export default async function getMyOrders(args: { pair?: string; count?: number;
 			fetchedAt: timestamp,
 			orderCount: orders.length,
 			pair: pair || undefined,
+			...(client.lastRateLimit ? { rateLimit: client.lastRateLimit } : {}),
 		};
 
 		return GetMyOrdersOutputSchema.parse(ok(summary, data, meta));

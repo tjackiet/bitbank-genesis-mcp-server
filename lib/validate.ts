@@ -142,7 +142,10 @@ export function validateDate(
 	return { ok: true, value: date };
 }
 
-export function createMeta(pair: Pair, additional: Record<string, unknown> = {}) {
+export function createMeta(
+	pair: Pair,
+	additional: Record<string, unknown> = {},
+): Record<string, unknown> & { pair: Pair; fetchedAt: string } {
 	return {
 		pair,
 		fetchedAt: nowIso(),

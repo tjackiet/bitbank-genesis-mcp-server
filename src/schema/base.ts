@@ -16,8 +16,21 @@ export const CandleTypeEnum = z.enum([
 
 // ── Shared base schemas ──
 
+/** レートリミット情報スキーマ（レスポンスヘッダから抽出、ヘッダ未提供時は省略） */
+export const RateLimitSchema = z
+	.object({
+		remaining: z.number().describe('残りリクエスト数'),
+		limit: z.number().describe('期間あたりの上限数'),
+		reset: z.number().describe('リセット時刻（Unix epoch 秒）'),
+	})
+	.optional();
+
 /** pair + fetchedAt: 全 Meta スキーマの共通ベース */
-export const BaseMetaSchema = z.object({ pair: z.string(), fetchedAt: z.string() });
+export const BaseMetaSchema = z.object({
+	pair: z.string(),
+	fetchedAt: z.string(),
+	rateLimit: RateLimitSchema,
+});
 
 /** pair デフォルト入力: z.string().optional().default('btc_jpy') */
 export const BasePairInputSchema = z.object({ pair: z.string().optional().default('btc_jpy') });

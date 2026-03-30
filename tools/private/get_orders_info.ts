@@ -52,7 +52,16 @@ export default async function getOrdersInfo(args: { pair: string; order_ids: num
 		const summary = lines.join('\n');
 
 		return GetOrdersInfoOutputSchema.parse(
-			ok(summary, { orders, timestamp }, { fetchedAt: timestamp, orderCount: orders.length, pair }),
+			ok(
+				summary,
+				{ orders, timestamp },
+				{
+					fetchedAt: timestamp,
+					orderCount: orders.length,
+					pair,
+					...(client.lastRateLimit ? { rateLimit: client.lastRateLimit } : {}),
+				},
+			),
 		);
 	} catch (err) {
 		if (err instanceof PrivateApiError) {
