@@ -1,0 +1,364 @@
+/**
+ * preview_order ツールのユニットテスト。
+ * バリデーション、確認トークン発行、プレビューメッセージ生成を検証する。
+ * ネットワーク依存のトリガー価格検証はモックで対応。
+ */
+
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { assertFail, assertOk } from '../_assertResult.js';
+import { mockBitbankSuccess } from '../fixtures/private-api.js';
+
+const originalFetch = globalThis.fetch;
+
+beforeEach(() => {
+	process.env.BITBANK_API_KEY = 'test_key';
+	process.env.BITBANK_API_SECRET = 'test_secret';
+	// トリガー価格検証で ticker API を呼ぶため fetch をモック
+	globalThis.fetch = vi
+		.fn()
+		.mockResolvedValue(
+			new Response(JSON.stringify(mockBitbankSuccess({ last: '15000000' })), { status: 200 }),
+		) as unknown as typeof fetch;
+});
+
+afterEach(() => {
+	globalThis.fetch = originalFetch;
+	delete process.env.BITBANK_API_KEY;
+	delete process.env.BITBANK_API_SECRET;
+	vi.resetModules();
+});
+
+describe('preview_order', () => {
+	describe('バリデーション', () => {
+		it('limit 注文で price 未指定はエラー', async () => {
+			const { default: previewOrder } = await import('../../tools/private/preview_order.js');
+			const result = await previewOrder({
+				pair: 'btc_jpy',
+				amount: '0.01',
+				side: 'buy',
+				type: 'limit',
+			});
+
+			assertFail(result);
+			expect(result.summary).toContain('price');
+		});
+
+		it('market 注文で price 指定はエラー', async () => {
+			const { default: previewOrder } = await import('../../tools/private/preview_order.js');
+			const result = await previewOrder({
+				pair: 'btc_jpy',
+				amount: '0.01',
+				side: 'buy',
+				type: 'market',
+				price: '15000000',
+			});
+
+			assertFail(result);
+			expect(result.summary).toContain('market');
+		});
+
+		it('market 注文で trigger_price 指定はエラー', async () => {
+			const { default: previewOrder } = await import('../../tools/private/preview_order.js');
+			const result = await previewOrder({
+				pair: 'btc_jpy',
+				amount: '0.01',
+				side: 'buy',
+				type: 'market',
+				trigger_price: '16000000',
+			});
+
+			assertFail(result);
+			expect(result.summary).toContain('market');
+		});
+
+		it('stop 注文で trigger_price 未指定はエラー', async () => {
+			const { default: previewOrder } = await import('../../tools/private/preview_order.js');
+			const result = await previewOrder({
+				pair: 'btc_jpy',
+				amount: '0.01',
+				side: 'sell',
+				type: 'stop',
+			});
+
+			assertFail(result);
+			expect(result.summary).toContain('trigger_price');
+		});
+
+		it('stop 注文で price 指定はエラー', async () => {
+			const { default: previewOrder } = await import('../../tools/private/preview_order.js');
+			const result = await previewOrder({
+				pair: 'btc_jpy',
+				amount: '0.01',
+				side: 'sell',
+				type: 'stop',
+				price: '14000000',
+				trigger_price: '13000000',
+			});
+
+			assertFail(result);
+			expect(result.summary).toContain('stop_limit');
+		});
+
+		it('stop_limit 注文で trigger_price 未指定はエラー', async () => {
+			const { default: previewOrder } = await import('../../tools/private/preview_order.js');
+			const result = await previewOrder({
+				pair: 'btc_jpy',
+				amount: '0.01',
+				side: 'buy',
+				type: 'stop_limit',
+				price: '16000000',
+			});
+
+			assertFail(result);
+			expect(result.summary).toContain('trigger_price');
+		});
+
+		it('stop_limit 注文で price 未指定はエラー', async () => {
+			const { default: previewOrder } = await import('../../tools/private/preview_order.js');
+			const result = await previewOrder({
+				pair: 'btc_jpy',
+				amount: '0.01',
+				side: 'buy',
+				type: 'stop_limit',
+				trigger_price: '16000000',
+			});
+
+			assertFail(result);
+			expect(result.summary).toContain('price');
+		});
+
+		it('post_only は limit 以外でエラー', async () => {
+			const { default: previewOrder } = await import('../../tools/private/preview_order.js');
+			const result = await previewOrder({
+				pair: 'btc_jpy',
+				amount: '0.01',
+				side: 'buy',
+				type: 'market',
+				post_only: true,
+			});
+
+			assertFail(result);
+			expect(result.summary).toContain('post_only');
+		});
+
+		it('amount が不正な値でエラー', async () => {
+			const { default: previewOrder } = await import('../../tools/private/preview_order.js');
+			const result = await previewOrder({
+				pair: 'btc_jpy',
+				amount: '-1',
+				side: 'buy',
+				type: 'market',
+			});
+
+			assertFail(result);
+			expect(result.summary).toContain('amount');
+		});
+
+		it('price が不正な値でエラー', async () => {
+			const { default: previewOrder } = await import('../../tools/private/preview_order.js');
+			const result = await previewOrder({
+				pair: 'btc_jpy',
+				amount: '0.01',
+				side: 'buy',
+				type: 'limit',
+				price: '0',
+			});
+
+			assertFail(result);
+			expect(result.summary).toContain('price');
+		});
+
+		it('trigger_price が不正な値でエラー', async () => {
+			const { default: previewOrder } = await import('../../tools/private/preview_order.js');
+			const result = await previewOrder({
+				pair: 'btc_jpy',
+				amount: '0.01',
+				side: 'sell',
+				type: 'stop',
+				trigger_price: 'abc',
+			});
+
+			assertFail(result);
+			expect(result.summary).toContain('trigger_price');
+		});
+	});
+
+	describe('正常系', () => {
+		it('limit 注文プレビューで confirmation_token を返す', async () => {
+			const { default: previewOrder } = await import('../../tools/private/preview_order.js');
+			const result = await previewOrder({
+				pair: 'btc_jpy',
+				amount: '0.01',
+				side: 'buy',
+				type: 'limit',
+				price: '14000000',
+			});
+
+			assertOk(result);
+			expect(result.data.confirmation_token).toBeTypeOf('string');
+			expect(result.data.confirmation_token.length).toBeGreaterThan(0);
+			expect(result.data.expires_at).toBeGreaterThan(Date.now());
+		});
+
+		it('market 注文プレビューが成功する', async () => {
+			const { default: previewOrder } = await import('../../tools/private/preview_order.js');
+			const result = await previewOrder({
+				pair: 'btc_jpy',
+				amount: '0.01',
+				side: 'buy',
+				type: 'market',
+			});
+
+			assertOk(result);
+			expect(result.summary).toContain('BTC/JPY');
+			expect(result.summary).toContain('買');
+			expect(result.summary).toContain('market');
+			expect(result.summary).toContain('成行');
+		});
+
+		it('sell 注文で「売」ラベルが表示される', async () => {
+			const { default: previewOrder } = await import('../../tools/private/preview_order.js');
+			const result = await previewOrder({
+				pair: 'eth_jpy',
+				amount: '1.0',
+				side: 'sell',
+				type: 'market',
+			});
+
+			assertOk(result);
+			expect(result.summary).toContain('売');
+			expect(result.summary).toContain('ETH/JPY');
+		});
+
+		it('limit 注文で価格がフォーマットされる（JPYペア）', async () => {
+			const { default: previewOrder } = await import('../../tools/private/preview_order.js');
+			const result = await previewOrder({
+				pair: 'btc_jpy',
+				amount: '0.01',
+				side: 'buy',
+				type: 'limit',
+				price: '14000000',
+			});
+
+			assertOk(result);
+			// formatPrice で3桁区切りになる
+			expect(result.summary).toContain('14,000,000');
+		});
+
+		it('post_only が有効な limit 注文のプレビュー', async () => {
+			const { default: previewOrder } = await import('../../tools/private/preview_order.js');
+			const result = await previewOrder({
+				pair: 'btc_jpy',
+				amount: '0.01',
+				side: 'buy',
+				type: 'limit',
+				price: '14000000',
+				post_only: true,
+			});
+
+			assertOk(result);
+			expect(result.summary).toContain('Post Only');
+		});
+
+		it('stop 注文でトリガー価格が表示される', async () => {
+			const { default: previewOrder } = await import('../../tools/private/preview_order.js');
+			const result = await previewOrder({
+				pair: 'btc_jpy',
+				amount: '0.01',
+				side: 'sell',
+				type: 'stop',
+				trigger_price: '13000000',
+			});
+
+			assertOk(result);
+			expect(result.summary).toContain('トリガー価格');
+			expect(result.summary).toContain('13,000,000');
+		});
+
+		it('preview にパラメータが含まれる', async () => {
+			const { default: previewOrder } = await import('../../tools/private/preview_order.js');
+			const result = await previewOrder({
+				pair: 'btc_jpy',
+				amount: '0.01',
+				side: 'buy',
+				type: 'limit',
+				price: '14000000',
+			});
+
+			assertOk(result);
+			expect(result.data.preview.pair).toBe('btc_jpy');
+			expect(result.data.preview.side).toBe('buy');
+			expect(result.data.preview.type).toBe('limit');
+		});
+
+		it('meta.action が create_order である', async () => {
+			const { default: previewOrder } = await import('../../tools/private/preview_order.js');
+			const result = await previewOrder({
+				pair: 'btc_jpy',
+				amount: '0.01',
+				side: 'buy',
+				type: 'market',
+			});
+
+			assertOk(result);
+			expect(result.meta.action).toBe('create_order');
+		});
+	});
+
+	describe('トリガー価格検証', () => {
+		it('stop sell でトリガー価格が現在価格以上の場合はエラー', async () => {
+			// 現在価格: 15,000,000（モック済み）
+			const { default: previewOrder } = await import('../../tools/private/preview_order.js');
+			const result = await previewOrder({
+				pair: 'btc_jpy',
+				amount: '0.01',
+				side: 'sell',
+				type: 'stop',
+				trigger_price: '16000000',
+			});
+
+			assertFail(result);
+			expect(result.summary).toContain('即時発動');
+		});
+
+		it('stop buy でトリガー価格が現在価格以下の場合はエラー', async () => {
+			const { default: previewOrder } = await import('../../tools/private/preview_order.js');
+			const result = await previewOrder({
+				pair: 'btc_jpy',
+				amount: '0.01',
+				side: 'buy',
+				type: 'stop',
+				trigger_price: '14000000',
+			});
+
+			assertFail(result);
+			expect(result.summary).toContain('即時発動');
+		});
+
+		it('stop sell でトリガー価格が現在価格未満なら正常', async () => {
+			const { default: previewOrder } = await import('../../tools/private/preview_order.js');
+			const result = await previewOrder({
+				pair: 'btc_jpy',
+				amount: '0.01',
+				side: 'sell',
+				type: 'stop',
+				trigger_price: '13000000',
+			});
+
+			assertOk(result);
+		});
+
+		it('stop buy でトリガー価格が現在価格超なら正常', async () => {
+			const { default: previewOrder } = await import('../../tools/private/preview_order.js');
+			const result = await previewOrder({
+				pair: 'btc_jpy',
+				amount: '0.01',
+				side: 'buy',
+				type: 'stop',
+				trigger_price: '16000000',
+			});
+
+			assertOk(result);
+		});
+	});
+});
