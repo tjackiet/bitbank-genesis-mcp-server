@@ -42,9 +42,7 @@ fi
 # ── 診断結果を出力 ──
 if [ -n "$diag" ]; then
   jq -Rn --arg msg "$diag" '{
-    hookSpecificOutput: {
-      hookEventName: "Stop",
-      additionalContext: $msg
-    }
+    continue: false,
+    stopReason: $msg
   }'
 fi
