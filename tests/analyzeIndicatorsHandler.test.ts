@@ -1,0 +1,597 @@
+import { afterEach, describe, expect, it, vi } from 'vitest';
+
+vi.mock('../tools/analyze_indicators.js', () => ({
+	default: vi.fn(),
+}));
+
+import {
+	type BuildIndicatorsTextInput,
+	buildIndicatorsText,
+	toolDef,
+} from '../src/handlers/analyzeIndicatorsHandler.js';
+import analyzeIndicators from '../tools/analyze_indicators.js';
+
+/** デフォルト入力: 全フィールド null/空 → 最小出力 */
+function baseInput(overrides?: Partial<BuildIndicatorsTextInput>): BuildIndicatorsTextInput {
+	return {
+		pair: 'btc_jpy',
+		type: '1day',
+		nowJst: '2026-04-01 12:00',
+		close: 10000000,
+		prev: 9900000,
+		deltaPrev: { amt: 100000, pct: 1.01 },
+		deltaLabel: '前日比',
+		trend: 'uptrend',
+		rsi: 55,
+		recentRsiFormatted: ['50.0', '52.0', '55.0'],
+		rsiUnitLabel: '日',
+		macdHist: 5000,
+		lastMacdCross: { type: 'golden', barsAgo: 3 },
+		divergence: 'なし',
+		sma25: 9800000,
+		sma75: 9500000,
+		sma200: 9000000,
+		s25Slope: 1000,
+		s75Slope: 500,
+		s200Slope: -200,
+		arrangement: '200日 < 75日 < 25日 < 価格',
+		crossInfo: '直近クロス: ゴールデン（5本前）',
+		bbMid: 9800000,
+		bbUp: 10200000,
+		bbLo: 9400000,
+		sigmaZ: 1.0,
+		bandWidthPct: 8.16,
+		bwTrend: '拡大中',
+		sigmaHistory: [
+			{ off: -6, z: 0.5 },
+			{ off: -1, z: 1.0 },
+		],
+		tenkan: 9900000,
+		kijun: 9700000,
+		spanA: 9600000,
+		spanB: 9400000,
+		cloudTop: 9600000,
+		cloudBot: 9400000,
+		cloudPos: 'above_cloud',
+		cloudThickness: 200000,
+		cloudThicknessPct: 2.0,
+		chikouBull: true,
+		threeSignals: { judge: '三役好転' },
+		toCloudDistance: null,
+		ichimokuConvSlope: 500,
+		ichimokuBaseSlope: -100,
+		stochK: 65,
+		stochD: 60,
+		stochPrevK: 58,
+		stochPrevD: 62,
+		obvVal: 12345,
+		obvSma20: 12000,
+		obvTrend: 'rising',
+		obvPrev: 12200,
+		...overrides,
+	};
+}
+
+describe('buildIndicatorsText', () => {
+	// ── ヘッダー ─────────────────────────────────────────
+
+	it('ヘッダーに pair / type / 時刻を含む', () => {
+		const text = buildIndicatorsText(baseInput());
+		expect(text).toContain('BTC_JPY');
+		expect(text).toContain('1day');
+		expect(text).toContain('2026-04-01');
+	});
+
+	it('deltaPrev ありで前日比を表示', () => {
+		const text = buildIndicatorsText(baseInput());
+		expect(text).toContain('前日比');
+	});
+
+	it('deltaPrev null で変化率なし', () => {
+		const text = buildIndicatorsText(baseInput({ deltaPrev: null }));
+		expect(text).not.toContain('前日比');
+	});
+
+	// ── 総合判定 ─────────────────────────────────────────
+
+	it('uptrend → 上昇トレンド', () => {
+		const text = buildIndicatorsText(baseInput({ trend: 'uptrend' }));
+		expect(text).toContain('上昇トレンド');
+	});
+
+	it('strong_downtrend → 強い下降トレンド', () => {
+		const text = buildIndicatorsText(baseInput({ trend: 'strong_downtrend' }));
+		expect(text).toContain('強い下降トレンド');
+	});
+
+	it('neutral → 中立/レンジ', () => {
+		const text = buildIndicatorsText(baseInput({ trend: 'neutral' }));
+		expect(text).toContain('中立/レンジ');
+	});
+
+	// ── RSI 判定 ─────────────────────────────────────────
+
+	it('RSI < 30 → 売られすぎ', () => {
+		const text = buildIndicatorsText(baseInput({ rsi: 25 }));
+		expect(text).toContain('売られすぎ');
+	});
+
+	it('RSI 30-50 → 弱め', () => {
+		const text = buildIndicatorsText(baseInput({ rsi: 40 }));
+		expect(text).toContain('弱め');
+	});
+
+	it('RSI 50-70 → 中立〜強め', () => {
+		const text = buildIndicatorsText(baseInput({ rsi: 60 }));
+		expect(text).toContain('中立〜強め');
+	});
+
+	it('RSI >= 70 → 買われすぎ', () => {
+		const text = buildIndicatorsText(baseInput({ rsi: 75 }));
+		expect(text).toContain('買われすぎ');
+	});
+
+	it('RSI null → n/a', () => {
+		const text = buildIndicatorsText(baseInput({ rsi: null }));
+		expect(text).toContain('RSI(14): n/a');
+	});
+
+	it('RSI 推移が2本以上で推移セクションを表示', () => {
+		const text = buildIndicatorsText(baseInput({ recentRsiFormatted: ['50.0', '55.0', '60.0'] }));
+		expect(text).toContain('RSI推移');
+		expect(text).toContain('50.0 → 55.0 → 60.0');
+	});
+
+	it('RSI 推移が1本以下で推移セクションなし', () => {
+		const text = buildIndicatorsText(baseInput({ recentRsiFormatted: ['50.0'] }));
+		expect(text).not.toContain('RSI推移');
+	});
+
+	// ── MACD ─────────────────────────────────────────────
+
+	it('MACD hist > 0 → 強気継続', () => {
+		const text = buildIndicatorsText(baseInput({ macdHist: 5000 }));
+		expect(text).toContain('強気継続');
+	});
+
+	it('MACD hist < 0 → 弱気継続', () => {
+		const text = buildIndicatorsText(baseInput({ macdHist: -3000 }));
+		expect(text).toContain('弱気継続');
+	});
+
+	it('MACD ゴールデンクロス表示', () => {
+		const text = buildIndicatorsText(baseInput({ lastMacdCross: { type: 'golden', barsAgo: 3 } }));
+		expect(text).toContain('ゴールデンクロス: 3本前');
+	});
+
+	it('MACD デッドクロス表示', () => {
+		const text = buildIndicatorsText(baseInput({ lastMacdCross: { type: 'dead', barsAgo: 7 } }));
+		expect(text).toContain('デッドクロス: 7本前');
+	});
+
+	it('MACD クロスなし', () => {
+		const text = buildIndicatorsText(baseInput({ lastMacdCross: null }));
+		expect(text).toContain('直近クロス: なし');
+	});
+
+	// ── BB ────────────────────────────────────────────────
+
+	it('sigmaZ <= -1 → 売られすぎ', () => {
+		const text = buildIndicatorsText(baseInput({ sigmaZ: -1.5 }));
+		expect(text).toContain('-1.5σ');
+		expect(text).toContain('売られすぎ');
+	});
+
+	it('sigmaZ >= 1 → 買われすぎ', () => {
+		const text = buildIndicatorsText(baseInput({ sigmaZ: 1.5 }));
+		expect(text).toContain('買われすぎ');
+	});
+
+	it('bandWidthPct < 8 → スクイーズ', () => {
+		const text = buildIndicatorsText(baseInput({ bandWidthPct: 5 }));
+		expect(text).toContain('スクイーズ');
+	});
+
+	it('bandWidthPct > 20 → エクスパンション', () => {
+		const text = buildIndicatorsText(baseInput({ bandWidthPct: 25 }));
+		expect(text).toContain('エクスパンション');
+	});
+
+	it('bbLo >= close で「現在価格に近い」表示', () => {
+		const text = buildIndicatorsText(baseInput({ close: 9400000, bbLo: 9400000 }));
+		expect(text).toContain('現在価格に近い');
+	});
+
+	it('sigmaHistory ありで過去推移を表示', () => {
+		const text = buildIndicatorsText(
+			baseInput({
+				sigmaHistory: [
+					{ off: -6, z: 0.5 },
+					{ off: -1, z: 1.0 },
+				],
+			}),
+		);
+		expect(text).toContain('5日前: 0.5σ');
+		expect(text).toContain('現在: 1σ');
+	});
+
+	// ── 一目均衡表 ───────────────────────────────────────
+
+	it('above_cloud → 強気', () => {
+		const text = buildIndicatorsText(baseInput({ cloudPos: 'above_cloud' }));
+		expect(text).toContain('雲の上 → 強気');
+	});
+
+	it('below_cloud → 弱気 + 雲突入距離', () => {
+		const text = buildIndicatorsText(baseInput({ cloudPos: 'below_cloud', toCloudDistance: 3.5, close: 9000000 }));
+		expect(text).toContain('雲の下 → 弱気');
+		expect(text).toContain('雲突入まで: 3.5%');
+	});
+
+	it('in_cloud → 中立', () => {
+		const text = buildIndicatorsText(baseInput({ cloudPos: 'in_cloud' }));
+		expect(text).toContain('雲の中 → 中立');
+	});
+
+	it('chikouBull true → 強気', () => {
+		const text = buildIndicatorsText(baseInput({ chikouBull: true }));
+		expect(text).toContain('価格より上 → 強気');
+	});
+
+	it('chikouBull false → 弱気', () => {
+		const text = buildIndicatorsText(baseInput({ chikouBull: false }));
+		expect(text).toContain('価格より下 → 弱気');
+	});
+
+	it('三役好転を表示', () => {
+		const text = buildIndicatorsText(baseInput({ threeSignals: { judge: '三役好転' } }));
+		expect(text).toContain('三役好転');
+	});
+
+	it('cloudThickness ありで雲の厚さを表示', () => {
+		const text = buildIndicatorsText(baseInput({ cloudThickness: 200000, cloudThicknessPct: 2.0 }));
+		expect(text).toContain('雲の厚さ');
+	});
+
+	// ── ストキャスティクス ────────────────────────────────
+
+	it('stochK <= 20 → 売られすぎゾーン', () => {
+		const text = buildIndicatorsText(baseInput({ stochK: 15, stochD: 18 }));
+		expect(text).toContain('売られすぎゾーン');
+	});
+
+	it('stochK >= 80 → 買われすぎゾーン', () => {
+		const text = buildIndicatorsText(baseInput({ stochK: 85, stochD: 82 }));
+		expect(text).toContain('買われすぎゾーン');
+	});
+
+	it('stochK <= 10 → 強い売られすぎ', () => {
+		const text = buildIndicatorsText(baseInput({ stochK: 8, stochD: 12 }));
+		expect(text).toContain('強い売られすぎ');
+	});
+
+	it('stochK >= 90 → 強い買われすぎ', () => {
+		const text = buildIndicatorsText(baseInput({ stochK: 92, stochD: 88 }));
+		expect(text).toContain('強い買われすぎ');
+	});
+
+	it('%K が %D を上抜け → 買いシグナル', () => {
+		// prevK < prevD, curK > curD
+		const text = buildIndicatorsText(baseInput({ stochK: 55, stochD: 50, stochPrevK: 45, stochPrevD: 50 }));
+		expect(text).toContain('買いシグナル');
+	});
+
+	it('%K が %D を下抜け → 売りシグナル', () => {
+		// prevK > prevD, curK < curD
+		const text = buildIndicatorsText(baseInput({ stochK: 45, stochD: 50, stochPrevK: 55, stochPrevD: 50 }));
+		expect(text).toContain('売りシグナル');
+	});
+
+	it('stoch クロスなし', () => {
+		// prevK > prevD, curK > curD（変化なし）
+		const text = buildIndicatorsText(baseInput({ stochK: 55, stochD: 50, stochPrevK: 55, stochPrevD: 50 }));
+		expect(text).toContain('クロス: なし');
+	});
+
+	it('stochK null → データ不足', () => {
+		const text = buildIndicatorsText(baseInput({ stochK: null, stochD: null }));
+		expect(text).toMatch(/ストキャスティクス[\s\S]*データ不足/);
+	});
+
+	// ── OBV ──────────────────────────────────────────────
+
+	it('OBV rising → 出来高が上昇を支持', () => {
+		const text = buildIndicatorsText(baseInput({ obvTrend: 'rising' }));
+		expect(text).toContain('出来高が上昇を支持');
+	});
+
+	it('OBV falling → 出来高が下落を支持', () => {
+		const text = buildIndicatorsText(baseInput({ obvTrend: 'falling' }));
+		expect(text).toContain('出来高が下落を支持');
+	});
+
+	it('OBV flat → 出来高中立', () => {
+		const text = buildIndicatorsText(baseInput({ obvTrend: 'flat' }));
+		expect(text).toContain('出来高中立');
+	});
+
+	it('OBV ベアリッシュダイバージェンス（価格↑・OBV↓）', () => {
+		// close > prev, obvVal < obvPrev
+		const text = buildIndicatorsText(baseInput({ close: 10100000, prev: 10000000, obvVal: 12000, obvPrev: 12500 }));
+		expect(text).toContain('ベアリッシュ');
+	});
+
+	it('OBV ブルリッシュダイバージェンス（価格↓・OBV↑）', () => {
+		// close < prev, obvVal > obvPrev
+		const text = buildIndicatorsText(baseInput({ close: 9900000, prev: 10000000, obvVal: 12500, obvPrev: 12000 }));
+		expect(text).toContain('ブルリッシュ');
+	});
+
+	it('OBV ダイバージェンスなし（同方向）', () => {
+		// close > prev, obvVal > obvPrev
+		const text = buildIndicatorsText(baseInput({ close: 10100000, prev: 10000000, obvVal: 12500, obvPrev: 12000 }));
+		expect(text).toContain('ダイバージェンス: なし');
+	});
+
+	it('OBV null → データ不足', () => {
+		const text = buildIndicatorsText(baseInput({ obvVal: null }));
+		expect(text).toMatch(/OBV[\s\S]*データ不足/);
+	});
+
+	// ── deltaLabel バリエーション ─────────────────────────
+
+	it('timeframe week → 前週比ラベル対応', () => {
+		const text = buildIndicatorsText(baseInput({ deltaLabel: '前週比' }));
+		expect(text).toContain('前週比');
+	});
+
+	// ── 全セクション存在確認 ──────────────────────────────
+
+	it('全セクションのヘッダーが含まれる', () => {
+		const text = buildIndicatorsText(baseInput());
+		expect(text).toContain('【総合判定】');
+		expect(text).toContain('【モメンタム】');
+		expect(text).toContain('【トレンド（移動平均線）】');
+		expect(text).toContain('【ボラティリティ（ボリンジャーバンド±2σ）】');
+		expect(text).toContain('【一目均衡表】');
+		expect(text).toContain('【ストキャスティクスRSI】');
+		expect(text).toContain('【OBV (On-Balance Volume)】');
+		expect(text).toContain('【次に確認すべきこと】');
+	});
+
+	// ── null 多数でも crash しない ────────────────────────
+
+	it('ほぼ全て null でもクラッシュしない', () => {
+		const text = buildIndicatorsText(
+			baseInput({
+				close: null,
+				prev: null,
+				deltaPrev: null,
+				rsi: null,
+				recentRsiFormatted: [],
+				macdHist: null,
+				lastMacdCross: null,
+				divergence: null,
+				sma25: null,
+				sma75: null,
+				sma200: null,
+				s25Slope: null,
+				s75Slope: null,
+				s200Slope: null,
+				crossInfo: null,
+				bbMid: null,
+				bbUp: null,
+				bbLo: null,
+				sigmaZ: null,
+				bandWidthPct: null,
+				bwTrend: null,
+				sigmaHistory: null,
+				tenkan: null,
+				kijun: null,
+				spanA: null,
+				spanB: null,
+				cloudTop: null,
+				cloudBot: null,
+				cloudThickness: null,
+				cloudThicknessPct: null,
+				chikouBull: null,
+				toCloudDistance: null,
+				ichimokuConvSlope: null,
+				ichimokuBaseSlope: null,
+				stochK: null,
+				stochD: null,
+				stochPrevK: null,
+				stochPrevD: null,
+				obvVal: null,
+				obvSma20: null,
+				obvTrend: null,
+				obvPrev: null,
+			}),
+		);
+		expect(text).toContain('【総合判定】');
+		expect(text.length).toBeGreaterThan(100);
+	});
+});
+
+// ── toolDef.handler テスト ───────────────────────────
+
+describe('toolDef.handler', () => {
+	const mockedAnalyze = vi.mocked(analyzeIndicators);
+
+	afterEach(() => vi.clearAllMocks());
+
+	/** handler が必要とする analyzeIndicators の戻り値を構築 */
+	function mockResult(overrides?: Record<string, unknown>) {
+		const series = {
+			SMA_25: Array.from({ length: 20 }, (_, i) => 9700000 + i * 1000),
+			SMA_75: Array.from({ length: 20 }, (_, i) => 9500000 + i * 500),
+			SMA_200: Array.from({ length: 20 }, (_, i) => 9000000 + i * 200),
+			MACD_line: Array.from({ length: 20 }, (_, i) => 1000 + i * 100),
+			MACD_signal: Array.from({ length: 20 }, (_, i) => 800 + i * 100),
+			MACD_hist: Array.from({ length: 20 }, (_, i) => 200 + i * 10),
+			BB_upper: Array.from({ length: 20 }, () => 10200000),
+			BB_lower: Array.from({ length: 20 }, () => 9400000),
+			BB_middle: Array.from({ length: 20 }, () => 9800000),
+			ICHIMOKU_conversion: Array.from({ length: 20 }, (_, i) => 9900000 + i * 100),
+			ICHIMOKU_base: Array.from({ length: 20 }, (_, i) => 9700000 + i * 50),
+		};
+		const indicators = {
+			RSI_14: 55,
+			RSI_14_series: Array.from({ length: 10 }, (_, i) => 50 + i),
+			SMA_25: 9800000,
+			SMA_75: 9500000,
+			SMA_200: 9000000,
+			BB_middle: 9800000,
+			BB_upper: 10200000,
+			BB_lower: 9400000,
+			MACD_hist: 5000,
+			ICHIMOKU_spanA: 9600000,
+			ICHIMOKU_spanB: 9400000,
+			ICHIMOKU_conversion: 9900000,
+			ICHIMOKU_base: 9700000,
+			STOCH_RSI_K: 65,
+			STOCH_RSI_D: 60,
+			STOCH_RSI_prevK: 58,
+			STOCH_RSI_prevD: 62,
+			OBV: 12345,
+			OBV_SMA20: 12000,
+			OBV_trend: 'rising',
+			OBV_prevObv: 12200,
+			series,
+			...overrides,
+		};
+		// 30 本のローソク足（chikou 判定に 27 本必要）
+		const normalized = Array.from({ length: 30 }, (_, i) => ({
+			close: 10000000 + (i - 15) * 10000,
+			open: 10000000,
+			high: 10050000,
+			low: 9950000,
+		}));
+		return {
+			ok: true,
+			summary: 'ok',
+			data: { indicators, normalized, trend: 'uptrend' },
+			meta: {},
+		};
+	}
+
+	it('正常データでテキスト content を返す', async () => {
+		mockedAnalyze.mockResolvedValueOnce(mockResult() as never);
+		const res = (await toolDef.handler({ pair: 'btc_jpy', type: '1day', limit: 200 })) as {
+			content: Array<{ text: string }>;
+		};
+		expect(res.content).toBeDefined();
+		expect(res.content[0].text).toContain('BTC_JPY');
+		expect(res.content[0].text).toContain('【総合判定】');
+	});
+
+	it('analyzeIndicators 失敗時はそのまま返す', async () => {
+		mockedAnalyze.mockResolvedValueOnce({ ok: false, summary: 'error' } as never);
+		const res = (await toolDef.handler({ pair: 'btc_jpy', type: '1day', limit: 200 })) as { ok: boolean };
+		expect(res.ok).toBe(false);
+	});
+
+	it('deltaLabel が timeframe に応じて変わる', async () => {
+		for (const [type, label] of [
+			['1day', '前日比'],
+			['1week', '前週比'],
+			['1month', '前月比'],
+			['1hour', '前時間比'],
+			['5min', '前足比'],
+		] as const) {
+			mockedAnalyze.mockResolvedValueOnce(mockResult() as never);
+			const res = (await toolDef.handler({ pair: 'btc_jpy', type, limit: 200 })) as {
+				content: Array<{ text: string }>;
+			};
+			expect(res.content[0].text).toContain(label);
+		}
+	});
+
+	it('rsiUnitLabel が timeframe に応じて変わる', async () => {
+		mockedAnalyze.mockResolvedValueOnce(mockResult() as never);
+		const res = (await toolDef.handler({ pair: 'btc_jpy', type: '1week', limit: 200 })) as {
+			content: Array<{ text: string }>;
+		};
+		expect(res.content[0].text).toContain('週');
+	});
+
+	it('BB series なしでも crash しない', async () => {
+		const m = mockResult();
+		(m.data.indicators as Record<string, unknown>).series = {};
+		mockedAnalyze.mockResolvedValueOnce(m as never);
+		const res = (await toolDef.handler({ pair: 'btc_jpy', type: '1day', limit: 200 })) as {
+			content: Array<{ text: string }>;
+		};
+		expect(res.content).toBeDefined();
+	});
+
+	it('candles が少なくても crash しない', async () => {
+		const m = mockResult();
+		m.data.normalized = [{ close: 10000000, open: 10000000, high: 10050000, low: 9950000 }];
+		mockedAnalyze.mockResolvedValueOnce(m as never);
+		const res = (await toolDef.handler({ pair: 'btc_jpy', type: '1day', limit: 200 })) as {
+			content: Array<{ text: string }>;
+		};
+		expect(res.content).toBeDefined();
+	});
+
+	it('cloudPos below_cloud で雲突入距離を計算', async () => {
+		const m = mockResult();
+		// close < cloudBot → below_cloud
+		m.data.normalized = Array.from({ length: 30 }, () => ({
+			close: 9300000,
+			open: 9300000,
+			high: 9350000,
+			low: 9250000,
+		}));
+		mockedAnalyze.mockResolvedValueOnce(m as never);
+		const res = (await toolDef.handler({ pair: 'btc_jpy', type: '1day', limit: 200 })) as {
+			content: Array<{ text: string }>;
+		};
+		expect(res.content[0].text).toContain('雲の下');
+	});
+
+	it('MACD クロス検出', async () => {
+		const m = mockResult();
+		// MACD_line と MACD_signal がクロスするデータ
+		const series = (m.data.indicators as Record<string, unknown>).series as Record<string, number[]>;
+		series.MACD_line = [...Array.from({ length: 10 }, () => -100), ...Array.from({ length: 10 }, () => 100)];
+		series.MACD_signal = Array.from({ length: 20 }, () => 0);
+		mockedAnalyze.mockResolvedValueOnce(m as never);
+		const res = (await toolDef.handler({ pair: 'btc_jpy', type: '1day', limit: 200 })) as {
+			content: Array<{ text: string }>;
+		};
+		expect(res.content[0].text).toContain('ゴールデン');
+	});
+
+	it('SMA クロス検出', async () => {
+		const m = mockResult();
+		const series = (m.data.indicators as Record<string, unknown>).series as Record<string, number[]>;
+		// SMA_25 が SMA_75 を上抜け
+		series.SMA_25 = [...Array.from({ length: 10 }, () => 9400000), ...Array.from({ length: 10 }, () => 9600000)];
+		series.SMA_75 = Array.from({ length: 20 }, () => 9500000);
+		mockedAnalyze.mockResolvedValueOnce(m as never);
+		const res = (await toolDef.handler({ pair: 'btc_jpy', type: '1day', limit: 200 })) as {
+			content: Array<{ text: string }>;
+		};
+		expect(res.content[0].text).toContain('ゴールデン');
+	});
+
+	it('MACD divergence 検出（ベアリッシュ）', async () => {
+		const m = mockResult();
+		// 価格は上昇、MACD hist は下降
+		m.data.normalized = Array.from({ length: 30 }, (_, i) => ({
+			close: 9000000 + i * 50000,
+			open: 9000000,
+			high: 9100000 + i * 50000,
+			low: 8900000 + i * 50000,
+		}));
+		const series = (m.data.indicators as Record<string, unknown>).series as Record<string, number[]>;
+		series.MACD_hist = Array.from({ length: 30 }, (_, i) => 5000 - i * 200);
+		mockedAnalyze.mockResolvedValueOnce(m as never);
+		const res = (await toolDef.handler({ pair: 'btc_jpy', type: '1day', limit: 200 })) as {
+			content: Array<{ text: string }>;
+		};
+		expect(res.content[0].text).toContain('ベアリッシュ');
+	});
+});
