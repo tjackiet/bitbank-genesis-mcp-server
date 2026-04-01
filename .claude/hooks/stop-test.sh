@@ -6,17 +6,10 @@ set -euo pipefail
 # 2. .ts/.tsx の変更があればテスト実行
 #
 # 最適化:
-#   - compact 起因の Stop はスキップ（SessionStart compact matcher がフラグを立てる）
+#   - compact 起因の Stop は SessionStart matcher で除外済み（hook 自体が発火しない）
 #   - 60 秒以内の再実行はスロットリングでスキップ
 
-# ── 0a. Compact 検出 → スキップ ──
-COMPACT_FLAG="/tmp/.claude-compact-in-progress"
-if [ -f "$COMPACT_FLAG" ]; then
-  rm -f "$COMPACT_FLAG"
-  exit 0
-fi
-
-# ── 0b. スロットリング（60 秒） ──
+# ── スロットリング（60 秒） ──
 STOP_STAMP="/tmp/.claude-stop-hook-last-run"
 STOP_THROTTLE_SEC=60
 
