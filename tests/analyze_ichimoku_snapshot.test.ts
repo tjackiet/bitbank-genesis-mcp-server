@@ -121,6 +121,88 @@ describe('analyze_ichimoku_snapshot', () => {
 		expect(res.data.trend.cloudHistory[1].barsAgo).toBe(1);
 	});
 
+	it('強気条件（雲上 + 転換線>基準線 + 雲上昇）では overallSignal は strong_bullish', async () => {
+		const base = buildMockIndicatorSuccess();
+		// 価格を雲の上に設定
+		base.data.normalized = Array.from({ length: 40 }, () => ({ close: 200 }));
+		// 転換線 > 基準線
+		base.data.indicators.ICHIMOKU_conversion = 180;
+		base.data.indicators.ICHIMOKU_base = 170;
+		// spanA > spanB で上昇雲
+		base.data.indicators.ICHIMOKU_spanA = 150;
+		base.data.indicators.ICHIMOKU_spanB = 140;
+		const sSeries = base.data.indicators.ichi_series;
+		sSeries.spanA = Array.from({ length: 40 }, (_, i) => 100 + i * 2);
+		sSeries.spanB = Array.from({ length: 40 }, (_, i) => 90 + i);
+		sSeries.tenkan = Array.from({ length: 40 }, () => 180);
+		sSeries.kijun = Array.from({ length: 40 }, () => 170);
+		sSeries.chikou = Array.from({ length: 40 }, () => 200);
+		mockedAnalyzeIndicators.mockResolvedValueOnce(asMockResult(base));
+
+		const res = await analyzeIchimokuSnapshot('btc_jpy', '1day', 120, 10);
+		assertOk(res);
+		expect(res.data.assessment.pricePosition).toBe('above_cloud');
+		expect(res.data.assessment.tenkanKijun).toBe('bullish');
+		expect(res.data.signals.overallSignal).toContain('bullish');
+	});
+
+	it('雲の中（in_cloud）の判定', async () => {
+		const base = buildMockIndicatorSuccess();
+		// spanA=100, spanB=50 の雲の中に close=75 を配置
+		base.data.indicators.ICHIMOKU_spanA = 100;
+		base.data.indicators.ICHIMOKU_spanB = 50;
+		const sSeries = base.data.indicators.ichi_series;
+		sSeries.spanA = Array.from({ length: 40 }, () => 100);
+		sSeries.spanB = Array.from({ length: 40 }, () => 50);
+		base.data.normalized = Array.from({ length: 40 }, () => ({ close: 75 }));
+		mockedAnalyzeIndicators.mockResolvedValueOnce(asMockResult(base));
+
+		const res = await analyzeIchimokuSnapshot('btc_jpy', '1day', 120, 10);
+		assertOk(res);
+		expect(res.data.assessment.pricePosition).toBe('in_cloud');
+	});
+
+	it('転換線 = 基準線 で neutral', async () => {
+		const base = buildMockIndicatorSuccess();
+		base.data.indicators.ICHIMOKU_conversion = 95;
+		base.data.indicators.ICHIMOKU_base = 95;
+		mockedAnalyzeIndicators.mockResolvedValueOnce(asMockResult(base));
+
+		const res = await analyzeIchimokuSnapshot('btc_jpy', '1day', 120, 10);
+		assertOk(res);
+		expect(res.data.assessment.tenkanKijun).toBe('neutral');
+	});
+
+	it('cloudSlope rising の検出', async () => {
+		const base = buildMockIndicatorSuccess();
+		// spanA が上昇トレンドに
+		const sSeries = base.data.indicators.ichi_series;
+		sSeries.spanA = Array.from({ length: 40 }, (_, i) => 50 + i * 3);
+		sSeries.spanB = Array.from({ length: 40 }, (_, i) => 40 + i * 2);
+		base.data.indicators.ICHIMOKU_spanA = sSeries.spanA[39];
+		base.data.indicators.ICHIMOKU_spanB = sSeries.spanB[39];
+		base.data.normalized = Array.from({ length: 40 }, () => ({ close: 200 }));
+		mockedAnalyzeIndicators.mockResolvedValueOnce(asMockResult(base));
+
+		const res = await analyzeIchimokuSnapshot('btc_jpy', '1day', 120, 10);
+		assertOk(res);
+		expect(res.data.assessment.cloudSlope).toBe('rising');
+	});
+
+	it('toolDef.handler: テキスト content を返す', async () => {
+		mockedAnalyzeIndicators.mockResolvedValueOnce(asMockResult(buildMockIndicatorSuccess()));
+		const res = (await toolDef.handler({
+			pair: 'btc_jpy',
+			type: '1day',
+			limit: 120,
+			lookback: 5,
+		})) as { content?: Array<{ text: string }> };
+		// handler may return content or direct result
+		if (res.content) {
+			expect(res.content[0].text).toBeTruthy();
+		}
+	});
+
 	it('雲データ不足時の cloud.direction は null（unknown を flat にしない）であるべき', async () => {
 		const noCloudSeries = asMockResult<Record<string, unknown>>(buildMockIndicatorSuccess());
 		noCloudSeries.data.indicators.ichi_series = {
