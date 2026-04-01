@@ -1,11 +1,11 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { clearIndicatorCache } from '../tools/analyze_indicators.js';
 import prepareChartData from '../tools/prepare_chart_data.js';
 import { assertFail, assertOk } from './_assertResult.js';
 
 type OhlcvRow = [string, string, string, string, string, string];
 
-function makeOhlcvRows(count: number): OhlcvRow[] {
+function makeOhlcvRows(count: number, intervalMs = 86_400_000): OhlcvRow[] {
 	const startMs = Date.UTC(2024, 0, 1);
 	const rows: OhlcvRow[] = [];
 	for (let i = 0; i < count; i++) {
@@ -16,27 +16,28 @@ function makeOhlcvRows(count: number): OhlcvRow[] {
 			String(base - 2_000),
 			String(base + 500),
 			'1.5',
-			String(startMs + i * 86_400_000),
+			String(startMs + i * intervalMs),
 		]);
 	}
 	return rows;
 }
 
-function mockFetch(rows: OhlcvRow[]) {
-	globalThis.fetch = vi.fn().mockResolvedValue({
+function mockFetch(rows: OhlcvRow[], candleType = '1day') {
+	vi.spyOn(globalThis, 'fetch').mockResolvedValue({
 		ok: true,
 		status: 200,
 		statusText: 'OK',
-		json: async () => ({ success: 1, data: { candlestick: [{ type: '1day', ohlcv: rows }] } }),
-	}) as unknown as typeof fetch;
+		json: async () => ({ success: 1, data: { candlestick: [{ type: candleType, ohlcv: rows }] } }),
+	} as Response);
 }
 
 describe('prepare_chart_data', () => {
-	const originalFetch = globalThis.fetch;
+	beforeEach(() => {
+		clearIndicatorCache();
+	});
 
 	afterEach(() => {
-		globalThis.fetch = originalFetch;
-		clearIndicatorCache();
+		vi.restoreAllMocks();
 	});
 
 	it('正常系: コンパクト形式で candles を返す', async () => {
@@ -45,14 +46,24 @@ describe('prepare_chart_data', () => {
 		assertOk(res);
 		expect(res.data.times).toHaveLength(100);
 		expect(res.data.candles).toHaveLength(100);
-		// candles は [o, h, l, c, v] タプル
 		expect(res.data.candles[0]).toHaveLength(5);
-		// candleFormat でフィールド名を明示
 		expect(res.data.candleFormat).toEqual(['open', 'high', 'low', 'close', 'volume']);
 		expect(res.meta.pair).toBe('btc_jpy');
 		expect(res.meta.count).toBe(100);
-		// 出来高の単位はベース通貨
 		expect(res.meta.volumeUnit).toBe('BTC');
+	});
+
+	it('candle の OHLCV 値が正しい関係を持つ', async () => {
+		mockFetch(makeOhlcvRows(600));
+		const res = await prepareChartData('btc_jpy', '1day', 100);
+		assertOk(res);
+		// makeOhlcvRows のパターン: high=open+2000, low=open-2000, close=open+500
+		const [o, h, l, c, v] = res.data.candles[0];
+		expect(h - o).toBe(2_000);
+		expect(o - l).toBe(2_000);
+		expect(c - o).toBe(500);
+		expect(h).toBeGreaterThan(l); // high > low
+		expect(v).toBe(1.5);
 	});
 
 	it('indicators 未指定時は series / subPanels を返さない', async () => {
@@ -70,7 +81,6 @@ describe('prepare_chart_data', () => {
 		assertOk(res);
 		expect(res.data.series).toHaveProperty('SMA_25');
 		expect(res.data.series).toHaveProperty('SMA_75');
-		// BB や ICHIMOKU は含まれない
 		expect(res.data.series).not.toHaveProperty('BB_upper');
 		expect(res.data.series).not.toHaveProperty('ICHI_tenkan');
 	});
@@ -95,6 +105,9 @@ describe('prepare_chart_data', () => {
 		for (const v of tail26) {
 			expect(v).toBeNull();
 		}
+		// 末尾以外に非 null 値が存在する
+		const head = chikou?.slice(0, -26) ?? [];
+		expect(head.some((v) => v !== null)).toBe(true);
 	});
 
 	it('series の各系列長が candles.length と一致する', async () => {
@@ -107,16 +120,29 @@ describe('prepare_chart_data', () => {
 		}
 	});
 
-	it('RSI/MACD/STOCH がサブパネルに含まれる', async () => {
+	it('RSI/MACD/STOCH がサブパネルに含まれ構造が正しい', async () => {
 		mockFetch(makeOhlcvRows(600));
 		const res = await prepareChartData('btc_jpy', '1day', 100, ['RSI', 'MACD', 'STOCH']);
 		assertOk(res);
+		const candleLen = res.data.candles.length;
+
+		// RSI
 		expect(res.data.subPanels?.RSI_14).toBeDefined();
+		expect(res.data.subPanels?.RSI_14).toHaveLength(candleLen);
+
+		// MACD — line, signal, hist すべて存在し長さが一致
 		expect(res.data.subPanels?.MACD).toBeDefined();
-		expect(res.data.subPanels?.MACD?.line).toBeDefined();
+		expect(res.data.subPanels?.MACD?.line).toHaveLength(candleLen);
+		expect(res.data.subPanels?.MACD?.signal).toHaveLength(candleLen);
+		expect(res.data.subPanels?.MACD?.hist).toHaveLength(candleLen);
+
+		// STOCH
 		expect(res.data.subPanels?.STOCH_K).toBeDefined();
+		expect(res.data.subPanels?.STOCH_K).toHaveLength(candleLen);
 		expect(res.data.subPanels?.STOCH_D).toBeDefined();
-		// メインパネルの series には含まれない（サブパネル専用指標のみ指定時は series 自体がない）
+		expect(res.data.subPanels?.STOCH_D).toHaveLength(candleLen);
+
+		// メインパネルの series には含まれない
 		expect(res.data.series ?? {}).not.toHaveProperty('RSI_14');
 	});
 
@@ -147,10 +173,8 @@ describe('prepare_chart_data', () => {
 
 	it('全 null 系列はレスポンスから除外される', async () => {
 		mockFetch(makeOhlcvRows(600));
-		// limit=24, ICHIMOKU 指定 → chikou は全 null になるはず
 		const res = await prepareChartData('btc_jpy', '1day', 24, ['ICHIMOKU']);
 		assertOk(res);
-		// 全 null の系列は含まれない
 		for (const [, arr] of Object.entries(res.data.series ?? {})) {
 			const hasValue = arr.some((v: number | null) => v !== null);
 			expect(hasValue).toBe(true);
@@ -167,11 +191,23 @@ describe('prepare_chart_data', () => {
 
 	it('limit × indicators 数がしきい値を超える場合 limit が自動切り詰めされる', async () => {
 		mockFetch(makeOhlcvRows(600));
-		// limit=90, indicators=5 → seriesMultiplier=6, 90*6=540 > 150 → effectiveLimit=25
-		const res = await prepareChartData('btc_jpy', '1day', 90, ['SMA_25', 'SMA_75', 'BB', 'RSI', 'MACD']);
+		const indicators = ['SMA_25', 'SMA_75', 'BB', 'RSI', 'MACD'];
+		// MAX_TOTAL_SERIES=150, seriesMultiplier=1+5=6
+		// effectiveLimit = max(5, floor(150/6)) = 25
+		const res = await prepareChartData('btc_jpy', '1day', 90, indicators);
 		assertOk(res);
-		expect(res.data.candles.length).toBeLessThanOrEqual(30);
+		expect(res.data.candles.length).toBe(25);
 		expect(res.summary).toContain('limit was capped');
+		expect(res.summary).toContain('from 90 to 25');
+	});
+
+	it('limit が十分小さければ切り詰めが発生しない', async () => {
+		mockFetch(makeOhlcvRows(600));
+		const res = await prepareChartData('btc_jpy', '1day', 20, ['SMA_25', 'SMA_75']);
+		assertOk(res);
+		// 20 * 3 = 60 < 150 → 切り詰め不要
+		expect(res.data.candles.length).toBe(20);
+		expect(res.summary).not.toContain('limit was capped');
 	});
 
 	it('不正な pair で fail を返す', async () => {
@@ -180,7 +216,7 @@ describe('prepare_chart_data', () => {
 	});
 
 	it('API エラー時に fail を返す', async () => {
-		globalThis.fetch = vi.fn().mockRejectedValue(new TypeError('fetch failed')) as unknown as typeof fetch;
+		vi.spyOn(globalThis, 'fetch').mockRejectedValue(new TypeError('fetch failed'));
 		const res = await prepareChartData('btc_jpy', '1day', 100);
 		assertFail(res);
 	});
@@ -192,17 +228,24 @@ describe('prepare_chart_data', () => {
 		expect(res.data.candles.length).toBeLessThanOrEqual(30);
 	});
 
-	it('デフォルト（Asia/Tokyo）で times がローカル時刻、labels が付加される', async () => {
+	it('デフォルト（Asia/Tokyo）で times がローカル時刻に変換される', async () => {
 		mockFetch(makeOhlcvRows(600));
 		const res = await prepareChartData('btc_jpy', '1day', 10);
 		assertOk(res);
 		// times はローカル ISO 形式（Z なし）
 		expect(res.data.times[0]).not.toMatch(/Z$/);
 		expect(res.data.times[0]).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$/);
-		// labels が存在し、同じ長さ
+		// makeOhlcvRows の末尾 10 本: i=590, timestamp = UTC 2024-01-01 + 590 日
+		// 先頭 = UTC 2025-08-14T00:00:00 → Asia/Tokyo = 2025-08-14T09:00:00
+		expect(res.data.times[0]).toContain('T09:00:00');
+	});
+
+	it('日足の labels は MM/DD 形式', async () => {
+		mockFetch(makeOhlcvRows(600));
+		const res = await prepareChartData('btc_jpy', '1day', 10);
+		assertOk(res);
 		expect(res.data.labels).toBeDefined();
 		expect(res.data.labels).toHaveLength(10);
-		// 日足なので MM/DD 形式
 		expect(res.data.labels?.[0]).toMatch(/^\d{2}\/\d{2}$/);
 	});
 
@@ -210,30 +253,42 @@ describe('prepare_chart_data', () => {
 		mockFetch(makeOhlcvRows(600));
 		const res = await prepareChartData('btc_jpy', '1day', 10, undefined, '');
 		assertOk(res);
-		// times は UTC ISO 形式 (.000Z 末尾)
 		expect(res.data.times[0]).toMatch(/Z$/);
 		expect(res.data.labels).toBeUndefined();
 	});
 
-	it('tz="Asia/Tokyo" + 時間足の場合 labels に時刻が含まれる', async () => {
-		const startMs = Date.UTC(2024, 0, 1);
-		const rows: OhlcvRow[] = [];
-		for (let i = 0; i < 600; i++) {
-			const base = 10_000_000 + i * 1_000;
-			rows.push([
-				String(base),
-				String(base + 2_000),
-				String(base - 2_000),
-				String(base + 500),
-				'1.5',
-				String(startMs + i * 3_600_000), // 1hour intervals
-			]);
-		}
-		mockFetch(rows);
+	it('時間足の labels は MM/DD HH:mm 形式', async () => {
+		mockFetch(makeOhlcvRows(600, 3_600_000));
 		const res = await prepareChartData('btc_jpy', '1hour', 10, undefined, 'Asia/Tokyo');
 		assertOk(res);
 		expect(res.data.labels).toBeDefined();
-		// 時間足は MM/DD HH:mm 形式
 		expect(res.data.labels?.[0]).toMatch(/^\d{2}\/\d{2} \d{2}:\d{2}$/);
+	});
+
+	it('メインパネルとサブパネルの指標を同時指定しても干渉しない', async () => {
+		mockFetch(makeOhlcvRows(600));
+		const res = await prepareChartData('btc_jpy', '1day', 50, ['BB', 'ICHIMOKU', 'RSI', 'STOCH']);
+		assertOk(res);
+		const candleLen = res.data.candles.length;
+
+		// メインパネル: BB + ICHIMOKU
+		expect(res.data.series).toHaveProperty('BB_upper');
+		expect(res.data.series).toHaveProperty('BB_middle');
+		expect(res.data.series).toHaveProperty('BB_lower');
+		expect(res.data.series).toHaveProperty('ICHI_tenkan');
+		expect(res.data.series).toHaveProperty('ICHI_kijun');
+		for (const [, arr] of Object.entries(res.data.series ?? {})) {
+			expect(arr).toHaveLength(candleLen);
+		}
+
+		// サブパネル: RSI + STOCH
+		expect(res.data.subPanels?.RSI_14).toHaveLength(candleLen);
+		expect(res.data.subPanels?.STOCH_K).toHaveLength(candleLen);
+		expect(res.data.subPanels?.STOCH_D).toHaveLength(candleLen);
+
+		// meta.indicators にすべて含まれる
+		for (const name of ['BB_upper', 'BB_middle', 'BB_lower', 'ICHI_tenkan', 'RSI_14', 'STOCH_K', 'STOCH_D']) {
+			expect(res.meta.indicators).toContain(name);
+		}
 	});
 });
