@@ -8,13 +8,14 @@
 # gen:types と typecheck は常に実行（高速かつ全体の整合性に必須）。
 set -euo pipefail
 
-# ── compact イベントではスキップ ──
-# on-compact.sh がフラグファイルを設置するので、それを検知して早期リターン。
-# compact 時は前回セッションの状態を引き継ぐため、再チェック不要。
-COMPACT_FLAG="/tmp/.claude-compact-in-progress"
-if [ -f "$COMPACT_FLAG" ]; then
-  rm -f "$COMPACT_FLAG"
-  echo "⏭️  Session start: skipped (triggered by compact)"
+# ── compact / resume イベントではスキップ ──
+# stdin の JSON から session_type を読み取り、init 以外は早期リターン。
+# フラグファイル方式は on-compact.sh との実行順序に依存するため廃止。
+INPUT="$(cat)"
+SESSION_TYPE="$(printf '%s' "$INPUT" | jq -r '.session_type // empty' 2>/dev/null || true)"
+
+if [ "$SESSION_TYPE" != "init" ] && [ -n "$SESSION_TYPE" ]; then
+  echo "⏭️  Session start: skipped (session_type=${SESSION_TYPE})"
   exit 0
 fi
 
