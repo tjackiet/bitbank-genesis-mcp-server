@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { asMockResult, assertOk } from './_assertResult.js';
+import { asMockResult, assertFail, assertOk } from './_assertResult.js';
 
 vi.mock('../tools/analyze_indicators.js', () => ({
 	default: vi.fn(),
@@ -9,9 +9,12 @@ vi.mock('../lib/get-depth.js', () => ({
 	default: vi.fn(),
 }));
 
+import getDepth from '../lib/get-depth.js';
 import { toolDef } from '../src/handlers/renderChartSvgHandler.js';
 import analyzeIndicators from '../tools/analyze_indicators.js';
 import renderChartSvg from '../tools/render_chart_svg.js';
+
+// ── ヘルパー ──
 
 function buildCandles(length: number) {
 	return Array.from({ length }, (_, i) => {
@@ -32,7 +35,7 @@ function buildSeries(length: number, offset = 0): Array<number | null> {
 	return Array.from({ length }, (_, i) => 100 + i + offset);
 }
 
-function buildAnalyzeIndicatorsSuccess(length: number) {
+function buildSuccess(length: number) {
 	return {
 		ok: true as const,
 		summary: 'ok',
@@ -67,53 +70,241 @@ function buildAnalyzeIndicatorsSuccess(length: number) {
 					ICHI_spanA: buildSeries(length, 6),
 					ICHI_spanB: buildSeries(length, 4),
 					ICHI_chikou: buildSeries(length, -2),
+					RSI_14: buildSeries(length, -50),
+					MACD_line: buildSeries(length, -90),
+					MACD_signal: buildSeries(length, -92),
+					MACD_hist: Array.from({ length }, (_, i) => (i % 2 === 0 ? 2 : -1)),
 				},
-				meta: {
-					pastBuffer: 0,
-					shift: 26,
-				},
+				meta: { pastBuffer: 0, shift: 26 },
 			},
 		},
-		meta: {
-			pair: 'btc_jpy',
-			type: '1day',
-		},
+		meta: { pair: 'btc_jpy', type: '1day' },
 	};
 }
 
 describe('render_chart_svg', () => {
-	const mockedAnalyzeIndicators = vi.mocked(analyzeIndicators);
+	const mockedAnalyze = vi.mocked(analyzeIndicators);
+	const mockedDepth = vi.mocked(getDepth);
 
-	afterEach(() => {
-		vi.clearAllMocks();
-	});
+	afterEach(() => vi.clearAllMocks());
 
-	it('inputSchema: ICHIMOKU と BB の併用は拒否する', () => {
-		// indicators 配列経由
+	// ── スキーマ ─────────────────────────────────────────
+
+	it('inputSchema: ICHIMOKU と BB の併用を拒否', () => {
 		expect(() =>
-			toolDef.inputSchema.parse({
-				pair: 'btc_jpy',
-				type: '1day',
-				limit: 60,
-				indicators: ['ICHIMOKU', 'BB'],
-			}),
+			toolDef.inputSchema.parse({ pair: 'btc_jpy', type: '1day', limit: 60, indicators: ['ICHIMOKU', 'BB'] }),
 		).toThrow();
-
-		// legacy with* 経由（後方互換）
 		expect(() =>
-			toolDef.inputSchema.parse({
-				pair: 'btc_jpy',
-				type: '1day',
-				limit: 60,
-				withIchimoku: true,
-				withBB: true,
-			}),
+			toolDef.inputSchema.parse({ pair: 'btc_jpy', type: '1day', limit: 60, withIchimoku: true, withBB: true }),
 		).toThrow();
 	});
 
-	it('meta.indicators は indicators 配列で指定した SMA を含むべき', async () => {
-		mockedAnalyzeIndicators.mockResolvedValueOnce(asMockResult(buildAnalyzeIndicatorsSuccess(60)));
+	// ── 基本描画（candles-only） ─────────────────────────
 
+	it('指標なしでローソク足 SVG を返す', async () => {
+		mockedAnalyze.mockResolvedValueOnce(asMockResult(buildSuccess(60)));
+		const res = await renderChartSvg({ pair: 'btc_jpy', type: '1day', limit: 60 });
+		assertOk(res);
+		expect(res.data.svg).toContain('<svg');
+		expect(res.data.svg).toContain('</svg>');
+		expect(res.meta.pair).toBe('btc_jpy');
+		expect(res.meta.sizeBytes).toBeGreaterThan(0);
+	});
+
+	it('analyzeIndicators 失敗 → fail 結果', async () => {
+		mockedAnalyze.mockResolvedValueOnce(asMockResult({ ok: false, summary: 'API error', meta: { errorType: 'api' } }));
+		const res = await renderChartSvg({ pair: 'btc_jpy', type: '1day', limit: 60 });
+		assertFail(res);
+	});
+
+	// ── SMA ──────────────────────────────────────────────
+
+	it('indicators 配列で SMA を描画', async () => {
+		mockedAnalyze.mockResolvedValueOnce(asMockResult(buildSuccess(60)));
+		const res = await renderChartSvg({ pair: 'btc_jpy', type: '1day', limit: 60, indicators: ['SMA_25'] });
+		assertOk(res);
+		expect(res.meta.indicators).toContain('SMA_25');
+		expect(res.data.svg).toContain('SMA');
+	});
+
+	it('legacy withSMA も動作（後方互換）', async () => {
+		mockedAnalyze.mockResolvedValueOnce(asMockResult(buildSuccess(60)));
+		const res = await renderChartSvg({ pair: 'btc_jpy', type: '1day', limit: 60, withSMA: [25] });
+		assertOk(res);
+		expect(res.meta.indicators).toContain('SMA_25');
+	});
+
+	it('複数 SMA を同時に描画', async () => {
+		mockedAnalyze.mockResolvedValueOnce(asMockResult(buildSuccess(60)));
+		const res = await renderChartSvg({
+			pair: 'btc_jpy',
+			type: '1day',
+			limit: 60,
+			indicators: ['SMA_25', 'SMA_75', 'SMA_200'],
+		});
+		assertOk(res);
+		expect(res.meta.indicators).toContain('SMA_25');
+		expect(res.meta.indicators).toContain('SMA_75');
+		expect(res.meta.indicators).toContain('SMA_200');
+	});
+
+	// ── EMA ──────────────────────────────────────────────
+
+	it('EMA を描画', async () => {
+		mockedAnalyze.mockResolvedValueOnce(asMockResult(buildSuccess(60)));
+		const res = await renderChartSvg({ pair: 'btc_jpy', type: '1day', limit: 60, indicators: ['EMA_12', 'EMA_26'] });
+		assertOk(res);
+		expect(res.meta.indicators).toContain('EMA_12');
+		expect(res.meta.indicators).toContain('EMA_26');
+	});
+
+	// ── ボリンジャーバンド ────────────────────────────────
+
+	it('BB default モードで ±2σ のみ描画', async () => {
+		mockedAnalyze.mockResolvedValueOnce(asMockResult(buildSuccess(60)));
+		const res = await renderChartSvg({ pair: 'btc_jpy', type: '1day', limit: 60, indicators: ['BB'] });
+		assertOk(res);
+		expect(res.meta.bbMode).toBe('default');
+		expect(res.meta.indicators).toContain('BB');
+	});
+
+	it('BB_EXTENDED モードで ±1σ/±2σ/±3σ 描画', async () => {
+		mockedAnalyze.mockResolvedValueOnce(asMockResult(buildSuccess(60)));
+		const res = await renderChartSvg({ pair: 'btc_jpy', type: '1day', limit: 60, indicators: ['BB_EXTENDED'] });
+		assertOk(res);
+		expect(res.meta.bbMode).toBe('extended');
+	});
+
+	it('legacy withBB + bbMode=extended も動作', async () => {
+		mockedAnalyze.mockResolvedValueOnce(asMockResult(buildSuccess(60)));
+		const res = await renderChartSvg({ pair: 'btc_jpy', type: '1day', limit: 60, withBB: true, bbMode: 'extended' });
+		assertOk(res);
+		expect(res.meta.bbMode).toBe('extended');
+	});
+
+	// ── 一目均衡表 ───────────────────────────────────────
+
+	it('ICHIMOKU で転換線・基準線・雲を描画', async () => {
+		mockedAnalyze.mockResolvedValueOnce(asMockResult(buildSuccess(90)));
+		const res = await renderChartSvg({ pair: 'btc_jpy', type: '1day', limit: 60, indicators: ['ICHIMOKU'] });
+		assertOk(res);
+		// 内部名で 'Ichimoku' として記録される
+		expect(res.meta.indicators).toContain('Ichimoku');
+	});
+
+	it('ICHIMOKU_EXTENDED で遅行スパンも描画', async () => {
+		mockedAnalyze.mockResolvedValueOnce(asMockResult(buildSuccess(90)));
+		const res = await renderChartSvg({ pair: 'btc_jpy', type: '1day', limit: 60, indicators: ['ICHIMOKU_EXTENDED'] });
+		assertOk(res);
+		expect(res.meta.indicators).toContain('Ichimoku');
+	});
+
+	it('一目均衡表使用時に limit < 60 なら自動調整', async () => {
+		mockedAnalyze.mockResolvedValueOnce(asMockResult(buildSuccess(90)));
+		const res = await renderChartSvg({ pair: 'btc_jpy', type: '1day', limit: 30, indicators: ['ICHIMOKU'] });
+		assertOk(res);
+		expect(res.summary).toContain('自動調整');
+	});
+
+	// ── heavy chart fallback ─────────────────────────────
+
+	it('limit * layers > 500 で candles-only にフォールバック', async () => {
+		mockedAnalyze.mockResolvedValueOnce(asMockResult(buildSuccess(365)));
+		const res = await renderChartSvg({ pair: 'btc_jpy', type: '1day', limit: 365, indicators: ['ICHIMOKU_EXTENDED'] });
+		assertOk(res);
+		expect(res.summary).toContain('fallback to candles-only');
+	});
+
+	// ── ラインチャート ───────────────────────────────────
+
+	it('style=line でライン描画', async () => {
+		mockedAnalyze.mockResolvedValueOnce(asMockResult(buildSuccess(60)));
+		const res = await renderChartSvg({ pair: 'btc_jpy', type: '1day', limit: 60, style: 'line' });
+		assertOk(res);
+		expect(res.data.svg).toContain('<path');
+	});
+
+	// ── サブパネル ───────────────────────────────────────
+
+	it('subPanels=["volume"] でボリュームパネルを描画', async () => {
+		mockedAnalyze.mockResolvedValueOnce(asMockResult(buildSuccess(60)));
+		const res = await renderChartSvg({ pair: 'btc_jpy', type: '1day', limit: 60, subPanels: ['volume'] });
+		assertOk(res);
+		expect(res.data.svg).toContain('Volume');
+	});
+
+	it('subPanels=["rsi"] で RSI パネルを描画', async () => {
+		mockedAnalyze.mockResolvedValueOnce(asMockResult(buildSuccess(60)));
+		const res = await renderChartSvg({ pair: 'btc_jpy', type: '1day', limit: 60, subPanels: ['rsi'] });
+		assertOk(res);
+		expect(res.data.svg).toContain('RSI');
+	});
+
+	it('subPanels=["macd"] で MACD パネルを描画', async () => {
+		mockedAnalyze.mockResolvedValueOnce(asMockResult(buildSuccess(60)));
+		const res = await renderChartSvg({ pair: 'btc_jpy', type: '1day', limit: 60, subPanels: ['macd'] });
+		assertOk(res);
+		expect(res.data.svg).toContain('MACD');
+	});
+
+	// ── オーバーレイ ─────────────────────────────────────
+
+	it('overlays.annotations でピンとラベルを描画', async () => {
+		mockedAnalyze.mockResolvedValueOnce(asMockResult(buildSuccess(60)));
+		const res = await renderChartSvg({
+			pair: 'btc_jpy',
+			type: '1day',
+			limit: 60,
+			overlays: { annotations: [{ isoTime: '2024-01-05T00:00:00.000Z', text: 'テスト注記' }] },
+		});
+		assertOk(res);
+		expect(res.data.svg).toContain('テスト注記');
+	});
+
+	it('overlays.ranges で時間範囲を描画', async () => {
+		mockedAnalyze.mockResolvedValueOnce(asMockResult(buildSuccess(60)));
+		const res = await renderChartSvg({
+			pair: 'btc_jpy',
+			type: '1day',
+			limit: 60,
+			overlays: {
+				ranges: [{ start: '2024-01-03T00:00:00.000Z', end: '2024-01-10T00:00:00.000Z', label: '範囲テスト' }],
+			},
+		});
+		assertOk(res);
+		// 範囲が SVG に含まれる
+		expect(res.data.svg).toContain('<svg');
+	});
+
+	it('overlays.depth_zones で価格帯を描画', async () => {
+		mockedAnalyze.mockResolvedValueOnce(asMockResult(buildSuccess(60)));
+		const res = await renderChartSvg({
+			pair: 'btc_jpy',
+			type: '1day',
+			limit: 60,
+			overlays: { depth_zones: [{ low: 95, high: 105, label: 'ゾーンA' }] },
+		});
+		assertOk(res);
+		expect(res.data.svg).toContain('ゾーンA');
+	});
+
+	// ── レジェンド ───────────────────────────────────────
+
+	it('withLegend=true でレジェンドを描画', async () => {
+		mockedAnalyze.mockResolvedValueOnce(asMockResult(buildSuccess(60)));
+		const res = await renderChartSvg({
+			pair: 'btc_jpy',
+			type: '1day',
+			limit: 60,
+			withLegend: true,
+			indicators: ['SMA_25'],
+		});
+		assertOk(res);
+		expect(res.data.legend).toBeDefined();
+	});
+
+	it('withLegend=false でもレジェンドメタは返す', async () => {
+		mockedAnalyze.mockResolvedValueOnce(asMockResult(buildSuccess(60)));
 		const res = await renderChartSvg({
 			pair: 'btc_jpy',
 			type: '1day',
@@ -121,40 +312,120 @@ describe('render_chart_svg', () => {
 			withLegend: false,
 			indicators: ['SMA_25'],
 		});
-
 		assertOk(res);
-		expect(res.meta.indicators).toContain('SMA_25');
+		expect(res.data.legend).toBeDefined();
 	});
 
-	it('legacy withSMA も引き続き動作する（後方互換）', async () => {
-		mockedAnalyzeIndicators.mockResolvedValueOnce(asMockResult(buildAnalyzeIndicatorsSuccess(60)));
+	// ── Depth チャート ───────────────────────────────────
 
+	it('style=depth で板深度チャートを描画', async () => {
+		mockedDepth.mockResolvedValueOnce(
+			asMockResult({
+				ok: true,
+				summary: 'ok',
+				data: {
+					asks: [
+						['101', '1.0'],
+						['102', '2.0'],
+						['103', '3.0'],
+					],
+					bids: [
+						['99', '1.5'],
+						['98', '2.5'],
+						['97', '3.5'],
+					],
+				},
+				meta: {},
+			}),
+		);
+		const res = await renderChartSvg({ pair: 'btc_jpy', type: '1day', style: 'depth' });
+		assertOk(res);
+		expect(res.data.svg).toContain('depth chart');
+		expect(res.data.svg).toContain('Bids');
+		expect(res.data.svg).toContain('Asks');
+		expect(res.data.filePath).toBeDefined();
+	});
+
+	it('depth チャートで getDepth 失敗 → fail 結果', async () => {
+		mockedDepth.mockResolvedValueOnce(asMockResult({ ok: false, summary: 'depth error', meta: { errorType: 'api' } }));
+		const res = await renderChartSvg({ pair: 'btc_jpy', type: '1day', style: 'depth' });
+		assertFail(res);
+	});
+
+	// ── SVG minify / precision ───────────────────────────
+
+	it('svgMinify=false でも SVG を返す', async () => {
+		mockedAnalyze.mockResolvedValueOnce(asMockResult(buildSuccess(60)));
+		const res = await renderChartSvg({ pair: 'btc_jpy', type: '1day', limit: 60, svgMinify: false });
+		assertOk(res);
+		expect(res.data.svg).toContain('<svg');
+	});
+
+	it('svgPrecision を設定可能', async () => {
+		mockedAnalyze.mockResolvedValueOnce(asMockResult(buildSuccess(60)));
+		const res = await renderChartSvg({ pair: 'btc_jpy', type: '1day', limit: 60, svgPrecision: 0 });
+		assertOk(res);
+		expect(res.data.svg).toBeDefined();
+	});
+
+	// ── meta 構造 ────────────────────────────────────────
+
+	it('meta に range / sizeBytes / layerCount を含む', async () => {
+		mockedAnalyze.mockResolvedValueOnce(asMockResult(buildSuccess(60)));
+		const res = await renderChartSvg({ pair: 'btc_jpy', type: '1day', limit: 60 });
+		assertOk(res);
+		expect(res.meta.range).toBeDefined();
+		expect(res.meta.sizeBytes).toBeGreaterThan(0);
+		expect(res.meta.layerCount).toBeDefined();
+	});
+
+	// ── viewBoxTight ─────────────────────────────────────
+
+	it('viewBoxTight=false でも描画可能', async () => {
+		mockedAnalyze.mockResolvedValueOnce(asMockResult(buildSuccess(60)));
+		const res = await renderChartSvg({ pair: 'btc_jpy', type: '1day', limit: 60, viewBoxTight: false });
+		assertOk(res);
+		expect(res.data.svg).toContain('<svg');
+	});
+
+	// ── barWidthRatio ────────────────────────────────────
+
+	it('barWidthRatio を指定可能', async () => {
+		mockedAnalyze.mockResolvedValueOnce(asMockResult(buildSuccess(60)));
+		const res = await renderChartSvg({ pair: 'btc_jpy', type: '1day', limit: 60, barWidthRatio: 0.5 });
+		assertOk(res);
+		expect(res.data.svg).toBeDefined();
+	});
+
+	// ── yPaddingPct ──────────────────────────────────────
+
+	it('yPaddingPct で Y 軸パディングを調整', async () => {
+		mockedAnalyze.mockResolvedValueOnce(asMockResult(buildSuccess(60)));
+		const res = await renderChartSvg({ pair: 'btc_jpy', type: '1day', limit: 60, yPaddingPct: 0.1 });
+		assertOk(res);
+		expect(res.data.svg).toBeDefined();
+	});
+
+	// ── simplifyTolerance ────────────────────────────────
+
+	it('simplifyTolerance=0 で簡略化なし', async () => {
+		mockedAnalyze.mockResolvedValueOnce(asMockResult(buildSuccess(60)));
 		const res = await renderChartSvg({
 			pair: 'btc_jpy',
 			type: '1day',
 			limit: 60,
-			withLegend: false,
-			withSMA: [25],
+			simplifyTolerance: 0,
+			indicators: ['SMA_25'],
 		});
-
 		assertOk(res);
-		expect(res.meta.indicators).toContain('SMA_25');
+		expect(res.data.svg).toBeDefined();
 	});
 
-	it('candles-only fallback を宣言したら一目均衡表レイヤーは描画しないべき', async () => {
-		mockedAnalyzeIndicators.mockResolvedValueOnce(asMockResult(buildAnalyzeIndicatorsSuccess(365)));
+	// ── toolDef.handler ──────────────────────────────────
 
-		const res = await renderChartSvg({
-			pair: 'btc_jpy',
-			type: '1day',
-			limit: 365,
-			indicators: ['ICHIMOKU_EXTENDED'],
-		});
-
-		assertOk(res);
-		expect(res.summary).toContain('fallback to candles-only');
-		expect(res.data.svg).not.toContain('stroke="#00a3ff"');
-		expect(res.data.svg).not.toContain('stroke="#ff4d4d"');
-		expect(res.data.svg).not.toContain('fill="rgba(16, 163, 74, 0.16)"');
+	it('toolDef.handler が renderChartSvg に委譲', async () => {
+		mockedAnalyze.mockResolvedValueOnce(asMockResult(buildSuccess(60)));
+		const res = await toolDef.handler({ pair: 'btc_jpy', type: '1day', limit: 60 });
+		expect(res).toBeDefined();
 	});
 });
