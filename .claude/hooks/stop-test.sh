@@ -4,6 +4,30 @@ set -euo pipefail
 # Stop Hook: テスト自動実行 + 完了条件チェックリスト検証
 # 1. completion-checklist があれば検証（checklist-verify.sh）
 # 2. .ts/.tsx の変更があればテスト実行
+#
+# 最適化:
+#   - compact 起因の Stop はスキップ（SessionStart compact matcher がフラグを立てる）
+#   - 60 秒以内の再実行はスロットリングでスキップ
+
+# ── 0a. Compact 検出 → スキップ ──
+COMPACT_FLAG="/tmp/.claude-compact-in-progress"
+if [ -f "$COMPACT_FLAG" ]; then
+  rm -f "$COMPACT_FLAG"
+  exit 0
+fi
+
+# ── 0b. スロットリング（60 秒） ──
+STOP_STAMP="/tmp/.claude-stop-hook-last-run"
+STOP_THROTTLE_SEC=60
+
+if [ -f "$STOP_STAMP" ]; then
+  last_run="$(cat "$STOP_STAMP" 2>/dev/null || echo 0)"
+  now="$(date +%s)"
+  if [ $(( now - last_run )) -lt "$STOP_THROTTLE_SEC" ]; then
+    exit 0
+  fi
+fi
+date +%s > "$STOP_STAMP"
 
 diag=""
 
