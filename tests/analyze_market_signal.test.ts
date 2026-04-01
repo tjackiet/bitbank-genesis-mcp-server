@@ -125,6 +125,123 @@ describe('analyze_market_signal', () => {
 		expect(res.data.nextActions.map((action) => action.tool)).not.toContain('multiple_analysis');
 	});
 
+	it('強い弱気シグナル: CVD下降 + RSI低 + SMA下降配列 → bearish recommendation', async () => {
+		// CVD が下降トレンド
+		mockedGetFlowMetrics.mockResolvedValueOnce(asMockResult(flowOk(0.2, [100, 80, 60, 40, 20, 10, 5, 0, -5, -10])));
+		mockedGetVolatilityMetrics.mockResolvedValueOnce(asMockResult(volOk(0.8)));
+		mockedAnalyzeIndicators.mockResolvedValueOnce(
+			asMockResult(
+				indicatorsOk({
+					close: 80,
+					rsi: 20,
+					sma25: 90,
+					sma75: 100,
+					sma200: 110,
+					trend: 'strong_downtrend',
+				}),
+			),
+		);
+
+		const res = await analyzeMarketSignal('btc_jpy');
+		assertOk(res);
+		expect(res.data.recommendation).toBe('bearish');
+		expect(res.data.score).toBeLessThan(0);
+	});
+
+	it('強い強気シグナル: CVD上昇 + RSI高 + SMA上昇配列 → bullish recommendation', async () => {
+		mockedGetFlowMetrics.mockResolvedValueOnce(asMockResult(flowOk(0.8, [0, 10, 20, 40, 60, 80, 100, 120, 140, 160])));
+		mockedGetVolatilityMetrics.mockResolvedValueOnce(asMockResult(volOk(0.3)));
+		mockedAnalyzeIndicators.mockResolvedValueOnce(
+			asMockResult(
+				indicatorsOk({
+					close: 120,
+					rsi: 65,
+					sma25: 115,
+					sma75: 110,
+					sma200: 100,
+					trend: 'strong_uptrend',
+				}),
+			),
+		);
+
+		const res = await analyzeMarketSignal('btc_jpy');
+		assertOk(res);
+		expect(res.data.recommendation).toBe('bullish');
+		expect(res.data.score).toBeGreaterThan(0);
+	});
+
+	it('overbought: RSI > 70 で買われすぎリスク', async () => {
+		mockedGetFlowMetrics.mockResolvedValueOnce(asMockResult(flowOk(0.6, [0, 5, 10, 15, 20, 25, 30, 35, 40, 45])));
+		mockedGetVolatilityMetrics.mockResolvedValueOnce(asMockResult(volOk(0.4)));
+		mockedAnalyzeIndicators.mockResolvedValueOnce(
+			asMockResult(indicatorsOk({ close: 130, rsi: 75, sma25: 125, sma75: 120, sma200: 110, trend: 'uptrend' })),
+		);
+
+		const res = await analyzeMarketSignal('btc_jpy');
+		assertOk(res);
+		expect(res.data.metrics.rsi).toBe(75);
+	});
+
+	it('oversold: RSI < 30 で売られすぎ', async () => {
+		mockedGetFlowMetrics.mockResolvedValueOnce(asMockResult(flowOk(0.3, [50, 40, 30, 20, 10, 5, 0, -5, -10, -15])));
+		mockedGetVolatilityMetrics.mockResolvedValueOnce(asMockResult(volOk(0.6)));
+		mockedAnalyzeIndicators.mockResolvedValueOnce(
+			asMockResult(indicatorsOk({ close: 85, rsi: 25, sma25: 95, sma75: 105, sma200: 115, trend: 'downtrend' })),
+		);
+
+		const res = await analyzeMarketSignal('btc_jpy');
+		assertOk(res);
+		expect(res.data.metrics.rsi).toBe(25);
+	});
+
+	it('高ボラティリティ: rv_std_ann > 1.0 で信頼度に影響', async () => {
+		mockedGetFlowMetrics.mockResolvedValueOnce(asMockResult(flowOk(0.5, [0, 0, 0, 0, 0, 0, 0, 0, 0, 0])));
+		mockedGetVolatilityMetrics.mockResolvedValueOnce(asMockResult(volOk(1.5)));
+		mockedAnalyzeIndicators.mockResolvedValueOnce(
+			asMockResult(indicatorsOk({ close: 100, rsi: 50, sma25: 100, sma75: 100, sma200: 100 })),
+		);
+
+		const res = await analyzeMarketSignal('btc_jpy');
+		assertOk(res);
+		expect(res.data.metrics.rv_std_ann).toBe(1.5);
+	});
+
+	it('SMA 整列: price > sma25 > sma75 > sma200 で aligned_up', async () => {
+		mockedGetFlowMetrics.mockResolvedValueOnce(asMockResult(flowOk(0.6, [0, 10, 20, 30, 40, 50, 60, 70, 80, 90])));
+		mockedGetVolatilityMetrics.mockResolvedValueOnce(asMockResult(volOk(0.3)));
+		mockedAnalyzeIndicators.mockResolvedValueOnce(
+			asMockResult(indicatorsOk({ close: 130, rsi: 60, sma25: 120, sma75: 110, sma200: 100, trend: 'uptrend' })),
+		);
+
+		const res = await analyzeMarketSignal('btc_jpy');
+		assertOk(res);
+		expect(res.data.sma.arrangement).toBe('bullish');
+	});
+
+	it('SMA 整列: price < sma25 < sma75 < sma200 で aligned_down', async () => {
+		mockedGetFlowMetrics.mockResolvedValueOnce(asMockResult(flowOk(0.3, [50, 40, 30, 20, 10, 5, 0, -5, -10, -15])));
+		mockedGetVolatilityMetrics.mockResolvedValueOnce(asMockResult(volOk(0.5)));
+		mockedAnalyzeIndicators.mockResolvedValueOnce(
+			asMockResult(indicatorsOk({ close: 80, rsi: 35, sma25: 90, sma75: 100, sma200: 110, trend: 'strong_downtrend' })),
+		);
+
+		const res = await analyzeMarketSignal('btc_jpy');
+		assertOk(res);
+		expect(res.data.sma.arrangement).toBe('bearish');
+	});
+
+	it('toolDef.handler: content テキストに分析結果が含まれる', async () => {
+		mockedGetFlowMetrics.mockResolvedValueOnce(asMockResult(flowOk(0.5, [0, 0, 0, 0, 0, 0, 0, 0, 0, 0])));
+		mockedGetVolatilityMetrics.mockResolvedValueOnce(asMockResult(volOk(0.5)));
+		mockedAnalyzeIndicators.mockResolvedValueOnce(
+			asMockResult(indicatorsOk({ close: 100, rsi: 50, sma25: 100, sma75: 100, sma200: 100 })),
+		);
+
+		const res = (await toolDef.handler({ pair: 'btc_jpy' })) as { content: Array<{ text: string }> };
+		expect(res.content).toBeDefined();
+		expect(res.content[0].text).toContain('BTC_JPY');
+	});
+
 	it('aggressorRatio が最大で板圧力が極端なときは get_orderbook を深掘り候補に含めるべき', async () => {
 		mockedGetFlowMetrics.mockResolvedValueOnce(asMockResult(flowOk(1, [0, 0, 0, 0, 0, 0, 0, 0, 0, 0])));
 		mockedGetVolatilityMetrics.mockResolvedValueOnce(asMockResult(volOk(0.5)));

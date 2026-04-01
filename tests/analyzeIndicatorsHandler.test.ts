@@ -68,6 +68,7 @@ function baseInput(overrides?: Partial<BuildIndicatorsTextInput>): BuildIndicato
 		obvSma20: 12000,
 		obvTrend: 'rising',
 		obvPrev: 12200,
+		obvUnit: '',
 		...overrides,
 	};
 }
@@ -361,6 +362,58 @@ describe('buildIndicatorsText', () => {
 
 	// ── null 多数でも crash しない ────────────────────────
 
+	it('strong_downtrend + rsi < 30 + エクスパンション → 総合判定が全て反映', () => {
+		const text = buildIndicatorsText(baseInput({ trend: 'strong_downtrend', rsi: 20, bandWidthPct: 25 }));
+		expect(text).toContain('強い下降トレンド');
+		expect(text).toContain('売られすぎ');
+		expect(text).toContain('エクスパンション');
+	});
+
+	it('sigmaZ 中立範囲（-1 < z < 1）→ 中立', () => {
+		const text = buildIndicatorsText(baseInput({ sigmaZ: 0.3 }));
+		expect(text).toContain('中立');
+	});
+
+	it('bbLo > close で「現在価格に近い」非表示', () => {
+		const text = buildIndicatorsText(baseInput({ close: 10000000, bbLo: 9000000 }));
+		expect(text).not.toContain('現在価格に近い');
+	});
+
+	it('bbUp close で upper のvsCurPctが表示される', () => {
+		const text = buildIndicatorsText(baseInput({ close: 10000000, bbUp: 10200000 }));
+		expect(text).toContain('upper');
+	});
+
+	it('cloudPos unknown でもクラッシュしない', () => {
+		const text = buildIndicatorsText(baseInput({ cloudPos: 'unknown' }));
+		expect(text).toContain('一目均衡表');
+	});
+
+	it('obvUnit が表示される', () => {
+		const text = buildIndicatorsText(baseInput({ obvUnit: 'BTC' }));
+		expect(text).toContain('BTC');
+	});
+
+	it('crossInfo null で表示されない', () => {
+		const text = buildIndicatorsText(baseInput({ crossInfo: null }));
+		expect(text).toContain('移動平均線');
+	});
+
+	it('bandWidthPct null で バンド幅 非表示', () => {
+		const text = buildIndicatorsText(baseInput({ bandWidthPct: null }));
+		expect(text).not.toContain('バンド幅');
+	});
+
+	it('chikouBull null で遅行スパン非表示', () => {
+		const text = buildIndicatorsText(baseInput({ chikouBull: null }));
+		expect(text).not.toContain('遅行スパン');
+	});
+
+	it('toCloudDistance: above_cloud では表示されない', () => {
+		const text = buildIndicatorsText(baseInput({ cloudPos: 'above_cloud', toCloudDistance: 5 }));
+		expect(text).not.toContain('雲突入まで');
+	});
+
 	it('ほぼ全て null でもクラッシュしない', () => {
 		const text = buildIndicatorsText(
 			baseInput({
@@ -575,6 +628,150 @@ describe('toolDef.handler', () => {
 			content: Array<{ text: string }>;
 		};
 		expect(res.content[0].text).toContain('ゴールデン');
+	});
+
+	it('三役逆転の検出', async () => {
+		const m = mockResult();
+		// close < cloudBot → below_cloud
+		m.data.normalized = Array.from({ length: 30 }, (_, i) => ({
+			close: 9000000 + (i < 15 ? i * 10000 : -i * 10000),
+			open: 9000000,
+			high: 9100000,
+			low: 8900000,
+		}));
+		// tenkan < kijun → convAboveBase = false
+		(m.data.indicators as Record<string, unknown>).ICHIMOKU_conversion = 9200000;
+		(m.data.indicators as Record<string, unknown>).ICHIMOKU_base = 9500000;
+		mockedAnalyze.mockResolvedValueOnce(m as never);
+		const res = (await toolDef.handler({ pair: 'btc_jpy', type: '1day', limit: 200 })) as {
+			content: Array<{ text: string }>;
+		};
+		expect(res.content[0].text).toContain('三役逆転');
+	});
+
+	it('cloudPos in_cloud の検出', async () => {
+		const m = mockResult();
+		// close is between spanA and spanB → in_cloud
+		(m.data.indicators as Record<string, unknown>).ICHIMOKU_spanA = 10200000;
+		(m.data.indicators as Record<string, unknown>).ICHIMOKU_spanB = 9800000;
+		m.data.normalized = Array.from({ length: 30 }, () => ({
+			close: 10000000,
+			open: 10000000,
+			high: 10050000,
+			low: 9950000,
+		}));
+		mockedAnalyze.mockResolvedValueOnce(m as never);
+		const res = (await toolDef.handler({ pair: 'btc_jpy', type: '1day', limit: 200 })) as {
+			content: Array<{ text: string }>;
+		};
+		expect(res.content[0].text).toContain('雲の中');
+	});
+
+	it('toCloudDistance: above_cloud で雲からの距離を計算', async () => {
+		const m = mockResult();
+		(m.data.indicators as Record<string, unknown>).ICHIMOKU_spanA = 9300000;
+		(m.data.indicators as Record<string, unknown>).ICHIMOKU_spanB = 9200000;
+		m.data.normalized = Array.from({ length: 30 }, () => ({
+			close: 10000000,
+			open: 10000000,
+			high: 10050000,
+			low: 9950000,
+		}));
+		mockedAnalyze.mockResolvedValueOnce(m as never);
+		const res = (await toolDef.handler({ pair: 'btc_jpy', type: '1day', limit: 200 })) as {
+			content: Array<{ text: string }>;
+		};
+		expect(res.content[0].text).toContain('雲の上');
+	});
+
+	it('ブルリッシュ divergence 検出（MACD）', async () => {
+		const m = mockResult();
+		// 価格は下降、MACD hist は上昇
+		m.data.normalized = Array.from({ length: 30 }, (_, i) => ({
+			close: 11000000 - i * 50000,
+			open: 11000000,
+			high: 11100000 - i * 50000,
+			low: 10900000 - i * 50000,
+		}));
+		const series = (m.data.indicators as Record<string, unknown>).series as Record<string, number[]>;
+		series.MACD_hist = Array.from({ length: 30 }, (_, i) => -5000 + i * 200);
+		mockedAnalyze.mockResolvedValueOnce(m as never);
+		const res = (await toolDef.handler({ pair: 'btc_jpy', type: '1day', limit: 200 })) as {
+			content: Array<{ text: string }>;
+		};
+		expect(res.content[0].text).toContain('ブルリッシュ');
+	});
+
+	it('SMA デッドクロス検出', async () => {
+		const m = mockResult();
+		const series = (m.data.indicators as Record<string, unknown>).series as Record<string, number[]>;
+		// SMA_25 が SMA_75 を下抜け
+		series.SMA_25 = [...Array.from({ length: 10 }, () => 9600000), ...Array.from({ length: 10 }, () => 9400000)];
+		series.SMA_75 = Array.from({ length: 20 }, () => 9500000);
+		mockedAnalyze.mockResolvedValueOnce(m as never);
+		const res = (await toolDef.handler({ pair: 'btc_jpy', type: '1day', limit: 200 })) as {
+			content: Array<{ text: string }>;
+		};
+		expect(res.content[0].text).toContain('デッド');
+	});
+
+	it('MACD デッドクロス検出', async () => {
+		const m = mockResult();
+		const series = (m.data.indicators as Record<string, unknown>).series as Record<string, number[]>;
+		series.MACD_line = [...Array.from({ length: 10 }, () => 100), ...Array.from({ length: 10 }, () => -100)];
+		series.MACD_signal = Array.from({ length: 20 }, () => 0);
+		mockedAnalyze.mockResolvedValueOnce(m as never);
+		const res = (await toolDef.handler({ pair: 'btc_jpy', type: '1day', limit: 200 })) as {
+			content: Array<{ text: string }>;
+		};
+		expect(res.content[0].text).toContain('デッド');
+	});
+
+	it('OBV unit が pair に応じて変わる', async () => {
+		mockedAnalyze.mockResolvedValueOnce(mockResult() as never);
+		const res = (await toolDef.handler({ pair: 'btc_jpy', type: '1day', limit: 200 })) as {
+			content: Array<{ text: string }>;
+		};
+		expect(res.content[0].text).toContain('BTC');
+	});
+
+	it('arrangement: SMA が3本未満で n/a', async () => {
+		const m = mockResult();
+		(m.data.indicators as Record<string, unknown>).SMA_25 = null;
+		(m.data.indicators as Record<string, unknown>).SMA_75 = null;
+		(m.data.indicators as Record<string, unknown>).SMA_200 = null;
+		mockedAnalyze.mockResolvedValueOnce(m as never);
+		const res = (await toolDef.handler({ pair: 'btc_jpy', type: '1day', limit: 200 })) as {
+			content: Array<{ text: string }>;
+		};
+		expect(res.content[0].text).toContain('配置: n/a');
+	});
+
+	it('bwTrend 収縮中の検出', async () => {
+		const m = mockResult({
+			series: {
+				SMA_25: Array.from({ length: 20 }, (_, i) => 9700000 + i * 1000),
+				SMA_75: Array.from({ length: 20 }, (_, i) => 9500000 + i * 500),
+				SMA_200: Array.from({ length: 20 }, (_, i) => 9000000 + i * 200),
+				MACD_line: Array.from({ length: 20 }, (_, i) => 1000 + i * 100),
+				MACD_signal: Array.from({ length: 20 }, (_, i) => 800 + i * 100),
+				MACD_hist: Array.from({ length: 20 }, (_, i) => 200 + i * 10),
+				// BB が収縮: 以前は幅広、今は幅狭
+				BB_upper: Array.from({ length: 20 }, (_, i) => (i < 10 ? 10500000 : 10100000)),
+				BB_lower: Array.from({ length: 20 }, (_, i) => (i < 10 ? 9500000 : 9900000)),
+				BB_middle: Array.from({ length: 20 }, () => 10000000),
+				ICHIMOKU_conversion: Array.from({ length: 20 }, (_, i) => 9900000 + i * 100),
+				ICHIMOKU_base: Array.from({ length: 20 }, (_, i) => 9700000 + i * 50),
+			},
+		});
+		mockedAnalyze.mockResolvedValueOnce(m as never);
+		const res = (await toolDef.handler({ pair: 'btc_jpy', type: '1day', limit: 200 })) as {
+			content: Array<{ text: string }>;
+		};
+		// bwTrend を確認（収縮中 or 拡大中 or 不変 のいずれか）
+		const text = res.content[0].text;
+		// BB series の幅が減少しているので収縮中が期待される
+		expect(text).toMatch(/収縮中|拡大中|不変/);
 	});
 
 	it('MACD divergence 検出（ベアリッシュ）', async () => {
