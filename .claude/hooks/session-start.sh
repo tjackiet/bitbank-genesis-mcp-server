@@ -8,6 +8,16 @@
 # gen:types と typecheck は常に実行（高速かつ全体の整合性に必須）。
 set -euo pipefail
 
+# ── compact イベントではスキップ ──
+# on-compact.sh がフラグファイルを設置するので、それを検知して早期リターン。
+# compact 時は前回セッションの状態を引き継ぐため、再チェック不要。
+COMPACT_FLAG="/tmp/.claude-compact-in-progress"
+if [ -f "$COMPACT_FLAG" ]; then
+  rm -f "$COMPACT_FLAG"
+  echo "⏭️  Session start: skipped (triggered by compact)"
+  exit 0
+fi
+
 echo "🔄 Session start: generating types..."
 npm run gen:types 2>&1
 
