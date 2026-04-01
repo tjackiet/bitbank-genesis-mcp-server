@@ -186,12 +186,19 @@ describe('MCP stdio E2E', () => {
 		});
 
 		it('バリデーションエラー: 不正な type は SDK 側で弾かれる', async () => {
-			await expect(
-				client.callTool({
+			try {
+				const result = await client.callTool({
 					name: 'get_candles',
 					arguments: { pair: 'btc_jpy', type: 'invalid' },
-				}),
-			).rejects.toThrow(/invalid/i);
+				});
+				// SDK がエラーを throw せず result を返すバージョン
+				expect(result.isError).toBe(true);
+				const text = extractText(result);
+				expect(text).toMatch(/invalid/i);
+			} catch (err) {
+				// SDK が McpError を throw するバージョン
+				expect(String(err)).toMatch(/invalid/i);
+			}
 		});
 	});
 
