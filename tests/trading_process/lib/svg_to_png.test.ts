@@ -1,5 +1,29 @@
-import { describe, expect, it } from 'vitest';
-import { generateBacktestChartFilename } from '../../../tools/trading_process/lib/svg_to_png.js';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+
+vi.mock('node:fs', () => ({
+	existsSync: vi.fn(),
+	mkdirSync: vi.fn(),
+}));
+vi.mock('sharp', () => ({
+	default: vi.fn(),
+}));
+
+import { existsSync, mkdirSync } from 'node:fs';
+import sharp from 'sharp';
+import { generateBacktestChartFilename, svgToPng } from '../../../tools/trading_process/lib/svg_to_png.js';
+
+afterEach(() => {
+	vi.resetAllMocks();
+});
+
+function makeSharpPipeline(toFile = vi.fn().mockResolvedValue(undefined)) {
+	const png = vi.fn().mockReturnValue({ toFile });
+	const resize = vi.fn();
+	const pipeline = { png, resize } as unknown as ReturnType<typeof sharp>;
+	vi.mocked(resize).mockReturnValue(pipeline);
+	vi.mocked(sharp).mockReturnValue(pipeline);
+	return { pipeline, png, resize, toFile };
+}
 
 describe('generateBacktestChartFilename', () => {
 	it('正しいフォーマットのファイル名を生成する', () => {
@@ -24,5 +48,56 @@ describe('generateBacktestChartFilename', () => {
 		const filename = generateBacktestChartFilename('xrp_jpy', '1H', 'rsi');
 		expect(filename).toContain('xrpjpy');
 		expect(filename).not.toContain('xrp_jpy');
+	});
+});
+
+describe('svgToPng', () => {
+	it('ディレクトリが存在する場合は mkdirSync を呼ばない', async () => {
+		vi.mocked(existsSync).mockReturnValue(true);
+		makeSharpPipeline();
+		await svgToPng('<svg/>', '/output/chart.png');
+		expect(mkdirSync).not.toHaveBeenCalled();
+	});
+
+	it('ディレクトリが存在しない場合は mkdirSync を呼ぶ', async () => {
+		vi.mocked(existsSync).mockReturnValue(false);
+		makeSharpPipeline();
+		await svgToPng('<svg/>', '/output/chart.png');
+		expect(mkdirSync).toHaveBeenCalledWith('/output', { recursive: true });
+	});
+
+	it('width/height 未指定時は resize を呼ばない', async () => {
+		vi.mocked(existsSync).mockReturnValue(true);
+		const { resize } = makeSharpPipeline();
+		await svgToPng('<svg/>', '/output/chart.png');
+		expect(resize).not.toHaveBeenCalled();
+	});
+
+	it('width と height 両方指定時は resize を呼ぶ', async () => {
+		vi.mocked(existsSync).mockReturnValue(true);
+		const { resize } = makeSharpPipeline();
+		await svgToPng('<svg/>', '/output/chart.png', { width: 800, height: 600 });
+		expect(resize).toHaveBeenCalledWith(800, 600, { fit: 'inside', withoutEnlargement: true });
+	});
+
+	it('width のみ指定時も resize を呼ぶ', async () => {
+		vi.mocked(existsSync).mockReturnValue(true);
+		const { resize } = makeSharpPipeline();
+		await svgToPng('<svg/>', '/output/chart.png', { width: 800 });
+		expect(resize).toHaveBeenCalledWith(800, undefined, { fit: 'inside', withoutEnlargement: true });
+	});
+
+	it('height のみ指定時も resize を呼ぶ', async () => {
+		vi.mocked(existsSync).mockReturnValue(true);
+		const { resize } = makeSharpPipeline();
+		await svgToPng('<svg/>', '/output/chart.png', { height: 600 });
+		expect(resize).toHaveBeenCalledWith(undefined, 600, { fit: 'inside', withoutEnlargement: true });
+	});
+
+	it('出力パスをそのまま返す', async () => {
+		vi.mocked(existsSync).mockReturnValue(true);
+		makeSharpPipeline();
+		const result = await svgToPng('<svg/>', '/output/chart.png');
+		expect(result).toBe('/output/chart.png');
 	});
 });
