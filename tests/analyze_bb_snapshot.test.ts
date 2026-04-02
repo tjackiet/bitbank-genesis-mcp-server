@@ -643,8 +643,8 @@ describe('analyze_bb_snapshot', () => {
 		const res = await analyzeBbSnapshot('btc_jpy', '1day', 120, 'default');
 		assertOk(res);
 		// フラット相場では bandWidthPct が全部ほぼ等しく percentile が 0 付近になる
-		const hasBreakout = res.data.signals.some((s) => s.includes('compressed') && s.includes('percentile'));
-		const hasHighVol = res.data.signals.some((s) => s.includes('expanded') && s.includes('percentile'));
+		const hasBreakout = res.data.signals.some((s: string) => s.includes('compressed') && s.includes('percentile'));
+		const hasHighVol = res.data.signals.some((s: string) => s.includes('expanded') && s.includes('percentile'));
 		const hasNoExtreme = res.data.signals.includes('No extreme positioning detected');
 		// いずれかのシグナルが存在するはず
 		expect(hasBreakout || hasHighVol || hasNoExtreme || res.data.signals.length > 0).toBe(true);
@@ -770,12 +770,12 @@ describe('analyze_bb_snapshot', () => {
 		const res = await analyzeBbSnapshot('btc_jpy', '1day', 120, 'default');
 		assertOk(res);
 		// 高ボラ相場では percentile > 80 になりやすい
-		const hasHighVol = res.data.signals.some((s) => s.includes('high volatility phase'));
+		const hasHighVol = res.data.signals.some((s: string) => s.includes('high volatility phase'));
 		const hasSomeSignal = res.data.signals.length > 0;
 		expect(hasSomeSignal).toBe(true);
 		// high volatility phase シグナルが付くことを確認（付かない場合でもテスト通過）
 		if (hasHighVol) {
-			expect(res.data.signals.some((s) => s.includes('percentile'))).toBe(true);
+			expect(res.data.signals.some((s: string) => s.includes('percentile'))).toBe(true);
 		}
 	});
 
@@ -1149,12 +1149,12 @@ describe('analyze_bb_snapshot', () => {
 
 		const res = await analyzeBbSnapshot('btc_jpy', '1day', 60, 'default');
 		assertOk(res);
-		const hasHighVol = res.data.signals.some((s) => s.includes('high volatility phase'));
-		const hasCompressed = res.data.signals.some((s) => s.includes('compressed'));
+		const hasHighVol = res.data.signals.some((s: string) => s.includes('high volatility phase'));
+		const hasCompressed = res.data.signals.some((s: string) => s.includes('compressed'));
 		// どちらか一方のパーセンタイルシグナルが付く
 		expect(hasHighVol || hasCompressed || res.data.signals.length > 0).toBe(true);
 		if (hasHighVol) {
-			expect(res.data.signals.some((s) => s.includes('percentile'))).toBe(true);
+			expect(res.data.signals.some((s: string) => s.includes('percentile'))).toBe(true);
 		}
 	});
 
@@ -1170,8 +1170,8 @@ describe('analyze_bb_snapshot', () => {
 
 		const res = await analyzeBbSnapshot('btc_jpy', '1day', 60, 'default');
 		assertOk(res);
-		const hasBreakout = res.data.signals.some((s) => s.includes('compressed'));
-		const hasHighVol = res.data.signals.some((s) => s.includes('high volatility phase'));
+		const hasBreakout = res.data.signals.some((s: string) => s.includes('compressed'));
+		const hasHighVol = res.data.signals.some((s: string) => s.includes('high volatility phase'));
 		expect(hasBreakout || hasHighVol || res.data.signals.length > 0).toBe(true);
 	});
 

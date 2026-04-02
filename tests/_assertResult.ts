@@ -5,21 +5,21 @@
  * `res.data.xxx` にアクセスするために型を絞り込む。
  */
 import { expect } from 'vitest';
+import type { FailResult } from '../src/schema/types.js';
 
-/**
- * Result が ok: true であることを assert し、型を絞り込む。
- * `expect(res.ok).toBe(true)` の代替として使用。
- */
-export function assertOk<T extends { ok: boolean }>(res: T): asserts res is Extract<T, { ok: true }> {
-	expect(res.ok).toBe(true);
+// biome-ignore lint/suspicious/noExplicitAny: テスト専用 — deep property access を許容する
+type AnyRecord = Record<string, any>;
+
+/** ok: true に絞り込む。handler の Result | McpResponse 両方に対応。 */
+export function assertOk<T>(
+	res: T,
+): asserts res is T & { ok: true; summary: string; data: AnyRecord; meta: AnyRecord } {
+	expect((res as { ok?: boolean }).ok).toBe(true);
 }
 
-/**
- * Result が ok: false であることを assert し、型を絞り込む。
- * `expect(res.ok).toBe(false)` の代替として使用。
- */
-export function assertFail<T extends { ok: boolean }>(res: T): asserts res is Extract<T, { ok: false }> {
-	expect(res.ok).toBe(false);
+/** ok: false に絞り込む。 */
+export function assertFail<T>(res: T): asserts res is T & FailResult<AnyRecord> {
+	expect((res as { ok?: boolean }).ok).toBe(false);
 }
 
 /**
