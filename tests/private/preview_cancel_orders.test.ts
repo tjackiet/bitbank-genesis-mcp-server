@@ -77,3 +77,15 @@ describe('preview_cancel_orders', () => {
 		expect(result.summary).toContain('9999');
 	});
 });
+
+describe('preview_cancel_orders — handler (toolDef)', () => {
+	it('handler が成功時に content + structuredContent を返す', async () => {
+		const { toolDef } = await import('../../tools/private/preview_cancel_orders.js');
+		const result = await toolDef.handler({ pair: 'btc_jpy', order_ids: [2001, 2002] });
+
+		expect(result).toHaveProperty('content');
+		expect(result).toHaveProperty('structuredContent');
+		const content = (result as Record<string, unknown[]>).content;
+		expect(content[0]).toHaveProperty('text');
+	});
+});

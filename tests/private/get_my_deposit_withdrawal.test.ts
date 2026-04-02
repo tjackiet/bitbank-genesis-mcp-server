@@ -205,4 +205,151 @@ describe('get_my_deposit_withdrawal', () => {
 		assertOk(result);
 		expect(result.meta.hasWarnings).toBe(true);
 	});
+
+	it('不正な end 日付で validation_error を返す', async () => {
+		const { default: getMyDepositWithdrawal } = await import('../../tools/private/get_my_deposit_withdrawal.js');
+		const result = await getMyDepositWithdrawal({ end: 'bad-date' });
+
+		assertFail(result);
+		expect(result.meta.errorType).toBe('validation_error');
+		expect(result.summary).toContain('end');
+	});
+
+	it('全通貨（asset未指定）+ since/end指定で単発取得する', async () => {
+		setupFetchMock({});
+
+		const { default: getMyDepositWithdrawal } = await import('../../tools/private/get_my_deposit_withdrawal.js');
+		const result = await getMyDepositWithdrawal({ since: '2024-03-01T00:00:00Z', end: '2024-03-31T00:00:00Z' });
+
+		assertOk(result);
+		// since/end 指定時は単発取得パス
+		expect(result.data.deposits.length).toBeGreaterThanOrEqual(0);
+	});
+
+	it('全通貨（asset未指定）+ since/end未指定でページネーション取得する', async () => {
+		setupFetchMock({});
+
+		const { default: getMyDepositWithdrawal } = await import('../../tools/private/get_my_deposit_withdrawal.js');
+		const result = await getMyDepositWithdrawal({});
+
+		assertOk(result);
+		expect(result.data.deposits.length).toBeGreaterThan(0);
+		expect(result.data.withdrawals.length).toBeGreaterThan(0);
+	});
+
+	it('collectResults が4チャネルの部分失敗で警告を収集する', async () => {
+		// deposit_history は失敗、withdrawal_history は成功
+		setupFetchMock({ depositFail: true });
+
+		const { default: getMyDepositWithdrawal } = await import('../../tools/private/get_my_deposit_withdrawal.js');
+		// asset 未指定: 4チャネル並列取得 → deposit 2チャネル失敗
+		const result = await getMyDepositWithdrawal({});
+
+		assertOk(result);
+		expect(result.meta.hasWarnings).toBe(true);
+		expect(result.meta.warnings.length).toBeGreaterThan(0);
+		// 警告メッセージがサマリーに含まれる
+		expect(result.summary).toContain('警告');
+	});
+
+	it('type=withdrawal で入金 API を呼ばない', async () => {
+		setupFetchMock({});
+
+		const { default: getMyDepositWithdrawal } = await import('../../tools/private/get_my_deposit_withdrawal.js');
+		const result = await getMyDepositWithdrawal({ asset: 'btc', type: 'withdrawal' });
+
+		assertOk(result);
+		expect(result.data.deposits).toHaveLength(0);
+
+		const fetchMock = globalThis.fetch as ReturnType<typeof vi.fn>;
+		const calledUrls = fetchMock.mock.calls.map((c) => String(c[0]));
+		expect(calledUrls.some((u) => u.includes('deposit_history'))).toBe(false);
+	});
+});
+
+describe('get_my_deposit_withdrawal — 特定通貨 + since/end 指定', () => {
+	it('asset + since/end で単発取得する', async () => {
+		setupFetchMock({});
+
+		const { default: getMyDepositWithdrawal } = await import('../../tools/private/get_my_deposit_withdrawal.js');
+		const result = await getMyDepositWithdrawal({
+			asset: 'btc',
+			since: '2024-03-01T00:00:00Z',
+			end: '2024-03-31T00:00:00Z',
+		});
+
+		assertOk(result);
+		// since/end 指定時は単発取得パス（asset指定あり）
+		const fetchMock = globalThis.fetch as ReturnType<typeof vi.fn>;
+		const calledUrls = fetchMock.mock.calls.map((c) => String(c[0]));
+		expect(calledUrls.some((u) => u.includes('since='))).toBe(true);
+	});
+
+	it('出金のみ取得時に partial failure で警告がつく', async () => {
+		setupFetchMock({ withdrawalFail: true });
+
+		const { default: getMyDepositWithdrawal } = await import('../../tools/private/get_my_deposit_withdrawal.js');
+		const result = await getMyDepositWithdrawal({ asset: 'btc', type: 'withdrawal' });
+
+		assertOk(result);
+		expect(result.meta.hasWarnings).toBe(true);
+		expect(result.data.withdrawals).toHaveLength(0);
+	});
+});
+
+describe('get_my_deposit_withdrawal — singleFetch エラーパス', () => {
+	it('asset + since/end + deposit失敗で singleFetchDeposits エラーパスを通る', async () => {
+		setupFetchMock({ depositFail: true });
+
+		const { default: getMyDepositWithdrawal } = await import('../../tools/private/get_my_deposit_withdrawal.js');
+		const result = await getMyDepositWithdrawal({
+			asset: 'btc',
+			since: '2024-03-01T00:00:00Z',
+			type: 'deposit',
+		});
+
+		assertOk(result);
+		expect(result.meta.hasWarnings).toBe(true);
+		expect(result.data.deposits).toHaveLength(0);
+	});
+
+	it('asset + since/end + withdrawal失敗で singleFetchWithdrawals エラーパスを通る', async () => {
+		setupFetchMock({ withdrawalFail: true });
+
+		const { default: getMyDepositWithdrawal } = await import('../../tools/private/get_my_deposit_withdrawal.js');
+		const result = await getMyDepositWithdrawal({
+			asset: 'eth',
+			since: '2024-03-01T00:00:00Z',
+			type: 'withdrawal',
+		});
+
+		assertOk(result);
+		expect(result.meta.hasWarnings).toBe(true);
+		expect(result.data.withdrawals).toHaveLength(0);
+	});
+
+	it('全通貨 + since/end + 部分失敗で collectResults 警告を含む', async () => {
+		setupFetchMock({ withdrawalFail: true });
+
+		const { default: getMyDepositWithdrawal } = await import('../../tools/private/get_my_deposit_withdrawal.js');
+		const result = await getMyDepositWithdrawal({
+			since: '2024-03-01T00:00:00Z',
+			end: '2024-03-31T00:00:00Z',
+		});
+
+		assertOk(result);
+		expect(result.meta.hasWarnings).toBe(true);
+		expect(result.summary).toContain('警告');
+	});
+});
+
+describe('get_my_deposit_withdrawal — handler (toolDef)', () => {
+	it('handler がデフォルト引数で動作する', async () => {
+		setupFetchMock({});
+
+		const { toolDef } = await import('../../tools/private/get_my_deposit_withdrawal.js');
+		const result = await toolDef.handler({});
+
+		expect(result.ok).toBe(true);
+	});
 });

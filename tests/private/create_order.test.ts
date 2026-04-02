@@ -148,3 +148,250 @@ describe('create_order — 確認トークン検証', () => {
 		assertOk(result);
 	});
 });
+
+describe('create_order — エラーコード別ハンドリング', () => {
+	it('残高不足エラー（60001）に適切なメッセージ', async () => {
+		const params = { pair: 'btc_jpy', amount: '0.001', side: 'buy', type: 'limit', price: '14000000' };
+		const { confirmation_token, token_expires_at } = validToken(params);
+
+		setupFetchMockSequence([{ body: { success: 0, data: { code: 60001 } }, status: 400 }]);
+
+		const { default: createOrder } = await import('../../tools/private/create_order.js');
+		const result = await createOrder({
+			...params,
+			side: params.side as 'buy' | 'sell',
+			type: params.type as 'limit',
+			confirmation_token,
+			token_expires_at,
+		});
+
+		assertFail(result);
+		expect(result.summary).toContain('残高が不足');
+	});
+
+	it('数量下限エラー（60003）に適切なメッセージ', async () => {
+		const params = { pair: 'btc_jpy', amount: '0.00000001', side: 'buy', type: 'limit', price: '14000000' };
+		const { confirmation_token, token_expires_at } = validToken(params);
+
+		setupFetchMockSequence([{ body: { success: 0, data: { code: 60003 } }, status: 400 }]);
+
+		const { default: createOrder } = await import('../../tools/private/create_order.js');
+		const result = await createOrder({
+			...params,
+			side: params.side as 'buy' | 'sell',
+			type: params.type as 'limit',
+			confirmation_token,
+			token_expires_at,
+		});
+
+		assertFail(result);
+		expect(result.summary).toContain('最小数量');
+	});
+
+	it('同時注文上限エラー（60011）に適切なメッセージ', async () => {
+		const params = { pair: 'btc_jpy', amount: '0.001', side: 'buy', type: 'limit', price: '14000000' };
+		const { confirmation_token, token_expires_at } = validToken(params);
+
+		setupFetchMockSequence([{ body: { success: 0, data: { code: 60011 } }, status: 400 }]);
+
+		const { default: createOrder } = await import('../../tools/private/create_order.js');
+		const result = await createOrder({
+			...params,
+			side: params.side as 'buy' | 'sell',
+			type: params.type as 'limit',
+			confirmation_token,
+			token_expires_at,
+		});
+
+		assertFail(result);
+		expect(result.summary).toContain('上限（30件）');
+	});
+
+	it('成行注文制限（70009）に適切なメッセージ', async () => {
+		const params = { pair: 'btc_jpy', amount: '0.001', side: 'buy', type: 'market' };
+		const { confirmation_token, token_expires_at } = validToken(params);
+
+		setupFetchMockSequence([{ body: { success: 0, data: { code: 70009 } }, status: 400 }]);
+
+		const { default: createOrder } = await import('../../tools/private/create_order.js');
+		const result = await createOrder({
+			...params,
+			side: params.side as 'buy' | 'sell',
+			type: params.type as 'market',
+			confirmation_token,
+			token_expires_at,
+		});
+
+		assertFail(result);
+		expect(result.summary).toContain('成行注文が制限');
+	});
+
+	it('非 PrivateApiError の例外で upstream_error を返す', async () => {
+		const params = { pair: 'btc_jpy', amount: '0.001', side: 'buy', type: 'limit', price: '14000000' };
+		const { confirmation_token, token_expires_at } = validToken(params);
+
+		globalThis.fetch = vi.fn().mockRejectedValue(new TypeError('Network failure')) as unknown as typeof fetch;
+
+		const { default: createOrder } = await import('../../tools/private/create_order.js');
+		const result = await createOrder({
+			...params,
+			side: params.side as 'buy' | 'sell',
+			type: params.type as 'limit',
+			confirmation_token,
+			token_expires_at,
+		});
+
+		assertFail(result);
+		expect(result.meta.errorType).toBe('upstream_error');
+		expect(result.summary).toContain('Network failure');
+	});
+
+	it('価格上限超過エラー（60006）に適切なメッセージ', async () => {
+		const params = { pair: 'btc_jpy', amount: '0.001', side: 'buy', type: 'limit', price: '999999999' };
+		const { confirmation_token, token_expires_at } = validToken(params);
+
+		setupFetchMockSequence([{ body: { success: 0, data: { code: 60006 } }, status: 400 }]);
+
+		const { default: createOrder } = await import('../../tools/private/create_order.js');
+		const result = await createOrder({
+			...params,
+			side: params.side as 'buy' | 'sell',
+			type: params.type as 'limit',
+			confirmation_token,
+			token_expires_at,
+		});
+
+		assertFail(result);
+		expect(result.summary).toContain('上限を超えています');
+	});
+});
+
+describe('create_order — 非 PrivateApiError の generic catch', () => {
+	afterEach(() => {
+		vi.doUnmock('../../src/private/client.js');
+	});
+
+	it('非 PrivateApiError が投げられると upstream_error を返す', async () => {
+		vi.doMock('../../src/private/client.js', () => ({
+			getDefaultClient: () => ({
+				post: () => {
+					throw new Error('unexpected crash');
+				},
+			}),
+			PrivateApiError: class extends Error {
+				errorType: string;
+				constructor(msg: string, errorType: string) {
+					super(msg);
+					this.errorType = errorType;
+				}
+			},
+		}));
+
+		const { generateToken } = await import('../../src/private/confirmation.js');
+		const params = { pair: 'btc_jpy', amount: '0.001', side: 'buy', type: 'limit', price: '14000000' };
+		const { token, expiresAt } = generateToken('create_order', params);
+
+		const { default: createOrder } = await import('../../tools/private/create_order.js');
+		const result = await createOrder({
+			...params,
+			side: params.side as 'buy' | 'sell',
+			type: params.type as 'limit',
+			confirmation_token: token,
+			token_expires_at: expiresAt,
+		});
+
+		assertFail(result);
+		expect(result.meta.errorType).toBe('upstream_error');
+		expect(result.summary).toContain('unexpected crash');
+	});
+});
+
+describe('create_order — handler (toolDef)', () => {
+	it('handler が失敗時に result をそのまま返す', async () => {
+		const { toolDef } = await import('../../tools/private/create_order.js');
+		const result = await toolDef.handler({
+			pair: 'btc_jpy',
+			amount: '0.001',
+			side: 'buy',
+			type: 'limit',
+			price: '14000000',
+			confirmation_token: 'invalid',
+			token_expires_at: Date.now() + 60000,
+		});
+
+		expect(result.ok).toBe(false);
+	});
+
+	it('handler が成功時に content + structuredContent を返す', async () => {
+		const params = { pair: 'btc_jpy', amount: '0.001', side: 'buy', type: 'limit', price: '14000000' };
+		const { confirmation_token, token_expires_at } = validToken(params);
+
+		setupFetchMockSequence([{ body: orderSuccessResponse({ side: 'buy', type: 'limit', price: '14000000' }) }]);
+
+		const { toolDef } = await import('../../tools/private/create_order.js');
+		const result = await toolDef.handler({
+			...params,
+			confirmation_token,
+			token_expires_at,
+		});
+
+		expect(result).toHaveProperty('content');
+		expect(result).toHaveProperty('structuredContent');
+	});
+});
+
+describe('create_order — stop_limit / post_only / trigger_price', () => {
+	it('stop_limit 注文で trigger_price がサマリーに含まれる', async () => {
+		const params = {
+			pair: 'btc_jpy',
+			amount: '0.001',
+			side: 'buy',
+			type: 'stop_limit',
+			price: '14500000',
+			trigger_price: '14000000',
+		};
+		const { confirmation_token, token_expires_at } = validToken(params);
+
+		setupFetchMockSequence([
+			{
+				body: orderSuccessResponse({
+					side: 'buy',
+					type: 'stop_limit',
+					price: '14500000',
+					trigger_price: '14000000',
+				}),
+			},
+		]);
+
+		const { default: createOrder } = await import('../../tools/private/create_order.js');
+		const result = await createOrder({
+			...params,
+			side: params.side as 'buy' | 'sell',
+			type: params.type as 'stop_limit',
+			confirmation_token,
+			token_expires_at,
+		});
+
+		assertOk(result);
+		expect(result.summary).toContain('トリガー価格');
+	});
+
+	it('post_only 有効時にサマリーに Post Only が含まれる', async () => {
+		const params = { pair: 'btc_jpy', amount: '0.001', side: 'buy', type: 'limit', price: '14000000', post_only: true };
+		const { confirmation_token, token_expires_at } = validToken(params);
+
+		setupFetchMockSequence([{ body: orderSuccessResponse({ side: 'buy', type: 'limit', price: '14000000' }) }]);
+
+		const { default: createOrder } = await import('../../tools/private/create_order.js');
+		const result = await createOrder({
+			...params,
+			side: params.side as 'buy' | 'sell',
+			type: params.type as 'limit',
+			confirmation_token,
+			token_expires_at,
+		});
+
+		assertOk(result);
+		expect(result.summary).toContain('Post Only');
+	});
+});

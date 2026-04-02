@@ -168,4 +168,111 @@ describe('cancel_orders', () => {
 		expect(result.summary).toContain('0件');
 		expect(result.data.orders).toHaveLength(0);
 	});
+
+	it('非 PrivateApiError の例外で upstream_error を返す', async () => {
+		globalThis.fetch = vi.fn().mockRejectedValue(new TypeError('Socket hang up')) as unknown as typeof fetch;
+		const { confirmation_token, token_expires_at } = validToken({ pair: 'btc_jpy', order_ids: [3001] });
+
+		const { default: cancelOrders } = await import('../../tools/private/cancel_orders.js');
+		const result = await cancelOrders({
+			pair: 'btc_jpy',
+			order_ids: [3001],
+			confirmation_token,
+			token_expires_at,
+		});
+
+		assertFail(result);
+		expect(result.meta.errorType).toBe('upstream_error');
+		expect(result.summary).toContain('Socket hang up');
+	});
+
+	it('成行注文のキャンセル時に価格が「成行」と表示される', async () => {
+		const marketOrder = canceledOrder(3001, 'buy', { type: 'market', price: undefined });
+		delete (marketOrder as Record<string, unknown>).price;
+		setupFetchMock(mockBitbankSuccess({ orders: [marketOrder] }));
+		const { confirmation_token, token_expires_at } = validToken({ pair: 'btc_jpy', order_ids: [3001] });
+
+		const { default: cancelOrders } = await import('../../tools/private/cancel_orders.js');
+		const result = await cancelOrders({
+			pair: 'btc_jpy',
+			order_ids: [3001],
+			confirmation_token,
+			token_expires_at,
+		});
+
+		assertOk(result);
+		expect(result.summary).toContain('成行');
+	});
+});
+
+describe('cancel_orders — 非 PrivateApiError の generic catch', () => {
+	afterEach(() => {
+		vi.doUnmock('../../src/private/client.js');
+	});
+
+	it('非 PrivateApiError が投げられると upstream_error を返す', async () => {
+		vi.doMock('../../src/private/client.js', () => ({
+			getDefaultClient: () => ({
+				post: () => {
+					throw new Error('unexpected crash');
+				},
+			}),
+			PrivateApiError: class extends Error {
+				errorType: string;
+				constructor(msg: string, errorType: string) {
+					super(msg);
+					this.errorType = errorType;
+				}
+			},
+		}));
+
+		const { generateToken } = await import('../../src/private/confirmation.js');
+		const { token, expiresAt } = generateToken('cancel_orders', { pair: 'btc_jpy', order_ids: [3001] });
+
+		const { default: cancelOrders } = await import('../../tools/private/cancel_orders.js');
+		const result = await cancelOrders({
+			pair: 'btc_jpy',
+			order_ids: [3001],
+			confirmation_token: token,
+			token_expires_at: expiresAt,
+		});
+
+		assertFail(result);
+		expect(result.meta.errorType).toBe('upstream_error');
+		expect(result.summary).toContain('unexpected crash');
+	});
+});
+
+describe('cancel_orders — handler (toolDef)', () => {
+	it('handler が失敗時に result をそのまま返す', async () => {
+		const { toolDef } = await import('../../tools/private/cancel_orders.js');
+		const result = await toolDef.handler({
+			pair: 'btc_jpy',
+			order_ids: [3001],
+			confirmation_token: 'invalid',
+			token_expires_at: Date.now() + 60000,
+		});
+
+		expect(result.ok).toBe(false);
+	});
+
+	it('handler が成功時に content + structuredContent を返す', async () => {
+		setupFetchMock(
+			mockBitbankSuccess({
+				orders: [canceledOrder(3001)],
+			}),
+		);
+		const { confirmation_token, token_expires_at } = validToken({ pair: 'btc_jpy', order_ids: [3001] });
+
+		const { toolDef } = await import('../../tools/private/cancel_orders.js');
+		const result = await toolDef.handler({
+			pair: 'btc_jpy',
+			order_ids: [3001],
+			confirmation_token,
+			token_expires_at,
+		});
+
+		expect(result).toHaveProperty('content');
+		expect(result).toHaveProperty('structuredContent');
+	});
 });
