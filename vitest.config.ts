@@ -14,7 +14,7 @@ export default defineConfig({
       // CI でカバレッジ低下を検出するための閾値（現状ベースライン基準）
       thresholds: {
         statements: 50,
-        branches: 35,
+        branches: 70,
         functions: 50,
         lines: 50,
       },

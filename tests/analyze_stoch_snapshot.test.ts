@@ -134,4 +134,168 @@ describe('analyze_stoch_snapshot', () => {
 		expect(res.data.crossover.description).toContain('買われすぎ圏');
 		expect(res.data.crossover.description).not.toContain('ニュートラル圏');
 	});
+
+	it('bearish cross をニュートラル圏で検出するべき', async () => {
+		mockedAnalyzeIndicators.mockResolvedValueOnce(
+			asMockResult(
+				buildIndicatorsOk({
+					stochK: 45,
+					stochD: 50,
+					prevK: 55,
+					prevD: 50,
+				}),
+			),
+		);
+
+		const res = await analyzeStochSnapshot('btc_jpy', '1day', 120);
+
+		assertOk(res);
+		expect(res.data.zone).toBe('neutral');
+		expect(res.data.crossover.type).toBe('bearish_cross');
+		expect(res.data.tags).toContain('stoch_bearish_cross');
+	});
+
+	it('売られすぎ圏での bullish cross は stoch_strong_buy タグを付与するべき', async () => {
+		mockedAnalyzeIndicators.mockResolvedValueOnce(
+			asMockResult(
+				buildIndicatorsOk({
+					stochK: 15,
+					stochD: 10,
+					prevK: 8,
+					prevD: 12,
+				}),
+			),
+		);
+
+		const res = await analyzeStochSnapshot('btc_jpy', '1day', 120);
+
+		assertOk(res);
+		expect(res.data.zone).toBe('oversold');
+		expect(res.data.crossover.type).toBe('bullish_cross');
+		expect(res.data.tags).toContain('stoch_oversold');
+		expect(res.data.tags).toContain('stoch_bullish_cross');
+		expect(res.data.tags).toContain('stoch_strong_buy');
+		expect(res.data.crossover.description).toContain('売られすぎ圏からの反転');
+	});
+
+	it('買われすぎ圏での bearish cross は stoch_strong_sell タグを付与するべき', async () => {
+		mockedAnalyzeIndicators.mockResolvedValueOnce(
+			asMockResult(
+				buildIndicatorsOk({
+					stochK: 85,
+					stochD: 90,
+					prevK: 92,
+					prevD: 88,
+				}),
+			),
+		);
+
+		const res = await analyzeStochSnapshot('btc_jpy', '1day', 120);
+
+		assertOk(res);
+		expect(res.data.zone).toBe('overbought');
+		expect(res.data.crossover.type).toBe('bearish_cross');
+		expect(res.data.tags).toContain('stoch_overbought');
+		expect(res.data.tags).toContain('stoch_bearish_cross');
+		expect(res.data.tags).toContain('stoch_strong_sell');
+		expect(res.data.crossover.description).toContain('買われすぎ圏からの反転');
+	});
+
+	it('bearish ダイバージェンスを検出するべき', async () => {
+		// price rising but %K falling
+		const len = 40;
+		const closes = Array.from({ length: len }, (_, i) => 100 + i * 2); // rising prices
+		const kSeries = Array.from({ length: len }, (_, i) => 80 - i * 0.5); // falling K
+		const ind = buildIndicatorsOk({ closes });
+		ind.data.indicators.stoch_k_series = kSeries;
+		mockedAnalyzeIndicators.mockResolvedValueOnce(asMockResult(ind));
+
+		const res = await analyzeStochSnapshot('btc_jpy', '1day', 120);
+
+		assertOk(res);
+		expect(res.data.divergence.type).toBe('bearish');
+		expect(res.data.tags).toContain('stoch_bearish_divergence');
+	});
+
+	it('bullish ダイバージェンスを検出するべき', async () => {
+		// price falling but %K rising
+		const len = 40;
+		const closes = Array.from({ length: len }, (_, i) => 200 - i * 2); // falling prices
+		const kSeries = Array.from({ length: len }, (_, i) => 20 + i * 0.5); // rising K
+		const ind = buildIndicatorsOk({ closes });
+		ind.data.indicators.stoch_k_series = kSeries;
+		mockedAnalyzeIndicators.mockResolvedValueOnce(asMockResult(ind));
+
+		const res = await analyzeStochSnapshot('btc_jpy', '1day', 120);
+
+		assertOk(res);
+		expect(res.data.divergence.type).toBe('bullish');
+		expect(res.data.tags).toContain('stoch_bullish_divergence');
+	});
+
+	it('無効なペアは ok: false を返す', async () => {
+		const res = await analyzeStochSnapshot('invalid_xxx', '1day', 120);
+		expect(res.ok).toBe(false);
+	});
+
+	it('クロスが発生しない場合 crossover は none を返す', async () => {
+		// prevDiff and currDiff have same sign → no cross
+		mockedAnalyzeIndicators.mockResolvedValueOnce(
+			asMockResult(
+				buildIndicatorsOk({
+					stochK: 55,
+					stochD: 50,
+					prevK: 55,
+					prevD: 50,
+				}),
+			),
+		);
+
+		const res = await analyzeStochSnapshot('btc_jpy', '1day', 120);
+
+		assertOk(res);
+		expect(res.data.crossover.type).toBe('none');
+	});
+
+	it('chart.candles がない場合は normalized をフォールバックに使うべき', async () => {
+		const ind = buildIndicatorsOk();
+		(ind.data.chart as Record<string, unknown>).candles = undefined;
+		mockedAnalyzeIndicators.mockResolvedValueOnce(asMockResult(ind));
+
+		const res = await analyzeStochSnapshot('btc_jpy', '1day', 120);
+
+		assertOk(res);
+		expect(res.data.latest.close).not.toBeNull();
+	});
+
+	it('カスタムパラメータ時に getCandles が失敗したら ok: false を返す', async () => {
+		mockedGetCandles.mockResolvedValueOnce(
+			asMockResult({
+				ok: false,
+				summary: 'candles failed',
+				data: {},
+				meta: { errorType: 'upstream' },
+			}),
+		);
+
+		const res = await analyzeStochSnapshot('btc_jpy', '1day', 40, 10, 5, 5);
+
+		expect(res.ok).toBe(false);
+	});
+
+	it('最近のクロスを系列データから検出するべき', async () => {
+		const len = 40;
+		// Create k/d series with a cross near the end
+		const kSeries = Array.from({ length: len }, (_, i) => (i < len - 3 ? 40 : 60));
+		const dSeries = Array.from({ length: len }, () => 50);
+		const ind = buildIndicatorsOk();
+		ind.data.indicators.stoch_k_series = kSeries;
+		ind.data.indicators.stoch_d_series = dSeries;
+		mockedAnalyzeIndicators.mockResolvedValueOnce(asMockResult(ind));
+
+		const res = await analyzeStochSnapshot('btc_jpy', '1day', 120);
+
+		assertOk(res);
+		expect(res.data.recentCrosses.length).toBeGreaterThan(0);
+	});
 });
