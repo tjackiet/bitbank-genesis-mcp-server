@@ -13,10 +13,10 @@ export default defineConfig({
       provider: 'v8',
       // CI でカバレッジ低下を検出するための閾値（現状ベースライン基準）
       thresholds: {
-        statements: 50,
+        statements: 80,
         branches: 70,
-        functions: 50,
-        lines: 50,
+        functions: 80,
+        lines: 80,
       },
     },
   },
