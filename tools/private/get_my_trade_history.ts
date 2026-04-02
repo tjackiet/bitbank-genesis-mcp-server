@@ -149,5 +149,5 @@ export const toolDef: ToolDefinition = {
 		'[My Trades / Trade History / Fills] 自分の約定履歴（my trades / trade history / fills / executions）を取得。通貨ペア・期間・件数でフィルタ可能。Private API。',
 	inputSchema: GetMyTradeHistoryInputSchema,
 	handler: async (args: { pair?: string; count?: number; order?: 'asc' | 'desc'; since?: string; end?: string }) =>
-		getMyTradeHistory(args ?? {}),
+		getMyTradeHistory(args),
 };
