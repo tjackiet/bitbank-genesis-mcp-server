@@ -1,0 +1,16 @@
+{
+	"success": 1,
+	"data": [
+		{
+			"pair": "btc_jpy",
+			"sell": "100",
+			"buy": "99",
+			"high": "110",
+			"low": "90",
+			"open": "0",
+			"last": "100",
+			"vol": "1.234",
+			"timestamp": 1760000000000
+		}
+	]
+}
