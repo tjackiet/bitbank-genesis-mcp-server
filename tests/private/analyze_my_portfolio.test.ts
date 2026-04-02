@@ -188,6 +188,6 @@ describe('analyze_my_portfolio — toolDef handler', () => {
 		const { toolDef } = await import('../../tools/private/analyze_my_portfolio.js');
 		const result = await toolDef.handler({});
 
-		expect(result.ok).toBe(true);
+		expect((result as { ok: boolean }).ok).toBe(true);
 	});
 });

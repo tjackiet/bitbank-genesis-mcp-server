@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { asMockResult, assertOk } from './_assertResult.js';
+import { asMockResult, assertFail, assertOk } from './_assertResult.js';
 
 vi.mock('../tools/analyze_indicators.js', async (importOriginal) => {
-	const actual = await importOriginal<typeof import('../analyze_indicators.js')>();
+	const actual = await importOriginal<typeof import('../tools/analyze_indicators.js')>();
 	return {
 		...actual,
 		default: vi.fn(),
@@ -89,7 +89,7 @@ describe('analyze_stoch_snapshot', () => {
 
 		const res = await analyzeStochSnapshot('btc_jpy', '1day', 120);
 
-		expect(res.ok).toBe(false);
+		assertFail(res);
 		expect(res.meta.errorType).toBe('upstream');
 	});
 

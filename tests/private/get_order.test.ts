@@ -236,7 +236,7 @@ describe('get_order — handler (toolDef)', () => {
 		const { toolDef } = await import('../../tools/private/get_order.js');
 		const result = await toolDef.handler({ pair: 'btc_jpy', order_id: 2001 });
 
-		expect(result.ok).toBe(false);
+		expect((result as { ok: boolean }).ok).toBe(false);
 	});
 
 	it('handler が成功時に content + structuredContent を返す', async () => {

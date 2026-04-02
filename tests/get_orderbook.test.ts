@@ -2,6 +2,13 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import getOrderbook, { toolDef } from '../tools/get_orderbook.js';
 import { assertFail, assertOk } from './_assertResult.js';
 
+/** assertOk 後の res.data を deep-access 可能にするヘルパー */
+// biome-ignore lint/suspicious/noExplicitAny: test helper — deep property access on Result.data
+function d(res: { data: Record<string, unknown> }): Record<string, any> {
+	// biome-ignore lint/suspicious/noExplicitAny: test helper
+	return res.data as Record<string, any>;
+}
+
 /** 基本的な板データ（2層ずつ） */
 function depthPayload() {
 	return {
@@ -74,27 +81,27 @@ describe('get_orderbook', () => {
 		mockFetch(depthPayload());
 		const res = await getOrderbook({ pair: 'btc_jpy', mode: 'summary', topN: 2 });
 		assertOk(res);
-		expect(res.data.mode).toBe('summary');
-		expect(res.data.normalized.bids).toHaveLength(2);
-		expect(res.data.normalized.asks).toHaveLength(2);
+		expect(d(res).mode).toBe('summary');
+		expect(d(res).normalized.bids).toHaveLength(2);
+		expect(d(res).normalized.asks).toHaveLength(2);
 	});
 
 	it('summary: mid / spread / bestBid / bestAsk が正しく計算される', async () => {
 		mockFetch(depthPayload());
 		const res = await getOrderbook({ pair: 'btc_jpy', mode: 'summary', topN: 2 });
 		assertOk(res);
-		expect(res.data.normalized.bestBid).toBe(5_000_000);
-		expect(res.data.normalized.bestAsk).toBe(5_000_100);
-		expect(res.data.normalized.spread).toBe(100);
-		expect(res.data.normalized.mid).toBe(5_000_050);
+		expect(d(res).normalized.bestBid).toBe(5_000_000);
+		expect(d(res).normalized.bestAsk).toBe(5_000_100);
+		expect(d(res).normalized.spread).toBe(100);
+		expect(d(res).normalized.mid).toBe(5_000_050);
 	});
 
 	it('summary: cumSize が累積される', async () => {
 		mockFetch(depthPayload());
 		const res = await getOrderbook({ pair: 'btc_jpy', mode: 'summary', topN: 2 });
 		assertOk(res);
-		expect(res.data.normalized.bids[1].cumSize).toBe(0.8); // 0.3 + 0.5
-		expect(res.data.normalized.asks[1].cumSize).toBe(0.6); // 0.2 + 0.4
+		expect(d(res).normalized.bids[1].cumSize).toBe(0.8); // 0.3 + 0.5
+		expect(d(res).normalized.asks[1].cumSize).toBe(0.6); // 0.2 + 0.4
 	});
 
 	// ─── mode=pressure ────────────────────────────────────
@@ -107,9 +114,9 @@ describe('get_orderbook', () => {
 			bandsPct: [0.001, 0.005, 0.01],
 		});
 		assertOk(res);
-		expect(res.data.mode).toBe('pressure');
-		expect(res.data.bands).toHaveLength(3);
-		for (const band of res.data.bands) {
+		expect(d(res).mode).toBe('pressure');
+		expect(d(res).bands).toHaveLength(3);
+		for (const band of d(res).bands) {
 			expect(band).toHaveProperty('widthPct');
 			expect(band).toHaveProperty('baseBidSize');
 			expect(band).toHaveProperty('baseAskSize');
@@ -123,9 +130,9 @@ describe('get_orderbook', () => {
 		const res = await getOrderbook({ pair: 'btc_jpy', mode: 'pressure', bandsPct: [0.001, 0.005, 0.01] });
 		assertOk(res);
 		// aggregates に strongestTag がある
-		expect(res.data.aggregates).toHaveProperty('strongestTag');
+		expect(d(res).aggregates).toHaveProperty('strongestTag');
 		const validTags = ['notice', 'warning', 'strong', null];
-		expect(validTags).toContain(res.data.aggregates.strongestTag);
+		expect(validTags).toContain(d(res).aggregates.strongestTag);
 	});
 
 	it('pressure: baseMid が null の場合（片側空）でも crash しない', async () => {
@@ -139,8 +146,8 @@ describe('get_orderbook', () => {
 		});
 		const res = await getOrderbook({ pair: 'btc_jpy', mode: 'pressure', bandsPct: [0.01] });
 		assertOk(res);
-		expect(res.data.bands[0].baseMid).toBeNull();
-		expect(res.data.bands[0].tag).toBeNull();
+		expect(d(res).bands[0].baseMid).toBeNull();
+		expect(d(res).bands[0].tag).toBeNull();
 	});
 
 	it('pressure: netDeltaPct の tag 分類（strong/warning/notice/null）', async () => {
@@ -154,8 +161,8 @@ describe('get_orderbook', () => {
 		const res = await getOrderbook({ pair: 'btc_jpy', mode: 'pressure', bandsPct: [0.01] });
 		assertOk(res);
 		// 大きな偏り → strong tag
-		expect(res.data.bands[0].tag).toBe('strong');
-		expect(res.data.aggregates.strongestTag).toBe('strong');
+		expect(d(res).bands[0].tag).toBe('strong');
+		expect(d(res).aggregates.strongestTag).toBe('strong');
 	});
 
 	// ─── mode=statistics ──────────────────────────────────
@@ -169,14 +176,14 @@ describe('get_orderbook', () => {
 			priceZones: 5,
 		});
 		assertOk(res);
-		expect(res.data.mode).toBe('statistics');
-		expect(res.data.ranges).toHaveLength(3);
-		expect(res.data.liquidityZones).toHaveLength(5);
-		expect(res.data.largeOrders).toHaveProperty('bids');
-		expect(res.data.largeOrders).toHaveProperty('asks');
-		expect(res.data.summary).toHaveProperty('overall');
-		expect(res.data.summary).toHaveProperty('strength');
-		expect(res.data.summary).toHaveProperty('liquidity');
+		expect(d(res).mode).toBe('statistics');
+		expect(d(res).ranges).toHaveLength(3);
+		expect(d(res).liquidityZones).toHaveLength(5);
+		expect(d(res).largeOrders).toHaveProperty('bids');
+		expect(d(res).largeOrders).toHaveProperty('asks');
+		expect(d(res).summary).toHaveProperty('overall');
+		expect(d(res).summary).toHaveProperty('strength');
+		expect(d(res).summary).toHaveProperty('liquidity');
 	});
 
 	it('statistics: interpretation が買い板厚い/売り板厚い/均衡に分岐', async () => {
@@ -189,7 +196,7 @@ describe('get_orderbook', () => {
 		});
 		const res = await getOrderbook({ pair: 'btc_jpy', mode: 'statistics', ranges: [0.5] });
 		assertOk(res);
-		expect(res.data.ranges[0].interpretation).toContain('買い板が厚い');
+		expect(d(res).ranges[0].interpretation).toContain('買い板が厚い');
 	});
 
 	it('statistics: 売り板が厚い場合の interpretation', async () => {
@@ -201,7 +208,7 @@ describe('get_orderbook', () => {
 		});
 		const res = await getOrderbook({ pair: 'btc_jpy', mode: 'statistics', ranges: [0.5] });
 		assertOk(res);
-		expect(res.data.ranges[0].interpretation).toContain('売り板が厚い');
+		expect(d(res).ranges[0].interpretation).toContain('売り板が厚い');
 	});
 
 	it('statistics: 均衡の場合の interpretation', async () => {
@@ -213,7 +220,7 @@ describe('get_orderbook', () => {
 		});
 		const res = await getOrderbook({ pair: 'btc_jpy', mode: 'statistics', ranges: [0.5] });
 		assertOk(res);
-		expect(res.data.ranges[0].interpretation).toBe('均衡');
+		expect(d(res).ranges[0].interpretation).toBe('均衡');
 	});
 
 	it('statistics: 大口注文 (>= 0.1 BTC) がフィルタされる', async () => {
@@ -221,9 +228,9 @@ describe('get_orderbook', () => {
 		const res = await getOrderbook({ pair: 'btc_jpy', mode: 'statistics', ranges: [2.0] });
 		assertOk(res);
 		// richDepthPayload has 0.5 and 0.8 BTC entries
-		expect(res.data.largeOrders.bids.length).toBeGreaterThan(0);
-		expect(res.data.largeOrders.asks.length).toBeGreaterThan(0);
-		for (const o of res.data.largeOrders.bids) {
+		expect(d(res).largeOrders.bids.length).toBeGreaterThan(0);
+		expect(d(res).largeOrders.asks.length).toBeGreaterThan(0);
+		for (const o of d(res).largeOrders.bids) {
 			expect(o.size).toBeGreaterThanOrEqual(0.1);
 		}
 	});
@@ -238,8 +245,8 @@ describe('get_orderbook', () => {
 		});
 		const res = await getOrderbook({ pair: 'btc_jpy', mode: 'statistics', ranges: [2.0] });
 		assertOk(res);
-		expect(res.data.largeOrders.bids).toHaveLength(0);
-		expect(res.data.largeOrders.asks).toHaveLength(0);
+		expect(d(res).largeOrders.bids).toHaveLength(0);
+		expect(d(res).largeOrders.asks).toHaveLength(0);
 	});
 
 	it('statistics: zone dominance (bid/ask/balanced)', async () => {
@@ -247,7 +254,7 @@ describe('get_orderbook', () => {
 		const res = await getOrderbook({ pair: 'btc_jpy', mode: 'statistics', ranges: [2.0], priceZones: 10 });
 		assertOk(res);
 		const validDoms = ['bid', 'ask', 'balanced'];
-		for (const zone of res.data.liquidityZones) {
+		for (const zone of d(res).liquidityZones) {
 			expect(validDoms).toContain(zone.dominance);
 		}
 	});
@@ -262,9 +269,9 @@ describe('get_orderbook', () => {
 		});
 		const res = await getOrderbook({ pair: 'btc_jpy', mode: 'statistics', ranges: [0.5] });
 		assertOk(res);
-		expect(res.data.summary.overall).toBe('買い優勢');
-		expect(res.data.summary.strength).toBe('strong');
-		expect(res.data.summary.recommendation).toContain('買いエントリー');
+		expect(d(res).summary.overall).toBe('買い優勢');
+		expect(d(res).summary.strength).toBe('strong');
+		expect(d(res).summary.recommendation).toContain('買いエントリー');
 	});
 
 	it('statistics: 売り優勢の assessment', async () => {
@@ -276,8 +283,8 @@ describe('get_orderbook', () => {
 		});
 		const res = await getOrderbook({ pair: 'btc_jpy', mode: 'statistics', ranges: [0.5] });
 		assertOk(res);
-		expect(res.data.summary.overall).toBe('売り優勢');
-		expect(res.data.summary.recommendation).toContain('押し目待ち');
+		expect(d(res).summary.overall).toBe('売り優勢');
+		expect(d(res).summary.recommendation).toContain('押し目待ち');
 	});
 
 	it('statistics: 均衡の assessment', async () => {
@@ -289,8 +296,8 @@ describe('get_orderbook', () => {
 		});
 		const res = await getOrderbook({ pair: 'btc_jpy', mode: 'statistics', ranges: [0.5] });
 		assertOk(res);
-		expect(res.data.summary.overall).toBe('均衡');
-		expect(res.data.summary.recommendation).toContain('レンジ');
+		expect(d(res).summary.overall).toBe('均衡');
+		expect(d(res).summary.recommendation).toContain('レンジ');
 	});
 
 	it('statistics: liquidity が high/medium/low に分岐', async () => {
@@ -303,7 +310,7 @@ describe('get_orderbook', () => {
 		});
 		const res = await getOrderbook({ pair: 'btc_jpy', mode: 'statistics', ranges: [0.5] });
 		assertOk(res);
-		expect(['high', 'medium', 'low']).toContain(res.data.summary.liquidity);
+		expect(['high', 'medium', 'low']).toContain(d(res).summary.liquidity);
 	});
 
 	it('statistics: bids/asks が空でも crash しない', async () => {
@@ -313,7 +320,7 @@ describe('get_orderbook', () => {
 		});
 		const res = await getOrderbook({ pair: 'btc_jpy', mode: 'statistics', ranges: [0.5], priceZones: 3 });
 		assertOk(res);
-		expect(res.data.basic.currentPrice).toBeNull();
+		expect(d(res).basic.currentPrice).toBeNull();
 	});
 
 	// ─── mode=raw ─────────────────────────────────────────
@@ -322,17 +329,17 @@ describe('get_orderbook', () => {
 		mockFetch(richDepthPayload());
 		const res = await getOrderbook({ pair: 'btc_jpy', mode: 'raw' });
 		assertOk(res);
-		expect(res.data.mode).toBe('raw');
-		expect(Array.isArray(res.data.bids)).toBe(true);
-		expect(Array.isArray(res.data.asks)).toBe(true);
-		expect(res.data.overlays).toHaveProperty('depth_zones');
+		expect(d(res).mode).toBe('raw');
+		expect(Array.isArray(d(res).bids)).toBe(true);
+		expect(Array.isArray(d(res).asks)).toBe(true);
+		expect(d(res).overlays).toHaveProperty('depth_zones');
 	});
 
 	it('raw: sequenceId を取得する', async () => {
 		mockFetch(richDepthPayload());
 		const res = await getOrderbook({ pair: 'btc_jpy', mode: 'raw' });
 		assertOk(res);
-		expect(res.data.sequenceId).toBe(12345);
+		expect(d(res).sequenceId).toBe(12345);
 	});
 
 	it('raw: sequence_id (別名) にも対応する', async () => {
@@ -343,22 +350,22 @@ describe('get_orderbook', () => {
 		mockFetch(payload);
 		const res = await getOrderbook({ pair: 'btc_jpy', mode: 'raw' });
 		assertOk(res);
-		expect(res.data.sequenceId).toBe(67890);
+		expect(d(res).sequenceId).toBe(67890);
 	});
 
 	it('raw: asks_over / bids_under などの補助フィールドを含む', async () => {
 		mockFetch(richDepthPayload());
 		const res = await getOrderbook({ pair: 'btc_jpy', mode: 'raw' });
 		assertOk(res);
-		expect(res.data.asks_over).toBe(10);
-		expect(res.data.bids_under).toBe(5);
+		expect(d(res).asks_over).toBe(10);
+		expect(d(res).bids_under).toBe(5);
 	});
 
 	it('raw: depth_zones (壁推定) が生成される', async () => {
 		mockFetch(richDepthPayload());
 		const res = await getOrderbook({ pair: 'btc_jpy', mode: 'raw' });
 		assertOk(res);
-		const zones = res.data.overlays.depth_zones;
+		const zones = d(res).overlays.depth_zones;
 		expect(Array.isArray(zones)).toBe(true);
 		// richDepthPayload has outlier sizes (0.5, 0.8) that should create wall zones
 		if (zones.length > 0) {
@@ -375,8 +382,8 @@ describe('get_orderbook', () => {
 		});
 		const res = await getOrderbook({ pair: 'btc_jpy', mode: 'raw' });
 		assertOk(res);
-		expect(res.data.bids).toHaveLength(0);
-		expect(res.data.asks).toHaveLength(0);
+		expect(d(res).bids).toHaveLength(0);
+		expect(d(res).asks).toHaveLength(0);
 	});
 
 	// ─── 後方互換 ─────────────────────────────────────────
@@ -385,7 +392,7 @@ describe('get_orderbook', () => {
 		mockFetch(depthPayload());
 		const res = await getOrderbook('btc_jpy');
 		assertOk(res);
-		expect(res.data.mode).toBe('summary');
+		expect(d(res).mode).toBe('summary');
 	});
 
 	// ─── エラー系 ─────────────────────────────────────────

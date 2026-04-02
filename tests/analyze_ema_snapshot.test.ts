@@ -353,7 +353,7 @@ describe('analyze_ema_snapshot', () => {
 			const res = await analyzeEmaSnapshot('btc_jpy', '1day', 220, [12, 26, 50, 200]);
 
 			assertOk(res);
-			expect(res.data.summary.position).toBe('above_all');
+			expect(res.data.summary!.position).toBe('above_all');
 		});
 
 		it('close < all EMAs → below_all', async () => {
@@ -365,7 +365,7 @@ describe('analyze_ema_snapshot', () => {
 			const res = await analyzeEmaSnapshot('btc_jpy', '1day', 220, [12, 26, 50, 200]);
 
 			assertOk(res);
-			expect(res.data.summary.position).toBe('below_all');
+			expect(res.data.summary!.position).toBe('below_all');
 		});
 
 		it('close between EMAs → between', async () => {
@@ -377,7 +377,7 @@ describe('analyze_ema_snapshot', () => {
 			const res = await analyzeEmaSnapshot('btc_jpy', '1day', 220, [12, 26, 50, 200]);
 
 			assertOk(res);
-			expect(res.data.summary.position).toBe('between');
+			expect(res.data.summary!.position).toBe('between');
 		});
 	});
 
@@ -583,7 +583,7 @@ describe('analyze_ema_snapshot', () => {
 			// Remove isoTime from candles so fallback to today() is triggered
 			mocked.data.chart.candles = Array.from({ length: len }, () => ({
 				isoTime: null,
-			})) as typeof mocked.data.chart.candles;
+			})) as unknown as typeof mocked.data.chart.candles;
 			mockedAnalyzeIndicators.mockResolvedValueOnce(asMockResult(mocked));
 
 			const res = await analyzeEmaSnapshot('btc_jpy', '1day', 220, [12, 26]);

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { asMockResult, assertOk } from './_assertResult.js';
+import { asMockResult, assertFail, assertOk } from './_assertResult.js';
 
 vi.mock('../tools/analyze_indicators.js', () => ({
 	default: vi.fn(),
@@ -13,8 +13,8 @@ function buildMockIndicatorSuccess() {
 		close: i === 39 ? 80 : 120 - i,
 	}));
 
-	const spanA = Array.from({ length: 40 }, (_, i) => (i < 14 ? 130 : 100));
-	const spanB = Array.from({ length: 40 }, (_, i) => (i < 14 ? 135 : 110));
+	const spanA: number[] = Array.from({ length: 40 }, (_, i) => (i < 14 ? 130 : 100));
+	const spanB: number[] = Array.from({ length: 40 }, (_, i) => (i < 14 ? 135 : 110));
 	spanA[38] = 62;
 	spanA[39] = 60;
 	spanB[38] = 67;
@@ -66,7 +66,7 @@ describe('analyze_ichimoku_snapshot', () => {
 		);
 
 		const res = await analyzeIchimokuSnapshot('btc_jpy', '1day', 120, 10);
-		expect(res.ok).toBe(false);
+		assertFail(res);
 		expect(res.meta.errorType).toBe('upstream');
 	});
 
@@ -93,14 +93,15 @@ describe('analyze_ichimoku_snapshot', () => {
 		expect(res.data.assessment.pricePosition).toBe('below_cloud');
 		expect(res.data.assessment.tenkanKijun).toBe('bearish');
 		expect(res.data.assessment.cloudSlope).toBe('falling');
-		expect(res.data.signals.overallSignal).toBe('strong_bearish');
+		expect(res.data.signals!.overallSignal).toBe('strong_bearish');
 	});
 
 	it('遅行スパンは spanB の有無に依存せず ichi_series.chikou から取得されるべき', async () => {
-		const base = asMockResult<Record<string, unknown>>(buildMockIndicatorSuccess());
+		// biome-ignore lint/suspicious/noExplicitAny: test fixture deep mutation
+		const base = buildMockIndicatorSuccess() as any;
 		base.data.indicators.ICHIMOKU_spanB = null;
 		base.data.indicators.ichi_series.chikou[39] = 777;
-		mockedAnalyzeIndicators.mockResolvedValueOnce(base);
+		mockedAnalyzeIndicators.mockResolvedValueOnce(asMockResult(base));
 
 		const res = await analyzeIchimokuSnapshot('btc_jpy', '1day', 120, 10);
 		assertOk(res);
@@ -108,17 +109,18 @@ describe('analyze_ichimoku_snapshot', () => {
 	});
 
 	it('cloudHistory は lookback とローソク足本数の小さい方まで含めるべき（off-by-one しない）', async () => {
-		const short = asMockResult<Record<string, unknown>>(buildMockIndicatorSuccess());
+		// biome-ignore lint/suspicious/noExplicitAny: test fixture deep mutation
+		const short = buildMockIndicatorSuccess() as any;
 		short.data.normalized = [{ close: 100 }, { close: 101 }];
 		short.data.indicators.ichi_series.spanA = Array.from({ length: 40 }, () => 90);
 		short.data.indicators.ichi_series.spanB = Array.from({ length: 40 }, () => 80);
-		mockedAnalyzeIndicators.mockResolvedValueOnce(short);
+		mockedAnalyzeIndicators.mockResolvedValueOnce(asMockResult(short));
 
 		const res = await analyzeIchimokuSnapshot('btc_jpy', '1day', 120, 2);
 		assertOk(res);
-		expect(res.data.trend.cloudHistory).toHaveLength(2);
-		expect(res.data.trend.cloudHistory[0].barsAgo).toBe(0);
-		expect(res.data.trend.cloudHistory[1].barsAgo).toBe(1);
+		expect(res.data.trend!.cloudHistory).toHaveLength(2);
+		expect(res.data.trend!.cloudHistory[0].barsAgo).toBe(0);
+		expect(res.data.trend!.cloudHistory[1].barsAgo).toBe(1);
 	});
 
 	it('強気条件（雲上 + 転換線>基準線 + 雲上昇）では overallSignal は strong_bullish', async () => {
@@ -143,7 +145,7 @@ describe('analyze_ichimoku_snapshot', () => {
 		assertOk(res);
 		expect(res.data.assessment.pricePosition).toBe('above_cloud');
 		expect(res.data.assessment.tenkanKijun).toBe('bullish');
-		expect(res.data.signals.overallSignal).toContain('bullish');
+		expect(res.data.signals!.overallSignal).toContain('bullish');
 	});
 
 	it('雲の中（in_cloud）の判定', async () => {
@@ -204,7 +206,8 @@ describe('analyze_ichimoku_snapshot', () => {
 	});
 
 	it('雲データ不足時の cloud.direction は null（unknown を flat にしない）であるべき', async () => {
-		const noCloudSeries = asMockResult<Record<string, unknown>>(buildMockIndicatorSuccess());
+		// biome-ignore lint/suspicious/noExplicitAny: test fixture deep mutation
+		const noCloudSeries = buildMockIndicatorSuccess() as any;
 		noCloudSeries.data.indicators.ichi_series = {
 			tenkan: Array.from({ length: 40 }, () => 90),
 			kijun: Array.from({ length: 40 }, () => 95),
@@ -214,11 +217,11 @@ describe('analyze_ichimoku_snapshot', () => {
 		};
 		noCloudSeries.data.indicators.ICHIMOKU_spanA = null;
 		noCloudSeries.data.indicators.ICHIMOKU_spanB = null;
-		mockedAnalyzeIndicators.mockResolvedValueOnce(noCloudSeries);
+		mockedAnalyzeIndicators.mockResolvedValueOnce(asMockResult(noCloudSeries));
 
 		const res = await analyzeIchimokuSnapshot('btc_jpy', '1day', 120, 10);
 		assertOk(res);
 		expect(res.data.assessment.cloudSlope).toBe('unknown');
-		expect(res.data.cloud.direction).toBeNull();
+		expect(res.data.cloud!.direction).toBeNull();
 	});
 });

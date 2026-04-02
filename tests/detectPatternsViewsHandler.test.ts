@@ -98,7 +98,8 @@ function makeDebugViewRes() {
 	};
 }
 
-function makeMeta(candidates: unknown[]) {
+// biome-ignore lint/suspicious/noExplicitAny: test fixture
+function makeMeta(candidates: any[]) {
 	return {
 		debug: {
 			swings: [{ kind: 'peak', idx: 3, price: 100000, isoTime: '2026-01-03T00:00:00.000Z' }],

@@ -110,7 +110,7 @@ describe('detect_macd_cross', () => {
 	});
 
 	it('screen.sortBy=date は barsAgo ではなく crossDate で並べるべき', async () => {
-		mockedAnalyzeIndicators.mockImplementation(async (pair: string) => {
+		mockedAnalyzeIndicators.mockImplementation(async (pair?: string) => {
 			if (pair === 'btc_jpy') {
 				return asMockResult(
 					buildAnalyzeIndicatorsOk({
@@ -150,7 +150,7 @@ describe('detect_macd_cross', () => {
 		});
 
 		assertOk(res);
-		expect(res.data.results.map((item) => item.pair)).toEqual(['eth_jpy', 'btc_jpy']);
+		expect(res.data.results.map((item: { pair: string }) => item.pair)).toEqual(['eth_jpy', 'btc_jpy']);
 	});
 
 	// ── screenMode branches ──
@@ -174,13 +174,13 @@ describe('detect_macd_cross', () => {
 	});
 
 	it('screenMode: analyzeIndicators が !ok を返すペアは failedPairs に追加され meta.warning が付く', async () => {
-		mockedAnalyzeIndicators.mockImplementation(async (pair: string) => {
+		mockedAnalyzeIndicators.mockImplementation(async (pair?: string) => {
 			if (pair === 'btc_jpy') {
 				return asMockResult({ ok: false, summary: 'error', meta: { errorType: 'internal' } });
 			}
 			return asMockResult(
 				buildAnalyzeIndicatorsOk({
-					pair,
+					pair: pair ?? 'btc_jpy',
 					line: [0, -1, 1],
 					signal: [0, 0, 0],
 				}),
@@ -195,13 +195,13 @@ describe('detect_macd_cross', () => {
 	});
 
 	it('screenMode: analyzeIndicators が throw したペアは failedPairs に追加される', async () => {
-		mockedAnalyzeIndicators.mockImplementation(async (pair: string) => {
+		mockedAnalyzeIndicators.mockImplementation(async (pair?: string) => {
 			if (pair === 'btc_jpy') {
 				throw new Error('network error');
 			}
 			return asMockResult(
 				buildAnalyzeIndicatorsOk({
-					pair,
+					pair: pair ?? 'btc_jpy',
 					line: [0, -1, 1],
 					signal: [0, 0, 0],
 				}),
@@ -231,7 +231,7 @@ describe('detect_macd_cross', () => {
 	});
 
 	it('screenMode: screen.crossType=golden は dead クロスを除外する', async () => {
-		mockedAnalyzeIndicators.mockImplementation(async (pair: string) => {
+		mockedAnalyzeIndicators.mockImplementation(async (pair?: string) => {
 			if (pair === 'btc_jpy') {
 				// golden cross
 				return asMockResult(
@@ -265,7 +265,7 @@ describe('detect_macd_cross', () => {
 	});
 
 	it('screenMode: screen.crossType=dead は golden クロスを除外する', async () => {
-		mockedAnalyzeIndicators.mockImplementation(async (pair: string) => {
+		mockedAnalyzeIndicators.mockImplementation(async (pair?: string) => {
 			if (pair === 'btc_jpy') {
 				return asMockResult(
 					buildAnalyzeIndicatorsOk({
@@ -383,7 +383,7 @@ describe('detect_macd_cross', () => {
 	});
 
 	it('screenMode: sortBy=histogram でヒストグラム絶対値の降順に並べる', async () => {
-		mockedAnalyzeIndicators.mockImplementation(async (pair: string) => {
+		mockedAnalyzeIndicators.mockImplementation(async (pair?: string) => {
 			if (pair === 'btc_jpy') {
 				return asMockResult(
 					buildAnalyzeIndicatorsOk({
@@ -416,7 +416,7 @@ describe('detect_macd_cross', () => {
 	});
 
 	it('screenMode: sortBy=return でリターン降順に並べる', async () => {
-		mockedAnalyzeIndicators.mockImplementation(async (pair: string) => {
+		mockedAnalyzeIndicators.mockImplementation(async (pair?: string) => {
 			if (pair === 'btc_jpy') {
 				// small return: cross at index 2 (price=100), currentPrice=101 → ~1%
 				return asMockResult(
@@ -453,7 +453,7 @@ describe('detect_macd_cross', () => {
 	});
 
 	it('screenMode: sortBy=barsAgo で barsAgo 昇順に並べる', async () => {
-		mockedAnalyzeIndicators.mockImplementation(async (pair: string) => {
+		mockedAnalyzeIndicators.mockImplementation(async (pair?: string) => {
 			if (pair === 'btc_jpy') {
 				// cross at index 1, n=4 → barsAgo = n-1-1 = 2 (older cross)
 				return asMockResult(
@@ -491,10 +491,10 @@ describe('detect_macd_cross', () => {
 	});
 
 	it('screenMode: screen.limit は結果を N 件に切り詰める', async () => {
-		mockedAnalyzeIndicators.mockImplementation(async (pair: string) => {
+		mockedAnalyzeIndicators.mockImplementation(async (pair?: string) => {
 			return asMockResult(
 				buildAnalyzeIndicatorsOk({
-					pair,
+					pair: pair ?? 'btc_jpy',
 					line: [0, -1, 1],
 					signal: [0, 0, 0],
 				}),
@@ -553,7 +553,7 @@ describe('detect_macd_cross', () => {
 	});
 
 	it('screenMode: buildMacdScreenText の returnSinceCrossPct null/non-null と histogramDelta null/non-null と prevCross', async () => {
-		mockedAnalyzeIndicators.mockImplementation(async (pair: string) => {
+		mockedAnalyzeIndicators.mockImplementation(async (pair?: string) => {
 			if (pair === 'btc_jpy') {
 				return asMockResult(
 					buildAnalyzeIndicatorsOk({
@@ -989,7 +989,7 @@ describe('detect_macd_cross', () => {
 	});
 
 	it('screenMode: sortBy=date ascending でクロスを日付昇順に並べる', async () => {
-		mockedAnalyzeIndicators.mockImplementation(async (pair: string) => {
+		mockedAnalyzeIndicators.mockImplementation(async (pair?: string) => {
 			if (pair === 'btc_jpy') {
 				return asMockResult(
 					buildAnalyzeIndicatorsOk({

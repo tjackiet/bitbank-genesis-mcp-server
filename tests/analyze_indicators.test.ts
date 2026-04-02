@@ -468,7 +468,7 @@ describe('ema (exported)', () => {
 
 describe('computeOBV (exported)', () => {
 	it('candles.length < 2 → null を返す', () => {
-		const candles = [{ open: 100, high: 110, low: 90, close: 105, volume: 10, unixtime: 0 }] as Parameters<
+		const candles = [{ open: 100, high: 110, low: 90, close: 105, volume: 10, unixtime: 0 }] as unknown as Parameters<
 			typeof computeOBV
 		>[0];
 		const result = computeOBV(candles);

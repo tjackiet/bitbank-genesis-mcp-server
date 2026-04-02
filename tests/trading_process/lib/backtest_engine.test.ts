@@ -32,10 +32,10 @@ describe('executeTradesFromSignals', () => {
 	it('buy → sell の1トレードを生成する', () => {
 		const candles = makeCandles(10);
 		const signals: Signal[] = [
-			{ action: 'buy', reason: '' },
-			{ action: 'hold', reason: '' },
-			{ action: 'sell', reason: '' },
-			...Array.from({ length: 7 }, () => ({ action: 'hold' as const, reason: '' })),
+			{ action: 'buy', reason: '', time: '' },
+			{ action: 'hold', reason: '', time: '' },
+			{ action: 'sell', reason: '', time: '' },
+			...Array.from({ length: 7 }, () => ({ action: 'hold' as const, reason: '', time: '' })),
 		];
 		const trades = executeTradesFromSignals(candles, signals, 0);
 		expect(trades).toHaveLength(1);
@@ -51,10 +51,10 @@ describe('executeTradesFromSignals', () => {
 			{ time: 't3', open: 100, high: 110, low: 90, close: 100 },
 		];
 		const signals: Signal[] = [
-			{ action: 'buy', reason: '' },
-			{ action: 'hold', reason: '' },
-			{ action: 'sell', reason: '' },
-			{ action: 'hold', reason: '' },
+			{ action: 'buy', reason: '', time: '' },
+			{ action: 'hold', reason: '', time: '' },
+			{ action: 'sell', reason: '', time: '' },
+			{ action: 'hold', reason: '', time: '' },
 		];
 		// 同じ価格で売買 → 手数料分だけマイナス
 		const trades = executeTradesFromSignals(candles, signals, 10); // 10bp = 0.1%
@@ -66,10 +66,10 @@ describe('executeTradesFromSignals', () => {
 	it('buy が連続しても2回目は無視される', () => {
 		const candles = makeCandles(10);
 		const signals: Signal[] = [
-			{ action: 'buy', reason: '' },
-			{ action: 'buy', reason: '' }, // ポジション保有中 → 無視
-			{ action: 'sell', reason: '' },
-			...Array.from({ length: 7 }, () => ({ action: 'hold' as const, reason: '' })),
+			{ action: 'buy', reason: '', time: '' },
+			{ action: 'buy', reason: '', time: '' }, // ポジション保有中 → 無視
+			{ action: 'sell', reason: '', time: '' },
+			...Array.from({ length: 7 }, () => ({ action: 'hold' as const, reason: '', time: '' })),
 		];
 		const trades = executeTradesFromSignals(candles, signals, 0);
 		expect(trades).toHaveLength(1);
@@ -78,11 +78,11 @@ describe('executeTradesFromSignals', () => {
 	it('sell が先に来ても無視される', () => {
 		const candles = makeCandles(5);
 		const signals: Signal[] = [
-			{ action: 'sell', reason: '' }, // ポジションなし → 無視
-			{ action: 'buy', reason: '' },
-			{ action: 'sell', reason: '' },
-			{ action: 'hold', reason: '' },
-			{ action: 'hold', reason: '' },
+			{ action: 'sell', reason: '', time: '' }, // ポジションなし → 無視
+			{ action: 'buy', reason: '', time: '' },
+			{ action: 'sell', reason: '', time: '' },
+			{ action: 'hold', reason: '', time: '' },
+			{ action: 'hold', reason: '', time: '' },
 		];
 		const trades = executeTradesFromSignals(candles, signals, 0);
 		expect(trades).toHaveLength(1);
@@ -91,11 +91,11 @@ describe('executeTradesFromSignals', () => {
 	it('未決済ポジションはトレードに含まれない', () => {
 		const candles = makeCandles(5);
 		const signals: Signal[] = [
-			{ action: 'buy', reason: '' },
-			{ action: 'hold', reason: '' },
-			{ action: 'hold', reason: '' },
-			{ action: 'hold', reason: '' },
-			{ action: 'hold', reason: '' },
+			{ action: 'buy', reason: '', time: '' },
+			{ action: 'hold', reason: '', time: '' },
+			{ action: 'hold', reason: '', time: '' },
+			{ action: 'hold', reason: '', time: '' },
+			{ action: 'hold', reason: '', time: '' },
 		];
 		const trades = executeTradesFromSignals(candles, signals, 0);
 		expect(trades).toHaveLength(0);
@@ -104,11 +104,11 @@ describe('executeTradesFromSignals', () => {
 	it('複数トレードを生成する', () => {
 		const candles = makeCandles(10);
 		const signals: Signal[] = [
-			{ action: 'buy', reason: '' },
-			{ action: 'sell', reason: '' },
-			{ action: 'buy', reason: '' },
-			{ action: 'sell', reason: '' },
-			...Array.from({ length: 6 }, () => ({ action: 'hold' as const, reason: '' })),
+			{ action: 'buy', reason: '', time: '' },
+			{ action: 'sell', reason: '', time: '' },
+			{ action: 'buy', reason: '', time: '' },
+			{ action: 'sell', reason: '', time: '' },
+			...Array.from({ length: 6 }, () => ({ action: 'hold' as const, reason: '', time: '' })),
 		];
 		const trades = executeTradesFromSignals(candles, signals, 0);
 		expect(trades).toHaveLength(2);
@@ -245,12 +245,14 @@ describe('runBacktestEngine', () => {
 		const candles = makeCandles(20);
 		const mockStrategy = {
 			name: 'test',
+			type: 'sma_cross' as const,
+			requiredBars: 5,
 			defaultParams: { short: 3, long: 5 },
 			generate: (_c: Candle[], _p: Record<string, number>): Signal[] => {
 				return Array.from({ length: 20 }, (_, i) => {
-					if (i === 2) return { action: 'buy' as const, reason: 'test' };
-					if (i === 5) return { action: 'sell' as const, reason: 'test' };
-					return { action: 'hold' as const, reason: '' };
+					if (i === 2) return { action: 'buy' as const, reason: 'test', time: '' };
+					if (i === 5) return { action: 'sell' as const, reason: 'test', time: '' };
+					return { action: 'hold' as const, reason: '', time: '' };
 				});
 			},
 			getOverlays: () => [],
@@ -259,7 +261,7 @@ describe('runBacktestEngine', () => {
 			pair: 'btc_jpy',
 			timeframe: '1D',
 			period: '1M',
-			strategy: { name: 'test', params: {} },
+			strategy: { type: 'sma_cross' as const, params: {} },
 			fee_bp: 0,
 			execution: 't+1_open' as const,
 		};

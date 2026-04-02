@@ -204,6 +204,6 @@ describe('get_my_trade_history — handler (toolDef)', () => {
 		const { toolDef } = await import('../../tools/private/get_my_trade_history.js');
 		const result = await toolDef.handler({});
 
-		expect(result.ok).toBe(true);
+		expect((result as { ok: boolean }).ok).toBe(true);
 	});
 });

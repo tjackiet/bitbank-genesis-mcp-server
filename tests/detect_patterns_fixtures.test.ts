@@ -217,7 +217,7 @@ describe('detect_patterns fixtures', () => {
 				breakoutConfirmed: true,
 			},
 		});
-		expect(res.data.overlays.ranges).toEqual([
+		expect(res.data.overlays!.ranges).toEqual([
 			{
 				start: makeIso(5),
 				end: makeIso(20),
@@ -267,7 +267,7 @@ describe('detect_patterns fixtures', () => {
 
 		assertOk(res);
 		expect(res.data.patterns).toEqual([]);
-		expect(res.data.overlays.ranges).toEqual([]);
+		expect(res.data.overlays!.ranges).toEqual([]);
 		expect(res.meta.count).toBe(0);
 	});
 

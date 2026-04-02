@@ -215,7 +215,7 @@ describe('analyze_market_signal', () => {
 
 		const res = await analyzeMarketSignal('btc_jpy');
 		assertOk(res);
-		expect(res.data.sma.arrangement).toBe('bullish');
+		expect(res.data.sma!.arrangement).toBe('bullish');
 	});
 
 	it('SMA 整列: price < sma25 < sma75 < sma200 で aligned_down', async () => {
@@ -227,7 +227,7 @@ describe('analyze_market_signal', () => {
 
 		const res = await analyzeMarketSignal('btc_jpy');
 		assertOk(res);
-		expect(res.data.sma.arrangement).toBe('bearish');
+		expect(res.data.sma!.arrangement).toBe('bearish');
 	});
 
 	it('toolDef.handler: content テキストに分析結果が含まれる', async () => {
