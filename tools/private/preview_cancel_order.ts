@@ -43,7 +43,6 @@ export const toolDef: ToolDefinition = {
 	inputSchema: PreviewCancelOrderInputSchema,
 	handler: async (args) => {
 		const result = previewCancelOrder(args as { pair: string; order_id: number });
-		if (!result.ok) return result;
 		const text = `${result.summary}\n${JSON.stringify(result.data, null, 2)}`;
 		return {
 			content: [{ type: 'text', text }],

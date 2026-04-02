@@ -496,5 +496,5 @@ export const toolDef: ToolDefinition = {
 		count?: number;
 		since?: string;
 		end?: string;
-	}) => getMyDepositWithdrawal(args ?? {}),
+	}) => getMyDepositWithdrawal(args),
 };
