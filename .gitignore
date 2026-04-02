@@ -11,3 +11,4 @@ coverage/
 .cursor/
 .DS_Store
 src/types/schemas.generated.d.ts
+assets/
