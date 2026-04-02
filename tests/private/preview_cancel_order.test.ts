@@ -66,3 +66,15 @@ describe('preview_cancel_order', () => {
 		expect(result.summary).toContain('SOL/JPY');
 	});
 });
+
+describe('preview_cancel_order — handler (toolDef)', () => {
+	it('handler が成功時に content + structuredContent を返す', async () => {
+		const { toolDef } = await import('../../tools/private/preview_cancel_order.js');
+		const result = await toolDef.handler({ pair: 'btc_jpy', order_id: 2001 });
+
+		expect(result).toHaveProperty('content');
+		expect(result).toHaveProperty('structuredContent');
+		const content = (result as Record<string, unknown[]>).content;
+		expect(content[0]).toHaveProperty('text');
+	});
+});

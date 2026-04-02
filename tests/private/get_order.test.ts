@@ -143,4 +143,109 @@ describe('get_order', () => {
 		assertOk(result);
 		expect(result.summary).toContain('成行');
 	});
+
+	it('非 PrivateApiError の例外で upstream_error を返す', async () => {
+		globalThis.fetch = vi.fn().mockRejectedValue(new TypeError('DNS error')) as unknown as typeof fetch;
+
+		const { default: getOrder } = await import('../../tools/private/get_order.js');
+		const result = await getOrder({ pair: 'btc_jpy', order_id: 2001 });
+
+		assertFail(result);
+		expect(result.meta.errorType).toBe('upstream_error');
+		expect(result.summary).toContain('DNS error');
+	});
+
+	it('start_amount が null で executed_amount にフォールバックする', async () => {
+		setupFetchMock(mockBitbankSuccess(orderResponse({ start_amount: null, executed_amount: '0.003' })));
+
+		const { default: getOrder } = await import('../../tools/private/get_order.js');
+		const result = await getOrder({ pair: 'btc_jpy', order_id: 2001 });
+
+		assertOk(result);
+		expect(result.summary).toContain('数量: 0.003');
+	});
+
+	it('非 JPY ペアのトリガー価格がそのまま表示される', async () => {
+		setupFetchMock(
+			mockBitbankSuccess(orderResponse({ pair: 'btc_usdt', type: 'stop', trigger_price: '44000', average_price: '0' })),
+		);
+
+		const { default: getOrder } = await import('../../tools/private/get_order.js');
+		const result = await getOrder({ pair: 'btc_usdt', order_id: 2001 });
+
+		assertOk(result);
+		expect(result.summary).toContain('トリガー価格');
+		expect(result.summary).toContain('44000');
+	});
+
+	it('非 JPY ペアの平均約定価格がそのまま表示される', async () => {
+		setupFetchMock(mockBitbankSuccess(orderResponse({ pair: 'btc_usdt', average_price: '45123.5' })));
+
+		const { default: getOrder } = await import('../../tools/private/get_order.js');
+		const result = await getOrder({ pair: 'btc_usdt', order_id: 2001 });
+
+		assertOk(result);
+		expect(result.summary).toContain('45123.5');
+	});
+
+	it('非 JPY ペアで価格をそのまま表示する', async () => {
+		setupFetchMock(mockBitbankSuccess(orderResponse({ pair: 'btc_usdt', price: '45000.5' })));
+
+		const { default: getOrder } = await import('../../tools/private/get_order.js');
+		const result = await getOrder({ pair: 'btc_usdt', order_id: 2001 });
+
+		assertOk(result);
+		expect(result.summary).toContain('45000.5');
+	});
+});
+
+describe('get_order — 非 PrivateApiError の generic catch', () => {
+	afterEach(() => {
+		vi.doUnmock('../../src/private/client.js');
+	});
+
+	it('非 PrivateApiError が投げられると upstream_error を返す', async () => {
+		vi.doMock('../../src/private/client.js', () => ({
+			getDefaultClient: () => ({
+				get: () => {
+					throw new Error('unexpected crash');
+				},
+			}),
+			PrivateApiError: class extends Error {
+				errorType: string;
+				constructor(msg: string, errorType: string) {
+					super(msg);
+					this.errorType = errorType;
+				}
+			},
+		}));
+
+		const { default: getOrder } = await import('../../tools/private/get_order.js');
+		const result = await getOrder({ pair: 'btc_jpy', order_id: 2001 });
+
+		assertFail(result);
+		expect(result.meta.errorType).toBe('upstream_error');
+		expect(result.summary).toContain('unexpected crash');
+	});
+});
+
+describe('get_order — handler (toolDef)', () => {
+	it('handler が失敗時に result をそのまま返す', async () => {
+		globalThis.fetch = vi.fn().mockRejectedValue(new TypeError('fail')) as unknown as typeof fetch;
+
+		const { toolDef } = await import('../../tools/private/get_order.js');
+		const result = await toolDef.handler({ pair: 'btc_jpy', order_id: 2001 });
+
+		expect(result.ok).toBe(false);
+	});
+
+	it('handler が成功時に content + structuredContent を返す', async () => {
+		setupFetchMock(mockBitbankSuccess(orderResponse()));
+
+		const { toolDef } = await import('../../tools/private/get_order.js');
+		const result = await toolDef.handler({ pair: 'btc_jpy', order_id: 2001 });
+
+		expect(result).toHaveProperty('content');
+		expect(result).toHaveProperty('structuredContent');
+	});
 });

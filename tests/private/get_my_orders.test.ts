@@ -91,4 +91,153 @@ describe('get_my_orders', () => {
 		assertFail(result);
 		expect(result.meta.errorType).toBe('authentication_error');
 	});
+
+	it('不正な end 日付で validation_error を返す', async () => {
+		const { default: getMyOrders } = await import('../../tools/private/get_my_orders.js');
+		const result = await getMyOrders({ end: 'not-a-date' });
+
+		assertFail(result);
+		expect(result.meta.errorType).toBe('validation_error');
+		expect(result.summary).toContain('end');
+	});
+
+	it('非 PrivateApiError の例外で upstream_error を返す', async () => {
+		globalThis.fetch = vi.fn().mockRejectedValue(new TypeError('fetch failed')) as unknown as typeof fetch;
+
+		const { default: getMyOrders } = await import('../../tools/private/get_my_orders.js');
+		const result = await getMyOrders({});
+
+		assertFail(result);
+		expect(result.meta.errorType).toBe('upstream_error');
+		expect(result.summary).toContain('fetch failed');
+	});
+
+	it('count パラメータを API に渡す', async () => {
+		setupFetchMock(mockBitbankSuccess({ orders: [] }));
+
+		const { default: getMyOrders } = await import('../../tools/private/get_my_orders.js');
+		await getMyOrders({ count: 10 });
+
+		const fetchMock = globalThis.fetch as ReturnType<typeof vi.fn>;
+		const calledUrl = fetchMock.mock.calls[0][0] as string;
+		expect(calledUrl).toContain('count=10');
+	});
+
+	it('expire_at がある注文で ISO8601 に変換される', async () => {
+		setupFetchMock(
+			mockBitbankSuccess({
+				orders: [
+					{
+						...rawActiveOrdersResponse.orders[0],
+						expire_at: 1710100000000,
+					},
+				],
+			}),
+		);
+
+		const { default: getMyOrders } = await import('../../tools/private/get_my_orders.js');
+		const result = await getMyOrders({});
+
+		assertOk(result);
+		expect(result.data.orders[0].expire_at).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+	});
+
+	it('成行注文の価格が「成行」と表示される', async () => {
+		const marketOrder = { ...rawActiveOrdersResponse.orders[0], type: 'market', price: undefined };
+		delete (marketOrder as Record<string, unknown>).price;
+		setupFetchMock(mockBitbankSuccess({ orders: [marketOrder] }));
+
+		const { default: getMyOrders } = await import('../../tools/private/get_my_orders.js');
+		const result = await getMyOrders({});
+
+		assertOk(result);
+		expect(result.summary).toContain('成行');
+	});
+
+	it('非 JPY ペアで価格がそのまま表示される', async () => {
+		const nonJpyOrder = { ...rawActiveOrdersResponse.orders[0], pair: 'btc_usdt', price: '45000' };
+		setupFetchMock(mockBitbankSuccess({ orders: [nonJpyOrder] }));
+
+		const { default: getMyOrders } = await import('../../tools/private/get_my_orders.js');
+		const result = await getMyOrders({});
+
+		assertOk(result);
+		expect(result.summary).toContain('45000');
+	});
+
+	it('remaining_amount が未定義で「?」にフォールバックする', async () => {
+		const order = { ...rawActiveOrdersResponse.orders[0] };
+		delete (order as Record<string, unknown>).remaining_amount;
+		setupFetchMock(mockBitbankSuccess({ orders: [order] }));
+
+		const { default: getMyOrders } = await import('../../tools/private/get_my_orders.js');
+		const result = await getMyOrders({});
+
+		assertOk(result);
+		expect(result.summary).toContain('?');
+	});
+
+	it('有効な since/end を unix ms に変換して API に渡す', async () => {
+		setupFetchMock(mockBitbankSuccess({ orders: [] }));
+
+		const { default: getMyOrders } = await import('../../tools/private/get_my_orders.js');
+		await getMyOrders({ since: '2024-03-10T00:00:00Z', end: '2024-03-11T00:00:00Z' });
+
+		const fetchMock = globalThis.fetch as ReturnType<typeof vi.fn>;
+		const calledUrl = fetchMock.mock.calls[0][0] as string;
+		expect(calledUrl).toContain('since=');
+		expect(calledUrl).toContain('end=');
+		expect(calledUrl).not.toContain('2024-03-10');
+	});
+
+	it('pair 指定なしで「全ペア」ラベルが表示される', async () => {
+		setupFetchMock(mockBitbankSuccess(rawActiveOrdersResponse));
+
+		const { default: getMyOrders } = await import('../../tools/private/get_my_orders.js');
+		const result = await getMyOrders({});
+
+		assertOk(result);
+		expect(result.summary).toContain('全ペア');
+	});
+});
+
+describe('get_my_orders — handler (toolDef)', () => {
+	it('handler がデフォルト引数で動作する', async () => {
+		setupFetchMock(mockBitbankSuccess(rawActiveOrdersResponse));
+
+		const { toolDef } = await import('../../tools/private/get_my_orders.js');
+		const result = await toolDef.handler({});
+
+		expect(result.ok).toBe(true);
+	});
+});
+
+describe('get_my_orders — 非 PrivateApiError の generic catch', () => {
+	afterEach(() => {
+		vi.doUnmock('../../src/private/client.js');
+	});
+
+	it('getDefaultClient が非 PrivateApiError を投げると upstream_error を返す', async () => {
+		vi.doMock('../../src/private/client.js', () => ({
+			getDefaultClient: () => ({
+				get: () => {
+					throw new Error('unexpected crash');
+				},
+			}),
+			PrivateApiError: class extends Error {
+				errorType: string;
+				constructor(msg: string, errorType: string) {
+					super(msg);
+					this.errorType = errorType;
+				}
+			},
+		}));
+
+		const { default: getMyOrders } = await import('../../tools/private/get_my_orders.js');
+		const result = await getMyOrders({});
+
+		assertFail(result);
+		expect(result.meta.errorType).toBe('upstream_error');
+		expect(result.summary).toContain('unexpected crash');
+	});
 });
