@@ -88,7 +88,7 @@ describe('analyze_volume_profile', () => {
 		const res = await analyzeVolumeProfile('btc_jpy', 0, 10, 20, 0.7);
 
 		expect(res.ok).toBe(false);
-		expect(res.meta?.errorType).toBe('network');
+		expect((res.meta as { errorType?: string })?.errorType).toBe('network');
 	});
 
 	it('toolDef.handler は省略パラメータ時に inputSchema の既定値で動作するべき', async () => {

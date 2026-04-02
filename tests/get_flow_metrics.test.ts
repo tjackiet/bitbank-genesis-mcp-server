@@ -108,7 +108,7 @@ describe('get_flow_metrics', () => {
 		mockFetch(txPayload(txs));
 		const res = await getFlowMetrics('btc_jpy', 100, '20240101', 60_000);
 		assertOk(res);
-		const spiked = res.data.series.buckets.filter((b: FlowMetricsBucket) => b.spike !== null);
+		const spiked = (res.data.series.buckets as FlowMetricsBucket[]).filter((b) => b.spike !== null);
 		expect(spiked.length).toBeGreaterThan(0);
 	});
 
@@ -122,7 +122,7 @@ describe('get_flow_metrics', () => {
 		mockFetch(txPayload(txs));
 		const res = await getFlowMetrics('btc_jpy', 10, '20240101', 60_000);
 		assertOk(res);
-		const spiked = res.data.series.buckets.filter((b: FlowMetricsBucket) => b.spike !== null);
+		const spiked = (res.data.series.buckets as FlowMetricsBucket[]).filter((b) => b.spike !== null);
 		expect(spiked.length).toBe(0);
 	});
 

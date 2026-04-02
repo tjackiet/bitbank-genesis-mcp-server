@@ -85,7 +85,7 @@ describe('preview_cancel_orders — handler (toolDef)', () => {
 
 		expect(result).toHaveProperty('content');
 		expect(result).toHaveProperty('structuredContent');
-		const content = (result as Record<string, unknown[]>).content;
+		const content = (result as unknown as Record<string, unknown[]>).content;
 		expect(content[0]).toHaveProperty('text');
 	});
 });

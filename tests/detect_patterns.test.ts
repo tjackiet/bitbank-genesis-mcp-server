@@ -65,7 +65,7 @@ describe('detect_patterns handler', () => {
 			view: 'detailed',
 		});
 
-		const text = res.content[0].text as string;
+		const text = (res as { content: Array<{ text: string }> }).content[0].text;
 		expect(text).toContain('insufficient data');
 		expect(text).not.toContain('tolerance を 0.03-0.06 に緩和してください');
 	});
@@ -119,7 +119,7 @@ describe('detect_patterns handler', () => {
 			includeForming: true,
 		});
 
-		const text = res.content[0].text as string;
+		const text = (res as { content: Array<{ text: string }> }).content[0].text;
 		expect(text).not.toContain('※形成中は includeForming=true を指定してください。');
 	});
 
@@ -192,7 +192,9 @@ describe('detect_patterns handler', () => {
 			view: 'debug',
 		});
 
-		expect(res.structuredContent.data.warnings).toEqual(warnings);
-		expect(res.structuredContent.data.statistics).toEqual(statistics);
+		// biome-ignore lint/suspicious/noExplicitAny: test assertion for structuredContent
+		const sc = (res as any).structuredContent;
+		expect(sc.data.warnings).toEqual(warnings);
+		expect(sc.data.statistics).toEqual(statistics);
 	});
 });

@@ -208,7 +208,7 @@ describe('get_my_orders — handler (toolDef)', () => {
 		const { toolDef } = await import('../../tools/private/get_my_orders.js');
 		const result = await toolDef.handler({});
 
-		expect(result.ok).toBe(true);
+		expect((result as { ok: boolean }).ok).toBe(true);
 	});
 });
 

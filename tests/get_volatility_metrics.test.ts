@@ -236,7 +236,7 @@ describe('get_volatility_metrics', () => {
 			mockFetchWithOhlcv(rows);
 			const res = await getVolatilityMetrics('btc_jpy', '1day', 30);
 			assertOk(res);
-			if (res.data.aggregates.rv_std_ann >= 0.8) {
+			if (res.data.aggregates!.rv_std_ann! >= 0.8) {
 				expect(res.data.tags).toContain('volatile');
 			}
 		});
@@ -246,8 +246,8 @@ describe('get_volatility_metrics', () => {
 			mockFetchWithOhlcv(rows);
 			const res = await getVolatilityMetrics('btc_jpy', '1day', 200, [14, 20, 30], { annualize: true });
 			assertOk(res);
-			const rvAnn = res.data.aggregates.rv_std_ann;
-			if (rvAnn <= 0.3) {
+			const rvAnn = res.data.aggregates!.rv_std_ann;
+			if (rvAnn! <= 0.3) {
 				expect(res.data.tags).toContain('calm');
 			} else {
 				expect(res.data.tags).not.toContain('calm');

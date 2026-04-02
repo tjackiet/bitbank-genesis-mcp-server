@@ -70,7 +70,7 @@ describe('detect_whale_events', () => {
 		const res = await detectWhaleEvents('btc_jpy', '1hour', 0.51);
 
 		expect(res.ok).toBe(false);
-		expect(res.meta?.errorType).toBe('upstream');
+		expect((res.meta as { errorType?: string })?.errorType).toBe('upstream');
 	});
 
 	it('ローソク足の close が欠損していても summary に NaN を出すべきではない', async () => {

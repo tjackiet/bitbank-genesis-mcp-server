@@ -350,6 +350,6 @@ describe('get_my_deposit_withdrawal — handler (toolDef)', () => {
 		const { toolDef } = await import('../../tools/private/get_my_deposit_withdrawal.js');
 		const result = await toolDef.handler({});
 
-		expect(result.ok).toBe(true);
+		expect((result as { ok: boolean }).ok).toBe(true);
 	});
 });

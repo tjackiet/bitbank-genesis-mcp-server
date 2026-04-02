@@ -95,10 +95,10 @@ describe('getCandles', () => {
 		assertOk(res);
 
 		// keyPoints should exist
-		expect(res.data.keyPoints.today).not.toBeNull();
-		expect(res.data.keyPoints.sevenDaysAgo).not.toBeNull();
-		expect(res.data.keyPoints.thirtyDaysAgo).not.toBeNull();
-		expect(res.data.keyPoints.ninetyDaysAgo).not.toBeNull();
+		expect(res.data.keyPoints!.today).not.toBeNull();
+		expect(res.data.keyPoints!.sevenDaysAgo).not.toBeNull();
+		expect(res.data.keyPoints!.thirtyDaysAgo).not.toBeNull();
+		expect(res.data.keyPoints!.ninetyDaysAgo).not.toBeNull();
 
 		// volumeStats should exist (>= 14 items)
 		expect(res.data.volumeStats).not.toBeNull();

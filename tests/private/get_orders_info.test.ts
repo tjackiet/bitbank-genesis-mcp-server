@@ -230,7 +230,7 @@ describe('get_orders_info — handler (toolDef)', () => {
 		const { toolDef } = await import('../../tools/private/get_orders_info.js');
 		const result = await toolDef.handler({ pair: 'btc_jpy', order_ids: [4001] });
 
-		expect(result.ok).toBe(false);
+		expect((result as { ok: boolean }).ok).toBe(false);
 	});
 
 	it('handler が成功時に content + structuredContent を返す', async () => {

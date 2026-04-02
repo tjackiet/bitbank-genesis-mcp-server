@@ -319,7 +319,7 @@ describe('create_order — handler (toolDef)', () => {
 			token_expires_at: Date.now() + 60000,
 		});
 
-		expect(result.ok).toBe(false);
+		expect((result as { ok: boolean }).ok).toBe(false);
 	});
 
 	it('handler が成功時に content + structuredContent を返す', async () => {
