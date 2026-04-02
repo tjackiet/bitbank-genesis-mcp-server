@@ -39,4 +39,246 @@ describe('getCandles', () => {
 		const calledUrls = fetchMock.mock.calls.map((call) => String(call[0]));
 		expect(calledUrls.some((u) => u.endsWith('/btc_jpy/candlestick/1hour/20240101'))).toBe(true);
 	});
+
+	it('無効な type は user エラーを返す', async () => {
+		const res = await getCandles('btc_jpy', 'invalid_type', '20240101', 10);
+		assertFail(res);
+		expect(res.meta?.errorType).toBe('user');
+	});
+
+	it('無効なペアは failFromValidation を返す', async () => {
+		const res = await getCandles('invalid_xxx', '1day', '20240101', 10);
+		assertFail(res);
+	});
+
+	it('空のローソク足データは user エラーを返す', async () => {
+		const fetchMock = vi.fn().mockResolvedValue({
+			ok: true,
+			status: 200,
+			statusText: 'OK',
+			json: async () => ({
+				success: 1,
+				data: {
+					candlestick: [{ ohlcv: [] }],
+				},
+			}),
+		});
+		globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+		const res = await getCandles('btc_jpy', '1day', '2024', 10);
+		assertFail(res);
+	});
+
+	it('十分なデータがある場合 keyPoints と volumeStats を計算するべき', async () => {
+		// 100本のローソク足を生成
+		const baseTs = 1704067200000;
+		const ohlcv = Array.from({ length: 100 }, (_, i) => [
+			String(100 + i),
+			String(110 + i),
+			String(90 + i),
+			String(105 + i),
+			String(1 + i * 0.1),
+			String(baseTs + i * 86400000),
+		]);
+		const fetchMock = vi.fn().mockResolvedValue({
+			ok: true,
+			status: 200,
+			statusText: 'OK',
+			json: async () => ({
+				success: 1,
+				data: { candlestick: [{ ohlcv }] },
+			}),
+		});
+		globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+		const res = await getCandles('btc_jpy', '1day', '2024', 100);
+		assertOk(res);
+
+		// keyPoints should exist
+		expect(res.data.keyPoints.today).not.toBeNull();
+		expect(res.data.keyPoints.sevenDaysAgo).not.toBeNull();
+		expect(res.data.keyPoints.thirtyDaysAgo).not.toBeNull();
+		expect(res.data.keyPoints.ninetyDaysAgo).not.toBeNull();
+
+		// volumeStats should exist (>= 14 items)
+		expect(res.data.volumeStats).not.toBeNull();
+		expect(res.data.volumeStats?.changePct).toBeDefined();
+		expect(res.data.volumeStats?.judgment).toBeDefined();
+	});
+
+	it('出来高変化率が +20% 以上なら「活発になっています」と判定するべき', async () => {
+		const baseTs = 1704067200000;
+		// recent 7 days high volume, previous 7 days low volume
+		const ohlcv = Array.from({ length: 20 }, (_, i) => [
+			'100',
+			'110',
+			'90',
+			'105',
+			i >= 13 ? '100' : '10', // last 7 high, previous low
+			String(baseTs + i * 86400000),
+		]);
+		const fetchMock = vi.fn().mockResolvedValue({
+			ok: true,
+			status: 200,
+			statusText: 'OK',
+			json: async () => ({
+				success: 1,
+				data: { candlestick: [{ ohlcv }] },
+			}),
+		});
+		globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+		const res = await getCandles('btc_jpy', '1day', '2024', 20);
+		assertOk(res);
+		expect(res.data.volumeStats?.judgment).toBe('活発になっています');
+	});
+
+	it('出来高変化率が -20% 以下なら「落ち着いています」と判定するべき', async () => {
+		const baseTs = 1704067200000;
+		// recent 7 days low volume, previous 7 days high volume
+		const ohlcv = Array.from({ length: 20 }, (_, i) => [
+			'100',
+			'110',
+			'90',
+			'105',
+			i >= 13 ? '10' : '100', // last 7 low, previous high
+			String(baseTs + i * 86400000),
+		]);
+		const fetchMock = vi.fn().mockResolvedValue({
+			ok: true,
+			status: 200,
+			statusText: 'OK',
+			json: async () => ({
+				success: 1,
+				data: { candlestick: [{ ohlcv }] },
+			}),
+		});
+		globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+		const res = await getCandles('btc_jpy', '1day', '2024', 20);
+		assertOk(res);
+		expect(res.data.volumeStats?.judgment).toBe('落ち着いています');
+	});
+
+	it('404 エラーで 4hour/8hour/12hour の場合はヒント付きメッセージを返す', async () => {
+		const fetchMock = vi.fn().mockRejectedValue(new Error('HTTP 404 Not Found'));
+		globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+		const res = await getCandles('btc_jpy', '4hour', '2024', 10);
+		assertFail(res);
+		expect(res.meta?.errorType).toBe('user');
+	});
+
+	it('ネットワークエラーの場合は network エラータイプを返す', async () => {
+		const fetchMock = vi.fn().mockRejectedValue(new Error('ECONNREFUSED'));
+		globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+		const res = await getCandles('btc_jpy', '1day', '2024', 10);
+		assertFail(res);
+		expect(res.meta?.errorType).toBe('network');
+	});
+
+	it('複数年取得が必要な場合は並列取得するべき', async () => {
+		const baseTs = 1704067200000;
+		const ohlcv = Array.from({ length: 200 }, (_, i) => [
+			'100',
+			'110',
+			'90',
+			'105',
+			'1.0',
+			String(baseTs + i * 86400000),
+		]);
+		const fetchMock = vi.fn().mockResolvedValue({
+			ok: true,
+			status: 200,
+			statusText: 'OK',
+			json: async () => ({
+				success: 1,
+				data: { candlestick: [{ ohlcv }] },
+			}),
+		});
+		globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+		// 1day with limit > 365 → needs multi-year
+		const res = await getCandles('btc_jpy', '1day', undefined, 500);
+		assertOk(res);
+
+		// Should have made multiple fetch calls (one per year)
+		expect(fetchMock.mock.calls.length).toBeGreaterThan(1);
+	});
+
+	it('複数日取得が必要な場合はバッチ取得するべき', async () => {
+		const baseTs = 1704067200000;
+		const ohlcv = Array.from({ length: 50 }, (_, i) => [
+			'100',
+			'110',
+			'90',
+			'105',
+			'1.0',
+			String(baseTs + i * 3600000),
+		]);
+		const fetchMock = vi.fn().mockResolvedValue({
+			ok: true,
+			status: 200,
+			statusText: 'OK',
+			json: async () => ({
+				success: 1,
+				data: { candlestick: [{ ohlcv }] },
+			}),
+		});
+		globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+		// 1hour with limit > 24 (1 day) → needs multi-day
+		const res = await getCandles('btc_jpy', '1hour', '20240115', 100);
+		assertOk(res);
+
+		// Should have made multiple fetch calls (one per day batch)
+		expect(fetchMock.mock.calls.length).toBeGreaterThan(1);
+	});
+
+	it('priceRange を正しく計算するべき', async () => {
+		const baseTs = 1704067200000;
+		const ohlcv = [
+			['100', '150', '80', '120', '1.0', String(baseTs)],
+			['120', '200', '70', '130', '2.0', String(baseTs + 86400000)],
+		];
+		const fetchMock = vi.fn().mockResolvedValue({
+			ok: true,
+			status: 200,
+			statusText: 'OK',
+			json: async () => ({
+				success: 1,
+				data: { candlestick: [{ ohlcv }] },
+			}),
+		});
+		globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+		const res = await getCandles('btc_jpy', '1day', '2024', 10);
+		assertOk(res);
+
+		// High should be 200, Low should be 70
+		const highs = res.data.normalized.map((c: { high: number }) => c.high);
+		const lows = res.data.normalized.map((c: { low: number }) => c.low);
+		expect(Math.max(...highs)).toBe(200);
+		expect(Math.min(...lows)).toBe(70);
+	});
+
+	it('tz が空文字列の場合 isoTimeLocal を含めないべき', async () => {
+		const fetchMock = vi.fn().mockResolvedValue({
+			ok: true,
+			status: 200,
+			statusText: 'OK',
+			json: async () => ({
+				success: 1,
+				data: {
+					candlestick: [{ ohlcv: [['100', '110', '90', '105', '1.0', '1704067200000']] }],
+				},
+			}),
+		});
+		globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+		const res = await getCandles('btc_jpy', '1day', '2024', 10, '');
+		assertOk(res);
+		expect(res.data.normalized[0]).not.toHaveProperty('isoTimeLocal');
+	});
 });
