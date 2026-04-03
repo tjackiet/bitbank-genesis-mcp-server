@@ -97,20 +97,40 @@ Claude Desktop の場合は `claude_desktop_config.json` の `env` に追加:
 | `get_orders_info` | 注文照会（複数） |
 | `analyze_my_portfolio` | ポートフォリオ損益分析 |
 | `get_my_deposit_withdrawal` | 入出金履歴 |
+| `get_margin_status` | 信用取引ステータス（保証金・ロスカット率・新規建て可能額） |
+| `get_margin_positions` | 信用建玉一覧（追証・不足金アラート付き） |
+| `get_margin_trade_history` | 信用約定履歴（新規建て・決済、実現損益・利息を含む） |
 
 ### 取引系（2ステップ確認必須）
 
 | ステップ 1 (Preview) | ステップ 2 (Execute) | 説明 |
 |---|---|---|
-| `preview_order` | `create_order` | 現物注文の発注 |
+| `preview_order` | `create_order` | 注文の発注（現物・信用） |
 | `preview_cancel_order` | `cancel_order` | 注文キャンセル（単一） |
 | `preview_cancel_orders` | `cancel_orders` | 注文キャンセル（一括、最大30件） |
 
+### 信用取引について
+
+`preview_order` / `create_order` に `position_side`（`long` / `short`）を指定すると信用注文として扱われます。
+
+| 操作 | side | position_side |
+|---|---|---|
+| ロング新規建て | `buy` | `long` |
+| ロング決済 | `sell` | `long` |
+| ショート新規建て | `sell` | `short` |
+| ショート決済 | `buy` | `short` |
+
+**注意事項**:
+- 信用取引には bitbank での申込・審査が必要です（未審査の場合はエラーコード 50058）
+- 損失が保証金を超える可能性があります
+- 利息・手数料は決済時に徴収されます
+- 建玉管理は平均法（加重平均）で行われます
+
 ## 制限事項
 
-- 現物取引のみ対応（信用取引・レバレッジ取引は非対応）
 - bitbank API のレート制限に従う（429 エラー時は自動リトライ）
 - 注文の最小/最大数量は bitbank の仕様に準拠
+- 信用取引のリアルタイム通知（ストリーム）は未対応
 
 ## トラブルシューティング
 
