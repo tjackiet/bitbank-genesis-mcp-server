@@ -54,7 +54,7 @@ import type { ToolDefinition } from './tool-definition.js';
  * | Signal & Detection  | 4       | 総合シグナル, パターン, MACD, クジラ       |
  * | Visualization       | 4       | SVG チャート, 板チャート, データ整形       |
  * | Backtesting         | 1       | SMA/MACD/BB/RSI 戦略バックテスト          |
- * | **Private**         | **13**  | 残高, 注文, 約定, ポートフォリオ, HITL確認（要 API キー）|
+ * | **Private**         | **16**  | 残高, 注文, 約定, ポートフォリオ, 信用取引, HITL確認（要 API キー）|
  */
 export const allToolDefs: ToolDefinition[] = [
 	// ── Data Retrieval (7) ──
@@ -117,6 +117,10 @@ if (isPrivateApiEnabled()) {
 	const { toolDef: cancelOrders } = await import('../tools/private/cancel_orders.js');
 	const { toolDef: getOrder } = await import('../tools/private/get_order.js');
 	const { toolDef: getOrdersInfo } = await import('../tools/private/get_orders_info.js');
+	// Margin tools
+	const { toolDef: getMarginStatus } = await import('../tools/private/get_margin_status.js');
+	const { toolDef: getMarginPositions } = await import('../tools/private/get_margin_positions.js');
+	const { toolDef: getMarginTradeHistory } = await import('../tools/private/get_margin_trade_history.js');
 	allToolDefs.push(
 		getMyAssets,
 		getMyTradeHistory,
@@ -131,6 +135,9 @@ if (isPrivateApiEnabled()) {
 		cancelOrders,
 		getOrder,
 		getOrdersInfo,
+		getMarginStatus,
+		getMarginPositions,
+		getMarginTradeHistory,
 	);
 	log('info', {
 		type: 'private_api',
@@ -149,6 +156,9 @@ if (isPrivateApiEnabled()) {
 			'cancel_orders',
 			'get_order',
 			'get_orders_info',
+			'get_margin_status',
+			'get_margin_positions',
+			'get_margin_trade_history',
 		],
 	});
 } else {
