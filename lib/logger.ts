@@ -43,6 +43,19 @@ export function log(level: 'error' | 'warn' | 'info' | 'debug', event: Record<st
 	}
 }
 
+/** ログ出力前に機密フィールドをマスクする */
+const SENSITIVE_KEYS = new Set(['confirmation_token', 'token']);
+
+function maskSensitiveFields(obj: unknown): unknown {
+	if (obj == null || typeof obj !== 'object') return obj;
+	if (Array.isArray(obj)) return obj.map(maskSensitiveFields);
+	const masked: Record<string, unknown> = {};
+	for (const [key, value] of Object.entries(obj as Record<string, unknown>)) {
+		masked[key] = SENSITIVE_KEYS.has(key) && typeof value === 'string' ? '***' : maskSensitiveFields(value);
+	}
+	return masked;
+}
+
 export function logToolRun(args: { tool: string; input: unknown; result: unknown; ms: number }): void {
 	const { tool, input, result, ms } = args;
 	const r = result as Record<string, unknown> | null | undefined;
@@ -51,14 +64,14 @@ export function logToolRun(args: { tool: string; input: unknown; result: unknown
 		summary: r?.summary,
 		meta: r?.meta,
 	};
-	log('info', { type: 'tool_run', tool, input, ms, result: safeData });
+	log('info', { type: 'tool_run', tool, input: maskSensitiveFields(input), ms, result: safeData });
 }
 
 export function logError(tool: string, err: unknown, input: unknown): void {
 	log('error', {
 		type: 'tool_error',
 		tool,
-		input,
+		input: maskSensitiveFields(input),
 		error: (err instanceof Error ? err.message : undefined) || String(err),
 	});
 }
