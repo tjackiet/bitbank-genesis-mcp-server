@@ -412,6 +412,149 @@ export const GetMyDepositWithdrawalOutputSchema = z.union([
 	PrivateFailResultSchema,
 ]);
 
+// ── get_margin_status ──
+
+export const GetMarginStatusInputSchema = z.object({});
+
+const MarginAccountStatus = z.enum(['NORMAL', 'LOSSCUT', 'CALL', 'DEBT', 'SETTLED']);
+
+export const GetMarginStatusDataSchema = z.object({
+	status: MarginAccountStatus,
+	total_margin_balance: z.string().describe('保証金合計額'),
+	total_margin_balance_percentage: z.string().nullable().describe('保証金率（%、建玉なし時は null）'),
+	margin_position_profit_loss: z.string().describe('建玉含み損益'),
+	unrealized_cost: z.string().describe('未実現コスト（未収手数料・未収利息）'),
+	total_margin_position_product: z.string().describe('建玉総評価額'),
+	open_margin_position_product: z.string().describe('保有建玉評価額'),
+	open_margin_order_product: z.string().describe('注文中建玉評価額'),
+	total_position_maintenance_margin: z.string().describe('維持保証金合計'),
+	total_long_position_maintenance_margin: z.string().describe('ロング維持保証金'),
+	total_short_position_maintenance_margin: z.string().describe('ショート維持保証金'),
+	total_open_order_maintenance_margin: z.string().describe('注文維持保証金'),
+	total_long_open_order_maintenance_margin: z.string().describe('ロング注文維持保証金'),
+	total_short_open_order_maintenance_margin: z.string().describe('ショート注文維持保証金'),
+	losscut_rate: z.string().nullable().describe('強制決済率（%、建玉なし時は null）'),
+	available_long_margin: z.string().describe('ロング新規建てご利用可能額'),
+	available_short_margin: z.string().describe('ショート新規建てご利用可能額'),
+	timestamp: z.string(),
+});
+
+export const GetMarginStatusMetaSchema = z.object({
+	fetchedAt: z.string(),
+	hasWarning: z.boolean(),
+});
+
+export const GetMarginStatusOutputSchema = z.union([
+	z.object({
+		ok: z.literal(true),
+		summary: z.string(),
+		data: GetMarginStatusDataSchema,
+		meta: GetMarginStatusMetaSchema,
+	}),
+	PrivateFailResultSchema,
+]);
+
+// ── get_margin_positions ──
+
+export const GetMarginPositionsInputSchema = z.object({
+	pair: z.string().optional().describe('通貨ペア（例: btc_jpy）。省略で全ペア'),
+});
+
+const MarginPositionSchema = z.object({
+	pair: z.string().describe('通貨ペア'),
+	position_side: z.enum(['long', 'short']).describe('ロング / ショート'),
+	open_amount: z.string().describe('建玉数量'),
+	product: z.string().describe('建玉評価額'),
+	average_price: z.string().describe('平均取得価格'),
+	unrealized_fee_amount: z.string().describe('未収手数料'),
+	unrealized_interest_amount: z.string().describe('未収利息'),
+});
+
+const MarginNoticeSchema = z
+	.object({
+		what: z.string().describe('追証・不足金の種別'),
+		occurred_at: z.number().describe('発生日時（unix ms）'),
+		amount: z.string().describe('追証・不足金額'),
+		due_date_at: z.number().describe('期日（unix ms）'),
+	})
+	.nullable();
+
+export const GetMarginPositionsDataSchema = z.object({
+	positions: z.array(MarginPositionSchema),
+	notice: MarginNoticeSchema.describe('追証・不足金情報（なければ null）'),
+	payables: z.object({ amount: z.string() }).describe('不足金額'),
+	losscut_threshold: z.object({
+		individual: z.string().describe('個人強制決済閾値'),
+		company: z.string().describe('法人強制決済閾値'),
+	}),
+	timestamp: z.string(),
+});
+
+export const GetMarginPositionsMetaSchema = z.object({
+	fetchedAt: z.string(),
+	positionCount: z.number().int(),
+	pair: z.string().optional(),
+	hasNotice: z.boolean(),
+});
+
+export const GetMarginPositionsOutputSchema = z.union([
+	z.object({
+		ok: z.literal(true),
+		summary: z.string(),
+		data: GetMarginPositionsDataSchema,
+		meta: GetMarginPositionsMetaSchema,
+	}),
+	PrivateFailResultSchema,
+]);
+
+// ── get_margin_trade_history ──
+
+export const GetMarginTradeHistoryInputSchema = z.object({
+	pair: z.string().optional().describe('通貨ペア（例: btc_jpy）。省略で全ペア'),
+	count: z.number().max(100).default(20).describe('取得件数（最大100）'),
+	order: z.enum(['asc', 'desc']).default('desc').describe('ソート順（asc: 古い順, desc: 新しい順）'),
+	since: z.string().optional().describe('開始日時（ISO8601、例: 2025-01-01T00:00:00+09:00）'),
+	end: z.string().optional().describe('終了日時（ISO8601、例: 2025-12-31T23:59:59+09:00）'),
+});
+
+const MarginTradeItemSchema = z.object({
+	trade_id: z.number().describe('約定ID'),
+	pair: z.string().describe('通貨ペア'),
+	order_id: z.number().describe('注文ID'),
+	side: z.string().describe('売買（buy / sell）'),
+	position_side: z.string().optional().describe('建玉方向（long / short）'),
+	type: z.string().describe('注文タイプ'),
+	amount: z.string().describe('約定数量'),
+	price: z.string().describe('約定価格'),
+	maker_taker: z.string().describe('メイカー / テイカー'),
+	fee_amount_base: z.string().describe('手数料（基軸通貨）'),
+	fee_amount_quote: z.string().describe('手数料（決済通貨）'),
+	profit_loss: z.string().optional().describe('実現損益（決済時のみ）'),
+	interest: z.string().optional().describe('利息（決済時のみ）'),
+	executed_at: z.string().describe('約定日時（ISO8601）'),
+});
+
+export const GetMarginTradeHistoryDataSchema = z.object({
+	trades: z.array(MarginTradeItemSchema),
+	timestamp: z.string(),
+});
+
+export const GetMarginTradeHistoryMetaSchema = z.object({
+	fetchedAt: z.string(),
+	tradeCount: z.number().int(),
+	pair: z.string().optional(),
+});
+
+export const GetMarginTradeHistoryOutputSchema = z.union([
+	z.object({
+		ok: z.literal(true),
+		summary: z.string(),
+		data: GetMarginTradeHistoryDataSchema,
+		meta: GetMarginTradeHistoryMetaSchema,
+	}),
+	PrivateFailResultSchema,
+]);
+
 // ── Trading: 注文レスポンス共通スキーマ ──
 
 /** bitbank 注文ステータス */

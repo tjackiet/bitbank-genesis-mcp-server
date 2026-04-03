@@ -193,6 +193,110 @@ export const rawWithdrawalHistoryResponse = {
 	],
 };
 
+// ── 信用取引ステータス ──
+
+export const rawMarginStatusResponse = {
+	status: 'NORMAL',
+	total_margin_balance: '1000000',
+	total_margin_balance_percentage: '250.00',
+	margin_position_profit_loss: '50000',
+	unrealized_cost: '1200',
+	total_margin_position_product: '400000',
+	open_margin_position_product: '300000',
+	open_margin_order_product: '100000',
+	total_position_maintenance_margin: '120000',
+	total_long_position_maintenance_margin: '80000',
+	total_short_position_maintenance_margin: '40000',
+	total_open_order_maintenance_margin: '30000',
+	total_long_open_order_maintenance_margin: '20000',
+	total_short_open_order_maintenance_margin: '10000',
+	losscut_rate: '110.00',
+	available_long_margin: '500000',
+	available_short_margin: '450000',
+};
+
+// ── 信用建玉 ──
+
+export const rawMarginPositionsResponse = {
+	notice: null,
+	payables: { amount: '0' },
+	positions: [
+		{
+			pair: 'btc_jpy',
+			position_side: 'long',
+			open_amount: '0.01',
+			product: '150000',
+			average_price: '15000000',
+			unrealized_fee_amount: '150',
+			unrealized_interest_amount: '30',
+		},
+		{
+			pair: 'eth_jpy',
+			position_side: 'short',
+			open_amount: '1.0',
+			product: '400000',
+			average_price: '400000',
+			unrealized_fee_amount: '400',
+			unrealized_interest_amount: '80',
+		},
+	],
+	losscut_threshold: {
+		individual: '110',
+		company: '120',
+	},
+};
+
+// ── 信用約定履歴 ──
+
+export const rawMarginTradeHistoryResponse = {
+	trades: [
+		{
+			trade_id: 301,
+			pair: 'btc_jpy',
+			order_id: 3001,
+			side: 'buy',
+			position_side: 'long',
+			type: 'limit',
+			amount: '0.01',
+			price: '15000000',
+			maker_taker: 'maker',
+			fee_amount_base: '0.00001',
+			fee_amount_quote: '0',
+			executed_at: 1710000000000,
+		},
+		{
+			trade_id: 302,
+			pair: 'btc_jpy',
+			order_id: 3002,
+			side: 'sell',
+			position_side: 'long',
+			type: 'market',
+			amount: '0.01',
+			price: '15500000',
+			maker_taker: 'taker',
+			fee_amount_base: '0',
+			fee_amount_quote: '155',
+			profit_loss: '5000',
+			interest: '30',
+			executed_at: 1710000100000,
+		},
+		{
+			trade_id: 303,
+			pair: 'eth_jpy',
+			order_id: 3003,
+			side: 'sell',
+			position_side: 'short',
+			type: 'limit',
+			amount: '1.0',
+			price: '400000',
+			maker_taker: 'maker',
+			fee_amount_base: '0.001',
+			fee_amount_quote: '0',
+			executed_at: 1710000200000,
+		},
+	],
+};
+
 // ── ヘルパー ──
 
 /** bitbank 成功レスポンスラッパー */

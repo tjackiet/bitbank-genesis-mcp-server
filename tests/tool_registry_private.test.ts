@@ -14,6 +14,9 @@ const PRIVATE_TOOL_NAMES = [
 	'cancel_orders',
 	'get_order',
 	'get_orders_info',
+	'get_margin_status',
+	'get_margin_positions',
+	'get_margin_trade_history',
 ] as const;
 
 describe('tool-registry — Private API 分岐', () => {
@@ -27,7 +30,7 @@ describe('tool-registry — Private API 分岐', () => {
 		process.env = { ...originalEnv };
 	});
 
-	it('APIキー設定時に 13 プライベートツールが追加される', async () => {
+	it('APIキー設定時に 16 プライベートツールが追加される', async () => {
 		process.env.BITBANK_API_KEY = 'test-key';
 		process.env.BITBANK_API_SECRET = 'test-secret';
 
@@ -37,8 +40,8 @@ describe('tool-registry — Private API 分岐', () => {
 		for (const privateName of PRIVATE_TOOL_NAMES) {
 			expect(names, `${privateName} が allToolDefs に含まれるべき`).toContain(privateName);
 		}
-		// 公開 29 + プライベート 13 = 42
-		expect(names).toHaveLength(42);
+		// 公開 29 + プライベート 16 = 45
+		expect(names).toHaveLength(45);
 	});
 
 	it('APIキー未設定時にプライベートツールが含まれない', async () => {
@@ -63,7 +66,7 @@ describe('tool-registry — Private API 分岐', () => {
 			PRIVATE_TOOL_NAMES.includes(t.name as (typeof PRIVATE_TOOL_NAMES)[number]),
 		);
 
-		expect(privateTools).toHaveLength(13);
+		expect(privateTools).toHaveLength(16);
 		for (const toolDef of privateTools) {
 			expect(toolDef.name).toEqual(expect.any(String));
 			expect(toolDef.description.length).toBeGreaterThan(0);
