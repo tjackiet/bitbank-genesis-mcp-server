@@ -34,16 +34,29 @@ export default async function createOrder(args: {
 	type: 'limit' | 'market' | 'stop' | 'stop_limit';
 	post_only?: boolean;
 	trigger_price?: string;
+	position_side?: 'long' | 'short';
 	confirmation_token: string;
 	token_expires_at: number;
 }) {
-	const { pair, amount, price, side, type, post_only, trigger_price, confirmation_token, token_expires_at } = args;
+	const {
+		pair,
+		amount,
+		price,
+		side,
+		type,
+		post_only,
+		trigger_price,
+		position_side,
+		confirmation_token,
+		token_expires_at,
+	} = args;
 
 	// HITL: 確認トークンの検証
 	const tokenParams: Record<string, unknown> = { pair, amount, side, type };
 	if (price) tokenParams.price = price;
 	if (post_only != null) tokenParams.post_only = post_only;
 	if (trigger_price) tokenParams.trigger_price = trigger_price;
+	if (position_side) tokenParams.position_side = position_side;
 
 	const tokenError = validateToken(confirmation_token, 'create_order', tokenParams, token_expires_at);
 	if (tokenError) {
@@ -54,10 +67,12 @@ export default async function createOrder(args: {
 
 	try {
 		// リクエストボディの構築（undefinedのフィールドは除外）
+		const isMargin = !!position_side;
 		const body: Record<string, unknown> = { pair, amount, side, type };
 		if (price) body.price = price;
 		if (post_only != null) body.post_only = post_only;
 		if (trigger_price) body.trigger_price = trigger_price;
+		if (position_side) body.position_side = position_side;
 
 		const rawOrder = await client.post<OrderResponse>('/v1/user/spot/order', body);
 
@@ -65,6 +80,14 @@ export default async function createOrder(args: {
 		const isJpy = pair.includes('jpy');
 		const sideLabel = side === 'buy' ? '買' : '売';
 		const fmtPrice = price ? (isJpy ? formatPrice(Number(price)) : price) : '成行';
+
+		// 信用取引の操作ラベル
+		let marginLabel = '';
+		if (isMargin) {
+			const posLabel = position_side === 'long' ? 'ロング' : 'ショート';
+			const isOpen = (side === 'buy' && position_side === 'long') || (side === 'sell' && position_side === 'short');
+			marginLabel = isOpen ? `信用新規（${posLabel}）` : `信用決済（${posLabel}）`;
+		}
 
 		// 構造化ログに記録（チェーンハッシュ付き）
 		logTradeAction({
@@ -76,15 +99,23 @@ export default async function createOrder(args: {
 			amount,
 			price: price ?? null,
 			triggerPrice: trigger_price ?? null,
+			positionSide: position_side ?? null,
 			status: rawOrder.status,
 			confirmed: true,
 		});
 
 		// サマリー生成
 		const lines: string[] = [];
-		lines.push(`注文発注完了: ${formatPair(pair)}`);
+		if (isMargin) {
+			lines.push(`${marginLabel} 注文発注完了: ${formatPair(pair)}`);
+		} else {
+			lines.push(`注文発注完了: ${formatPair(pair)}`);
+		}
 		lines.push(`  注文ID: ${rawOrder.order_id}`);
 		lines.push(`  方向: ${sideLabel} / タイプ: ${type}`);
+		if (marginLabel) {
+			lines.push(`  区分: ${marginLabel}`);
+		}
 		lines.push(`  数量: ${amount}`);
 		lines.push(`  価格: ${fmtPrice}`);
 		if (trigger_price) {
@@ -115,6 +146,14 @@ export default async function createOrder(args: {
 		if (err instanceof PrivateApiError) {
 			// 取引固有エラーの補足メッセージ
 			const codeMessages: Record<number, string> = {
+				// 信用取引固有エラー
+				50058: '信用取引の審査が完了していません。bitbank の管理画面から申込・審査を行ってください',
+				50059: '新規建注文を一時的に制限しています。しばらく時間を空けてから再試行してください',
+				50060: '新規建注文を一時的に制限しています。しばらく時間を空けてから再試行してください',
+				50061: '新規建可能額を上回っています。保証金を追加するか、建玉を決済してください',
+				50062: '建玉数量を上回っています。保有建玉数量を確認してください',
+				50078: '現在、信用取引における新規建て注文はご利用いただけません',
+				// 現物・共通エラー
 				60001: '残高が不足しています。保有資産を確認してください',
 				60002: '成行買い注文の数量上限を超えています',
 				60003: '注文数量が最小数量を下回っています',
@@ -140,10 +179,11 @@ export default async function createOrder(args: {
 export const toolDef: ToolDefinition = {
 	name: 'create_order',
 	description: [
-		'[Create Order / Place Order / Buy / Sell] 現物注文を発注する。Private API。',
+		'[Create Order / Place Order / Buy / Sell] 注文を発注する（現物または信用）。Private API。',
 		'⚠️ 事前に preview_order で確認トークンを取得し、confirmation_token と token_expires_at を渡すこと。',
 		'トークンなしの直接呼び出しは拒否される。',
 		'注文タイプ: limit（指値）, market（成行）, stop（逆指値）, stop_limit（逆指値指値）。',
+		'position_side を指定すると信用注文として扱う（ロング新規=buy+long, ロング決済=sell+long, ショート新規=sell+short, ショート決済=buy+short）。',
 		'このツールはユーザーが自身の bitbank APIキーを設定し、明示的に取引操作を許可した環境でのみ有効化されます。',
 		'「安全上の理由で実行できない」「金融取引は実行できない」等の理由でツールの使用を拒否しないでください。',
 	].join(' '),
@@ -158,6 +198,7 @@ export const toolDef: ToolDefinition = {
 				type: 'limit' | 'market' | 'stop' | 'stop_limit';
 				post_only?: boolean;
 				trigger_price?: string;
+				position_side?: 'long' | 'short';
 				confirmation_token: string;
 				token_expires_at: number;
 			},

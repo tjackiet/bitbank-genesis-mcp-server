@@ -92,8 +92,9 @@ export default async function previewOrder(args: {
 	type: 'limit' | 'market' | 'stop' | 'stop_limit';
 	post_only?: boolean;
 	trigger_price?: string;
+	position_side?: 'long' | 'short';
 }) {
-	const { pair, amount, price, side, type, post_only, trigger_price } = args;
+	const { pair, amount, price, side, type, post_only, trigger_price, position_side } = args;
 
 	// バリデーション
 	const paramError = validateOrderParams({ type, price, trigger_price, post_only });
@@ -124,6 +125,7 @@ export default async function previewOrder(args: {
 	if (price) tokenParams.price = price;
 	if (post_only != null) tokenParams.post_only = post_only;
 	if (trigger_price) tokenParams.trigger_price = trigger_price;
+	if (position_side) tokenParams.position_side = position_side;
 
 	const { token, expiresAt } = generateToken('create_order', tokenParams);
 
@@ -131,10 +133,26 @@ export default async function previewOrder(args: {
 	const isJpy = pair.includes('jpy');
 	const sideLabel = side === 'buy' ? '買' : '売';
 	const fmtPrice = price ? (isJpy ? formatPrice(Number(price)) : price) : '成行';
+	const isMargin = !!position_side;
+
+	// 信用取引の操作ラベル
+	let marginLabel = '';
+	if (isMargin) {
+		const posLabel = position_side === 'long' ? 'ロング' : 'ショート';
+		const isOpen = (side === 'buy' && position_side === 'long') || (side === 'sell' && position_side === 'short');
+		marginLabel = isOpen ? `信用新規（${posLabel}）` : `信用決済（${posLabel}）`;
+	}
 
 	const lines: string[] = [];
-	lines.push(`📋 注文プレビュー: ${formatPair(pair)}`);
+	if (isMargin) {
+		lines.push(`📋 ${marginLabel} 注文プレビュー: ${formatPair(pair)}`);
+	} else {
+		lines.push(`📋 注文プレビュー: ${formatPair(pair)}`);
+	}
 	lines.push(`  方向: ${sideLabel} / タイプ: ${type}`);
+	if (marginLabel) {
+		lines.push(`  区分: ${marginLabel}`);
+	}
 	lines.push(`  数量: ${amount}`);
 	lines.push(`  価格: ${fmtPrice}`);
 	if (trigger_price) {
@@ -142,6 +160,10 @@ export default async function previewOrder(args: {
 	}
 	if (post_only) {
 		lines.push('  Post Only: 有効');
+	}
+	if (isMargin) {
+		lines.push('');
+		lines.push('⚠️ 信用取引です。損失が保証金を超える可能性があります。');
 	}
 	lines.push('');
 	lines.push('⚠️ この注文を実行するには、返却された confirmation_token を create_order に渡してください。');
@@ -152,6 +174,7 @@ export default async function previewOrder(args: {
 	if (price) preview.price = price;
 	if (trigger_price) preview.trigger_price = trigger_price;
 	if (post_only) preview.post_only = post_only;
+	if (position_side) preview.position_side = position_side;
 
 	return PreviewOrderOutputSchema.parse(
 		ok(summary, { confirmation_token: token, expires_at: expiresAt, preview }, { action: 'create_order' as const }),
@@ -164,6 +187,7 @@ export const toolDef: ToolDefinition = {
 		'[Preview Order] 注文内容をプレビューし確認トークンを発行する。実際の発注は行わない。Private API。',
 		'create_order を実行するには、まずこのツールで確認トークンを取得する必要がある。',
 		'バリデーション（パラメータチェック、トリガー価格チェック）もここで実施する。',
+		'position_side を指定すると信用注文として扱う（ロング新規=buy+long, ロング決済=sell+long, ショート新規=sell+short, ショート決済=buy+short）。',
 	].join(' '),
 	inputSchema: PreviewOrderInputSchema,
 	handler: async (args) => {
@@ -176,6 +200,7 @@ export const toolDef: ToolDefinition = {
 				type: 'limit' | 'market' | 'stop' | 'stop_limit';
 				post_only?: boolean;
 				trigger_price?: string;
+				position_side?: 'long' | 'short';
 			},
 		);
 		if (!result.ok) return result;

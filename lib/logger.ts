@@ -88,6 +88,7 @@ export function logTradeAction(action: {
 	amount?: string;
 	price?: string | null;
 	triggerPrice?: string | null;
+	positionSide?: string | null;
 	status: string;
 	confirmed: boolean;
 }) {
