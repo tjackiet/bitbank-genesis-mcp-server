@@ -361,4 +361,96 @@ describe('preview_order', () => {
 			assertOk(result);
 		});
 	});
+
+	describe('信用取引（position_side）', () => {
+		it('ロング新規（buy + long）で「信用新規（ロング）」ラベルが表示される', async () => {
+			const { default: previewOrder } = await import('../../tools/private/preview_order.js');
+			const result = await previewOrder({
+				pair: 'btc_jpy',
+				amount: '0.01',
+				side: 'buy',
+				type: 'limit',
+				price: '14000000',
+				position_side: 'long',
+			});
+
+			assertOk(result);
+			expect(result.summary).toContain('信用新規（ロング）');
+			expect(result.summary).toContain('信用取引です');
+			expect(result.data.preview.position_side).toBe('long');
+		});
+
+		it('ロング決済（sell + long）で「信用決済（ロング）」ラベルが表示される', async () => {
+			const { default: previewOrder } = await import('../../tools/private/preview_order.js');
+			const result = await previewOrder({
+				pair: 'btc_jpy',
+				amount: '0.01',
+				side: 'sell',
+				type: 'market',
+				position_side: 'long',
+			});
+
+			assertOk(result);
+			expect(result.summary).toContain('信用決済（ロング）');
+		});
+
+		it('ショート新規（sell + short）で「信用新規（ショート）」ラベルが表示される', async () => {
+			const { default: previewOrder } = await import('../../tools/private/preview_order.js');
+			const result = await previewOrder({
+				pair: 'eth_jpy',
+				amount: '1.0',
+				side: 'sell',
+				type: 'limit',
+				price: '400000',
+				position_side: 'short',
+			});
+
+			assertOk(result);
+			expect(result.summary).toContain('信用新規（ショート）');
+		});
+
+		it('ショート決済（buy + short）で「信用決済（ショート）」ラベルが表示される', async () => {
+			const { default: previewOrder } = await import('../../tools/private/preview_order.js');
+			const result = await previewOrder({
+				pair: 'eth_jpy',
+				amount: '1.0',
+				side: 'buy',
+				type: 'market',
+				position_side: 'short',
+			});
+
+			assertOk(result);
+			expect(result.summary).toContain('信用決済（ショート）');
+		});
+
+		it('position_side なしで現物注文として信用ラベルが表示されない', async () => {
+			const { default: previewOrder } = await import('../../tools/private/preview_order.js');
+			const result = await previewOrder({
+				pair: 'btc_jpy',
+				amount: '0.01',
+				side: 'buy',
+				type: 'market',
+			});
+
+			assertOk(result);
+			expect(result.summary).not.toContain('信用');
+			expect(result.data.preview.position_side).toBeUndefined();
+		});
+
+		it('position_side が確認トークンに含まれる（改ざん検出用）', async () => {
+			const { default: previewOrder } = await import('../../tools/private/preview_order.js');
+			const result = await previewOrder({
+				pair: 'btc_jpy',
+				amount: '0.01',
+				side: 'buy',
+				type: 'limit',
+				price: '14000000',
+				position_side: 'long',
+			});
+
+			assertOk(result);
+			expect(result.data.confirmation_token).toBeTypeOf('string');
+			expect(result.data.confirmation_token.length).toBeGreaterThan(0);
+		});
+	});
 });

@@ -567,8 +567,11 @@ export const OrderStatusEnum = z.enum([
 	'CANCELED_PARTIALLY_FILLED',
 ]);
 
-/** 現物注文タイプ（margin 系の take_profit / stop_loss / losscut は除外） */
+/** 注文タイプ（現物・信用共通） */
 export const SpotOrderTypeEnum = z.enum(['limit', 'market', 'stop', 'stop_limit']);
+
+/** 信用取引の建玉方向 */
+export const PositionSideEnum = z.enum(['long', 'short']);
 
 /** 注文レスポンス（単一） — bitbank API が返す注文オブジェクト */
 const OrderResponseSchema = z.object({
@@ -604,6 +607,11 @@ export const PreviewOrderInputSchema = z
 		type: SpotOrderTypeEnum.describe('注文タイプ（limit / market / stop / stop_limit）'),
 		post_only: z.boolean().optional().describe('Post Only（limit のみ有効。Maker 手数料を確保）'),
 		trigger_price: z.string().optional().describe('トリガー価格。stop / stop_limit で必須'),
+		position_side: PositionSideEnum.optional().describe(
+			'信用取引の建玉方向。指定時は信用注文として扱う。' +
+				'ロング新規=buy+long, ロング決済=sell+long, ショート新規=sell+short, ショート決済=buy+short。' +
+				'⚠️ 信用取引です。損失が保証金を超える可能性があります',
+		),
 	})
 	.describe('注文内容をプレビューし、確認トークンを発行する。実際の発注は行わない');
 
@@ -618,6 +626,7 @@ export const PreviewOrderDataSchema = z.object({
 		price: z.string().optional(),
 		trigger_price: z.string().optional(),
 		post_only: z.boolean().optional(),
+		position_side: PositionSideEnum.optional(),
 	}),
 });
 
@@ -646,12 +655,13 @@ export const CreateOrderInputSchema = z
 		type: SpotOrderTypeEnum.describe('注文タイプ（limit / market / stop / stop_limit）'),
 		post_only: z.boolean().optional().describe('Post Only（limit のみ有効。Maker 手数料を確保）'),
 		trigger_price: z.string().optional().describe('トリガー価格。stop / stop_limit で必須'),
+		position_side: PositionSideEnum.optional().describe('信用取引の建玉方向。preview_order で指定した値をそのまま渡す'),
 		confirmation_token: z.string().describe('preview_order が発行した確認トークン'),
 		token_expires_at: z
 			.number()
 			.describe('確認トークンの有効期限（unix ms）。preview_order の expires_at をそのまま渡す'),
 	})
-	.describe('現物注文を発注する。事前に preview_order で確認トークンを取得すること');
+	.describe('注文を発注する（現物または信用）。事前に preview_order で確認トークンを取得すること');
 
 export const CreateOrderDataSchema = z.object({
 	order: OrderResponseSchema,

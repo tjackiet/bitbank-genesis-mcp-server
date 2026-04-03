@@ -395,3 +395,288 @@ describe('create_order — stop_limit / post_only / trigger_price', () => {
 		expect(result.summary).toContain('Post Only');
 	});
 });
+
+describe('create_order — 信用取引（position_side）', () => {
+	it('ロング新規（buy + long）で「信用新規（ロング）」サマリーが表示される', async () => {
+		const params = {
+			pair: 'btc_jpy',
+			amount: '0.001',
+			side: 'buy',
+			type: 'limit',
+			price: '14000000',
+			position_side: 'long',
+		};
+		const { confirmation_token, token_expires_at } = validToken(params);
+
+		setupFetchMockSequence([{ body: orderSuccessResponse({ side: 'buy', type: 'limit', price: '14000000' }) }]);
+
+		const { default: createOrder } = await import('../../tools/private/create_order.js');
+		const result = await createOrder({
+			...params,
+			side: params.side as 'buy' | 'sell',
+			type: params.type as 'limit',
+			position_side: params.position_side as 'long' | 'short',
+			confirmation_token,
+			token_expires_at,
+		});
+
+		assertOk(result);
+		expect(result.summary).toContain('信用新規（ロング）');
+	});
+
+	it('ロング決済（sell + long）で「信用決済（ロング）」サマリーが表示される', async () => {
+		const params = {
+			pair: 'btc_jpy',
+			amount: '0.001',
+			side: 'sell',
+			type: 'market',
+			position_side: 'long',
+		};
+		const { confirmation_token, token_expires_at } = validToken(params);
+
+		setupFetchMockSequence([{ body: orderSuccessResponse({ side: 'sell', type: 'market' }) }]);
+
+		const { default: createOrder } = await import('../../tools/private/create_order.js');
+		const result = await createOrder({
+			...params,
+			side: params.side as 'buy' | 'sell',
+			type: params.type as 'market',
+			position_side: params.position_side as 'long' | 'short',
+			confirmation_token,
+			token_expires_at,
+		});
+
+		assertOk(result);
+		expect(result.summary).toContain('信用決済（ロング）');
+	});
+
+	it('ショート新規（sell + short）で「信用新規（ショート）」サマリーが表示される', async () => {
+		const params = {
+			pair: 'eth_jpy',
+			amount: '1.0',
+			side: 'sell',
+			type: 'limit',
+			price: '400000',
+			position_side: 'short',
+		};
+		const { confirmation_token, token_expires_at } = validToken(params);
+
+		setupFetchMockSequence([
+			{ body: orderSuccessResponse({ pair: 'eth_jpy', side: 'sell', type: 'limit', price: '400000' }) },
+		]);
+
+		const { default: createOrder } = await import('../../tools/private/create_order.js');
+		const result = await createOrder({
+			...params,
+			side: params.side as 'buy' | 'sell',
+			type: params.type as 'limit',
+			position_side: params.position_side as 'long' | 'short',
+			confirmation_token,
+			token_expires_at,
+		});
+
+		assertOk(result);
+		expect(result.summary).toContain('信用新規（ショート）');
+	});
+
+	it('position_side なしで現物注文として信用ラベルが表示されない', async () => {
+		const params = { pair: 'btc_jpy', amount: '0.001', side: 'buy', type: 'limit', price: '14000000' };
+		const { confirmation_token, token_expires_at } = validToken(params);
+
+		setupFetchMockSequence([{ body: orderSuccessResponse({ side: 'buy', type: 'limit', price: '14000000' }) }]);
+
+		const { default: createOrder } = await import('../../tools/private/create_order.js');
+		const result = await createOrder({
+			...params,
+			side: params.side as 'buy' | 'sell',
+			type: params.type as 'limit',
+			confirmation_token,
+			token_expires_at,
+		});
+
+		assertOk(result);
+		expect(result.summary).not.toContain('信用');
+	});
+
+	it('position_side の改ざんでトークン検証が失敗する', async () => {
+		const params = {
+			pair: 'btc_jpy',
+			amount: '0.001',
+			side: 'buy',
+			type: 'limit',
+			price: '14000000',
+			position_side: 'long',
+		};
+		const { confirmation_token, token_expires_at } = validToken(params);
+
+		const { default: createOrder } = await import('../../tools/private/create_order.js');
+		const result = await createOrder({
+			...params,
+			side: params.side as 'buy' | 'sell',
+			type: params.type as 'limit',
+			position_side: 'short', // 改ざん: long → short
+			confirmation_token,
+			token_expires_at,
+		});
+
+		assertFail(result);
+		expect(result.meta.errorType).toBe('confirmation_required');
+	});
+
+	it('position_side を追加する改ざんでトークン検証が失敗する', async () => {
+		// 現物注文のトークンで信用注文を試みる
+		const params = { pair: 'btc_jpy', amount: '0.001', side: 'buy', type: 'limit', price: '14000000' };
+		const { confirmation_token, token_expires_at } = validToken(params);
+
+		const { default: createOrder } = await import('../../tools/private/create_order.js');
+		const result = await createOrder({
+			...params,
+			side: params.side as 'buy' | 'sell',
+			type: params.type as 'limit',
+			position_side: 'long', // 改ざん: 現物→信用
+			confirmation_token,
+			token_expires_at,
+		});
+
+		assertFail(result);
+		expect(result.meta.errorType).toBe('confirmation_required');
+	});
+
+	it('position_side を含む信用注文で request body に position_side が渡される', async () => {
+		const params = {
+			pair: 'btc_jpy',
+			amount: '0.001',
+			side: 'buy',
+			type: 'limit',
+			price: '14000000',
+			position_side: 'long',
+		};
+		const { confirmation_token, token_expires_at } = validToken(params);
+
+		const fetchMock = setupFetchMockSequence([
+			{ body: orderSuccessResponse({ side: 'buy', type: 'limit', price: '14000000' }) },
+		]);
+
+		const { default: createOrder } = await import('../../tools/private/create_order.js');
+		await createOrder({
+			...params,
+			side: params.side as 'buy' | 'sell',
+			type: params.type as 'limit',
+			position_side: params.position_side as 'long' | 'short',
+			confirmation_token,
+			token_expires_at,
+		});
+
+		const requestBody = JSON.parse(fetchMock.mock.calls[0][1].body as string);
+		expect(requestBody.position_side).toBe('long');
+	});
+});
+
+describe('create_order — 信用取引エラーコード', () => {
+	it('信用取引未審査エラー（50058）に適切なメッセージ', async () => {
+		const params = {
+			pair: 'btc_jpy',
+			amount: '0.001',
+			side: 'buy',
+			type: 'limit',
+			price: '14000000',
+			position_side: 'long',
+		};
+		const { confirmation_token, token_expires_at } = validToken(params);
+
+		setupFetchMockSequence([{ body: { success: 0, data: { code: 50058 } }, status: 400 }]);
+
+		const { default: createOrder } = await import('../../tools/private/create_order.js');
+		const result = await createOrder({
+			...params,
+			side: params.side as 'buy' | 'sell',
+			type: params.type as 'limit',
+			position_side: params.position_side as 'long' | 'short',
+			confirmation_token,
+			token_expires_at,
+		});
+
+		assertFail(result);
+		expect(result.summary).toContain('審査');
+	});
+
+	it('新規建可能額超過エラー（50061）に適切なメッセージ', async () => {
+		const params = {
+			pair: 'btc_jpy',
+			amount: '10',
+			side: 'buy',
+			type: 'limit',
+			price: '14000000',
+			position_side: 'long',
+		};
+		const { confirmation_token, token_expires_at } = validToken(params);
+
+		setupFetchMockSequence([{ body: { success: 0, data: { code: 50061 } }, status: 400 }]);
+
+		const { default: createOrder } = await import('../../tools/private/create_order.js');
+		const result = await createOrder({
+			...params,
+			side: params.side as 'buy' | 'sell',
+			type: params.type as 'limit',
+			position_side: params.position_side as 'long' | 'short',
+			confirmation_token,
+			token_expires_at,
+		});
+
+		assertFail(result);
+		expect(result.summary).toContain('新規建可能額');
+	});
+
+	it('建玉数量超過エラー（50062）に適切なメッセージ', async () => {
+		const params = {
+			pair: 'btc_jpy',
+			amount: '100',
+			side: 'sell',
+			type: 'market',
+			position_side: 'long',
+		};
+		const { confirmation_token, token_expires_at } = validToken(params);
+
+		setupFetchMockSequence([{ body: { success: 0, data: { code: 50062 } }, status: 400 }]);
+
+		const { default: createOrder } = await import('../../tools/private/create_order.js');
+		const result = await createOrder({
+			...params,
+			side: params.side as 'buy' | 'sell',
+			type: params.type as 'market',
+			position_side: params.position_side as 'long' | 'short',
+			confirmation_token,
+			token_expires_at,
+		});
+
+		assertFail(result);
+		expect(result.summary).toContain('建玉数量');
+	});
+
+	it('信用取引利用不可エラー（50078）に適切なメッセージ', async () => {
+		const params = {
+			pair: 'btc_jpy',
+			amount: '0.001',
+			side: 'buy',
+			type: 'limit',
+			price: '14000000',
+			position_side: 'long',
+		};
+		const { confirmation_token, token_expires_at } = validToken(params);
+
+		setupFetchMockSequence([{ body: { success: 0, data: { code: 50078 } }, status: 400 }]);
+
+		const { default: createOrder } = await import('../../tools/private/create_order.js');
+		const result = await createOrder({
+			...params,
+			side: params.side as 'buy' | 'sell',
+			type: params.type as 'limit',
+			position_side: params.position_side as 'long' | 'short',
+			confirmation_token,
+			token_expires_at,
+		});
+
+		assertFail(result);
+		expect(result.summary).toContain('信用取引');
+	});
+});
