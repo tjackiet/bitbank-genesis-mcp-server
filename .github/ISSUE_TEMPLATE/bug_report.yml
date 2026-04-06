@@ -45,5 +45,5 @@ body:
     id: logs
     attributes:
       label: エラーログ（任意）
-      description: 関連するエラーメッセージやログがあれば貼り付けてください。
+      description: 関連するエラーメッセージやログがあれば貼り付けてください（APIキー、トークン、秘密情報、個人情報は必ずマスクしてください）。
       render: shell
