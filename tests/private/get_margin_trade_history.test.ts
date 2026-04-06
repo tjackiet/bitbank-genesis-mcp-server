@@ -147,6 +147,136 @@ describe('get_margin_trade_history', () => {
 		expect(result.summary).toContain('ショート 1件');
 	});
 
+	it('10 件超の trades で省略表示される', async () => {
+		const manyTrades = {
+			trades: Array.from({ length: 15 }, (_, i) => ({
+				trade_id: 400 + i,
+				pair: 'btc_jpy',
+				order_id: 4000 + i,
+				side: 'buy',
+				position_side: 'long',
+				type: 'limit',
+				amount: '0.01',
+				price: '15000000',
+				maker_taker: 'maker',
+				fee_amount_base: '0.00001',
+				fee_amount_quote: '0',
+				executed_at: 1710000000000 + i * 1000,
+			})),
+		};
+		setupFetchMock(mockBitbankSuccess(manyTrades));
+
+		const { default: getMarginTradeHistory } = await import('../../tools/private/get_margin_trade_history.js');
+		const result = await getMarginTradeHistory({});
+
+		assertOk(result);
+		expect(result.data.trades).toHaveLength(15);
+		expect(result.meta.tradeCount).toBe(15);
+		expect(result.summary).toContain('他 5件');
+	});
+
+	it('order=asc 時は末尾 10 件を表示する', async () => {
+		const manyTrades = {
+			trades: Array.from({ length: 12 }, (_, i) => ({
+				trade_id: 500 + i,
+				pair: 'btc_jpy',
+				order_id: 5000 + i,
+				side: 'buy',
+				position_side: 'long',
+				type: 'limit',
+				amount: '0.01',
+				price: '15000000',
+				maker_taker: 'maker',
+				fee_amount_base: '0.00001',
+				fee_amount_quote: '0',
+				executed_at: 1710000000000 + i * 1000,
+			})),
+		};
+		setupFetchMock(mockBitbankSuccess(manyTrades));
+
+		const { default: getMarginTradeHistory } = await import('../../tools/private/get_margin_trade_history.js');
+		const result = await getMarginTradeHistory({ order: 'asc' });
+
+		assertOk(result);
+		// asc 時は末尾 10 件（trade_id 502〜511）が表示される
+		expect(result.summary).toContain('trade: 502');
+		expect(result.summary).not.toContain('trade: 500]');
+		expect(result.summary).not.toContain('trade: 501]');
+	});
+
+	it('count がデフォルト値 (20) の場合はパラメータを送らない', async () => {
+		setupFetchMock(mockBitbankSuccess({ trades: [] }));
+
+		const { default: getMarginTradeHistory } = await import('../../tools/private/get_margin_trade_history.js');
+		await getMarginTradeHistory({});
+
+		const fetchMock = globalThis.fetch as ReturnType<typeof vi.fn>;
+		const calledUrl = fetchMock.mock.calls[0][0] as string;
+		expect(calledUrl).not.toContain('count=');
+	});
+
+	it('order がデフォルト値 (desc) の場合はパラメータを送らない', async () => {
+		setupFetchMock(mockBitbankSuccess({ trades: [] }));
+
+		const { default: getMarginTradeHistory } = await import('../../tools/private/get_margin_trade_history.js');
+		await getMarginTradeHistory({});
+
+		const fetchMock = globalThis.fetch as ReturnType<typeof vi.fn>;
+		const calledUrl = fetchMock.mock.calls[0][0] as string;
+		expect(calledUrl).not.toContain('order=');
+	});
+
+	it('order=asc を API に渡す', async () => {
+		setupFetchMock(mockBitbankSuccess({ trades: [] }));
+
+		const { default: getMarginTradeHistory } = await import('../../tools/private/get_margin_trade_history.js');
+		await getMarginTradeHistory({ order: 'asc' });
+
+		const fetchMock = globalThis.fetch as ReturnType<typeof vi.fn>;
+		const calledUrl = fetchMock.mock.calls[0][0] as string;
+		expect(calledUrl).toContain('order=asc');
+	});
+
+	it('profit_loss がないトレード（新規建て）は損益を表示しない', async () => {
+		const openOnly = {
+			trades: [
+				{
+					trade_id: 601,
+					pair: 'btc_jpy',
+					order_id: 6001,
+					side: 'buy',
+					position_side: 'long',
+					type: 'limit',
+					amount: '0.01',
+					price: '15000000',
+					maker_taker: 'maker',
+					fee_amount_base: '0.00001',
+					fee_amount_quote: '0',
+					executed_at: 1710000000000,
+				},
+			],
+		};
+		setupFetchMock(mockBitbankSuccess(openOnly));
+
+		const { default: getMarginTradeHistory } = await import('../../tools/private/get_margin_trade_history.js');
+		const result = await getMarginTradeHistory({});
+
+		assertOk(result);
+		expect(result.summary).not.toContain('損益');
+	});
+
+	it('空の trades で 0 件メッセージを返す', async () => {
+		setupFetchMock(mockBitbankSuccess({ trades: [] }));
+
+		const { default: getMarginTradeHistory } = await import('../../tools/private/get_margin_trade_history.js');
+		const result = await getMarginTradeHistory({});
+
+		assertOk(result);
+		expect(result.data.trades).toHaveLength(0);
+		expect(result.meta.tradeCount).toBe(0);
+		expect(result.summary).toContain('0件');
+	});
+
 	it('PrivateApiError で fail を返す', async () => {
 		setupFetchMock(mockBitbankError(20001), 400);
 

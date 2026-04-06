@@ -153,6 +153,64 @@ describe('get_margin_positions', () => {
 		expect(result.meta.errorType).toBe('upstream_error');
 		expect(result.summary).toContain('fetch failed');
 	});
+
+	it('存在しない pair でフィルタ → 0 件になる', async () => {
+		setupFetchMock(mockBitbankSuccess(rawMarginPositionsResponse));
+
+		const { default: getMarginPositions } = await import('../../tools/private/get_margin_positions.js');
+		const result = await getMarginPositions({ pair: 'xrp_jpy' });
+
+		assertOk(result);
+		expect(result.data.positions).toHaveLength(0);
+		expect(result.summary).toContain('建玉はありません');
+		expect(result.meta.pair).toBe('xrp_jpy');
+	});
+
+	it('追証と不足金が同時に発生した場合、両方のアラートを表示する', async () => {
+		const withBoth = {
+			...rawMarginPositionsResponse,
+			notice: {
+				what: '追証',
+				occurred_at: 1710000000000,
+				amount: '100000',
+				due_date_at: 1710200000000,
+			},
+			payables: { amount: '50000' },
+		};
+		setupFetchMock(mockBitbankSuccess(withBoth));
+
+		const { default: getMarginPositions } = await import('../../tools/private/get_margin_positions.js');
+		const result = await getMarginPositions({});
+
+		assertOk(result);
+		expect(result.meta.hasNotice).toBe(true);
+		expect(result.summary).toContain('追証');
+		expect(result.summary).toContain('100,000');
+		expect(result.summary).toContain('不足金');
+		expect(result.summary).toContain('50,000');
+	});
+
+	it('不足金が 0 の場合はアラートを表示しない', async () => {
+		setupFetchMock(mockBitbankSuccess(rawMarginPositionsResponse));
+
+		const { default: getMarginPositions } = await import('../../tools/private/get_margin_positions.js');
+		const result = await getMarginPositions({});
+
+		assertOk(result);
+		expect(result.summary).not.toContain('不足金');
+	});
+
+	it('建玉の評価額・平均取得価格をサマリーに含む', async () => {
+		setupFetchMock(mockBitbankSuccess(rawMarginPositionsResponse));
+
+		const { default: getMarginPositions } = await import('../../tools/private/get_margin_positions.js');
+		const result = await getMarginPositions({});
+
+		assertOk(result);
+		// btc_jpy のポジション
+		expect(result.summary).toContain('15,000,000');
+		expect(result.summary).toContain('評価額');
+	});
 });
 
 describe('get_margin_positions — handler (toolDef)', () => {

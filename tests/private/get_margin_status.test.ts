@@ -94,6 +94,21 @@ describe('get_margin_status', () => {
 		expect(result.summary).toContain('不足金が発生しています');
 	});
 
+	it('SETTLED ステータスを正常に処理する（警告なし）', async () => {
+		const settledStatus = { ...rawMarginStatusResponse, status: 'SETTLED' };
+		setupFetchMock(mockBitbankSuccess(settledStatus));
+
+		const { default: getMarginStatus } = await import('../../tools/private/get_margin_status.js');
+		const result = await getMarginStatus({});
+
+		assertOk(result);
+		expect(result.data.status).toBe('SETTLED');
+		expect(result.meta.hasWarning).toBe(false);
+		expect(result.summary).toContain('精算済み');
+		// SETTLED は特別な警告メッセージを持たない
+		expect(result.summary).not.toContain('⚠');
+	});
+
 	it('建玉なし（null フィールド）を正常に処理する', async () => {
 		const noPositions = {
 			...rawMarginStatusResponse,
@@ -131,6 +146,49 @@ describe('get_margin_status', () => {
 		assertFail(result);
 		expect(result.meta.errorType).toBe('upstream_error');
 		expect(result.summary).toContain('fetch failed');
+	});
+
+	it('サマリーに維持保証金・建玉評価額・新規建て可能額を含む', async () => {
+		setupFetchMock(mockBitbankSuccess(rawMarginStatusResponse));
+
+		const { default: getMarginStatus } = await import('../../tools/private/get_margin_status.js');
+		const result = await getMarginStatus({});
+
+		assertOk(result);
+		expect(result.summary).toContain('維持保証金合計');
+		expect(result.summary).toContain('ロング');
+		expect(result.summary).toContain('ショート');
+		expect(result.summary).toContain('建玉総評価額');
+		expect(result.summary).toContain('新規建て可能額');
+	});
+
+	it('強制決済率が設定されている場合サマリーに含む', async () => {
+		setupFetchMock(mockBitbankSuccess(rawMarginStatusResponse));
+
+		const { default: getMarginStatus } = await import('../../tools/private/get_margin_status.js');
+		const result = await getMarginStatus({});
+
+		assertOk(result);
+		expect(result.summary).toContain('強制決済率');
+		expect(result.summary).toContain('110.00%');
+	});
+
+	it('全数値フィールドが data に正しくマッピングされる', async () => {
+		setupFetchMock(mockBitbankSuccess(rawMarginStatusResponse));
+
+		const { default: getMarginStatus } = await import('../../tools/private/get_margin_status.js');
+		const result = await getMarginStatus({});
+
+		assertOk(result);
+		expect(result.data.margin_position_profit_loss).toBe('50000');
+		expect(result.data.unrealized_cost).toBe('1200');
+		expect(result.data.total_margin_position_product).toBe('400000');
+		expect(result.data.open_margin_position_product).toBe('300000');
+		expect(result.data.open_margin_order_product).toBe('100000');
+		expect(result.data.total_position_maintenance_margin).toBe('120000');
+		expect(result.data.total_long_position_maintenance_margin).toBe('80000');
+		expect(result.data.total_short_position_maintenance_margin).toBe('40000');
+		expect(result.data.total_open_order_maintenance_margin).toBe('30000');
 	});
 });
 
