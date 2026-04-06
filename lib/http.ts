@@ -40,16 +40,20 @@ export interface FetchJsonOptions {
 	schema?: { parse: (data: unknown) => unknown };
 }
 
+/** リトライ待機の上限（30秒） */
+const MAX_RETRY_WAIT_MS = 30_000;
+
 /**
  * Retry-After ヘッダから待機ミリ秒を算出する。
- * 未指定・不正値の場合はフォールバック値を返す。
+ * 未指定・不正値の場合はフォールバック値を返す。いずれも MAX_RETRY_WAIT_MS でキャップ。
  */
 function parseRetryAfterMs(headers: { get(name: string): string | null }, fallbackMs: number): number {
+	const boundedFallbackMs = Math.min(fallbackMs, MAX_RETRY_WAIT_MS);
 	const raw = headers.get('Retry-After');
-	if (raw == null) return fallbackMs;
+	if (raw == null) return boundedFallbackMs;
 	const secs = parseInt(raw, 10);
-	if (Number.isFinite(secs) && secs > 0) return Math.min(secs * 1000, 30_000);
-	return fallbackMs;
+	if (Number.isFinite(secs) && secs > 0) return Math.min(secs * 1000, MAX_RETRY_WAIT_MS);
+	return boundedFallbackMs;
 }
 
 export async function fetchJson<T = unknown>(
