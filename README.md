@@ -226,3 +226,7 @@ npx @modelcontextprotocol/inspector http://localhost:8787/mcp
 ```
 
 > HTTP サーバは既定で無効です（STDIO 汚染を避けるため）。Docker での起動方法は [docs/ops.md](docs/ops.md#docker起動開発検証用) を参照してください。
+
+## フィードバック・バグ報告
+
+バグ報告や機能要望は [GitHub Issues](https://github.com/tjackiet/bitbank-genesis-mcp-server/issues) からお願いします。Issue テンプレートを用意していますので、用途に合ったものを選択してください。
