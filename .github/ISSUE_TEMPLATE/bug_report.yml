@@ -1,0 +1,49 @@
+name: バグ報告
+description: 不具合や予期しない動作の報告
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        バグ報告ありがとうございます。以下の情報をできるだけ詳しく記入してください。
+
+  - type: textarea
+    id: description
+    attributes:
+      label: 何が起きましたか？
+      description: 期待した動作と、実際に起きたことを教えてください。
+      placeholder: 例）analyze_market_signal を呼び出すとタイムアウトエラーが発生する
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: 再現手順
+      description: バグを再現するための手順を教えてください。
+      placeholder: |
+        1. Claude Desktop で「BTCの市場分析をして」と入力
+        2. analyze_market_signal ツールが呼び出される
+        3. エラーが発生する
+    validations:
+      required: true
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: 環境
+      description: 利用環境を教えてください。
+      value: |
+        - OS:
+        - Node.js バージョン:
+        - MCP クライアント: Claude Desktop / Claude Code / その他
+        - 起動モード: STDIO / HTTP
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: エラーログ（任意）
+      description: 関連するエラーメッセージやログがあれば貼り付けてください。
+      render: shell
