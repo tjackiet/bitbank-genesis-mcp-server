@@ -413,10 +413,10 @@ describe('server.ts smoke', () => {
 
 		const errorResult = await server.tools[1].handler({ pair: 'eth_jpy' });
 		expect(errorResult).toEqual({
-			content: [{ type: 'text', text: 'internal error: boom' }],
+			content: [{ type: 'text', text: '内部エラー: boom' }],
 			structuredContent: {
 				ok: false,
-				summary: 'internal error: boom',
+				summary: '内部エラー: boom',
 				meta: {
 					ms: expect.any(Number),
 					errorType: 'internal',

@@ -780,7 +780,10 @@ export default async function analyzeCandlePatterns(
 
 		return AnalyzeCandlePatternsOutputSchema.parse(result);
 	} catch (e: unknown) {
-		return failFromError(e, { schema: AnalyzeCandlePatternsOutputSchema, defaultMessage: 'Unknown error' });
+		return failFromError(e, {
+			schema: AnalyzeCandlePatternsOutputSchema,
+			defaultMessage: 'ローソク足パターン分析中にエラーが発生しました',
+		});
 	}
 }
 
