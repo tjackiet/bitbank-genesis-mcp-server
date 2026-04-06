@@ -14,9 +14,12 @@ RUN mkdir -p assets && \
     cp node_modules/lightweight-charts/dist/lightweight-charts.standalone.production.js assets/lightweight-charts.standalone.js
 
 # Copy the rest of the application's source code
-COPY src ./src
-COPY tools ./tools
-COPY lib ./lib
+COPY --chown=node:node src ./src
+COPY --chown=node:node tools ./tools
+COPY --chown=node:node lib ./lib
+
+# Run as non-root user for security
+USER node
 
 # Set the environment to production
 ENV NODE_ENV=production

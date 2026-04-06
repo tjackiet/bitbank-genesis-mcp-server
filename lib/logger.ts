@@ -44,7 +44,7 @@ export function log(level: 'error' | 'warn' | 'info' | 'debug', event: Record<st
 }
 
 /** ログ出力前に機密フィールドをマスクする */
-const SENSITIVE_KEYS = new Set(['confirmation_token', 'token']);
+const SENSITIVE_KEYS = new Set(['confirmation_token', 'token', 'key', 'secret', 'apiKey', 'apiSecret']);
 
 function maskSensitiveFields(obj: unknown): unknown {
 	if (obj == null || typeof obj !== 'object') return obj;
