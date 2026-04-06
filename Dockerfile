@@ -18,6 +18,9 @@ COPY src ./src
 COPY tools ./tools
 COPY lib ./lib
 
+# Run as non-root user for security
+USER node
+
 # Set the environment to production
 ENV NODE_ENV=production
 
