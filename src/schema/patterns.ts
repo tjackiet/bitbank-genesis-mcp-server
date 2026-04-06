@@ -228,7 +228,7 @@ export const CandlePatternTypeEnum = z.enum([
 ]);
 
 export const AnalyzeCandlePatternsInputSchema = z.object({
-	pair: z.literal('btc_jpy').optional().default('btc_jpy'),
+	pair: z.string().optional().default('btc_jpy'),
 	timeframe: z.literal('1day').optional().default('1day'),
 	// as_of: 主要パラメータ名（ISO形式 "2025-11-05" または YYYYMMDD "20251105" を受け付け）
 	as_of: z
