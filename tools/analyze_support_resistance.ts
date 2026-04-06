@@ -792,7 +792,7 @@ export default async function analyzeSupportResistance(
 	} catch (err: unknown) {
 		return failFromError(err, {
 			schema: AnalyzeSupportResistanceOutputSchema,
-			defaultMessage: 'Analysis error',
+			defaultMessage: 'サポート・レジスタンス分析中にエラーが発生しました',
 		});
 	}
 }

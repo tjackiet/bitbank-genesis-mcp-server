@@ -40,6 +40,18 @@ export interface FetchJsonOptions {
 	schema?: { parse: (data: unknown) => unknown };
 }
 
+/**
+ * Retry-After ヘッダから待機ミリ秒を算出する。
+ * 未指定・不正値の場合はフォールバック値を返す。
+ */
+function parseRetryAfterMs(headers: { get(name: string): string | null }, fallbackMs: number): number {
+	const raw = headers.get('Retry-After');
+	if (raw == null) return fallbackMs;
+	const secs = parseInt(raw, 10);
+	if (Number.isFinite(secs) && secs > 0) return Math.min(secs * 1000, 30_000);
+	return fallbackMs;
+}
+
 export async function fetchJson<T = unknown>(
 	url: string,
 	{ timeoutMs = 2500, retries = DEFAULT_RETRIES, schema }: FetchJsonOptions = {},
@@ -51,6 +63,14 @@ export async function fetchJson<T = unknown>(
 		try {
 			const res = await fetch(url, { signal: ctrl.signal });
 			clearTimeout(t);
+			if (res.status === 429) {
+				const waitMs = parseRetryAfterMs(res.headers, 1000 * 2 ** i);
+				if (i < retries) {
+					await new Promise((r) => setTimeout(r, waitMs));
+					continue;
+				}
+				throw new Error('レート制限超過 (HTTP 429)。しばらく待ってから再試行してください');
+			}
 			if (!res.ok) throw new Error(`HTTP ${res.status} ${res.statusText}`);
 			const json: unknown = await res.json();
 			if (schema) return schema.parse(json) as T;
@@ -85,6 +105,14 @@ export async function fetchJsonWithRateLimit<T = unknown>(
 		try {
 			const res = await fetch(url, { signal: ctrl.signal });
 			clearTimeout(t);
+			if (res.status === 429) {
+				const waitMs = parseRetryAfterMs(res.headers, 1000 * 2 ** i);
+				if (i < retries) {
+					await new Promise((r) => setTimeout(r, waitMs));
+					continue;
+				}
+				throw new Error('レート制限超過 (HTTP 429)。しばらく待ってから再試行してください');
+			}
 			if (!res.ok) throw new Error(`HTTP ${res.status} ${res.statusText}`);
 			const rateLimit = extractRateLimit(res.headers);
 			const json: unknown = await res.json();

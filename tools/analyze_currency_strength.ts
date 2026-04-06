@@ -95,7 +95,13 @@ export default async function analyzeCurrencyStrength(topN: number = 10, type: s
 		const targets = withVolume.slice(0, topN);
 
 		// 3. Fetch RSI & SMA for each target (parallel, with concurrency limit)
-		const indicatorResults = await Promise.allSettled(targets.map((t) => analyzeIndicators(t.pair, type, 60)));
+		const MAX_CONCURRENT = 3;
+		const indicatorResults: PromiseSettledResult<Awaited<ReturnType<typeof analyzeIndicators>>>[] = [];
+		for (let i = 0; i < targets.length; i += MAX_CONCURRENT) {
+			const batch = targets.slice(i, i + MAX_CONCURRENT);
+			const batchResults = await Promise.allSettled(batch.map((t) => analyzeIndicators(t.pair, type, 60)));
+			indicatorResults.push(...batchResults);
+		}
 
 		// 3b. Check failures
 		const failedIndicatorPairs: string[] = [];

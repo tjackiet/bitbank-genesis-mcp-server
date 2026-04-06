@@ -489,7 +489,7 @@ export default async function analyzeFibonacci(opts: Record<string, unknown> = {
 	} catch (err: unknown) {
 		return failFromError(err, {
 			schema: AnalyzeFibonacciOutputSchema,
-			defaultMessage: 'Fibonacci analysis error',
+			defaultMessage: 'フィボナッチ分析中にエラーが発生しました',
 		});
 	}
 }

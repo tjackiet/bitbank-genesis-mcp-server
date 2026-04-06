@@ -194,9 +194,18 @@ function registerToolWithLog<S extends z.ZodTypeAny, R = unknown>(
 		name,
 		{ description: schema.description, inputSchema: getRawShape(schema.inputSchema) } as any,
 		async (input: any) => {
+			const TOOL_TIMEOUT_MS = 60_000;
 			const t0 = Date.now();
 			try {
-				const result = await handler(input as z.infer<S>);
+				const result = await Promise.race([
+					handler(input as z.infer<S>),
+					new Promise<never>((_, reject) =>
+						setTimeout(
+							() => reject(new Error(`ツール実行がタイムアウトしました (${TOOL_TIMEOUT_MS / 1000}秒)`)),
+							TOOL_TIMEOUT_MS,
+						),
+					),
+				]);
 				const ms = Date.now() - t0;
 				logToolRun({ tool: name, input, result, ms });
 				return respond(result);
@@ -205,10 +214,10 @@ function registerToolWithLog<S extends z.ZodTypeAny, R = unknown>(
 				logError(name, err, input);
 				const message = err instanceof Error ? err.message : String(err);
 				return {
-					content: [{ type: 'text', text: `internal error: ${message || 'unknown error'}` }],
+					content: [{ type: 'text', text: `内部エラー: ${message || '不明なエラー'}` }],
 					structuredContent: {
 						ok: false,
-						summary: `internal error: ${message || 'unknown error'}`,
+						summary: `内部エラー: ${message || '不明なエラー'}`,
 						meta: { ms, errorType: 'internal' },
 					},
 				};

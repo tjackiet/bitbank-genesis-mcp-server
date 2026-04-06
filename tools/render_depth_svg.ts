@@ -230,7 +230,7 @@ export default async function renderDepthSvg(
 			meta,
 		);
 	} catch (e: unknown) {
-		return failFromError(e, { defaultMessage: 'failed to render depth' });
+		return failFromError(e, { defaultMessage: '板の深度チャート描画に失敗しました' });
 	}
 }
 

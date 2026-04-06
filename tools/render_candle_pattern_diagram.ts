@@ -312,7 +312,10 @@ export default async function renderCandlePatternDiagram(opts: {
 
 		return RenderCandlePatternDiagramOutputSchema.parse(result);
 	} catch (e: unknown) {
-		return failFromError(e, { schema: RenderCandlePatternDiagramOutputSchema, defaultMessage: 'Unknown error' });
+		return failFromError(e, {
+			schema: RenderCandlePatternDiagramOutputSchema,
+			defaultMessage: 'ローソク足パターン図の描画中にエラーが発生しました',
+		});
 	}
 }
 
