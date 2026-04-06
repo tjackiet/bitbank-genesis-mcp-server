@@ -2,7 +2,7 @@
  * analyze_candle_patterns - ローソク足パターン検出（1〜3本足）
  *
  * 設計思想:
- * - 目的: BTC/JPY の直近5日間のローソク足から短期反転パターンを検出
+ * - 目的: 指定ペアの直近5日間のローソク足から短期反転パターンを検出
  * - 対象:
  *   - 1本足: ハンマー、シューティングスター、十字線
  *   - 2本足: 包み線、はらみ線、毛抜き、かぶせ線、切り込み線
@@ -30,8 +30,8 @@ import {
 	upperShadow,
 } from '../lib/candle-utils.js';
 import { dayjs, nowIso, today, toIsoTime } from '../lib/datetime.js';
-import { fail, failFromError } from '../lib/result.js';
-import { createMeta } from '../lib/validate.js';
+import { fail, failFromError, failFromValidation } from '../lib/result.js';
+import { createMeta, ensurePair } from '../lib/validate.js';
 import type {
 	CandlePatternType,
 	DetectedCandlePattern,
@@ -40,7 +40,7 @@ import type {
 	WindowCandle,
 } from '../src/handlers/analyzeCandlePatternsHandler.js';
 import { generateContent, generateSummary } from '../src/handlers/analyzeCandlePatternsHandler.js';
-import type { Candle, Pair } from '../src/schemas.js';
+import type { Candle } from '../src/schemas.js';
 import { AnalyzeCandlePatternsInputSchema, AnalyzeCandlePatternsOutputSchema } from '../src/schemas.js';
 import type { ToolDefinition } from '../src/tool-definition.js';
 import getCandles from './get_candles.js';
@@ -585,7 +585,7 @@ function normalizeDateToYYYYMMDD(dateStr: string | undefined): string | undefine
 // ----- メイン関数 -----
 export default async function analyzeCandlePatterns(
 	opts: {
-		pair?: 'btc_jpy';
+		pair?: string;
 		timeframe?: '1day';
 		as_of?: string; // ISO "2025-11-05" or YYYYMMDD "20251105"
 		date?: string; // DEPRECATED: YYYYMMDD format (for backward compatibility)
@@ -600,7 +600,9 @@ export default async function analyzeCandlePatterns(
 	try {
 		// 入力の正規化
 		const input = AnalyzeCandlePatternsInputSchema.parse(opts);
-		const pair = input.pair as Pair;
+		const chk = ensurePair(input.pair);
+		if (!chk.ok) return failFromValidation(chk);
+		const pair = chk.pair;
 		const timeframe = input.timeframe;
 
 		// as_of を優先、なければ date を使用（互換性のため）
@@ -794,7 +796,7 @@ export const toolDef: ToolDefinition = {
 		'[Candlestick Patterns / Doji / Engulfing] ローソク足パターン検出（candle patterns / doji / engulfing / hammer / harami）。1〜3本足パターンを検出し文脈と過去統計を付けて解説。',
 	inputSchema: AnalyzeCandlePatternsInputSchema,
 	handler: async (args: {
-		pair?: 'btc_jpy';
+		pair?: string;
 		timeframe?: '1day';
 		as_of?: string;
 		date?: string;
