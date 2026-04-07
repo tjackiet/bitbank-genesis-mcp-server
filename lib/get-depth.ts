@@ -26,13 +26,13 @@ export function buildDepthText(input: BuildDepthTextInput): string {
 		'',
 		summary,
 		`板の層数: 買い ${bids.length}層 / 売り ${asks.length}層`,
-		mid ? `中値: ${mid.toLocaleString()}円` : '',
+		mid ? `中値: ${mid.toLocaleString('ja-JP')}円` : '',
 		'',
 		`🟢 買い板 (全${bids.length}層):`,
-		...bids.map(([p, s]: [unknown, unknown], i: number) => `  ${i + 1}. ${Number(p).toLocaleString()}円 ${s}`),
+		...bids.map(([p, s]: [unknown, unknown], i: number) => `  ${i + 1}. ${Number(p).toLocaleString('ja-JP')}円 ${s}`),
 		'',
 		`🔴 売り板 (全${asks.length}層):`,
-		...asks.map(([p, s]: [unknown, unknown], i: number) => `  ${i + 1}. ${Number(p).toLocaleString()}円 ${s}`),
+		...asks.map(([p, s]: [unknown, unknown], i: number) => `  ${i + 1}. ${Number(p).toLocaleString('ja-JP')}円 ${s}`),
 	]
 		.filter(Boolean)
 		.join('\n');

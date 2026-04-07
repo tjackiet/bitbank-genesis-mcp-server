@@ -52,7 +52,7 @@ export function formatPrice(value: number | null | undefined, pair?: string): st
  */
 export function formatPriceJPY(value: number | null | undefined): string {
 	if (value == null || !Number.isFinite(Number(value))) return 'n/a';
-	return `${Math.round(Number(value)).toLocaleString()}円`;
+	return `${Math.round(Number(value)).toLocaleString('ja-JP')}円`;
 }
 
 /**
@@ -62,7 +62,7 @@ export function formatPriceJPY(value: number | null | undefined): string {
 export function formatCurrency(value: number | null | undefined, pair?: string): string {
 	if (value == null) return 'n/a';
 	const jpy = !pair || (typeof pair === 'string' && pair.toLowerCase().includes('jpy'));
-	return jpy ? `${Number(value).toLocaleString()} JPY` : `${Number(value).toFixed(2)}`;
+	return jpy ? `${Number(value).toLocaleString('ja-JP')} JPY` : `${Number(value).toFixed(2)}`;
 }
 
 /**
@@ -74,7 +74,7 @@ export function formatCurrencyShort(value: number | null | undefined, pair?: str
 	const jpy = !pair || (typeof pair === 'string' && pair.toLowerCase().includes('jpy'));
 	if (jpy) {
 		const n = Number(value);
-		return n >= 1000 ? `${Math.round(n / 1000)}k JPY` : `${n.toLocaleString()} JPY`;
+		return n >= 1000 ? `${Math.round(n / 1000)}k JPY` : `${n.toLocaleString('ja-JP')} JPY`;
 	}
 	return `${Number(value).toFixed(2)}`;
 }

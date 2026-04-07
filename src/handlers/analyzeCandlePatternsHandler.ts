@@ -189,13 +189,15 @@ function format2CandleDetail(
 		const highDiff = Math.abs(c1.high - c2.high);
 		const matchPct = (1 - highDiff / ((c1.high + c2.high) / 2)) * 100;
 		lines.push(
-			`    判定: 2日連続で高値がほぼ同じ（誤差${highDiff.toLocaleString()}円, 一致率${matchPct.toFixed(1)}%）`,
+			`    判定: 2日連続で高値がほぼ同じ（誤差${highDiff.toLocaleString('ja-JP')}円, 一致率${matchPct.toFixed(1)}%）`,
 		);
 		lines.push(`    高値: ${formatPrice(c1.high)} → ${formatPrice(c2.high)}`);
 	} else if (p.pattern === 'tweezer_bottom') {
 		const lowDiff = Math.abs(c1.low - c2.low);
 		const matchPct = (1 - lowDiff / ((c1.low + c2.low) / 2)) * 100;
-		lines.push(`    判定: 2日連続で安値がほぼ同じ（誤差${lowDiff.toLocaleString()}円, 一致率${matchPct.toFixed(1)}%）`);
+		lines.push(
+			`    判定: 2日連続で安値がほぼ同じ（誤差${lowDiff.toLocaleString('ja-JP')}円, 一致率${matchPct.toFixed(1)}%）`,
+		);
 		lines.push(`    安値: ${formatPrice(c1.low)} → ${formatPrice(c2.low)}`);
 	} else if (p.pattern === 'dark_cloud_cover') {
 		const midPoint = (c1.open + c1.close) / 2;

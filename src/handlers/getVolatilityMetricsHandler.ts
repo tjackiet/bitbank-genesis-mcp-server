@@ -73,7 +73,7 @@ export function buildVolatilityDetailedText(input: VolDetailedInput, view: 'deta
 	const fmtCurr = (p: string, v: number | null) => formatCurrency(v, p);
 
 	const windowsList = rolling.map((r) => r.window).join('/');
-	const header = `${String(pair).toUpperCase()} [${String(type)}] close=${lastClose != null ? Number(lastClose).toLocaleString() : 'n/a'}\n`;
+	const header = `${String(pair).toUpperCase()} [${String(type)}] close=${lastClose != null ? Number(lastClose).toLocaleString('ja-JP') : 'n/a'}\n`;
 	const block1 = `【Volatility Metrics${ann ? ' (annualized)' : ''}, ${sampleSize ?? 'n/a'} samples】\nRV (std): ${fmtPct(rvAnn)}\nATR: ${fmtCurr(pair, atrAbs)}\nParkinson: ${fmtPct(pkAnn)}\nGarman-Klass: ${fmtPct(gkAnn)}\nRogers-Satchell: ${fmtPct(rsAnn)}`;
 
 	const maxW = rolling.length ? Math.max(...rolling.map((r) => r.window)) : null;
@@ -113,7 +113,7 @@ export function buildVolatilityDetailedText(input: VolDetailedInput, view: 'deta
 		const maxClose = cArr.length ? Math.max(...cArr) : null;
 		const mean = retArr.length ? retArr.reduce((s, v) => s + v, 0) / retArr.length : null;
 		const std = retArr.length ? stddev(retArr) : null;
-		text += `\n\n【Series】\nTotal: ${sampleSize ?? cArr.length} candles\nFirst: ${firstIso} , Last: ${lastIso}\nClose range: ${minClose != null ? Number(minClose).toLocaleString() : 'n/a'} - ${maxClose != null ? Number(maxClose).toLocaleString() : 'n/a'} JPY\nReturns: mean=${formatPercent(mean, { multiply: true, digits: 2 })}, std=${formatPercent(std, { multiply: true, digits: 2 })}${ann ? ' (base interval)' : ''}`;
+		text += `\n\n【Series】\nTotal: ${sampleSize ?? cArr.length} candles\nFirst: ${firstIso} , Last: ${lastIso}\nClose range: ${minClose != null ? Number(minClose).toLocaleString('ja-JP') : 'n/a'} - ${maxClose != null ? Number(maxClose).toLocaleString('ja-JP') : 'n/a'} JPY\nReturns: mean=${formatPercent(mean, { multiply: true, digits: 2 })}, std=${formatPercent(std, { multiply: true, digits: 2 })}${ann ? ' (base interval)' : ''}`;
 	}
 	return text;
 }

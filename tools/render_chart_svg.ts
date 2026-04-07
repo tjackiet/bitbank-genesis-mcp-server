@@ -338,7 +338,7 @@ export default async function renderChartSvg(
 		if (abs >= 1_000_000_000) return `${prefix}${(val / 1_000_000_000).toFixed(1)}B`;
 		if (abs >= 1_000_000) return `${prefix}${(val / 1_000_000).toFixed(abs >= 10_000_000 ? 1 : 2)}M`;
 		if (abs >= 10_000) return `${prefix}${(val / 1_000).toFixed(abs >= 100_000 ? 0 : 1)}K`;
-		if (abs >= 1_000) return `${prefix}${val.toLocaleString()}`;
+		if (abs >= 1_000) return `${prefix}${val.toLocaleString('ja-JP')}`;
 		return `${prefix}${val}`;
 	};
 

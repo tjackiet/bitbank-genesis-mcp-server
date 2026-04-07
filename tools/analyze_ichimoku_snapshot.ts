@@ -96,7 +96,7 @@ export function buildIchimokuSnapshotText(input: BuildIchimokuSnapshotTextInput)
 	} = input;
 	const lines: string[] = [];
 	lines.push(`${String(pair).toUpperCase()} ${String(type)} 一目均衡表分析`);
-	if (close != null) lines.push(`価格: ${Number(close).toLocaleString()}円`);
+	if (close != null) lines.push(`価格: ${Number(close).toLocaleString('ja-JP')}円`);
 	lines.push('');
 	lines.push('【基本配置】');
 	if (pricePosition !== 'unknown') {
@@ -110,33 +110,35 @@ export function buildIchimokuSnapshotText(input: BuildIchimokuSnapshotTextInput)
 				: null;
 		const clrPct = clr != null && close != null && close !== 0 ? Number(((clr / close) * 100).toFixed(2)) : null;
 		lines.push(
-			`・価格位置: ${pricePosition.replace('_', ' ')}${clr != null ? ` (クリアランス: ${clr >= 0 ? '+' : ''}${clr.toLocaleString()}円${clrPct != null ? `, ${clrPct}%` : ''})` : ''}`,
+			`・価格位置: ${pricePosition.replace('_', ' ')}${clr != null ? ` (クリアランス: ${clr >= 0 ? '+' : ''}${clr.toLocaleString('ja-JP')}円${clrPct != null ? `, ${clrPct}%` : ''})` : ''}`,
 		);
 	}
 	if (tenkan != null)
 		lines.push(
-			`・転換線: ${Number(tenkan).toLocaleString()}円${close != null ? ` (価格比 ${Number(((tenkan - close) / close) * 100).toFixed(1)}%)` : ''}`,
+			`・転換線: ${Number(tenkan).toLocaleString('ja-JP')}円${close != null ? ` (価格比 ${Number(((tenkan - close) / close) * 100).toFixed(1)}%)` : ''}`,
 		);
-	if (kijun != null) lines.push(`・基準線: ${Number(kijun).toLocaleString()}円`);
+	if (kijun != null) lines.push(`・基準線: ${Number(kijun).toLocaleString('ja-JP')}円`);
 	if (tenkan != null && kijun != null)
 		lines.push(
-			`・転換線と基準線: ${tenkanKijun === 'bullish' ? '強気' : tenkanKijun === 'bearish' ? '弱気' : '中立'}配置${tkDist != null ? ` (転換線が${Math.abs(tkDist).toLocaleString()}円${tenkan > (kijun as number) ? '上' : '下'})` : ''}`,
+			`・転換線と基準線: ${tenkanKijun === 'bullish' ? '強気' : tenkanKijun === 'bearish' ? '弱気' : '中立'}配置${tkDist != null ? ` (転換線が${Math.abs(tkDist).toLocaleString('ja-JP')}円${tenkan > (kijun as number) ? '上' : '下'})` : ''}`,
 		);
 	lines.push('');
 	lines.push('【雲の状態（今日の雲）】');
 	lines.push(`・雲の方向: ${direction}`);
 	if (thickness != null)
 		lines.push(
-			`・雲の厚み: ${thickness.toLocaleString()}円${thicknessPct != null ? ` (${thicknessPct}%)` : ''} - ${strength ?? 'n/a'}の強度`,
+			`・雲の厚み: ${thickness.toLocaleString('ja-JP')}円${thicknessPct != null ? ` (${thicknessPct}%)` : ''} - ${strength ?? 'n/a'}の強度`,
 		);
 	if (cloudTop != null && cloudBottom != null)
-		lines.push(`・雲の範囲: ${Number(cloudBottom).toLocaleString()}円 ~ ${Number(cloudTop).toLocaleString()}円`);
+		lines.push(
+			`・雲の範囲: ${Number(cloudBottom).toLocaleString('ja-JP')}円 ~ ${Number(cloudTop).toLocaleString('ja-JP')}円`,
+		);
 	// 26日後の雲（将来の参考情報）
 	if (futureCloudTop != null && futureCloudBottom != null) {
 		lines.push('');
 		lines.push('【26日後の雲（先行スパン）】');
 		lines.push(
-			`・雲の範囲: ${Number(futureCloudBottom).toLocaleString()}円 ~ ${Number(futureCloudTop).toLocaleString()}円`,
+			`・雲の範囲: ${Number(futureCloudBottom).toLocaleString('ja-JP')}円 ~ ${Number(futureCloudTop).toLocaleString('ja-JP')}円`,
 		);
 		if (close != null) {
 			const futurePos = close > futureCloudTop ? '雲の上' : close < futureCloudBottom ? '雲の下' : '雲の中';
@@ -147,7 +149,7 @@ export function buildIchimokuSnapshotText(input: BuildIchimokuSnapshotTextInput)
 	lines.push('【遅行スパン】');
 	if (chikouSpan.position)
 		lines.push(
-			`・位置: 26本前の価格より${chikouSpan.position === 'above' ? '上' : '下'}${chikouSpan.distance != null ? ` (${chikouSpan.distance >= 0 ? '+' : ''}${chikouSpan.distance.toLocaleString()}円)` : ''}`,
+			`・位置: 26本前の価格より${chikouSpan.position === 'above' ? '上' : '下'}${chikouSpan.distance != null ? ` (${chikouSpan.distance >= 0 ? '+' : ''}${chikouSpan.distance.toLocaleString('ja-JP')}円)` : ''}`,
 		);
 	lines.push('');
 	lines.push('【シグナル分析】');
@@ -177,23 +179,23 @@ export function buildIchimokuSnapshotText(input: BuildIchimokuSnapshotTextInput)
 		const bear = scenarios.scenarios.bearish;
 		if (bull)
 			lines.push(
-				`・上昇シナリオ: ${bull.condition} → ${Number(bull.target).toLocaleString()}円 (可能性: ${bull.probability})`,
+				`・上昇シナリオ: ${bull.condition} → ${Number(bull.target).toLocaleString('ja-JP')}円 (可能性: ${bull.probability})`,
 			);
 		if (bear)
 			lines.push(
-				`・下落シナリオ: ${bear.condition} → ${Number(bear.target).toLocaleString()}円 (可能性: ${bear.probability})`,
+				`・下落シナリオ: ${bear.condition} → ${Number(bear.target).toLocaleString('ja-JP')}円 (可能性: ${bear.probability})`,
 			);
 	}
 	lines.push('');
 	lines.push('・重要価格:');
 	if (scenarios?.keyLevels?.support?.length) {
 		lines.push(
-			`  - サポート: ${scenarios.keyLevels.support.map((x: number) => `${Number(x).toLocaleString()}円`).join('、')}`,
+			`  - サポート: ${scenarios.keyLevels.support.map((x: number) => `${Number(x).toLocaleString('ja-JP')}円`).join('、')}`,
 		);
 	}
 	if (scenarios?.keyLevels?.resistance?.length) {
 		lines.push(
-			`  - レジスタンス: ${scenarios.keyLevels.resistance.map((x: number) => `${Number(x).toLocaleString()}円`).join('、')}`,
+			`  - レジスタンス: ${scenarios.keyLevels.resistance.map((x: number) => `${Number(x).toLocaleString('ja-JP')}円`).join('、')}`,
 		);
 	}
 	if (Array.isArray(scenarios?.watchPoints)) {

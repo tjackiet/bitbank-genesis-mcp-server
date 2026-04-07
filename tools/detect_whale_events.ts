@@ -128,7 +128,7 @@ export default async function detectWhaleEvents(
 			'📋 主要な大口:',
 			...events.map(
 				(e) =>
-					`${e.side === 'buy' ? '🟢' : '🔴'} ${e.price.toLocaleString()}円に${e.size} BTC（${e.side === 'buy' ? '買い' : '売り'}）距離: ${e.distancePct != null ? `${(e.distancePct >= 0 ? '+' : '') + e.distancePct}%` : 'n/a'}`,
+					`${e.side === 'buy' ? '🟢' : '🔴'} ${e.price.toLocaleString('ja-JP')}円に${e.size} BTC（${e.side === 'buy' ? '買い' : '売り'}）距離: ${e.distancePct != null ? `${(e.distancePct >= 0 ? '+' : '') + e.distancePct}%` : 'n/a'}`,
 			),
 			'',
 			`📈 過去${lookback}の価格変化: ${(priceChange * 100).toFixed(2)}%`,

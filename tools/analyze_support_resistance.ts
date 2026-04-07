@@ -673,7 +673,7 @@ export default async function analyzeSupportResistance(
 		const formatLevel = (level: SupportResistanceLevel, type: 'support' | 'resistance') => {
 			// 3段階表記：★☆☆ / ★★☆ / ★★★
 			const stars = '★'.repeat(level.strength) + '☆'.repeat(3 - level.strength);
-			let text = `${level.label}: ${level.price.toLocaleString()}円（${level.pctFromCurrent > 0 ? '+' : ''}${level.pctFromCurrent.toFixed(1)}%）強度：${stars}\n`;
+			let text = `${level.label}: ${level.price.toLocaleString('ja-JP')}円（${level.pctFromCurrent > 0 ? '+' : ''}${level.pctFromCurrent.toFixed(1)}%）強度：${stars}\n`;
 
 			// 形成タイプに応じた平易な説明
 			if (level.formationType === 'new_formation') {
@@ -718,7 +718,7 @@ export default async function analyzeSupportResistance(
 			}
 
 			if (level.recentBreak) {
-				text += `  - ⚠️ 直近の崩壊: ${level.recentBreak.date}に${Math.abs(level.recentBreak.breakPct).toFixed(1)}%${type === 'support' ? '下抜け' : '上抜け'}（${type === 'support' ? '最安' : '最高'}${level.recentBreak.price.toLocaleString()}円）\n`;
+				text += `  - ⚠️ 直近の崩壊: ${level.recentBreak.date}に${Math.abs(level.recentBreak.breakPct).toFixed(1)}%${type === 'support' ? '下抜け' : '上抜け'}（${type === 'support' ? '最安' : '最高'}${level.recentBreak.price.toLocaleString('ja-JP')}円）\n`;
 				text += `  - 評価: 崩壊実績により信頼性低下、${type === 'support' ? '再割れ' : '再突破'}リスク高\n`;
 			}
 
@@ -727,7 +727,7 @@ export default async function analyzeSupportResistance(
 
 		const displayPair = chk.pair.replace('_', '/').toUpperCase();
 		let contentText = `${displayPair} サポート・レジスタンス分析（過去${lookbackDays}日）\n`;
-		contentText += `現在価格: ${currentPrice.toLocaleString()}円\n`;
+		contentText += `現在価格: ${currentPrice.toLocaleString('ja-JP')}円\n`;
 		contentText += `分析日時: ${(currentCandle.isoTime ?? '').split('T')[0]}\n\n`;
 
 		contentText += `【サポートライン】\n`;

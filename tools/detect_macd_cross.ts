@@ -88,7 +88,7 @@ export function buildMacdSingleText(input: BuildMacdSingleTextInput): string {
 	const { pair, lastClose, forming, statistics, history, historyDays, includeForming, includeStats } = input;
 	const lines: string[] = [];
 	const pairStr = String(pair).toUpperCase();
-	lines.push(lastClose != null ? `${pairStr} close=${Number(lastClose).toLocaleString()}円` : pairStr);
+	lines.push(lastClose != null ? `${pairStr} close=${Number(lastClose).toLocaleString('ja-JP')}円` : pairStr);
 
 	if (forming) {
 		const f = forming;

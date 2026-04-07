@@ -170,7 +170,7 @@ export function buildIndicatorsText(input: BuildIndicatorsTextInput): string {
 		lines.push('');
 		lines.push(`    ${recentRsiFormatted.join(' → ')}`);
 	}
-	const macdHistFmt = macdHist == null ? 'n/a' : `${Math.round(Number(macdHist)).toLocaleString()}`;
+	const macdHistFmt = macdHist == null ? 'n/a' : `${Math.round(Number(macdHist)).toLocaleString('ja-JP')}`;
 	const macdHint =
 		macdHist == null ? '—' : Number(macdHist) >= 0 ? '強気継続（プラス＝上昇圧力）' : '弱気継続（マイナス＝下落圧力）';
 	lines.push(`  MACD: hist=${macdHistFmt} → ${macdHint}`);
@@ -218,7 +218,7 @@ export function buildIndicatorsText(input: BuildIndicatorsTextInput): string {
 	lines.push(`  先行スパンB: ${fmtJPY(spanB)} (${vsCurPct(spanB)})`);
 	if (cloudThickness != null)
 		lines.push(
-			`  雲の厚さ: ${Math.round(cloudThickness).toLocaleString()}円（${cloudThicknessPct != null ? `${cloudThicknessPct.toFixed(1)}%` : 'n/a'}）`,
+			`  雲の厚さ: ${Math.round(cloudThickness).toLocaleString('ja-JP')}円（${cloudThicknessPct != null ? `${cloudThicknessPct.toFixed(1)}%` : 'n/a'}）`,
 		);
 	if (chikouBull != null) lines.push(`  遅行スパン: ${chikouBull ? '価格より上 → 強気' : '価格より下 → 弱気'}`);
 	if (threeSignals) lines.push(`  三役判定: ${threeSignals.judge}`);

@@ -184,7 +184,7 @@ function calcVolumeProfile(txs: Tx[], bins: number, valueAreaPct: number) {
 		const totalVolume = singleBin.totalVolume;
 		const isJpy = true;
 		const fmtSingle = () => {
-			const p = isJpy ? Math.round(priceLow).toLocaleString() : priceLow.toFixed(2);
+			const p = isJpy ? Math.round(priceLow).toLocaleString('ja-JP') : priceLow.toFixed(2);
 			return `${p}〜${p}`;
 		};
 		const binResult = {
@@ -281,8 +281,8 @@ function calcVolumeProfile(txs: Tx[], bins: number, valueAreaPct: number) {
 
 	const isJpy = true; // This tool always operates on JPY pairs primarily
 	const fmtBin = (b: (typeof profileBins)[0]) => {
-		const lo = isJpy ? Math.round(b.low).toLocaleString() : b.low.toFixed(2);
-		const hi = isJpy ? Math.round(b.high).toLocaleString() : b.high.toFixed(2);
+		const lo = isJpy ? Math.round(b.low).toLocaleString('ja-JP') : b.low.toFixed(2);
+		const hi = isJpy ? Math.round(b.high).toLocaleString('ja-JP') : b.high.toFixed(2);
 		return `${lo}〜${hi}`;
 	};
 

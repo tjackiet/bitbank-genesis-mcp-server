@@ -80,7 +80,7 @@ export function generatePatternDiagram(
 		const valley1Date = formatDateShort(v1?.date);
 		const peakDate = formatDateShort(pk?.date);
 		const valley2Date = formatDateShort(v2?.date);
-		const necklinePrice = Math.round(neckline.price).toLocaleString();
+		const necklinePrice = Math.round(neckline.price).toLocaleString('ja-JP');
 		const svg = `<svg width="600" height="300" xmlns="http://www.w3.org/2000/svg">
   <rect width="600" height="300" fill="#f8f9fa"/>
   <line x1="50" y1="100" x2="550" y2="100" stroke="#666" stroke-width="2" stroke-dasharray="5,5"/>
@@ -108,7 +108,7 @@ export function generatePatternDiagram(
 		const peak1Date = formatDateShort(p1?.date);
 		const valleyDate = formatDateShort(vl?.date);
 		const peak2Date = formatDateShort(p2?.date);
-		const necklinePrice = Math.round(neckline.price).toLocaleString();
+		const necklinePrice = Math.round(neckline.price).toLocaleString('ja-JP');
 		const svg = `<svg width="600" height="300" xmlns="http://www.w3.org/2000/svg">
   <rect width="600" height="300" fill="#f8f9fa"/>
   <line x1="50" y1="200" x2="550" y2="200" stroke="#666" stroke-width="2" stroke-dasharray="5,5"/>
@@ -141,7 +141,7 @@ export function generatePatternDiagram(
 		const rsDate = formatDateShort(rightShoulder?.date);
 		// ネックライン: 山1/山2の平均価格（表示用）
 		const nlVal = ((peak1?.price ?? 0) + (peak2?.price ?? 0)) / 2;
-		const necklinePrice = Math.round(nlVal).toLocaleString();
+		const necklinePrice = Math.round(nlVal).toLocaleString('ja-JP');
 		const svg = `<svg width="600" height="300" xmlns="http://www.w3.org/2000/svg">
   <rect width="600" height="300" fill="#f8f9fa"/>
   <!-- Neckline (peaks average) -->
@@ -182,7 +182,7 @@ export function generatePatternDiagram(
 		const rsDate = formatDateShort(rightShoulder?.date);
 		// ネックライン: 谷1/谷2の平均価格（表示用）
 		const nlVal = ((valley1?.price ?? 0) + (valley2?.price ?? 0)) / 2;
-		const necklinePrice = Math.round(nlVal).toLocaleString();
+		const necklinePrice = Math.round(nlVal).toLocaleString('ja-JP');
 		const svg = `<svg width="600" height="300" xmlns="http://www.w3.org/2000/svg">
   <rect width="600" height="300" fill="#f8f9fa"/>
   <!-- Neckline (valleys average) -->
@@ -222,7 +222,7 @@ export function generatePatternDiagram(
 		const p2Date = formatDateShort(peak2?.date);
 		const v3Date = formatDateShort(valley3?.date);
 		const nlVal = ((peak1?.price ?? 0) + (peak2?.price ?? 0)) / 2;
-		const necklinePrice = Math.round(nlVal).toLocaleString();
+		const necklinePrice = Math.round(nlVal).toLocaleString('ja-JP');
 		const svg = `<svg width="600" height="300" xmlns="http://www.w3.org/2000/svg">
   <rect width="600" height="300" fill="#f8f9fa"/>
   <!-- Neckline (peaks average) -->
@@ -257,7 +257,7 @@ export function generatePatternDiagram(
 		const v2Date = formatDateShort(valley2?.date);
 		const p3Date = formatDateShort(peak3?.date);
 		const nlVal = ((valley1?.price ?? 0) + (valley2?.price ?? 0)) / 2;
-		const necklinePrice = Math.round(nlVal).toLocaleString();
+		const necklinePrice = Math.round(nlVal).toLocaleString('ja-JP');
 		const svg = `<svg width="600" height="300" xmlns="http://www.w3.org/2000/svg">
   <rect width="600" height="300" fill="#f8f9fa"/>
   <!-- Neckline (valleys average) -->
@@ -413,7 +413,7 @@ export function generateSupportResistanceDiagram(
 	// ライン描画データ生成
 	const lines = allLevels.map((level, _idx) => {
 		const y = getY(level.price);
-		const priceStr = Math.round(level.price).toLocaleString();
+		const priceStr = Math.round(level.price).toLocaleString('ja-JP');
 		const pctStr =
 			level.pctFromCurrent !== 0 ? `(${level.pctFromCurrent > 0 ? '+' : ''}${level.pctFromCurrent.toFixed(1)}%)` : '';
 

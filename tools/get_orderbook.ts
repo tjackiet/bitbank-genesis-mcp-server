@@ -78,17 +78,17 @@ function buildSummary(pair: string, bidsNum: NumLevel[], asksNum: NumLevel[], to
 		summary,
 		'',
 		`📊 板情報 (上位${topN}層):`,
-		`中値: ${mid?.toLocaleString() ?? 'N/A'}円`,
-		`スプレッド: ${spread?.toLocaleString() ?? 'N/A'}円`,
+		`中値: ${mid?.toLocaleString('ja-JP') ?? 'N/A'}円`,
+		`スプレッド: ${spread?.toLocaleString('ja-JP') ?? 'N/A'}円`,
 		'',
 		`🟢 買い板 (Bids): ${bids.length}層`,
 		...bids.map(
-			(b, i) => `  ${i + 1}. ${b.price.toLocaleString()}円 ${b.size.toFixed(4)} (cum:${b.cumSize.toFixed(4)})`,
+			(b, i) => `  ${i + 1}. ${b.price.toLocaleString('ja-JP')}円 ${b.size.toFixed(4)} (cum:${b.cumSize.toFixed(4)})`,
 		),
 		'',
 		`🔴 売り板 (Asks): ${asks.length}層`,
 		...asks.map(
-			(a, i) => `  ${i + 1}. ${a.price.toLocaleString()}円 ${a.size.toFixed(4)} (cum:${a.cumSize.toFixed(4)})`,
+			(a, i) => `  ${i + 1}. ${a.price.toLocaleString('ja-JP')}円 ${a.size.toFixed(4)} (cum:${a.cumSize.toFixed(4)})`,
 		),
 	]
 		.filter(Boolean)
@@ -287,7 +287,7 @@ function buildStatistics(
 			const dom = bVol > aVol * 1.2 ? 'bid' : aVol > bVol * 1.2 ? 'ask' : 'balanced';
 			const note = dom === 'bid' ? '強い買いサポート' : dom === 'ask' ? '強い売り圧力' : undefined;
 			zones.push({
-				priceRange: `${Math.round(lo).toLocaleString()} - ${Math.round(hi).toLocaleString()}`,
+				priceRange: `${Math.round(lo).toLocaleString('ja-JP')} - ${Math.round(hi).toLocaleString('ja-JP')}`,
 				bidVolume: Number(bVol.toFixed(4)),
 				askVolume: Number(aVol.toFixed(4)),
 				dominance: dom,
@@ -336,7 +336,7 @@ function buildStatistics(
 		`📸 ${formatTimestampJST(timestamp)}`,
 		'',
 		`=== ${String(pair).toUpperCase()} 板統計分析 ===`,
-		`💰 現在価格: ${basic.currentPrice != null ? `${basic.currentPrice.toLocaleString()}円` : 'n/a'}`,
+		`💰 現在価格: ${basic.currentPrice != null ? `${basic.currentPrice.toLocaleString('ja-JP')}円` : 'n/a'}`,
 		basic.spread != null ? `   スプレッド: ${basic.spread}円 (${((basic.spreadPct || 0) * 100).toFixed(6)}%)` : '',
 		'',
 		'📊 板の厚み分析:',
@@ -353,11 +353,11 @@ function buildStatistics(
 		'🐋 大口注文:',
 		...largeBids.map(
 			(o) =>
-				`買い板: ${o.price.toLocaleString()}円に${o.size} BTC (${o.distance != null ? `${(o.distance >= 0 ? '+' : '') + o.distance}%` : ''})`,
+				`買い板: ${o.price.toLocaleString('ja-JP')}円に${o.size} BTC (${o.distance != null ? `${(o.distance >= 0 ? '+' : '') + o.distance}%` : ''})`,
 		),
 		...largeAsks.map(
 			(o) =>
-				`売り板: ${o.price.toLocaleString()}円に${o.size} BTC (${o.distance != null ? `${(o.distance >= 0 ? '+' : '') + o.distance}%` : ''})`,
+				`売り板: ${o.price.toLocaleString('ja-JP')}円に${o.size} BTC (${o.distance != null ? `${(o.distance >= 0 ? '+' : '') + o.distance}%` : ''})`,
 		),
 		'',
 		`💡 総合評価: ${overall}（${strength}）`,
@@ -405,13 +405,13 @@ function buildRaw(
 		'',
 		summary,
 		`板の層数: 買い ${bidsRaw.length}層 / 売り ${asksRaw.length}層`,
-		mid ? `中値: ${mid.toLocaleString()}円` : '',
+		mid ? `中値: ${mid.toLocaleString('ja-JP')}円` : '',
 		'',
 		`🟢 買い板 (全${bidsRaw.length}層):`,
-		...bidsRaw.map(([p, s], i) => `  ${i + 1}. ${Number(p).toLocaleString()}円 ${s}`),
+		...bidsRaw.map(([p, s], i) => `  ${i + 1}. ${Number(p).toLocaleString('ja-JP')}円 ${s}`),
 		'',
 		`🔴 売り板 (全${asksRaw.length}層):`,
-		...asksRaw.map(([p, s], i) => `  ${i + 1}. ${Number(p).toLocaleString()}円 ${s}`),
+		...asksRaw.map(([p, s], i) => `  ${i + 1}. ${Number(p).toLocaleString('ja-JP')}円 ${s}`),
 	]
 		.filter(Boolean)
 		.join('\n');
