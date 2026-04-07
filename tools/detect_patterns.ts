@@ -309,7 +309,7 @@ export default async function detectPatterns(
 				// ネックライン/トレンドラインがある場合（用語正規化ラベルを使用）
 				if (p.neckline && Array.isArray(p.neckline) && p.neckline.length >= 2) {
 					const label = p.trendlineLabel || 'ネックライン';
-					detail += `\n   - ${label}: ${Math.round(p.neckline[0]?.y || 0).toLocaleString()}円 → ${Math.round(p.neckline[1]?.y || 0).toLocaleString()}円`;
+					detail += `\n   - ${label}: ${Math.round(p.neckline[0]?.y || 0).toLocaleString('ja-JP')}円 → ${Math.round(p.neckline[1]?.y || 0).toLocaleString('ja-JP')}円`;
 				}
 
 				// ウェッジ固有: Apex（頂点）情報
@@ -324,7 +324,7 @@ export default async function detectPatterns(
 						pattern_height: 'パターン高さ投影',
 						neckline_projection: 'ネックライン投影',
 					};
-					detail += `\n   - ターゲット価格: ${Math.round(p.breakoutTarget).toLocaleString()}円（${(p.targetMethod && methodJa[p.targetMethod]) || p.targetMethod || '不明'}）`;
+					detail += `\n   - ターゲット価格: ${Math.round(p.breakoutTarget).toLocaleString('ja-JP')}円（${(p.targetMethod && methodJa[p.targetMethod]) || p.targetMethod || '不明'}）`;
 					if (p.targetReachedPct != null) {
 						detail += `\n   - ターゲット進捗: ${p.targetReachedPct}%${p.targetReachedPct >= 100 ? '（到達済み）' : ''}`;
 					}
@@ -339,7 +339,7 @@ export default async function detectPatterns(
 						detail += `\n   - 先行トレンド: ${p.priorTrendDirection === 'bullish' ? '強気（上昇トレンド）' : '弱気（下降トレンド）'}`;
 					}
 					if (p.flagpoleHeight != null) {
-						detail += `\n   - フラッグポール値幅: ${Math.round(p.flagpoleHeight).toLocaleString()}円`;
+						detail += `\n   - フラッグポール値幅: ${Math.round(p.flagpoleHeight).toLocaleString('ja-JP')}円`;
 					}
 					if (p.retracementRatio != null) {
 						const pctStr = (p.retracementRatio * 100).toFixed(0);

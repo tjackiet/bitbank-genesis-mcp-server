@@ -66,7 +66,7 @@ const fmtNum = (v: unknown): string => {
 
 const fmtRound = (v: unknown): string => {
 	const n = Number(v);
-	return Number.isFinite(n) ? Math.round(n).toLocaleString() : 'n/a';
+	return Number.isFinite(n) ? Math.round(n).toLocaleString('ja-JP') : 'n/a';
 };
 
 const fmtPct = (v: unknown): string => {
@@ -193,7 +193,7 @@ function formatCandidateDetails(c: CandidateDebug): string {
 	const lo = Number(d.loSlope);
 	const spreadPart =
 		Number.isFinite(s1) && Number.isFinite(s2)
-			? `${Math.round(s1).toLocaleString()} → ${Math.round(s2).toLocaleString()}`
+			? `${Math.round(s1).toLocaleString('ja-JP')} → ${Math.round(s2).toLocaleString('ja-JP')}`
 			: 'n/a';
 	return `\n   spread: ${spreadPart}${Number.isFinite(hi) || Number.isFinite(lo) ? `, slopes: hi=${fmtNum(hi)} lo=${fmtNum(lo)}` : ''}`;
 }
@@ -208,14 +208,15 @@ export function formatDebugView(
 	const cands: CandidateDebug[] = Array.isArray(meta?.debug?.candidates) ? meta.debug.candidates : [];
 
 	const swingLines = swings.map(
-		(s) => `- ${s.kind} idx=${s.idx} price=${Math.round(Number(s.price)).toLocaleString()} (${s.isoTime || 'n/a'})`,
+		(s) =>
+			`- ${s.kind} idx=${s.idx} price=${Math.round(Number(s.price)).toLocaleString('ja-JP')} (${s.isoTime || 'n/a'})`,
 	);
 
 	const candLines = cands.map((c, i: number) => {
 		const tag = c.accepted ? '✅' : '❌';
 		const reason = c.accepted ? (c.reason ? ` (${c.reason})` : '') : c.reason ? ` [${c.reason}]` : '';
 		const pts = Array.isArray(c.points)
-			? c.points.map((p) => `${p.role}@${p.idx}:${Math.round(Number(p.price)).toLocaleString()}`).join(', ')
+			? c.points.map((p) => `${p.role}@${p.idx}:${Math.round(Number(p.price)).toLocaleString('ja-JP')}`).join(', ')
 			: '';
 		const indices = Array.isArray(c.indices) ? ` indices=[${c.indices.join(',')}]` : '';
 		const detailsStr = formatCandidateDetails(c);
@@ -276,7 +277,7 @@ export function formatPatternLine(p: PatternEntry, idx: number, view: string, me
 	if (Array.isArray(p?.pivots) && p.pivots.length) {
 		const prices = p.pivots.map((v) => Number(v?.price)).filter(Number.isFinite);
 		if (prices.length)
-			priceRange = `${Math.min(...prices).toLocaleString()}円 - ${Math.max(...prices).toLocaleString()}円`;
+			priceRange = `${Math.min(...prices).toLocaleString('ja-JP')}円 - ${Math.max(...prices).toLocaleString('ja-JP')}円`;
 	}
 
 	// neckline
@@ -286,7 +287,10 @@ export function formatPatternLine(p: PatternEntry, idx: number, view: string, me
 		const y1 = Number(a?.y),
 			y2 = Number(b?.y);
 		if (Number.isFinite(y1) && Number.isFinite(y2)) {
-			neckline = y1 === y2 ? `${y1.toLocaleString()}円（水平）` : `${y1.toLocaleString()}円 → ${y2.toLocaleString()}円`;
+			neckline =
+				y1 === y2
+					? `${y1.toLocaleString('ja-JP')}円（水平）`
+					: `${y1.toLocaleString('ja-JP')}円 → ${y2.toLocaleString('ja-JP')}円`;
 		}
 	}
 
@@ -304,7 +308,7 @@ export function formatPatternLine(p: PatternEntry, idx: number, view: string, me
 				if (!pv) continue;
 				const d = idxToIso[Number(pv.idx)] || '';
 				const date = d ? d.slice(0, 10) : 'n/a';
-				pivotLines.push(`   - ${roleLabels[i]}: ${date} (${Math.round(Number(pv.price)).toLocaleString()}円)`);
+				pivotLines.push(`   - ${roleLabels[i]}: ${date} (${Math.round(Number(pv.price)).toLocaleString('ja-JP')}円)`);
 			}
 		}
 	}
@@ -316,7 +320,7 @@ export function formatPatternLine(p: PatternEntry, idx: number, view: string, me
 			const bidx = Number(p.breakout.idx);
 			const bpx = Number(p.breakout.price);
 			const bdate = idxToIso[bidx] ? String(idxToIso[bidx]).slice(0, 10) : 'n/a';
-			const bprice = Number.isFinite(bpx) ? Math.round(bpx).toLocaleString() : 'n/a';
+			const bprice = Number.isFinite(bpx) ? Math.round(bpx).toLocaleString('ja-JP') : 'n/a';
 			breakoutLine = `   - ブレイク: ${bdate} (${bprice}円)`;
 		}
 	} catch {
@@ -379,7 +383,7 @@ export function formatPatternLine(p: PatternEntry, idx: number, view: string, me
 					`先行トレンド: ${p.priorTrendDirection === 'bullish' ? '強気（上昇トレンド）' : '弱気（下降トレンド）'}`,
 				);
 			if (p.flagpoleHeight != null)
-				parts.push(`フラッグポール値幅: ${Math.round(Number(p.flagpoleHeight)).toLocaleString()}円`);
+				parts.push(`フラッグポール値幅: ${Math.round(Number(p.flagpoleHeight)).toLocaleString('ja-JP')}円`);
 			if (p.retracementRatio != null) {
 				const pctStr = (Number(p.retracementRatio) * 100).toFixed(0);
 				parts.push(
@@ -422,7 +426,7 @@ export function formatPatternLine(p: PatternEntry, idx: number, view: string, me
 			pattern_height: 'パターン高さ投影',
 			neckline_projection: 'ネックライン投影',
 		};
-		targetLine = `   - ターゲット価格: ${Math.round(Number(p.breakoutTarget)).toLocaleString()}円（${(p.targetMethod && methodJa[p.targetMethod]) || p.targetMethod}）`;
+		targetLine = `   - ターゲット価格: ${Math.round(Number(p.breakoutTarget)).toLocaleString('ja-JP')}円（${(p.targetMethod && methodJa[p.targetMethod]) || p.targetMethod}）`;
 		if (p?.targetReachedPct != null) {
 			targetLine += `\n   - ターゲット進捗: ${p.targetReachedPct}%${Number(p.targetReachedPct) >= 100 ? '（到達済み）' : ''}`;
 		}

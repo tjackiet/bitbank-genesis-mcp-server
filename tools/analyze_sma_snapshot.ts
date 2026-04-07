@@ -50,7 +50,9 @@ export function buildSmaSnapshotText(input: BuildSmaSnapshotTextInput): string {
 		const valStr = it.value != null ? it.value : 'n/a';
 		const pctStr = it.distancePct != null ? `${it.distancePct >= 0 ? '+' : ''}${it.distancePct}%` : 'n/a';
 		const absStr =
-			it.distanceAbs != null ? `${it.distanceAbs >= 0 ? '+' : ''}${Number(it.distanceAbs).toLocaleString()}円` : 'n/a';
+			it.distanceAbs != null
+				? `${it.distanceAbs >= 0 ? '+' : ''}${Number(it.distanceAbs).toLocaleString('ja-JP')}円`
+				: 'n/a';
 		const slopeRate =
 			it.slopePctPerBar != null
 				? `${it.slopePctPerBar >= 0 ? '+' : ''}${it.slopePctPerBar}%/${type === '1day' ? 'day' : 'bar'}`
