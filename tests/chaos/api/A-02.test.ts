@@ -29,6 +29,10 @@ describe('Chaos: A-02 — bitbank API が応答しない（タイムアウト）
 		const result = await getTicker('btc_jpy', { timeoutMs: 100 });
 
 		expect(result.ok).toBe(false);
+		if (!result.ok) {
+			// AbortError 由来のエラーメッセージが含まれる
+			expect(result.summary).toBeTruthy();
+		}
 	});
 
 	it('タイムアウト後にプロセスがハングしない', async () => {

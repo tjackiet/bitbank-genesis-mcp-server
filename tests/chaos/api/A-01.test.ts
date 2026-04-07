@@ -51,7 +51,7 @@ describe('Chaos: A-01 — bitbank API が HTTP 503 を返す', () => {
 		const result = await getTicker('btc_jpy', { timeoutMs: 500 });
 
 		expect(result.ok).toBe(false);
-		// リトライが発生している（DEFAULT_RETRIES = 2 → 最大3回）
-		expect(callCount).toBeGreaterThanOrEqual(1);
+		// リトライが発生している（DEFAULT_RETRIES = 2 → 初回 + 2回 = 最大3回）
+		expect(callCount).toBeGreaterThan(1);
 	});
 });

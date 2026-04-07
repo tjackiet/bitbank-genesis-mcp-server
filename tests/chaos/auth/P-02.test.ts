@@ -45,11 +45,21 @@ describe('Chaos: P-02 — 空文字の API キーを設定', () => {
 		expect(() => createGetAuthHeaders('/v1/user/assets')).toThrow('未設定');
 	});
 
-	it('スペースのみの値は有効として扱われる（仕様確認）', () => {
+	it('スペースのみの値は無効として扱われる', () => {
 		process.env.BITBANK_API_KEY = ' ';
 		process.env.BITBANK_API_SECRET = ' ';
-		// スペースは truthy なので isPrivateApiEnabled() は true を返す
-		// これは潜在的な問題だが、現在の実装の挙動として記録
-		expect(isPrivateApiEnabled()).toBe(true);
+		expect(isPrivateApiEnabled()).toBe(false);
+	});
+
+	it('スペースのみで getPrivateApiConfig() が null を返す', () => {
+		process.env.BITBANK_API_KEY = ' ';
+		process.env.BITBANK_API_SECRET = ' ';
+		expect(getPrivateApiConfig()).toBeNull();
+	});
+
+	it('スペースのみで createGetAuthHeaders() が throw する', () => {
+		process.env.BITBANK_API_KEY = ' ';
+		process.env.BITBANK_API_SECRET = ' ';
+		expect(() => createGetAuthHeaders('/v1/user/assets')).toThrow('未設定');
 	});
 });
