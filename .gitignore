@@ -9,6 +9,11 @@ cache/
 output/
 coverage/
 .cursor/
+
+# Security/chaos tests — local only, not published to public repo
+tests/chaos/
+tests/private/security.test.ts
+vitest.security.config.ts
 .DS_Store
 src/types/schemas.generated.d.ts
 assets/
