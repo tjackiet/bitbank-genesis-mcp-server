@@ -111,13 +111,14 @@ describe('Chaos: S-03 — トークン生成後にパラメータ改ざん', () 
 		const now = Date.now();
 		const { token, expiresAt } = generateToken(
 			'create_order',
-			{ pair: 'btc_jpy', amount: '0.001', side: 'buy', type: 'limit' },
+			{ pair: 'btc_jpy', amount: '0.001', side: 'buy', type: 'limit', price: '5000000' },
 			now,
 		);
 
 		await createOrder({
 			pair: 'btc_jpy',
 			amount: '999', // 改ざん
+			price: '5000000',
 			side: 'buy',
 			type: 'limit',
 			confirmation_token: token,

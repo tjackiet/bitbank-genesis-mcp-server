@@ -15,6 +15,7 @@ beforeEach(() => {
 afterEach(() => {
 	delete process.env.BITBANK_API_SECRET;
 	delete process.env.BITBANK_API_KEY;
+	delete process.env.ORDER_CONFIRM_TTL_MS;
 	vi.restoreAllMocks();
 });
 

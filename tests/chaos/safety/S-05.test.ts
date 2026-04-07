@@ -89,6 +89,29 @@ describe('Chaos: S-05 — stop sell のトリガー価格が現在価格以上',
 		}
 	});
 
+	it('stop buy でトリガー価格 = 現在価格の場合も拒否される', async () => {
+		vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+			new Response(JSON.stringify({ success: 1, data: { last: '5000000' } }), {
+				status: 200,
+				headers: { 'Content-Type': 'application/json' },
+			}),
+		);
+
+		const result = await previewOrder({
+			pair: 'btc_jpy',
+			amount: '0.001',
+			side: 'buy',
+			type: 'stop',
+			trigger_price: '5000000', // 現在価格と同一 → 即時発動
+		});
+
+		expect(result.ok).toBe(false);
+		if (!result.ok) {
+			expect(result.meta.errorType).toBe('validation_error');
+			expect(result.summary).toContain('即時発動');
+		}
+	});
+
 	it('stop_limit sell でもトリガー価格チェックが有効', async () => {
 		vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
 			new Response(JSON.stringify({ success: 1, data: { last: '5000000' } }), {
