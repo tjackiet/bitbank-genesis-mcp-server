@@ -10,16 +10,16 @@ export interface PrivateApiConfig {
 
 /** Private API が有効かどうかを返す */
 export function isPrivateApiEnabled(): boolean {
-	return !!(process.env.BITBANK_API_KEY && process.env.BITBANK_API_SECRET);
+	return !!(process.env.BITBANK_API_KEY?.trim() && process.env.BITBANK_API_SECRET?.trim());
 }
 
 /**
  * 環境変数から Private API 設定を読み込む。
- * 未設定の場合は null を返す。
+ * 未設定・空白のみの場合は null を返す。
  */
 export function getPrivateApiConfig(): PrivateApiConfig | null {
-	const apiKey = process.env.BITBANK_API_KEY;
-	const apiSecret = process.env.BITBANK_API_SECRET;
+	const apiKey = process.env.BITBANK_API_KEY?.trim();
+	const apiSecret = process.env.BITBANK_API_SECRET?.trim();
 	if (!apiKey || !apiSecret) return null;
 	return { apiKey, apiSecret };
 }
