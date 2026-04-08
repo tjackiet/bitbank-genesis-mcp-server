@@ -4,6 +4,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import type { z } from 'zod';
+import { zodToJsonSchema } from 'zod-to-json-schema';
 import { getErrorMessage } from '../lib/error.js';
 import { logError, logToolRun } from '../lib/logger.js';
 import { type PromptDef, prompts as promptDefs } from './prompts.js';
@@ -12,7 +13,7 @@ import { allToolDefs } from './tool-registry.js';
 
 const server = new McpServer({ name: 'bitbank-mcp', version: '0.4.2' });
 // Explicit registries for tools/prompts to improve STDIO inspector compatibility
-const registeredTools: Array<{ name: string; description: string; inputSchema: any }> = [];
+const registeredTools: Array<{ name: string; description: string; inputSchema: Record<string, unknown> }> = [];
 const registeredPrompts: Array<{ name: string; description: string }> = [];
 
 type TextContent = { type: 'text'; text: string; _meta?: Record<string, unknown> };
@@ -26,19 +27,21 @@ const respond = (result: unknown): ToolReturn => {
 	// 優先順位: custom content > summary > safe JSON fallback
 	let text = '';
 	if (isPlainObject(result)) {
-		const r: any = result as any;
+		const r = result;
 		// ツールが content を提供している場合（配列 or 文字列）を優先
 		if (Array.isArray(r.content)) {
-			const first = r.content.find((c: any) => c && c.type === 'text' && typeof c.text === 'string');
+			const first = (r.content as unknown[]).find(
+				(c): c is { type: 'text'; text: string } => isPlainObject(c) && c.type === 'text' && typeof c.text === 'string',
+			);
 			if (first) {
-				text = String(first.text);
+				text = first.text;
 			}
 		} else if (typeof r.content === 'string') {
-			text = String(r.content);
+			text = r.content;
 		}
 		// 上記で未決定なら summary を採用
 		if (!text && typeof r.summary === 'string') {
-			text = String(r.summary);
+			text = r.summary;
 		}
 	}
 	// それでも空の場合は安全な短縮JSONにフォールバック
@@ -63,138 +66,52 @@ const respond = (result: unknown): ToolReturn => {
 	};
 };
 
-function registerToolWithLog<S extends z.ZodTypeAny, R = unknown>(
+/** Zod スキーマ → MCP inspector 用 JSON Schema に変換する。
+ *  zod-to-json-schema に委譲し、MCP 不要の additionalProperties を除去する。 */
+function zodToInputJsonSchema(schema: z.ZodTypeAny): Record<string, unknown> {
+	const json = zodToJsonSchema(schema, { target: 'openApi3', $refStrategy: 'none' }) as Record<string, unknown>;
+	// MCP ツール入力に additionalProperties は不要（SDK が検証する）
+	delete json.additionalProperties;
+	return json;
+}
+
+/** SDK の registerTool に渡すための ZodRawShape を取得する。
+ *  .describe() / .default() / .optional() 等のラッパーを再帰的にアンラップする。 */
+function getRawShape(s: z.ZodTypeAny): z.ZodRawShape {
+	let cur = s as { shape?: z.ZodRawShape; _def?: { schema?: z.ZodTypeAny; innerType?: z.ZodTypeAny } };
+	for (let i = 0; i < 6; i++) {
+		if (cur.shape) break;
+		const def = cur._def;
+		if (!def) break;
+		if (def.schema) {
+			cur = def.schema as typeof cur;
+			continue;
+		}
+		if (def.innerType) {
+			cur = def.innerType as typeof cur;
+			continue;
+		}
+		break;
+	}
+	if (cur.shape) return cur.shape;
+	throw new Error('inputSchema must be or wrap a ZodObject');
+}
+
+function registerToolWithLog(
 	name: string,
-	schema: { description: string; inputSchema: S },
-	handler: (input: z.infer<S>) => Promise<R>,
+	schema: { description: string; inputSchema: z.ZodTypeAny },
+	handler: (input: Record<string, unknown>) => Promise<unknown>,
 ) {
-	// Convert Zod schema → JSON Schema (subset) for MCP inspector
-	const unwrapZod = (s: any): any => {
-		let cur = s;
-		for (let i = 0; i < 6; i++) {
-			const def = cur?._def;
-			if (!def) break;
-			if (def?.schema) {
-				cur = def.schema;
-				continue;
-			}
-			if (def?.innerType) {
-				cur = def.innerType;
-				continue;
-			}
-			break;
-		}
-		return cur;
-	};
-
-	const toJsonSchema = (s: any): any => {
-		s = unwrapZod(s);
-		const t = s?._def?.typeName;
-		switch (t) {
-			case 'ZodString': {
-				const out: any = { type: 'string' };
-				const checks = s?._def?.checks || [];
-				const rex = checks.find((c: any) => c.kind === 'regex')?.regex;
-				if (rex) out.pattern = String(rex.source);
-				return out;
-			}
-			case 'ZodNumber': {
-				const out: any = { type: 'number' };
-				const checks = s?._def?.checks || [];
-				const min = checks.find((c: any) => c.kind === 'min')?.value;
-				const max = checks.find((c: any) => c.kind === 'max')?.value;
-				if (Number.isFinite(min)) out.minimum = min;
-				if (Number.isFinite(max)) out.maximum = max;
-				return out;
-			}
-			case 'ZodBoolean':
-				return { type: 'boolean' };
-			case 'ZodEnum':
-				return { type: 'string', enum: [...(s?._def?.values || [])] };
-			case 'ZodArray':
-				return { type: 'array', items: toJsonSchema(s?._def?.type) };
-			case 'ZodTuple': {
-				const items = (s?._def?.items || []).map((it: any) => toJsonSchema(it));
-				return { type: 'array', items, minItems: items.length, maxItems: items.length };
-			}
-			case 'ZodRecord':
-				return { type: 'object', additionalProperties: toJsonSchema(s?._def?.valueType) };
-			case 'ZodObject': {
-				const shape = (s as any).shape || (typeof s?._def?.shape === 'function' ? s._def.shape() : undefined) || {};
-				const properties: Record<string, any> = {};
-				const required: string[] = [];
-				for (const [key, zodProp] of Object.entries(shape)) {
-					// detect defaults and optional
-					let defVal: any;
-					let isOptional = false;
-					let cur: any = zodProp as any;
-					for (let i = 0; i < 6; i++) {
-						const def = cur?._def;
-						if (!def) break;
-						if (def.typeName === 'ZodDefault') {
-							try {
-								defVal = typeof def.defaultValue === 'function' ? def.defaultValue() : def.defaultValue;
-							} catch {}
-							cur = def.innerType;
-							continue;
-						}
-						if (def.typeName === 'ZodOptional') {
-							isOptional = true;
-							cur = def.innerType;
-							continue;
-						}
-						if (def?.schema) {
-							cur = def.schema;
-							continue;
-						}
-						if (def?.innerType) {
-							cur = def.innerType;
-							continue;
-						}
-						break;
-					}
-					properties[key] = toJsonSchema(cur);
-					if (defVal !== undefined) properties[key].default = defVal;
-					if (!isOptional && defVal === undefined) required.push(key);
-				}
-				const obj: any = { type: 'object', properties };
-				if (required.length) obj.required = required;
-				return obj;
-			}
-			default:
-				return {};
-		}
-	};
-
 	// Build JSON Schema for listing
-	const inputSchemaJson = toJsonSchema(schema.inputSchema) || { type: 'object', properties: {} };
+	const inputSchemaJson = zodToInputJsonSchema(schema.inputSchema);
 	registeredTools.push({ name, description: schema.description, inputSchema: inputSchemaJson });
 
-	// For actual registration, the SDK expects a Zod raw shape (not JSON schema)
-	const getRawShape = (s: z.ZodTypeAny): z.ZodRawShape => {
-		let cur: any = s as any;
-		for (let i = 0; i < 6; i++) {
-			if (cur?.shape) break;
-			const def = cur?._def;
-			if (!def) break;
-			if (def?.schema) {
-				cur = def.schema;
-				continue;
-			}
-			if (def?.innerType) {
-				cur = def.innerType;
-				continue;
-			}
-			break;
-		}
-		if (cur?.shape) return cur.shape as z.ZodRawShape;
-		throw new Error('inputSchema must be or wrap a ZodObject');
-	};
-
-	server.registerTool(
+	// SDK の registerTool は第2引数に { inputSchema: ZodRawShape } を要求するが
+	// 型定義が厳密すぎて直接渡せないため、ここでキャストを集約する
+	(server as unknown as { registerTool: (n: string, s: unknown, h: unknown) => void }).registerTool(
 		name,
-		{ description: schema.description, inputSchema: getRawShape(schema.inputSchema) } as any,
-		async (input: any) => {
+		{ description: schema.description, inputSchema: getRawShape(schema.inputSchema) },
+		async (input: Record<string, unknown>) => {
 			const TOOL_TIMEOUT_MS = 60_000;
 			const t0 = Date.now();
 			try {
@@ -205,7 +122,7 @@ function registerToolWithLog<S extends z.ZodTypeAny, R = unknown>(
 						TOOL_TIMEOUT_MS,
 					);
 				});
-				const result = await Promise.race([handler(input as z.infer<S>), timeoutPromise]).finally(() => {
+				const result = await Promise.race([handler(input), timeoutPromise]).finally(() => {
 					if (timeoutId) clearTimeout(timeoutId);
 				});
 				const ms = Date.now() - t0;
@@ -230,7 +147,7 @@ function registerToolWithLog<S extends z.ZodTypeAny, R = unknown>(
 
 // === Auto-register all tools from registry ===
 for (const def of allToolDefs) {
-	registerToolWithLog(def.name, { description: def.description, inputSchema: def.inputSchema }, def.handler as any);
+	registerToolWithLog(def.name, { description: def.description, inputSchema: def.inputSchema }, def.handler);
 }
 
 // === Register prompts (SDK 形式に寄せた最小導入) ===
@@ -380,19 +297,28 @@ try {
 			.map((s) => s.trim())
 			.filter(Boolean);
 
-		const httpTransport: any = new (StreamableHTTPServerTransport as any)({
-			path: '/mcp', // some SDKs use 'path' instead of 'endpoint'
+		// StreamableHTTPServerTransport のコンストラクタ引数・戻り値が SDK で正確に export されていないため
+		// Transport 互換型にキャストを集約する
+		type Transport = Parameters<typeof server.connect>[0];
+		type ExpressMiddleware = (req: unknown, res: unknown, next: () => void) => void;
+		const HttpTransport = StreamableHTTPServerTransport as unknown as new (
+			opts: Record<string, unknown>,
+		) => Transport & {
+			expressMiddleware?: () => ExpressMiddleware;
+		};
+		const httpTransport = new HttpTransport({
+			path: '/mcp',
 			sessionIdGenerator: () => randomUUID(),
 			enableDnsRebindingProtection: true,
 			...(allowedHosts.length ? { allowedHosts } : {}),
 			...(allowedOrigins.length ? { allowedOrigins } : {}),
-		} as any);
+		});
 
-		await server.connect(httpTransport as any);
-		const mw =
+		await server.connect(httpTransport);
+		const mw: ExpressMiddleware =
 			typeof httpTransport.expressMiddleware === 'function'
 				? httpTransport.expressMiddleware()
-				: (_req: any, _res: any, next: any) => next();
+				: (_req, _res, next) => next();
 		app.use(mw);
 		app.listen(port, () => {
 			// no stdout/stderr output to avoid STDIO transport contamination
