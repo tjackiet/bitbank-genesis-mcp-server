@@ -1,3 +1,4 @@
+import { toStructured } from '../../lib/result.js';
 import { runBacktest } from '../../tools/trading_process/index.js';
 import { RunBacktestInputSchema } from '../schemas.js';
 import type { ToolDefinition } from '../tool-definition.js';
@@ -28,7 +29,7 @@ SVG チャート付きで損益・勝率・最大DD・Sharpe Ratio 等を返却�
 			const errorText = res.availableStrategies
 				? `Error: ${res.error}\nAvailable strategies: ${res.availableStrategies.join(', ')}`
 				: `Error: ${res.error}`;
-			return { content: [{ type: 'text', text: errorText }], structuredContent: res };
+			return { content: [{ type: 'text', text: errorText }], structuredContent: toStructured(res) };
 		}
 
 		// SVG がある場合はアーティファクト用のヒントを追加

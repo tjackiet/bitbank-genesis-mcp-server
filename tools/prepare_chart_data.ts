@@ -10,7 +10,7 @@
  */
 
 import { dayjs, toIsoWithTz } from '../lib/datetime.js';
-import { fail, failFromError, ok } from '../lib/result.js';
+import { fail, failFromError, ok, toStructured } from '../lib/result.js';
 import { createMeta, ensurePair } from '../lib/validate.js';
 import type { Candle, FailResult, NumericSeries, OkResult } from '../src/schemas.js';
 import { PrepareChartDataInputSchema } from '../src/schemas.js';
@@ -288,7 +288,7 @@ export const toolDef: ToolDefinition = {
 		const text = `${result.summary}\n${JSON.stringify(result.data)}`;
 		return {
 			content: [{ type: 'text', text }],
-			structuredContent: result as unknown as Record<string, unknown>,
+			structuredContent: toStructured(result),
 		};
 	},
 };

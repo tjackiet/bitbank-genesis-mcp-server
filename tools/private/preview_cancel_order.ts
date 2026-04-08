@@ -6,7 +6,7 @@
  */
 
 import { formatPair } from '../../lib/formatter.js';
-import { ok } from '../../lib/result.js';
+import { ok, toStructured } from '../../lib/result.js';
 import { generateToken } from '../../src/private/confirmation.js';
 import { PreviewCancelOrderInputSchema, PreviewCancelOrderOutputSchema } from '../../src/private/schemas.js';
 import type { ToolDefinition } from '../../src/tool-definition.js';
@@ -46,7 +46,7 @@ export const toolDef: ToolDefinition = {
 		const text = `${result.summary}\n${JSON.stringify(result.data, null, 2)}`;
 		return {
 			content: [{ type: 'text', text }],
-			structuredContent: result as unknown as Record<string, unknown>,
+			structuredContent: toStructured(result),
 		};
 	},
 };

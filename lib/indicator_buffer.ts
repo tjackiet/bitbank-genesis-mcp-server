@@ -31,7 +31,7 @@ const INDICATOR_PERIODS: Record<IndicatorBufferKey, number> = {
 	ICHIMOKU: 78,
 };
 
-export function getFetchCount(displayCount: number, indicatorKeys: IndicatorBufferKey[] = []): number {
+export function getFetchCount(displayCount: number, indicatorKeys: readonly IndicatorBufferKey[] = []): number {
 	const maxPeriod = indicatorKeys.reduce((max, key) => {
 		const period = INDICATOR_PERIODS[key] || 0;
 		return Math.max(max, period);

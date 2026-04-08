@@ -9,7 +9,7 @@
 
 import { nowIso, toIsoMs } from '../../lib/datetime.js';
 import { formatPair, formatPrice } from '../../lib/formatter.js';
-import { fail, ok } from '../../lib/result.js';
+import { fail, ok, toStructured } from '../../lib/result.js';
 import { getDefaultClient, PrivateApiError } from '../../src/private/client.js';
 import type { OrderResponse } from '../../src/private/schemas.js';
 import { GetOrdersInfoInputSchema, GetOrdersInfoOutputSchema } from '../../src/private/schemas.js';
@@ -84,7 +84,7 @@ export const toolDef: ToolDefinition = {
 		const text = `${result.summary}\n${JSON.stringify(result.data, null, 2)}`;
 		return {
 			content: [{ type: 'text', text }],
-			structuredContent: result as unknown as Record<string, unknown>,
+			structuredContent: toStructured(result),
 		};
 	},
 };

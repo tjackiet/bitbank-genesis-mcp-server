@@ -4,8 +4,9 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import type { z } from 'zod';
+import { getErrorMessage } from '../lib/error.js';
 import { logError, logToolRun } from '../lib/logger.js';
-import { prompts as promptDefs } from './prompts.js';
+import { type PromptDef, prompts as promptDefs } from './prompts.js';
 import { SYSTEM_PROMPT } from './system-prompt.js';
 import { allToolDefs } from './tool-registry.js';
 
@@ -233,110 +234,114 @@ for (const def of allToolDefs) {
 }
 
 // === Register prompts (SDK 形式に寄せた最小導入) ===
-function registerPromptSafe(name: string, def: { description: string; messages: any[] }) {
-	const s: any = server as any;
+
+type PromptMessage = PromptDef['messages'][number];
+type ContentBlock = PromptMessage['content'][number];
+
+function toSdkMessages(msgs: PromptMessage[]) {
+	return msgs.map((msg) => {
+		const blocks: ContentBlock[] = Array.isArray(msg.content) ? msg.content : [];
+		const text = blocks
+			.map((b) => {
+				if (b.type === 'text' && typeof b.text === 'string') return b.text;
+				// tool_code ブロック: PromptDef の型定義外だが実データに存在する
+				if (b.type === 'tool_code') {
+					const tc = b as unknown as { tool_name?: string; tool_input?: unknown };
+					const tool = tc.tool_name || 'tool';
+					const args = tc.tool_input ? JSON.stringify(tc.tool_input) : '{}';
+					return `Call ${tool} with ${args}`;
+				}
+				return '';
+			})
+			.filter(Boolean)
+			.join('\n');
+		return {
+			role: msg.role === 'assistant' ? ('assistant' as const) : ('user' as const),
+			content: { type: 'text' as const, text },
+		};
+	});
+}
+
+function registerPromptSafe(name: string, def: Pick<PromptDef, 'description' | 'messages'>) {
+	const s = server as unknown as {
+		registerPrompt?: (name: string, meta: { description: string }, cb: () => unknown) => void;
+	};
 	if (typeof s.registerPrompt === 'function') {
-		// Inspector 互換: tool_code をテキストに変換し、role=system は user 扱いにする
-		const toSdkMessages = (msgs: any[]) =>
-			msgs.map((msg) => {
-				const blocks = Array.isArray(msg.content) ? msg.content : [];
-				const text = blocks
-					.map((b: any) => {
-						if (b?.type === 'text' && typeof b.text === 'string') return b.text;
-						if (b?.type === 'tool_code') {
-							const tool = b.tool_name || 'tool';
-							const args = b.tool_input ? JSON.stringify(b.tool_input) : '{}';
-							return `Call ${tool} with ${args}`;
-						}
-						return '';
-					})
-					.filter(Boolean)
-					.join('\n');
-				return { role: msg.role === 'assistant' ? 'assistant' : 'user', content: { type: 'text', text } };
-			});
 		registeredPrompts.push({ name, description: def.description });
 		s.registerPrompt(name, { description: def.description }, () => ({
 			description: def.description,
 			messages: toSdkMessages(def.messages),
 		}));
-	} else {
-		// no-op if SDK doesn't support prompts in this version
 	}
 }
 
 // === Register prompts from src/prompts.ts ===
-for (const p of promptDefs as any[]) {
-	registerPromptSafe(p.name, { description: p.description, messages: p.messages });
+for (const p of promptDefs) {
+	registerPromptSafe(p.name, p);
 }
 
 // === stdio 接続（最後に実行） ===
 const transport = new StdioServerTransport();
 await server.connect(transport);
 
+// SDK の McpServer は setRequestHandler を public 型として export していないため、
+// 低レベル API アクセスのキャストをこのヘルパーに集約する。
+type HandlerFn = (request: unknown) => Promise<unknown>;
+function setHandler(method: string, fn: HandlerFn) {
+	(server as unknown as { setRequestHandler?: (method: string, fn: HandlerFn) => void }).setRequestHandler?.(
+		method,
+		fn,
+	);
+}
+
 // Fallback handlers to ensure list operations work over STDIO
 try {
-	(server as any).setRequestHandler?.('tools/list', async () => ({
+	setHandler('tools/list', async () => ({
 		tools: registeredTools.map((t) => ({ name: t.name, description: t.description, inputSchema: t.inputSchema })),
 	}));
-	(server as any).setRequestHandler?.('prompts/list', async () => ({
+	setHandler('prompts/list', async () => ({
 		prompts: registeredPrompts.map((p) => ({ name: p.name, description: p.description })),
 	}));
 	// prompts/get: convert content arrays to single TextContent objects per MCP spec
-	(server as any).setRequestHandler?.('prompts/get', async (request: any) => {
+	setHandler('prompts/get', async (request: unknown) => {
 		try {
-			console.error('[prompts/get] Request received:', safeJson(request));
-			const name = request?.params?.name;
+			const params = (request as { params?: { name?: string } })?.params;
+			const name = params?.name;
 			console.error('[prompts/get] Requested name:', name);
 			if (!name) {
-				console.error('[prompts/get] ERROR: No name provided');
 				throw new Error('Prompt name is required');
 			}
 
-			console.error('[prompts/get] Available prompts:', (promptDefs as any[]).map((p) => p.name).join(', '));
-
-			const promptDef = (promptDefs as any[]).find((p) => p.name === name);
+			const promptDef = promptDefs.find((p) => p.name === name);
 			if (!promptDef) {
 				console.error('[prompts/get] ERROR: Prompt not found:', name);
 				throw new Error(`Prompt not found: ${name}`);
 			}
 
-			console.error('[prompts/get] Found prompt:', name, 'with', (promptDef as any)?.messages?.length ?? 0, 'messages');
-			// Convert messages: flatten content arrays to single TextContent, fix roles for MCP spec
-			const messages = ((promptDef as any).messages ?? []).map((msg: any) => {
-				const blocks = Array.isArray(msg.content) ? msg.content : [msg.content];
+			console.error('[prompts/get] Found prompt:', name, 'with', promptDef.messages.length, 'messages');
+			// prompts/get はテキストブロックのみ抽出（tool_code は除外）
+			const messages = promptDef.messages.map((msg) => {
+				const blocks: ContentBlock[] = Array.isArray(msg.content) ? msg.content : [];
 				const text = blocks
-					.map((b: any) => (b?.type === 'text' && typeof b.text === 'string' ? b.text : ''))
-					.filter(Boolean)
+					.filter((b): b is ContentBlock & { text: string } => b.type === 'text' && typeof b.text === 'string')
+					.map((b) => b.text)
 					.join('\n');
 				return {
-					role: msg.role === 'assistant' ? 'assistant' : 'user',
+					role: msg.role === 'assistant' ? ('assistant' as const) : ('user' as const),
 					content: { type: 'text' as const, text },
 				};
 			});
-
-			const result = { description: (promptDef as any).description, messages };
-			console.error('[prompts/get] Returning result with', (result as any).messages?.length ?? 0, 'messages');
-			return result;
+			return { description: promptDef.description, messages };
 		} catch (error: unknown) {
-			const message = error instanceof Error ? error.message : String(error);
-			const stack = error instanceof Error ? error.stack : undefined;
-			console.error('[prompts/get] EXCEPTION:', message, stack);
+			console.error('[prompts/get] EXCEPTION:', getErrorMessage(error));
 			throw error;
 		}
 	});
 } catch {}
 
-function safeJson(v: unknown) {
-	try {
-		return JSON.stringify(v);
-	} catch {
-		return '[unserializable]';
-	}
-}
-
 // Resources: provide system-level prompt as MCP resource
 try {
-	(server as any).setRequestHandler?.('resources/list', async () => ({
+	setHandler('resources/list', async () => ({
 		resources: [
 			{
 				uri: 'prompt://system',
@@ -346,8 +351,8 @@ try {
 			},
 		],
 	}));
-	(server as any).setRequestHandler?.('resources/read', async (request: any) => {
-		const uri = request?.params?.uri;
+	setHandler('resources/read', async (request: unknown) => {
+		const uri = (request as { params?: { uri?: string } })?.params?.uri;
 		if (uri === 'prompt://system') {
 			return {
 				contents: [{ uri: 'prompt://system', mimeType: 'text/plain', text: SYSTEM_PROMPT }],
@@ -395,5 +400,5 @@ try {
 	}
 } catch (e) {
 	// eslint-disable-next-line no-console
-	console.warn('HTTP transport setup skipped:', (e as any)?.message || e);
+	console.warn('HTTP transport setup skipped:', getErrorMessage(e));
 }

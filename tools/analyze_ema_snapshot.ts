@@ -134,7 +134,7 @@ export default async function analyzeEmaSnapshot(
 					fail(indRes.summary || 'indicators failed', indRes.meta.errorType || 'internal'),
 				);
 			close = indRes.data.normalized.at(-1)?.close ?? null;
-			chartInd = (indRes?.data?.chart?.indicators ?? {}) as unknown as Record<string, unknown>;
+			chartInd = indRes?.data?.chart?.indicators ?? {};
 			candles = Array.isArray(indRes?.data?.chart?.candles)
 				? indRes.data.chart.candles
 				: Array.isArray(indRes?.data?.normalized)

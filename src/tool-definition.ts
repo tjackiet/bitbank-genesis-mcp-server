@@ -4,7 +4,7 @@ import type { Result } from './schemas.js';
 /** SVG 等を直接返すハンドラ用の事前フォーマット済み MCP レスポンス */
 export interface McpResponse {
 	content: Array<{ type: string; text: string }>;
-	structuredContent: unknown;
+	structuredContent: Record<string, unknown>;
 }
 
 /**

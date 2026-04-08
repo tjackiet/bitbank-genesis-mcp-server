@@ -7,7 +7,7 @@
 
 import { formatPair, formatPrice } from '../../lib/formatter.js';
 import { BITBANK_API_BASE, fetchJson } from '../../lib/http.js';
-import { fail, ok } from '../../lib/result.js';
+import { fail, ok, toStructured } from '../../lib/result.js';
 import { generateToken } from '../../src/private/confirmation.js';
 import { PreviewOrderInputSchema, PreviewOrderOutputSchema } from '../../src/private/schemas.js';
 import type { ToolDefinition } from '../../src/tool-definition.js';
@@ -207,7 +207,7 @@ export const toolDef: ToolDefinition = {
 		const text = `${result.summary}\n${JSON.stringify(result.data, null, 2)}`;
 		return {
 			content: [{ type: 'text', text }],
-			structuredContent: result as unknown as Record<string, unknown>,
+			structuredContent: toStructured(result),
 		};
 	},
 };

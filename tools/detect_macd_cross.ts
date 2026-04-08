@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { dayjs } from '../lib/datetime.js';
 import { formatSummary } from '../lib/formatter.js';
-import { fail, failFromError, failFromValidation, ok } from '../lib/result.js';
+import { fail, failFromError, failFromValidation, ok, toStructured } from '../lib/result.js';
 import { ALLOWED_PAIRS, ensurePair } from '../lib/validate.js';
 import type { Pair } from '../src/schemas.js';
 import type { ToolDefinition } from '../src/tool-definition.js';
@@ -680,7 +680,7 @@ screen（スクリーニング用）:
 					return `${String(r.pair)}: ${String(r.type)}@${date} (ヒストグラム${fmtDelta(r?.histogramDelta)}, 前回クロスから${prevDays}${r?.returnSinceCrossPct != null ? `, ${fmtRet(r.returnSinceCrossPct)}` : ''})`;
 				});
 				const text = `${String(res?.summary || '')}\n${lines.join('\n')}`.trim();
-				return { content: [{ type: 'text', text }], structuredContent: res as unknown as Record<string, unknown> };
+				return { content: [{ type: 'text', text }], structuredContent: toStructured(res) };
 			} catch {
 				return res;
 			}

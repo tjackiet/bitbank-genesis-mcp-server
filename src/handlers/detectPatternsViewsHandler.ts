@@ -3,6 +3,7 @@
  * debug / summary / full / detailed の4モードを分離
  */
 import { toIsoTime } from '../../lib/datetime.js';
+import { toStructured } from '../../lib/result.js';
 import type { PatternEntry } from '../../tools/patterns/types.js';
 import type { McpResponse } from '../tool-definition.js';
 
@@ -244,7 +245,7 @@ export function formatDebugView(
 			} as Record<string, unknown>,
 		};
 	} catch {
-		return { content: [{ type: 'text', text }], structuredContent: res as unknown };
+		return { content: [{ type: 'text', text }], structuredContent: toStructured(res) };
 	}
 }
 
@@ -466,7 +467,7 @@ export function formatSummaryView(
 	const in90 = within(90 * 86400000);
 	const formingHint = includeForming ? '' : '\n※形成中は includeForming=true を指定してください。';
 	const text = `${hdr}（${typeSummary || '分類なし'}、直近30日: ${in30}件、直近90日: ${in90}件）\n${periodLine ? `${periodLine}\n` : ''}検討パターン: ${patterns?.length ? patterns.join(', ') : '既定セット'}${formingHint}\n詳細は structuredContent.data.patterns を参照。`;
-	return { content: [{ type: 'text', text }], structuredContent: res as unknown };
+	return { content: [{ type: 'text', text }], structuredContent: toStructured(res) };
 }
 
 // ── full view ──
@@ -486,7 +487,7 @@ export function formatFullView(
 	const trustNote =
 		'\n\nパターン整合度について（形状一致度・対称性・期間から算出）:\n  0.8以上 = 理想的な形状（教科書的パターン）\n  0.7-0.8 = 標準的な形状（他指標と併用推奨）\n  0.6-0.7 = やや不明瞭（慎重に判断）\n  0.6未満 = 形状不十分';
 	const text = `${hdr}（${typeSummary || '分類なし'}）\n${periodLine ? `${periodLine}\n` : ''}\n【検出パターン（全件）】\n${body}${overlayNote}${trustNote}`;
-	return { content: [{ type: 'text', text }], structuredContent: res as unknown };
+	return { content: [{ type: 'text', text }], structuredContent: toStructured(res) };
 }
 
 // ── detailed view (default) ──

@@ -91,3 +91,14 @@ export function failFromValidation(
 	const f = fail(result.error.message, result.error.type);
 	return (schema ? schema.parse(f) : f) as FailResult;
 }
+
+/**
+ * Result オブジェクトを structuredContent 用の Record<string, unknown> に変換する。
+ *
+ * ツールハンドラが返す McpResponse の structuredContent は Record<string, unknown> を期待するが、
+ * Result 型は直接代入できない。このヘルパーでキャストを1箇所に集約し、各ツールファイルから
+ * `as unknown as Record<string, unknown>` を排除する。
+ */
+export function toStructured(result: object): Record<string, unknown> {
+	return result as Record<string, unknown>;
+}

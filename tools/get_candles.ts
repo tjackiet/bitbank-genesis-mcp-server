@@ -2,7 +2,7 @@ import { dayjs, daysAgo, today, toIsoTime, toIsoWithTz } from '../lib/datetime.j
 import { getErrorMessage } from '../lib/error.js';
 import { formatSummary } from '../lib/formatter.js';
 import { BITBANK_API_BASE, DEFAULT_RETRIES, fetchJsonWithRateLimit, type RateLimitInfo } from '../lib/http.js';
-import { fail, failFromError, failFromValidation, ok, parseAsResult } from '../lib/result.js';
+import { fail, failFromError, failFromValidation, ok, parseAsResult, toStructured } from '../lib/result.js';
 import { createMeta, ensurePair, validateDate, validateLimit } from '../lib/validate.js';
 import type { CandleType, FailResult, GetCandlesData, GetCandlesMeta, OkResult } from '../src/schemas.js';
 import { GetCandlesInputSchema, GetCandlesOutputSchema } from '../src/schemas.js';
@@ -479,7 +479,7 @@ export const toolDef: ToolDefinition = {
 			const sample = items.slice(0, 5);
 			const header = String(result?.summary ?? `${String(pair).toUpperCase()} [${String(type)}]`);
 			const text = `${header}\nSample (first ${sample.length}/${items.length}):\n${JSON.stringify(sample, null, 2)}`;
-			return { content: [{ type: 'text', text }], structuredContent: result as unknown as Record<string, unknown> };
+			return { content: [{ type: 'text', text }], structuredContent: toStructured(result) };
 		} catch {
 			return result;
 		}
