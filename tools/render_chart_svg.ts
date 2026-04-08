@@ -23,15 +23,24 @@
  *   { svg?: string | null; filePath?: string | null; legend?: Record<string,string> },
  *   { pair: string; type: string; limit?: number; indicators?: string[]; bbMode: 'default'|'extended'; range?: {start:string; end:string}; sizeBytes?: number; layerCount?: number; truncated?: boolean; }>
  */
-import fs from 'node:fs/promises';
-import path from 'node:path';
 import { dayjs } from '../lib/datetime.js';
-import { getErrorMessage } from '../lib/error.js';
 import { formatPair } from '../lib/formatter.js';
-import getDepth from '../lib/get-depth.js';
 import { fail, ok } from '../lib/result.js';
 import type { CandleType, ChartPayload, Pair, RenderChartSvgOptions, Result } from '../src/schemas.js';
 import analyzeIndicators from './analyze_indicators.js';
+import { createCloudPaths } from './chart/ichimoku-cloud.js';
+import { renderDepthChart } from './chart/render-depth.js';
+import { renderSubPanels } from './chart/render-sub-panels.js';
+import {
+	bbColors,
+	emaColors,
+	formatYLabel,
+	niceTicks,
+	type Pt,
+	sanitizeSvg,
+	simplifyPts,
+	smaColors,
+} from './chart/svg-utils.js';
 
 /** Internal options extending the public schema with undocumented/debug properties */
 type RenderChartSvgInternalOpts = RenderChartSvgOptions & {
@@ -118,118 +127,7 @@ export default async function renderChartSvg(
 
 	// === Depth チャート（独立描画） ===
 	if (isDepth) {
-		try {
-			const depth = await getDepth(pair, { maxLevels: args.depth?.levels ?? 200 });
-			if (!depth.ok) return fail(depth.summary.replace(/^Error: /, ''), depth.meta?.errorType || 'internal');
-			const asks: Array<[string, string]> = depth.data.asks || [];
-			const bids: Array<[string, string]> = depth.data.bids || [];
-			// 価格レンジ
-			const minBid = Number(bids[bids.length - 1]?.[0] ?? bids[0]?.[0] ?? 0);
-			const maxAsk = Number(asks[asks.length - 1]?.[0] ?? asks[0]?.[0] ?? 0);
-			const xMinP = Math.min(minBid, Number(bids[0]?.[0] ?? minBid));
-			const xMaxP = Math.max(maxAsk, Number(asks[0]?.[0] ?? maxAsk));
-			// 累積量（左：bids 降順→小へ、右：asks 昇順→大へ）
-			const bidsSorted = [...bids]
-				.map(([p, s]) => [Number(p), Number(s)] as [number, number])
-				.sort((a, b) => b[0] - a[0]);
-			const asksSorted = [...asks]
-				.map(([p, s]) => [Number(p), Number(s)] as [number, number])
-				.sort((a, b) => a[0] - b[0]);
-			let cum = 0;
-			const bidSteps: Array<[number, number]> = [];
-			for (const [p, s] of bidsSorted) {
-				cum += s;
-				bidSteps.push([p, cum]);
-			}
-			cum = 0;
-			const askSteps: Array<[number, number]> = [];
-			for (const [p, s] of asksSorted) {
-				cum += s;
-				askSteps.push([p, cum]);
-			}
-			const maxQty = Math.max(bidSteps.at(-1)?.[1] || 0, askSteps.at(-1)?.[1] || 0) || 1;
-
-			// キャンバス
-			const w = 860,
-				h = 420;
-			const padding = { top: 36, right: 12, bottom: 32, left: 64 };
-			const plotW = w - padding.left - padding.right;
-			const plotH = h - padding.top - padding.bottom;
-			const x = (price: number) =>
-				Number((padding.left + ((price - xMinP) * plotW) / Math.max(1, xMaxP - xMinP)).toFixed(effectivePrecision));
-			const y = (qty: number) => Number((h - padding.bottom - (qty * plotH) / maxQty).toFixed(effectivePrecision));
-
-			// ステップパス生成
-			const toStepPath = (steps: Array<[number, number]>) => {
-				if (!steps.length) return '';
-				const pts = steps.map(([p, q]) => `${x(p)},${y(q)}`);
-				return `M ${pts.join(' L ')}`;
-			};
-			const bidPath = toStepPath(bidSteps);
-			const askPath = toStepPath(askSteps);
-
-			// 塗りつぶし（ステップ下を半透明で）
-			const toFillPath = (steps: Array<[number, number]>, side: 'bid' | 'ask') => {
-				if (!steps.length) return '';
-				const head = steps[0];
-				const tail = steps[steps.length - 1];
-				const baseY = y(0);
-				const poly = ['M', `${x(head[0])},${baseY}`, 'L']
-					.concat(steps.map(([p, q]) => `${x(p)},${y(q)}`))
-					.concat(['L', `${x(tail[0])},${baseY}`, 'Z'])
-					.join(' ');
-				const fill = side === 'bid' ? 'rgba(16,185,129,0.12)' : 'rgba(249,115,22,0.12)';
-				return `<path d="${poly}" fill="${fill}" stroke="none"/>`;
-			};
-			const bidFill = toFillPath(bidSteps, 'bid');
-			const askFill = toFillPath(askSteps, 'ask');
-
-			const mid = (Number(bids[0]?.[0] ?? 0) + Number(asks[0]?.[0] ?? 0)) / 2;
-			const yAxis = `
-        <line x1="${padding.left}" y1="${padding.top}" x2="${padding.left}" y2="${h - padding.bottom}" stroke="#4b5563" stroke-width="1"/>
-      `;
-			const xAxis = `
-        <line x1="${padding.left}" y1="${h - padding.bottom}" x2="${w - padding.right}" y2="${h - padding.bottom}" stroke="#4b5563" stroke-width="1"/>
-      `;
-			const legendDepth = `
-        <g font-size="12" fill="#e5e7eb" transform="translate(${padding.left}, ${Math.max(14, padding.top - 18)})">
-          <rect x="0" y="-10" width="12" height="12" fill="#10b981"></rect>
-          <text x="16" y="0">買い (Bids)</text>
-          <rect x="120" y="-10" width="12" height="12" fill="#f97316"></rect>
-          <text x="136" y="0">売り (Asks)</text>
-        </g>`;
-
-			const svg = `
-      <svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg" style="background-color:#1f2937;color:#e5e7eb;font-family:sans-serif;max-width:100%;height:auto;">
-        <title>${formatPair(pair)} depth chart</title>
-        ${legendDepth}
-        <g class="axes">${yAxis}${xAxis}</g>
-        <g class="plot-area">
-          ${bidFill}
-          ${askFill}
-          <path d="${bidPath}" fill="none" stroke="#10b981" stroke-width="2"/>
-          <path d="${askPath}" fill="none" stroke="#f97316" stroke-width="2"/>
-          <line x1="${x(mid)}" y1="${padding.top}" x2="${x(mid)}" y2="${h - padding.bottom}" stroke="#9ca3af" stroke-width="1" stroke-dasharray="4 4"/>
-        </g>
-      </svg>`;
-			const assetsDir = path.join(process.cwd(), 'assets');
-			await fs.mkdir(assetsDir, { recursive: true });
-			const outputPath = path.join(assetsDir, `depth-${pair}-${Date.now()}.svg`);
-			await fs.writeFile(outputPath, svg);
-			// Note: meta.type should reflect timeframe for schema compatibility (not 'depth')
-			const metaOut: RenderMeta = {
-				pair: pair as Pair,
-				type: String(args.type || '1day'),
-				bbMode: 'default',
-			};
-			return ok<RenderData, RenderMeta>(
-				`${formatPair(pair)} depth chart saved to ${outputPath}`,
-				{ filePath: outputPath, svg },
-				metaOut,
-			);
-		} catch (e: unknown) {
-			return fail(getErrorMessage(e) || 'failed to render depth', 'internal');
-		}
+		return renderDepthChart(pair, args, effectivePrecision);
 	}
 
 	// --- 事前見積もりヒューリスティクス（重そうなら candles-only にフォールバック） ---
@@ -302,45 +200,9 @@ export default async function renderChartSvg(
 		}
 	}
 
-	// Y軸スケール用の "きれいな" 目盛りを生成する関数
-	function niceTicks(min: number, max: number, count = 5): number[] {
-		if (max < min) [min, max] = [max, min];
-		const range = max - min;
-		if (range === 0) return [min];
-
-		// stepが極小値になるのを防ぐ
-		const step = Math.max(1e-9, 10 ** Math.floor(Math.log10(range / count)));
-		const err = (count * step) / range;
-
-		let niceStep: number;
-		if (err <= 0.15) niceStep = step * 10;
-		else if (err <= 0.35) niceStep = step * 5;
-		else if (err <= 0.75) niceStep = step * 2;
-		else niceStep = step;
-
-		// JSの浮動小数点誤差を吸収するため、toFixedで丸める
-		const precision = Math.max(0, -Math.floor(Math.log10(niceStep)));
-		const niceMin = Math.round(min / niceStep) * niceStep;
-		const ticks: number[] = [];
-		// 無限ループ対策
-		for (let v = niceMin; ticks.length < 20 && v <= max * 1.01; v += niceStep) {
-			ticks.push(Number(v.toFixed(precision)));
-		}
-
-		return ticks;
-	}
-
-	// Y軸ラベルの省略表示フォーマッタ
+	// Y軸ラベルの省略表示フォーマッタ（imported formatYLabel を pair に束縛）
 	const isJpyPair = pair.toLowerCase().includes('jpy');
-	const formatYLabel = (val: number): string => {
-		const abs = Math.abs(val);
-		const prefix = isJpyPair ? '¥' : '';
-		if (abs >= 1_000_000_000) return `${prefix}${(val / 1_000_000_000).toFixed(1)}B`;
-		if (abs >= 1_000_000) return `${prefix}${(val / 1_000_000).toFixed(abs >= 10_000_000 ? 1 : 2)}M`;
-		if (abs >= 10_000) return `${prefix}${(val / 1_000).toFixed(abs >= 100_000 ? 0 : 1)}K`;
-		if (abs >= 1_000) return `${prefix}${val.toLocaleString('ja-JP')}`;
-		return `${prefix}${val}`;
-	};
+	const fmtYLabel = (val: number) => formatYLabel(val, isJpyPair);
 
 	const xs = displayItems.map((_, i) => i);
 	const highs = displayItems.map((d) => d.high as number);
@@ -385,7 +247,7 @@ export default async function renderChartSvg(
 	const yMax = yTicks.at(-1) as number;
 
 	// Y軸ラベルの最大幅に基づいてpadding.leftを動的に調整
-	const maxLabelWidth = Math.max(...yTicks.map((v) => formatYLabel(v).length));
+	const maxLabelWidth = Math.max(...yTicks.map((v) => fmtYLabel(v).length));
 	const dynamicPaddingLeft = maxLabelWidth * 8 + 16; // 1文字8pxと仮定 + 余白
 
 	// スケール計算
@@ -459,44 +321,9 @@ export default async function renderChartSvg(
 	}
 
 	// --- インジケータ描画 ---
-	const smaColors: Record<number, string> = {
-		5: '#f472b6',
-		20: '#a78bfa',
-		25: '#3b82f6',
-		50: '#22d3ee',
-		75: '#f59e0b',
-		200: '#10b981',
-	};
-	const bbColors = {
-		bandFill2: 'rgba(59, 130, 246, 0.10)', // 2σバンド塗り
-		line1: '#9ca3af', // ±1σ
-		line2: '#3b82f6', // ±2σ
-		line3: '#f59e0b', // ±3σ
-		middle: '#9ca3af',
-	} as const;
 
 	// 汎用的なライン描画関数
 	const round = (v: number) => Number(v.toFixed(svgPrecision));
-
-	// 共通の RDP 風ポイント簡略化ヘルパー
-	type Pt = { x: number; y: number };
-	const simplifyPts = (raw: Pt[]): Pt[] => {
-		if (simplifyTolerance <= 0 || raw.length <= 2) return raw;
-		const sqTol = simplifyTolerance * simplifyTolerance;
-		const simplified: Pt[] = [raw[0]];
-		for (let i = 1; i < raw.length - 1; i++) {
-			const a = raw[i - 1],
-				b = raw[i],
-				c = raw[i + 1];
-			const area = Math.abs((b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x));
-			const dx = c.x - a.x;
-			const dy = c.y - a.y;
-			const len2 = dx * dx + dy * dy || 1;
-			if ((area * area) / len2 >= sqTol) simplified.push(b);
-		}
-		simplified.push(raw[raw.length - 1]);
-		return simplified;
-	};
 
 	const createLinePath = (
 		data: Array<number | null> | undefined,
@@ -521,7 +348,7 @@ export default async function renderChartSvg(
 		if (raw.length === 0) return '';
 		// RDP風の単純化
 		if (options.simplify !== false) {
-			raw = simplifyPts(raw);
+			raw = simplifyPts(raw, simplifyTolerance);
 		}
 		const points = raw.map((p) => `${round(p.x)},${round(p.y)}`);
 		const d = `M ${points.join(' L ')}`;
@@ -577,7 +404,6 @@ export default async function renderChartSvg(
 	}
 
 	// EMAレイヤー（SMAと区別するため暖色系・破線）
-	const emaColors: Record<number, string> = { 12: '#ff6b35', 26: '#ffd166', 50: '#ef476f', 200: '#06d6a0' };
 	let emaLayers = '';
 	for (const p of withEMA) {
 		const series = indicatorSeries(`EMA_${p}`);
@@ -680,96 +506,14 @@ export default async function renderChartSvg(
 		const spanAPath = createLinePath(ichiSeries.spanA, '#16a34a', { width: '1', offset: 26 });
 		const spanBPath = createLinePath(ichiSeries.spanB, '#ef4444', { width: '1', offset: 26 });
 
-		// 雲の描画（交点で色切替）
-		// 描画領域外のポイントを除外してSVGサイズを削減
-		const createCloudPaths = (spanA?: Array<number | null>, spanB?: Array<number | null>, offset?: number) => {
-			let greenCloudPath = '';
-			let redCloudPath = '';
-			let currentTop: Array<{ x: number; y: number }> = [];
-			let currentBottom: Array<{ x: number; y: number }> = [];
-			let currentIsGreen: boolean | null = null;
-
-			// 描画領域の範囲（少し余裕を持たせる）
-			const minPosIndex = -1;
-			const maxPosIndex = xs.length + forwardShift + 1;
-
-			const pushPolygon = () => {
-				if (currentTop.length < 2 || currentBottom.length < 2) return;
-				const polygon = `M ${[...currentTop, ...currentBottom.slice().reverse()].map((p) => `${p.x},${p.y}`).join(' L ')} Z`;
-				if (currentIsGreen) greenCloudPath += polygon;
-				else redCloudPath += polygon;
-			};
-
-			const getPosIndex = (i: number) => i - pastBuffer + (offset || 0);
-			const toPoint = (i: number, yVal: number) => ({ x: x(getPosIndex(i)), y: y(yVal) });
-
-			const len = Math.max(spanA?.length || 0, spanB?.length || 0);
-			for (let i = 0; i < len - 1; i++) {
-				const a0 = spanA?.[i] as number | null;
-				const b0 = spanB?.[i] as number | null;
-				const a1 = spanA?.[i + 1] as number | null;
-				const b1 = spanB?.[i + 1] as number | null;
-				if (
-					a0 == null ||
-					b0 == null ||
-					a1 == null ||
-					b1 == null ||
-					!Number.isFinite(a0) ||
-					!Number.isFinite(b0) ||
-					!Number.isFinite(a1) ||
-					!Number.isFinite(b1)
-				) {
-					pushPolygon();
-					currentTop = [];
-					currentBottom = [];
-					currentIsGreen = null;
-					continue;
-				}
-
-				// 描画領域外のセグメントをスキップ（SVGサイズ削減）
-				const posIndex0 = getPosIndex(i);
-				const posIndex1 = getPosIndex(i + 1);
-				if (posIndex1 < minPosIndex || posIndex0 > maxPosIndex) {
-					// 完全に描画領域外 → スキップ
-					pushPolygon();
-					currentTop = [];
-					currentBottom = [];
-					currentIsGreen = null;
-					continue;
-				}
-
-				const isGreen0 = a0 >= b0;
-				const isGreen1 = a1 >= b1;
-				if (currentIsGreen === null) {
-					currentIsGreen = isGreen0;
-					currentTop.push(toPoint(i, currentIsGreen ? a0 : b0));
-					currentBottom.push(toPoint(i, currentIsGreen ? b0 : a0));
-				}
-				if (isGreen0 === isGreen1) {
-					currentTop.push(toPoint(i + 1, currentIsGreen ? a1 : b1));
-					currentBottom.push(toPoint(i + 1, currentIsGreen ? b1 : a1));
-					continue;
-				}
-				const da = a1 - a0;
-				const db = b1 - b0;
-				const denom = da - db;
-				const t = denom === 0 ? 0 : (a0 - b0) / denom;
-				const tClamped = Math.max(0, Math.min(1, t));
-				const xi = i + tClamped;
-				const yi = a0 + tClamped * da;
-				const pInt = toPoint(xi, yi);
-				currentTop.push(pInt);
-				currentBottom.push(pInt);
-				pushPolygon();
-				currentIsGreen = isGreen1;
-				currentTop = [pInt, toPoint(i + 1, currentIsGreen ? a1 : b1)];
-				currentBottom = [pInt, toPoint(i + 1, currentIsGreen ? b1 : a1)];
-			}
-			pushPolygon();
-			return { greenCloudPath, redCloudPath };
-		};
-
-		const { greenCloudPath, redCloudPath } = createCloudPaths(ichiSeries.spanA, ichiSeries.spanB, 26);
+		// 雲の描画（交点で色切替）— 抽出済みモジュールに委譲
+		const { greenCloudPath, redCloudPath } = createCloudPaths(ichiSeries.spanA, ichiSeries.spanB, 26, {
+			x,
+			y,
+			pastBuffer,
+			displayLength: xs.length,
+			forwardShift,
+		});
 
 		ichimokuLayers = `
       <path d="${greenCloudPath}" fill="rgba(16, 163, 74, 0.16)" stroke="none" />
@@ -832,7 +576,7 @@ export default async function renderChartSvg(
       ${yTicks
 				.map((val) => {
 					const yPos = y(val);
-					return `<text x="${padding.left - 8}" y="${yPos}" text-anchor="end" dominant-baseline="middle">${formatYLabel(val)}</text>`;
+					return `<text x="${padding.left - 8}" y="${yPos}" text-anchor="end" dominant-baseline="middle">${fmtYLabel(val)}</text>`;
 				})
 				.join('')}
     </g>
@@ -883,170 +627,17 @@ export default async function renderChartSvg(
   `;
 
 	// --- Sub-panel rendering ---
-	let subPanelSvg = '';
-	if (subPanelTypes.length > 0) {
-		const pricePanelBottom = h - padding.bottom;
-		let currentTop = pricePanelBottom + SUB_PANEL_GAP;
-
-		const LEGEND_H = 18;
-		const subPanelY = (v: number, min: number, max: number, top: number) => {
-			const dataH = SUB_PANEL_HEIGHT - LEGEND_H;
-			const range = Math.max(1e-10, max - min);
-			return Number((top + SUB_PANEL_HEIGHT - ((v - min) * dataH) / range).toFixed(effectivePrecision));
-		};
-
-		for (const panelType of subPanelTypes) {
-			const panelBottom = currentTop + SUB_PANEL_HEIGHT;
-			let pc = '';
-			// panel background + top border
-			pc += `<rect x="${padding.left}" y="${currentTop}" width="${plotW}" height="${SUB_PANEL_HEIGHT}" fill="rgba(255,255,255,0.02)"/>`;
-			pc += `<line x1="${padding.left}" y1="${currentTop}" x2="${w - padding.right}" y2="${currentTop}" stroke="#374151" stroke-width="0.5"/>`;
-
-			if (panelType === 'macd') {
-				const ms = indicators?.macd_series as { line?: number[]; signal?: number[]; hist?: number[] } | undefined;
-				const mLine = (ms?.line || []) as Array<number | null>;
-				const mSig = (ms?.signal || []) as Array<number | null>;
-				const mHist = (ms?.hist || []) as Array<number | null>;
-				const vals: number[] = [];
-				for (const s of [mLine, mSig, mHist]) {
-					const sliced = s.slice(pastBuffer);
-					for (let i = 0; i < sliced.length; i++) {
-						const v = sliced[i];
-						if (v != null && i < displayItems.length) vals.push(v as number);
-					}
-				}
-				if (vals.length > 0) {
-					const mMin = Math.min(...vals);
-					const mMax = Math.max(...vals);
-					const pad = (mMax - mMin) * 0.1 || 1;
-					const yMin = mMin - pad;
-					const yMax = mMax + pad;
-					const py = (v: number) => subPanelY(v, yMin, yMax, currentTop);
-
-					// zero line
-					if (yMin < 0 && yMax > 0) {
-						pc += `<line x1="${padding.left}" y1="${py(0)}" x2="${w - padding.right}" y2="${py(0)}" stroke="#4b5563" stroke-width="0.5" stroke-dasharray="4 4"/>`;
-					}
-					// histogram bars
-					const hBarW = Math.max(1, barW * 0.7);
-					mHist.forEach((val, i) => {
-						if (val == null) return;
-						const idx = i - pastBuffer;
-						if (idx < 0 || idx >= displayItems.length) return;
-						const cx = x(idx);
-						const topY = py(val as number);
-						const zeroY = py(0);
-						const color = (val as number) >= 0 ? 'rgba(34,197,94,0.6)' : 'rgba(239,68,68,0.6)';
-						pc += `<rect x="${Number((cx - hBarW / 2).toFixed(1))}" y="${Math.min(topY, zeroY)}" width="${Number(hBarW.toFixed(1))}" height="${Math.max(1, Math.abs(topY - zeroY))}" fill="${color}"/>`;
-					});
-					// MACD line
-					const lPts: string[] = [];
-					mLine.forEach((v, i) => {
-						if (v != null) {
-							const idx = i - pastBuffer;
-							if (idx >= 0 && idx < displayItems.length) lPts.push(`${x(idx)},${py(v as number)}`);
-						}
-					});
-					if (lPts.length > 1)
-						pc += `<path d="M ${lPts.join(' L ')}" fill="none" stroke="#3b82f6" stroke-width="1.5"/>`;
-					// Signal line
-					const sPts: string[] = [];
-					mSig.forEach((v, i) => {
-						if (v != null) {
-							const idx = i - pastBuffer;
-							if (idx >= 0 && idx < displayItems.length) sPts.push(`${x(idx)},${py(v as number)}`);
-						}
-					});
-					if (sPts.length > 1)
-						pc += `<path d="M ${sPts.join(' L ')}" fill="none" stroke="#f97316" stroke-width="1.5"/>`;
-					// Y-axis ticks
-					const mt = niceTicks(yMin, yMax, 3);
-					mt.forEach((v) => {
-						pc += `<text x="${padding.left - 8}" y="${py(v)}" text-anchor="end" dominant-baseline="middle" fill="#9ca3af" font-size="10">${v.toFixed(0)}</text>`;
-					});
-				}
-				pc += `<text x="${padding.left + 4}" y="${currentTop + 12}" fill="#9ca3af" font-size="10" font-weight="bold">MACD</text>`;
-				// legend
-				pc += `<line x1="${padding.left + 50}" y1="${currentTop + 8}" x2="${padding.left + 62}" y2="${currentTop + 8}" stroke="#3b82f6" stroke-width="1.5"/>`;
-				pc += `<text x="${padding.left + 65}" y="${currentTop + 12}" fill="#9ca3af" font-size="9">MACD</text>`;
-				pc += `<line x1="${padding.left + 100}" y1="${currentTop + 8}" x2="${padding.left + 112}" y2="${currentTop + 8}" stroke="#f97316" stroke-width="1.5"/>`;
-				pc += `<text x="${padding.left + 115}" y="${currentTop + 12}" fill="#9ca3af" font-size="9">Signal</text>`;
-			} else if (panelType === 'rsi') {
-				const rsiSeries = (indicators?.RSI_14_series || []) as Array<number | null>;
-				const rMin = 0,
-					rMax = 100;
-				const py = (v: number) => subPanelY(v, rMin, rMax, currentTop);
-				// zone fills
-				pc += `<rect x="${padding.left}" y="${py(100)}" width="${plotW}" height="${Math.abs(py(70) - py(100))}" fill="rgba(239,68,68,0.06)"/>`;
-				pc += `<rect x="${padding.left}" y="${py(30)}" width="${plotW}" height="${Math.abs(py(0) - py(30))}" fill="rgba(34,197,94,0.06)"/>`;
-				// reference lines
-				(
-					[
-						{ v: 70, c: '#ef4444', d: '2 2' },
-						{ v: 50, c: '#4b5563', d: '4 4' },
-						{ v: 30, c: '#22c55e', d: '2 2' },
-					] as const
-				).forEach(({ v, c, d }) => {
-					pc += `<line x1="${padding.left}" y1="${py(v)}" x2="${w - padding.right}" y2="${py(v)}" stroke="${c}" stroke-width="0.5" stroke-dasharray="${d}"/>`;
-				});
-				// RSI line
-				const rPts: string[] = [];
-				rsiSeries.forEach((v, i) => {
-					if (v != null) {
-						const idx = i - pastBuffer;
-						if (idx >= 0 && idx < displayItems.length) rPts.push(`${x(idx)},${py(v as number)}`);
-					}
-				});
-				if (rPts.length > 1) pc += `<path d="M ${rPts.join(' L ')}" fill="none" stroke="#a78bfa" stroke-width="1.5"/>`;
-				// Y-axis ticks
-				[0, 30, 50, 70, 100].forEach((v) => {
-					pc += `<text x="${padding.left - 8}" y="${py(v)}" text-anchor="end" dominant-baseline="middle" fill="#9ca3af" font-size="10">${v}</text>`;
-				});
-				pc += `<text x="${padding.left + 4}" y="${currentTop + 12}" fill="#9ca3af" font-size="10" font-weight="bold">RSI (14)</text>`;
-				// inline legend
-				pc += `<line x1="${padding.left + 65}" y1="${currentTop + 8}" x2="${padding.left + 77}" y2="${currentTop + 8}" stroke="#a78bfa" stroke-width="1.5"/>`;
-				pc += `<text x="${padding.left + 80}" y="${currentTop + 12}" fill="#9ca3af" font-size="9">RSI</text>`;
-			} else if (panelType === 'volume') {
-				const volumes = displayItems.map((d) => (d.volume as number) || 0);
-				const vMax = Math.max(...volumes) || 1;
-				const py = (v: number) => subPanelY(v, 0, vMax, currentTop);
-				// volume bars
-				volumes.forEach((vol, i) => {
-					if (vol <= 0) return;
-					const cx = x(i);
-					const topY = py(vol);
-					const bottomY = py(0);
-					const up = displayItems[i].close >= displayItems[i].open;
-					const color = up ? 'rgba(34,197,94,0.5)' : 'rgba(239,68,68,0.5)';
-					const vBarW = barW;
-					pc += `<rect x="${Number((cx - vBarW / 2).toFixed(1))}" y="${topY}" width="${Number(vBarW.toFixed(1))}" height="${Math.max(1, bottomY - topY)}" fill="${color}"/>`;
-				});
-				// Y-axis ticks
-				const vt = niceTicks(0, vMax, 3);
-				vt.forEach((v) => {
-					const label =
-						v >= 1e9
-							? `${(v / 1e9).toFixed(1)}B`
-							: v >= 1e6
-								? `${(v / 1e6).toFixed(1)}M`
-								: v >= 1e3
-									? `${(v / 1e3).toFixed(0)}K`
-									: v.toFixed(0);
-					pc += `<text x="${padding.left - 8}" y="${py(v)}" text-anchor="end" dominant-baseline="middle" fill="#9ca3af" font-size="10">${label}</text>`;
-				});
-				pc += `<text x="${padding.left + 4}" y="${currentTop + 12}" fill="#9ca3af" font-size="10" font-weight="bold">Volume</text>`;
-				// inline legend
-				pc += `<rect x="${padding.left + 55}" y="${currentTop + 4}" width="8" height="8" fill="rgba(34,197,94,0.5)"/>`;
-				pc += `<text x="${padding.left + 66}" y="${currentTop + 12}" fill="#9ca3af" font-size="9">Up</text>`;
-				pc += `<rect x="${padding.left + 85}" y="${currentTop + 4}" width="8" height="8" fill="rgba(239,68,68,0.5)"/>`;
-				pc += `<text x="${padding.left + 96}" y="${currentTop + 12}" fill="#9ca3af" font-size="9">Down</text>`;
-			}
-			// panel Y-axis line
-			pc += `<line x1="${padding.left}" y1="${currentTop}" x2="${padding.left}" y2="${panelBottom}" stroke="#4b5563" stroke-width="1"/>`;
-			subPanelSvg += pc;
-			currentTop = panelBottom + SUB_PANEL_GAP;
-		}
-	}
+	const { svg: subPanelSvg } = renderSubPanels(subPanelTypes, {
+		x,
+		padding,
+		plotW,
+		w,
+		barW,
+		effectivePrecision,
+		pastBuffer,
+		displayItems: displayItems as Array<{ open: number; close: number; volume?: number; [k: string]: unknown }>,
+		indicators: indicators as Record<string, unknown> | undefined,
+	});
 
 	// --- 2種類のSVGを構築 ---
 	const createSvgString = (layers: { ichimoku: string; bb: string; sma: string; ema: string }) => `
@@ -1071,7 +662,7 @@ ${priceLine}
         ${layers.sma}
         ${layers.ema}
         ${(() => {
-					if (!overlays || !overlays.ranges) return '';
+					if (!overlays?.ranges) return '';
 					const mkRect = (startIso: string, endIso: string, color?: string, label?: string) => {
 						const findIndexByIso = (iso: string) => displayItems.findIndex((d) => d.isoTime === iso);
 						const i0 = findIndexByIso(startIso);
@@ -1094,7 +685,7 @@ ${priceLine}
 						.join('');
 				})()}
         ${(() => {
-					if (!overlays || !overlays.annotations) return '';
+					if (!overlays?.annotations) return '';
 					// ピン＆テキストを上部に配置し、重なりを軽減するため縦位置を交互にずらす
 					let slot = 0;
 					const mkPin = (iso: string, text: string) => {
@@ -1112,7 +703,7 @@ ${priceLine}
 					return overlays.annotations.map((a: { isoTime: string; text: string }) => mkPin(a.isoTime, a.text)).join('');
 				})()}
         ${(() => {
-					if (!overlays || !overlays.depth_zones) return '';
+					if (!overlays?.depth_zones) return '';
 					const mkBand = (low: number, high: number, color?: string, label?: string) => {
 						const y1 = y(high);
 						const y2 = y(low);
@@ -1150,15 +741,6 @@ ${priceLine}
 		fullSvg = minify(fullSvg);
 		lightSvg = minify(lightSvg);
 	}
-
-	// --- 安全のための簡易サニタイゼーション ---
-	const sanitizeSvg = (s: string) =>
-		s
-			// strip script tags
-			.replace(/<script[\s\S]*?>[\s\S]*?<\/script>/gi, '')
-			// drop on* event handlers
-			.replace(/\son[a-z]+="[^"]*"/gi, '')
-			.replace(/\son[a-z]+='[^']*'/gi, '');
 
 	// --- 返却: 常に生 SVG をインライン返却 ---
 	const finalSvg = sanitizeSvg(withIchimoku ? lightSvg : fullSvg);
