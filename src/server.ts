@@ -197,9 +197,20 @@ for (const p of promptDefs) {
 	registerPromptSafe(p.name, p);
 }
 
-// === stdio 接続（最後に実行） ===
-const transport = new StdioServerTransport();
-await server.connect(transport);
+// === トランスポート接続 ===
+// SDK の McpServer.connect() は 1:1 でトランスポートを結合する (SDK issue #961)。
+// MCP_ENABLE_HTTP=1 + PORT が設定されている場合は HTTP を優先し、stdio は接続しない。
+const enableHttp = process.env.MCP_ENABLE_HTTP === '1';
+const httpPort = (() => {
+	const p = Number(process.env.PORT);
+	return Number.isFinite(p) && p > 0 ? p : NaN;
+})();
+const useHttp = enableHttp && Number.isFinite(httpPort);
+
+if (!useHttp) {
+	const transport = new StdioServerTransport();
+	await server.connect(transport);
+}
 
 // SDK の McpServer は setRequestHandler を public 型として export していないため、
 // 低レベル API アクセスのキャストをこのヘルパーに集約する。
@@ -279,12 +290,9 @@ try {
 	});
 } catch {}
 
-// Optional HTTP transport (/mcp) when PORT is provided
-try {
-	const portStr = process.env.PORT;
-	const port = portStr ? Number(portStr) : NaN;
-	const enableHttp = process.env.MCP_ENABLE_HTTP === '1';
-	if (enableHttp && Number.isFinite(port) && port > 0) {
+// Optional HTTP transport (/mcp) when MCP_ENABLE_HTTP=1 + PORT
+if (useHttp) {
+	try {
 		const { default: express } = await import('express');
 		const app = express();
 		app.use(express.json());
@@ -300,11 +308,15 @@ try {
 		// StreamableHTTPServerTransport のコンストラクタ引数・戻り値が SDK で正確に export されていないため
 		// Transport 互換型にキャストを集約する
 		type Transport = Parameters<typeof server.connect>[0];
-		type ExpressMiddleware = (req: unknown, res: unknown, next: () => void) => void;
+		type HandleRequestFn = (
+			req: import('node:http').IncomingMessage,
+			res: import('node:http').ServerResponse,
+			body?: unknown,
+		) => Promise<void>;
 		const HttpTransport = StreamableHTTPServerTransport as unknown as new (
 			opts: Record<string, unknown>,
 		) => Transport & {
-			expressMiddleware?: () => ExpressMiddleware;
+			handleRequest?: HandleRequestFn;
 		};
 		const httpTransport = new HttpTransport({
 			path: '/mcp',
@@ -315,16 +327,19 @@ try {
 		});
 
 		await server.connect(httpTransport);
-		const mw: ExpressMiddleware =
-			typeof httpTransport.expressMiddleware === 'function'
-				? httpTransport.expressMiddleware()
-				: (_req, _res, next) => next();
-		app.use(mw);
-		app.listen(port, () => {
+
+		// SDK 公式の handleRequest を使って HTTP リクエストを処理する
+		if (typeof httpTransport.handleRequest === 'function') {
+			const handle = httpTransport.handleRequest.bind(httpTransport);
+			app.use('/mcp', (req, res, next) => {
+				handle(req, res, req.body).catch(next);
+			});
+		}
+		app.listen(httpPort, () => {
 			// no stdout/stderr output to avoid STDIO transport contamination
 		});
+	} catch (e) {
+		// eslint-disable-next-line no-console
+		console.warn('HTTP transport setup skipped:', getErrorMessage(e));
 	}
-} catch (e) {
-	// eslint-disable-next-line no-console
-	console.warn('HTTP transport setup skipped:', getErrorMessage(e));
 }
