@@ -1,6 +1,6 @@
 import { TtlCache } from '../lib/cache.js';
 import { formatSummary } from '../lib/formatter.js';
-import { getFetchCount, type IndicatorBufferKey } from '../lib/indicator_buffer.js';
+import { getFetchCount } from '../lib/indicator_buffer.js';
 import {
 	ichimokuSnapshot,
 	bollingerBands as rawBollingerBands,
@@ -339,7 +339,7 @@ export default async function analyzeIndicators(
 		'STOCH',
 		'ICHIMOKU',
 	] as const;
-	const fetchCount = getFetchCount(displayCount, indicatorKeys as unknown as IndicatorBufferKey[]);
+	const fetchCount = getFetchCount(displayCount, indicatorKeys);
 
 	// Check cache before fetching & computing
 	const cacheKey = `${chk.pair}:${type}`;
@@ -507,7 +507,8 @@ export default async function analyzeIndicators(
 
 	(function padSeriesLengths() {
 		const len = chartData.candles.length;
-		const seriesMap = chartData.indicators as unknown as Record<string, NumericSeries | number | null | undefined>;
+		// ChartIndicators の各フィールドを動的に走査・パディングするため Record でアクセスする
+		const seriesMap = chartData.indicators as Record<string, unknown>;
 		const keys = [
 			'SMA_5',
 			'SMA_20',

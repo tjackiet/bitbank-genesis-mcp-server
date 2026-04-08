@@ -1,6 +1,7 @@
 import type { z } from 'zod';
 import { nowIso, toDisplayTime } from '../../lib/datetime.js';
 import { formatPercent, formatPriceJPY } from '../../lib/formatter.js';
+import { toStructured } from '../../lib/result.js';
 import analyzeIndicators from '../../tools/analyze_indicators.js';
 import { GetIndicatorsInputSchema } from '../schemas.js';
 import type { ToolDefinition } from '../tool-definition.js';
@@ -614,6 +615,6 @@ export const toolDef: ToolDefinition = {
 			obvPrev,
 			obvUnit: String(pair).toLowerCase().includes('btc') ? 'BTC' : '',
 		});
-		return { content: [{ type: 'text', text }], structuredContent: res as unknown as Record<string, unknown> };
+		return { content: [{ type: 'text', text }], structuredContent: toStructured(res) };
 	},
 };

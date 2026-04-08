@@ -108,7 +108,7 @@ export default async function analyzeSmaSnapshot(
 		for (const p of periods) map[`SMA_${p}`] = get(p);
 
 		// Series for slopes/crosses (prefer chart.indicators for complete arrays)
-		const chartInd = (indRes?.data?.chart?.indicators ?? {}) as unknown as Record<string, unknown>;
+		const chartInd: Record<string, unknown> = indRes?.data?.chart?.indicators ?? {};
 		const candles: Array<{ isoTime?: string | null }> = Array.isArray(indRes?.data?.chart?.candles)
 			? indRes.data.chart.candles
 			: Array.isArray(indRes?.data?.normalized)
