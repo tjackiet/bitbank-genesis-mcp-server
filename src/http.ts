@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import type { IncomingMessage, ServerResponse } from 'node:http';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import express from 'express';
@@ -35,12 +36,16 @@ app.get(ENDPOINT, (_req: Request, res: Response) => {
 });
 
 // 最小サーバ（必要に応じて既存の登録ロジックに差し替え可）
-const server: any = new McpServer({ name: 'bb-mcp', version: '1.0.0' }) as any;
-server.registerTool(
+const server = new McpServer({ name: 'bb-mcp', version: '1.0.0' });
+// SDK の registerTool 型が厳密すぎるため、空スキーマ登録にキャストを集約
+(server as unknown as { registerTool: (n: string, s: unknown, h: unknown) => void }).registerTool(
 	'ping',
-	{ description: 'Return a ping response', inputSchema: {} as any },
-	async (args: Record<string, unknown>, _extra: any) => {
-		return { content: [{ type: 'text', text: `pong: ${String((args as any)?.message ?? '')}` }] } as any;
+	{
+		description: 'Return a ping response',
+		inputSchema: { message: { type: 'string', description: 'Any message' } },
+	},
+	async (args: Record<string, unknown>) => {
+		return { content: [{ type: 'text', text: `pong: ${String(args.message ?? '')}` }] };
 	},
 );
 
@@ -54,19 +59,29 @@ const allowedOrigins = (process.env.ALLOWED_ORIGINS ?? '')
 	.map((s) => s.trim())
 	.filter(Boolean);
 
-const transport: any = new (StreamableHTTPServerTransport as any)({
-	path: ENDPOINT, // 一部SDKは endpoint ではなく path を使用
+// StreamableHTTPServerTransport のコンストラクタ型が SDK で正確に export されていないためキャストを集約
+type Transport = Parameters<typeof server.connect>[0];
+const HttpTransport = StreamableHTTPServerTransport as unknown as new (
+	opts: Record<string, unknown>,
+) => Transport & {
+	handleRequest?: (req: IncomingMessage, res: ServerResponse, body?: unknown) => Promise<void>;
+};
+const transport = new HttpTransport({
+	path: ENDPOINT,
 	sessionIdGenerator: () => randomUUID(),
 	enableDnsRebindingProtection: true,
 	...(allowedHosts.length ? { allowedHosts } : {}),
 	...(allowedOrigins.length ? { allowedOrigins } : {}),
-} as any);
+});
 
-await server.connect(transport as any);
+await server.connect(transport);
 
+// SDK 公式の handleRequest を使って HTTP リクエストを処理する
 const mw: RequestHandler =
-	typeof transport.expressMiddleware === 'function'
-		? (transport.expressMiddleware() as RequestHandler)
+	typeof transport.handleRequest === 'function'
+		? (req, res, next) => {
+				transport.handleRequest!(req, res, req.body).catch(next);
+			}
 		: (_req: Request, _res: Response, next: NextFunction) => next();
 app.use(ENDPOINT, mw);
 

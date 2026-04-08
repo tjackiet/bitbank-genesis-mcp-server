@@ -23,7 +23,7 @@ interface FakeMcpServerShape {
 interface FakeHttpTransportShape {
 	kind: string;
 	options: Record<string, unknown>;
-	expressMiddleware: () => Record<string, unknown>;
+	handleRequest: ReturnType<typeof vi.fn>;
 }
 interface FakeExpressApp {
 	use: ReturnType<typeof vi.fn>;
@@ -49,7 +49,6 @@ const runtime = vi.hoisted(() => ({
 	expressFactory: vi.fn(),
 	expressJson: vi.fn(),
 	expressApp: null as FakeExpressApp | null,
-	httpMiddleware: { kind: 'http-middleware' } as { kind: string },
 }));
 
 vi.mock('@modelcontextprotocol/sdk/server/mcp.js', () => {
@@ -109,14 +108,11 @@ vi.mock('@modelcontextprotocol/sdk/server/streamableHttp.js', () => {
 	class FakeStreamableHTTPServerTransport {
 		kind = 'http';
 		options: Record<string, unknown>;
+		handleRequest = vi.fn(async () => {});
 
 		constructor(options: Record<string, unknown>) {
 			this.options = options;
 			runtime.httpTransports.push(this);
-		}
-
-		expressMiddleware() {
-			return runtime.httpMiddleware;
 		}
 	}
 
@@ -202,7 +198,6 @@ function resetRuntime() {
 	runtime.expressFactory.mockImplementation(() => runtime.expressApp);
 	runtime.expressJson.mockReset();
 	runtime.expressJson.mockReturnValue({ kind: 'json-middleware' });
-	runtime.httpMiddleware = { kind: 'http-middleware' };
 }
 
 async function importServer(): Promise<FakeMcpServerShape> {
@@ -445,9 +440,9 @@ describe('server.ts smoke', () => {
 
 		const server = await importServer();
 
-		expect(server.connections).toHaveLength(2);
-		expect(server.connections[0].kind).toBe('stdio');
-		expect(server.connections[1].kind).toBe('http');
+		// SDK の McpServer.connect() は 1:1 のため、HTTP 有効時は stdio を接続しない
+		expect(server.connections).toHaveLength(1);
+		expect(server.connections[0].kind).toBe('http');
 		expect(runtime.httpTransports).toHaveLength(1);
 		expect(runtime.httpTransports[0].options).toMatchObject({
 			path: '/mcp',
@@ -459,7 +454,8 @@ describe('server.ts smoke', () => {
 		expect(runtime.expressFactory).toHaveBeenCalledTimes(1);
 		expect(runtime.expressJson).toHaveBeenCalledTimes(1);
 		expect(runtime.expressApp?.use).toHaveBeenNthCalledWith(1, { kind: 'json-middleware' });
-		expect(runtime.expressApp?.use).toHaveBeenNthCalledWith(2, runtime.httpMiddleware);
-		expect(runtime.expressApp?.listen).toHaveBeenCalledWith(3010, expect.any(Function));
+		// handleRequest ベースのミドルウェアが '/mcp' パスで登録される
+		expect(runtime.expressApp?.use).toHaveBeenNthCalledWith(2, '/mcp', expect.any(Function));
+		expect(runtime.expressApp?.listen).toHaveBeenCalledWith(expect.any(Number), expect.any(Function));
 	});
 });
