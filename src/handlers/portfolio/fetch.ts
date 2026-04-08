@@ -32,7 +32,7 @@ async function paginateDeposits(
 		const params = { ...baseParams, count: '1000', ...(since ? { since } : {}) };
 		const result = await tryGet<{ deposits: RawDeposit[] }>(client, '/v1/user/deposit_history', params);
 		if (!result.ok) {
-			return { deposits: all, complete: all.length !== 0, error: result.error };
+			return { deposits: all, complete: false, error: result.error };
 		}
 		const batch = result.data.deposits || [];
 		all.push(...batch);
@@ -58,7 +58,7 @@ async function paginateWithdrawals(
 		const params = { ...baseParams, count: '1000', ...(since ? { since } : {}) };
 		const result = await tryGet<{ withdrawals: RawWithdrawal[] }>(client, '/v1/user/withdrawal_history', params);
 		if (!result.ok) {
-			return { withdrawals: all, complete: all.length !== 0, error: result.error };
+			return { withdrawals: all, complete: false, error: result.error };
 		}
 		const batch = result.data.withdrawals || [];
 		all.push(...batch);

@@ -81,11 +81,13 @@ export function calcPnl(trades: RawTrade[], asset: string, withdrawals?: RawWith
 				// sell: 移動平均法で原価を按分
 				if (holdingQty > 0) {
 					const avgCost = holdingCost / holdingQty;
-					const sellCost = qty * avgCost;
+					// 保有量を超える売りの場合、原価は保有分のみ按分（超過分は原価ゼロ扱い）
+					const coveredQty = Math.min(qty, holdingQty);
+					const sellCost = coveredQty * avgCost;
 					const sellRevenue = qty * price - feeQuote; // 売却収入から手数料を差し引く
 					realizedPnl += sellRevenue - sellCost;
 					holdingCost -= sellCost;
-					holdingQty -= qty;
+					holdingQty -= coveredQty;
 					// 誤差修正: 数量がゼロ近くなったらコストもリセット
 					if (holdingQty < 1e-12) {
 						holdingQty = 0;
@@ -164,11 +166,13 @@ export function calcPeriodRealizedPnl(
 			let sellRealized = 0;
 			if (h.qty > 0) {
 				const avgCost = h.cost / h.qty;
-				const sellCost = qty * avgCost;
+				// 保有量を超える売りの場合、原価は保有分のみ按分
+				const coveredQty = Math.min(qty, h.qty);
+				const sellCost = coveredQty * avgCost;
 				const sellRevenue = qty * price - feeQuote;
 				sellRealized = sellRevenue - sellCost;
 				h.cost -= sellCost;
-				h.qty -= qty;
+				h.qty -= coveredQty;
 				if (h.qty < 1e-12) {
 					h.qty = 0;
 					h.cost = 0;
@@ -244,7 +248,7 @@ export function calcDepositWithdrawalSummary(
 	// 口座全体リターン
 	let accountReturnPct: number | undefined;
 	let accountReturnJpy: number | undefined;
-	if (netJpyInvested > 0 && totalJpyValue > 0) {
+	if (netJpyInvested > 0) {
 		accountReturnJpy = Math.round(totalJpyValue - netJpyInvested);
 		accountReturnPct = Math.round(((totalJpyValue - netJpyInvested) / netJpyInvested) * 10000) / 100;
 	}
