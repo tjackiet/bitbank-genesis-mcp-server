@@ -71,13 +71,15 @@ export default async function analyzeMyPortfolioHandler(args: {
 		// 全履歴を取得しないことで API 呼び出し回数を削減し、pagination 上限の問題も回避。
 		const tradePromise = include_pnl
 			? paginateTrades(client, boundaries.yearStartMs)
-			: Promise.resolve([] as RawTrade[]);
+			: Promise.resolve({ trades: [] as RawTrade[], truncated: false });
 
 		const dwPromise = include_deposit_withdrawal
 			? fetchDepositWithdrawal(client, boundaries.yearStartMs)
 			: Promise.resolve(null);
 
-		const [allTrades, dwData] = await Promise.all([tradePromise, dwPromise]);
+		const [tradeResult, dwData] = await Promise.all([tradePromise, dwPromise]);
+		const allTrades = tradeResult.trades;
+		const tradesTruncated = tradeResult.truncated;
 
 		// 期間パフォーマンス用: 全関連ペアのキャンドルデータを早期フェッチ開始
 		const allRelevantPairs = new Set<string>();
@@ -671,6 +673,9 @@ export default async function analyzeMyPortfolioHandler(args: {
 			);
 		}
 		lines.push('※ 評価損益は当年（1/1〜）の約定ベース。年初以前の取得原価は含みません');
+		if (tradesTruncated) {
+			lines.push('※ 約定履歴が上限に達したため一部のみ取得。損益計算が不正確な可能性があります');
+		}
 		lines.push('');
 
 		// 保有銘柄のパフォーマンス（月次・年次の価格騰落率）

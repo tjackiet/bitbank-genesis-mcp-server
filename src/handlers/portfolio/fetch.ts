@@ -73,7 +73,10 @@ async function paginateWithdrawals(
 }
 
 /** ページネーション付きで約定履歴を取得（最大 MAX_PAGES ページ、古い順） */
-export async function paginateTrades(client: BitbankPrivateClient, sinceMs?: number): Promise<RawTrade[]> {
+export async function paginateTrades(
+	client: BitbankPrivateClient,
+	sinceMs?: number,
+): Promise<{ trades: RawTrade[]; truncated: boolean }> {
 	const all: RawTrade[] = [];
 	let since: string | undefined = sinceMs != null ? String(sinceMs) : undefined;
 	for (let page = 0; page < MAX_PAGES; page++) {
@@ -83,13 +86,15 @@ export async function paginateTrades(client: BitbankPrivateClient, sinceMs?: num
 		if (!result.ok) break;
 		const batch = result.data.trades || [];
 		all.push(...batch);
-		if (batch.length < 1000) break;
+		if (batch.length < 1000) return { trades: all, truncated: false };
 		// 次ページ: 最後の約定の executed_at + 1ms を since に
 		const lastTs = batch[batch.length - 1]?.executed_at;
 		if (!lastTs) break;
 		since = String(lastTs + 1);
 	}
-	return all;
+	// MAX_PAGES 到達 or エラーで抜けた場合、最終バッチが満杯なら打ち切り
+	const truncated = all.length > 0 && all.length % 1000 === 0;
+	return { trades: all, truncated };
 }
 
 /**
