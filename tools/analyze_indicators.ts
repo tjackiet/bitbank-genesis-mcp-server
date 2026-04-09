@@ -330,8 +330,8 @@ function analyzeTrend(
 		return 'downtrend';
 	}
 
-	if (rsi != null && rsi > RSI_OVERBOUGHT) return 'overbought';
-	if (rsi != null && rsi < RSI_OVERSOLD) return 'oversold';
+	if (rsi != null && rsi >= RSI_OVERBOUGHT) return 'overbought';
+	if (rsi != null && rsi <= RSI_OVERSOLD) return 'oversold';
 	return 'sideways';
 }
 

@@ -131,7 +131,7 @@ export function buildIndicatorsText(input: BuildIndicatorsTextInput): string {
 	const vsCurPct = (ref?: number | null) => formatDeviation(close, ref);
 	const rsiInterp = (val: number | null) => {
 		if (val == null) return '—';
-		if (val < RSI_OVERSOLD) return '売られすぎ圏（反発の可能性）';
+		if (val <= RSI_OVERSOLD) return '売られすぎ圏（反発の可能性）';
 		if (val < 50) return '弱め（反発余地）';
 		if (val < RSI_OVERBOUGHT) return '中立〜強め';
 		return '買われすぎ圏（反落の可能性）';
@@ -151,9 +151,9 @@ export function buildIndicatorsText(input: BuildIndicatorsTextInput): string {
 	const rsiHint =
 		rsi == null
 			? '—'
-			: Number(rsi) < RSI_OVERSOLD
+			: Number(rsi) <= RSI_OVERSOLD
 				? '売られすぎ'
-				: Number(rsi) > RSI_OVERBOUGHT
+				: Number(rsi) >= RSI_OVERBOUGHT
 					? '買われすぎ'
 					: '中立圏';
 	const bwState =
@@ -166,7 +166,7 @@ export function buildIndicatorsText(input: BuildIndicatorsTextInput): string {
 	lines.push('');
 	// Momentum
 	lines.push('【モメンタム】');
-	lines.push(`  RSI(14): ${rsi ?? 'n/a'} → ${rsiInterp(Number(rsi))}`);
+	lines.push(`  RSI(14): ${rsi ?? 'n/a'} → ${rsiInterp(rsi)}`);
 	if (recentRsiFormatted.length >= 2) {
 		lines.push(`    【RSI推移（直近${recentRsiFormatted.length}${rsiUnitLabel}）】`);
 		lines.push('');
