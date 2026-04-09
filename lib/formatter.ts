@@ -106,6 +106,95 @@ export function formatVolumeJPY(value: number | null | undefined): string {
 	return `${Math.round(value / 10_000)}万円`;
 }
 
+// ── unknown 型安全フォーマッタ（デバッグ・パターン検出向け） ──
+
+/**
+ * unknown 値を固定小数点で整形（デバッグ表示用）
+ * @param v 値（unknown 型対応、NaN/null/undefined → 'n/a'）
+ * @param digits 小数桁数（デフォルト: 8）
+ */
+export function formatFixed(v: unknown, digits = 8): string {
+	if (v == null) return 'n/a';
+	const n = Number(v);
+	return Number.isFinite(n) ? n.toFixed(digits) : 'n/a';
+}
+
+/**
+ * unknown 値を四捨五入してロケール整形
+ * @param v 値（unknown 型対応、NaN/null/undefined → 'n/a'）
+ */
+export function formatRounded(v: unknown): string {
+	if (v == null) return 'n/a';
+	const n = Number(v);
+	return Number.isFinite(n) ? Math.round(n).toLocaleString('ja-JP') : 'n/a';
+}
+
+/**
+ * unknown 値をそのまま文字列化（整数表示用）
+ * @param v 値（unknown 型対応、NaN/null/undefined → 'n/a'）
+ */
+export function formatInt(v: unknown): string {
+	if (v == null) return 'n/a';
+	const n = Number(v);
+	return Number.isFinite(n) ? String(n) : 'n/a';
+}
+
+/**
+ * unknown 値を比率（0-1）からパーセント整形
+ * 例: 0.05 → "5.0%"
+ * @param v 値（unknown 型対応、NaN/null/undefined → 'n/a'）
+ * @param digits 小数桁数（デフォルト: 1）
+ */
+export function formatPctFromRatio(v: unknown, digits = 1): string {
+	if (v == null) return 'n/a';
+	const n = Number(v);
+	return Number.isFinite(n) ? `${(n * 100).toFixed(digits)}%` : 'n/a';
+}
+
+// ── トレンド方向シンボル ──
+
+/**
+ * 傾き（slope）から方向絵文字を返す
+ * 正→📈  負→📉  ゼロ/null→➡️
+ */
+export function formatTrendSymbol(slope: number | null | undefined): string {
+	if (slope == null) return '➡️';
+	return slope > 0 ? '📈' : slope < 0 ? '📉' : '➡️';
+}
+
+/**
+ * 値の基準値との比較で矢印を返す（ボラティリティ推移など）
+ * @param val 現在値
+ * @param base 基準値
+ * @param threshold 有意差の閾値（デフォルト: 0.05 = 5%）
+ */
+export function formatTrendArrow(
+	val: number | null | undefined,
+	base: number | null | undefined,
+	threshold = 0.05,
+): string {
+	if (val == null || base == null) return '→';
+	if (val > base * (1 + threshold)) return '⬆⬆';
+	if (val > base) return '⬆';
+	if (val < base * (1 - threshold)) return '⬇⬇';
+	if (val < base) return '⬇';
+	return '→';
+}
+
+/**
+ * 現在価格に対する基準価格の乖離率を整形
+ * 例: close=100, ref=102 → "+2.0% 上方"
+ * @param close 現在価格
+ * @param ref 基準価格（SMA等）
+ */
+export function formatDeviation(close: number | null, ref: number | null | undefined): string {
+	if (close == null || ref == null || !Number.isFinite(close) || !Number.isFinite(ref) || close === 0) return 'n/a';
+	const pct = ((ref - close) / Math.abs(close)) * 100;
+	if (!Number.isFinite(pct)) return 'n/a';
+	const dir = ref >= close ? '上方' : '下方';
+	return `${formatPercent(pct, { sign: true, digits: 1 })} ${dir}`;
+}
+
 export function formatSummary(
 	args: {
 		pair?: string;

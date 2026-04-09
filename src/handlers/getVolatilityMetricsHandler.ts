@@ -1,6 +1,12 @@
 import type { z } from 'zod';
 import { toIsoTime } from '../../lib/datetime.js';
-import { formatCurrency, formatCurrencyShort, formatPercent, formatPriceJPY } from '../../lib/formatter.js';
+import {
+	formatCurrency,
+	formatCurrencyShort,
+	formatPercent,
+	formatPriceJPY,
+	formatTrendArrow,
+} from '../../lib/formatter.js';
 import { stddev } from '../../lib/math.js';
 import getVolatilityMetrics from '../../tools/get_volatility_metrics.js';
 import { GetVolMetricsInputSchema } from '../schemas.js';
@@ -52,9 +58,9 @@ export function buildVolatilityBeginnerText(input: VolViewInput): string {
 /** summary ビューのテキスト組み立て */
 export function buildVolatilitySummaryText(input: VolViewInput): string {
 	const { pair, type, sampleSize, rvAnn, pkAnn, gkAnn, rsAnn, atrAbs, tagsAll } = input;
-	const fmtPct = (x: number | null) => formatPercent(x, { multiply: true });
+	const fp = (x: number | null) => formatPercent(x, { multiply: true });
 	const fmtCurrShort = (p: string, v: number | null) => formatCurrencyShort(v, p);
-	return `${String(pair).toUpperCase()} [${String(type)}] samples=${sampleSize ?? 'n/a'} RV=${fmtPct(rvAnn)} ATR=${fmtCurrShort(pair, atrAbs)} PK=${fmtPct(pkAnn)} GK=${fmtPct(gkAnn)} RS=${fmtPct(rsAnn)} Tags: ${tagsAll.join(', ')}`;
+	return `${String(pair).toUpperCase()} [${String(type)}] samples=${sampleSize ?? 'n/a'} RV=${fp(rvAnn)} ATR=${fmtCurrShort(pair, atrAbs)} PK=${fp(pkAnn)} GK=${fp(gkAnn)} RS=${fp(rsAnn)} Tags: ${tagsAll.join(', ')}`;
 }
 
 export interface VolDetailedInput extends VolViewInput {
@@ -69,12 +75,12 @@ export interface VolDetailedInput extends VolViewInput {
 export function buildVolatilityDetailedText(input: VolDetailedInput, view: 'detailed' | 'full'): string {
 	const { pair, type, lastClose, ann, annFactor, sampleSize, rvAnn, pkAnn, gkAnn, rsAnn, atrAbs, tagsAll, rolling } =
 		input;
-	const fmtPct = (x: number | null | undefined) => formatPercent(x, { multiply: true });
+	const fp = (x: number | null | undefined) => formatPercent(x, { multiply: true });
 	const fmtCurr = (p: string, v: number | null) => formatCurrency(v, p);
 
 	const windowsList = rolling.map((r) => r.window).join('/');
 	const header = `${String(pair).toUpperCase()} [${String(type)}] close=${lastClose != null ? Number(lastClose).toLocaleString('ja-JP') : 'n/a'}\n`;
-	const block1 = `【Volatility Metrics${ann ? ' (annualized)' : ''}, ${sampleSize ?? 'n/a'} samples】\nRV (std): ${fmtPct(rvAnn)}\nATR: ${fmtCurr(pair, atrAbs)}\nParkinson: ${fmtPct(pkAnn)}\nGarman-Klass: ${fmtPct(gkAnn)}\nRogers-Satchell: ${fmtPct(rsAnn)}`;
+	const block1 = `【Volatility Metrics${ann ? ' (annualized)' : ''}, ${sampleSize ?? 'n/a'} samples】\nRV (std): ${fp(rvAnn)}\nATR: ${fmtCurr(pair, atrAbs)}\nParkinson: ${fp(pkAnn)}\nGarman-Klass: ${fp(gkAnn)}\nRogers-Satchell: ${fp(rsAnn)}`;
 
 	const maxW = rolling.length ? Math.max(...rolling.map((r) => r.window)) : null;
 	const baseVal =
@@ -82,17 +88,9 @@ export function buildVolatilityDetailedText(input: VolDetailedInput, view: 'deta
 			? (rolling.find((r) => r.window === maxW)?.rv_std_ann ??
 				((rolling.find((r) => r.window === maxW)?.rv_std ?? null) as number) * (ann ? annFactor : 1))
 			: null;
-	const arrowFor = (val: number | null | undefined) => {
-		if (val == null || baseVal == null) return '→';
-		if (val > baseVal * 1.05) return '⬆⬆';
-		if (val > baseVal) return '⬆';
-		if (val < baseVal * 0.95) return '⬇⬇';
-		if (val < baseVal) return '⬇';
-		return '→';
-	};
 	const trendLines = rolling.map((r) => {
 		const now = r.rv_std_ann ?? (r.rv_std != null ? r.rv_std * (ann ? annFactor : 1) : null);
-		return `${r.window}-day RV: ${fmtPct(now)} ${arrowFor(now)}`;
+		return `${r.window}-day RV: ${fp(now)} ${formatTrendArrow(now, baseVal)}`;
 	});
 
 	let text =

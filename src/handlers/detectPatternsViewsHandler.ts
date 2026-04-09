@@ -3,6 +3,7 @@
  * debug / summary / full / detailed の4モードを分離
  */
 import { toIsoTime } from '../../lib/datetime.js';
+import { formatFixed, formatInt, formatPctFromRatio, formatRounded } from '../../lib/formatter.js';
 import { toStructured } from '../../lib/result.js';
 import type { PatternEntry } from '../../tools/patterns/types.js';
 import type { McpResponse } from '../tool-definition.js';
@@ -60,28 +61,8 @@ const toTs = (s?: string): number => {
 	}
 };
 
-const fmtNum = (v: unknown): string => {
-	const n = Number(v);
-	return Number.isFinite(n) ? n.toFixed(8) : 'n/a';
-};
-
-const fmtRound = (v: unknown): string => {
-	const n = Number(v);
-	return Number.isFinite(n) ? Math.round(n).toLocaleString('ja-JP') : 'n/a';
-};
-
-const fmtPct = (v: unknown): string => {
-	const n = Number(v);
-	return Number.isFinite(n) ? `${(n * 100).toFixed(1)}%` : 'n/a';
-};
-
-const fmtInt = (v: unknown): string => {
-	const n = Number(v);
-	return Number.isFinite(n) ? String(n) : 'n/a';
-};
-
 const fmtPointList = (arr: unknown): string =>
-	Array.isArray(arr) ? arr.map((p: IndexedPoint) => `[${p.index}:${fmtRound(p.price)}]`).join(', ') : 'n/a';
+	Array.isArray(arr) ? arr.map((p: IndexedPoint) => `[${p.index}:${formatRounded(p.price)}]`).join(', ') : 'n/a';
 
 // ── shared ──
 
@@ -127,18 +108,18 @@ function formatCandidateDetails(c: CandidateDebug): string {
 	if (reason === 'type_classification_failed') {
 		return (
 			`\n   failureReason: ${d?.failureReason || 'n/a'}` +
-			`\n   slopes: hi=${fmtNum(d?.slopeHigh)} lo=${fmtNum(d?.slopeLow)}` +
+			`\n   slopes: hi=${formatFixed(d?.slopeHigh)} lo=${formatFixed(d?.slopeLow)}` +
 			`\n   slopeRatio: ${Number.isFinite(Number(d?.slopeRatio)) ? Number(d.slopeRatio).toFixed(3) : 'n/a'}`
 		);
 	}
 
 	if (reason === 'probe_window') {
 		return (
-			`\n   upper.slope: ${fmtNum(d?.slopeHigh)}` +
-			`\n   lower.slope: ${fmtNum(d?.slopeLow)}` +
-			`\n   priceRange: ${fmtRound(d?.priceRange)}` +
-			`\n   barsSpan: ${fmtInt(d?.barsSpan)}` +
-			`\n   minMeaningfulSlope: ${fmtNum(d?.minMeaningfulSlope)}` +
+			`\n   upper.slope: ${formatFixed(d?.slopeHigh)}` +
+			`\n   lower.slope: ${formatFixed(d?.slopeLow)}` +
+			`\n   priceRange: ${formatRounded(d?.priceRange)}` +
+			`\n   barsSpan: ${formatInt(d?.barsSpan)}` +
+			`\n   minMeaningfulSlope: ${formatFixed(d?.minMeaningfulSlope)}` +
 			`\n   highsIn: ${fmtPointList(d?.highsIn)}` +
 			`\n   lowsIn: ${fmtPointList(d?.lowsIn)}`
 		);
@@ -147,10 +128,10 @@ function formatCandidateDetails(c: CandidateDebug): string {
 	if (reason === 'declining_highs' || reason === 'declining_highs_probe') {
 		return (
 			`\n   ${reason === 'declining_highs' ? 'declining_highs: true' : 'declining_highs_probe: metrics'}` +
-			`\n   highsIn.count: ${fmtInt(d?.highsCount)}` +
-			`\n   1st half avg: ${fmtRound(d?.firstAvg)}` +
-			`\n   2nd half avg: ${fmtRound(d?.secondAvg)}` +
-			`\n   ratio: ${fmtPct(d?.ratio)}`
+			`\n   highsIn.count: ${formatInt(d?.highsCount)}` +
+			`\n   1st half avg: ${formatRounded(d?.firstAvg)}` +
+			`\n   2nd half avg: ${formatRounded(d?.secondAvg)}` +
+			`\n   ratio: ${formatPctFromRatio(d?.ratio)}`
 		);
 	}
 
@@ -159,31 +140,31 @@ function formatCandidateDetails(c: CandidateDebug): string {
 			`\n   r2: hi=${Number.isFinite(Number(d?.r2High)) ? Number(d.r2High).toFixed(3) : 'n/a'}, lo=${Number.isFinite(Number(d?.r2Low)) ? Number(d.r2Low).toFixed(3) : 'n/a'}` +
 			`\n   slopes: hi=${Number.isFinite(Number(d?.slopeHigh)) ? Number(d.slopeHigh).toFixed(6) : 'n/a'} lo=${Number.isFinite(Number(d?.slopeLow)) ? Number(d.slopeLow).toFixed(6) : 'n/a'}` +
 			`\n   slopeRatioLH: ${Number.isFinite(Number(d?.slopeRatioLH)) ? Number(d.slopeRatioLH).toFixed(3) : 'n/a'}` +
-			`\n   priceRange: ${fmtRound(d?.priceRange)}, barsSpan: ${fmtInt(d?.barsSpan)}` +
+			`\n   priceRange: ${formatRounded(d?.priceRange)}, barsSpan: ${formatInt(d?.barsSpan)}` +
 			`\n   minMeaningfulSlope: ${Number.isFinite(Number(d?.minMeaningfulSlope)) ? Number(d.minMeaningfulSlope).toFixed(6) : 'n/a'}` +
 			`\n   highsIn: ${fmtPointList(d?.highsIn)}` +
 			`\n   lowsIn: ${fmtPointList(d?.lowsIn)}` +
-			`\n   declining_highs metrics: firstAvg=${fmtRound(d?.firstAvg)}, secondAvg=${fmtRound(d?.secondAvg)}, ratio=${fmtPct(d?.ratio)}`
+			`\n   declining_highs metrics: firstAvg=${formatRounded(d?.firstAvg)}, secondAvg=${formatRounded(d?.secondAvg)}, ratio=${formatPctFromRatio(d?.ratio)}`
 		);
 	}
 
 	if (reason === 'post_filter_rising_highs_not_declining') {
 		return (
 			`\n   post_filter: rising highs not declining` +
-			`\n   highsIn.count: ${fmtInt(d?.highsCount)}` +
-			`\n   1st half avg: ${fmtRound(d?.firstAvg)}` +
-			`\n   2nd half avg: ${fmtRound(d?.secondAvg)}` +
-			`\n   ratio: ${fmtPct(d?.ratio)}`
+			`\n   highsIn.count: ${formatInt(d?.highsCount)}` +
+			`\n   1st half avg: ${formatRounded(d?.firstAvg)}` +
+			`\n   2nd half avg: ${formatRounded(d?.secondAvg)}` +
+			`\n   ratio: ${formatPctFromRatio(d?.ratio)}`
 		);
 	}
 
 	if (reason === 'post_filter_falling_lows_not_rising') {
 		return (
 			`\n   post_filter: falling lows not rising` +
-			`\n   lowsIn.count: ${fmtInt(d?.lowsCount)}` +
-			`\n   1st half avg: ${fmtRound(d?.firstAvg)}` +
-			`\n   2nd half avg: ${fmtRound(d?.secondAvg)}` +
-			`\n   ratio: ${fmtPct(d?.ratio)}`
+			`\n   lowsIn.count: ${formatInt(d?.lowsCount)}` +
+			`\n   1st half avg: ${formatRounded(d?.firstAvg)}` +
+			`\n   2nd half avg: ${formatRounded(d?.secondAvg)}` +
+			`\n   ratio: ${formatPctFromRatio(d?.ratio)}`
 		);
 	}
 
@@ -196,7 +177,7 @@ function formatCandidateDetails(c: CandidateDebug): string {
 		Number.isFinite(s1) && Number.isFinite(s2)
 			? `${Math.round(s1).toLocaleString('ja-JP')} → ${Math.round(s2).toLocaleString('ja-JP')}`
 			: 'n/a';
-	return `\n   spread: ${spreadPart}${Number.isFinite(hi) || Number.isFinite(lo) ? `, slopes: hi=${fmtNum(hi)} lo=${fmtNum(lo)}` : ''}`;
+	return `\n   spread: ${spreadPart}${Number.isFinite(hi) || Number.isFinite(lo) ? `, slopes: hi=${formatFixed(hi)} lo=${formatFixed(lo)}` : ''}`;
 }
 
 export function formatDebugView(

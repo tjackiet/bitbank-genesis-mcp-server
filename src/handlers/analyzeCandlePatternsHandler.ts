@@ -3,7 +3,7 @@
  * generateSummary / generateContent + 共有型定義
  */
 
-import { dayjs } from '../../lib/datetime.js';
+import { formatDateWithDayOfWeek } from '../../lib/datetime.js';
 import { formatPrice as fmtPrice } from '../../lib/formatter.js';
 import type { CandlePatternTypeEnum } from '../schemas.js';
 
@@ -54,19 +54,6 @@ export interface DetectedCandlePattern {
 
 function formatPrice(price: number): string {
 	return fmtPrice(Math.round(price));
-}
-
-function getDayOfWeek(isoDate: string): string {
-	const days = ['日', '月', '火', '水', '木', '金', '土'];
-	return days[dayjs(isoDate).utc().day()];
-}
-
-function formatDateWithDay(isoDate: string): string {
-	const d = dayjs(isoDate).utc();
-	const m = d.month() + 1;
-	const day = d.date();
-	const dow = getDayOfWeek(isoDate);
-	return `${m}/${day}(${dow})`;
 }
 
 // ── サマリー生成 ──
@@ -162,8 +149,8 @@ function format2CandleDetail(
 	statusMark: string,
 ): string[] {
 	const lines: string[] = [];
-	const date1 = formatDateWithDay(c1.timestamp);
-	const date2 = formatDateWithDay(c2.timestamp);
+	const date1 = formatDateWithDayOfWeek(c1.timestamp);
+	const date2 = formatDateWithDayOfWeek(c2.timestamp);
 	const body1 = c1.close - c1.open;
 	const body2 = c2.close - c2.open;
 	const type1 = body1 >= 0 ? '陽線' : '陰線';
@@ -221,9 +208,9 @@ function format3CandleDetail(
 	statusMark: string,
 ): string[] {
 	const lines: string[] = [];
-	const date1 = formatDateWithDay(c1.timestamp);
-	const date2 = formatDateWithDay(c2.timestamp);
-	const date3 = formatDateWithDay(c3.timestamp);
+	const date1 = formatDateWithDayOfWeek(c1.timestamp);
+	const date2 = formatDateWithDayOfWeek(c2.timestamp);
+	const date3 = formatDateWithDayOfWeek(c3.timestamp);
 
 	lines.push(`  📍 ${date1}-${date3} に${p.pattern_jp}を検出${statusMark}（3本足パターン）`);
 	for (const [label, c, dateStr] of [
@@ -316,7 +303,7 @@ export function generateContent(
 	// === 1. ローソク足データ ===
 	lines.push(`=== ${windowCandles.length}日間のローソク足 ===`);
 	for (const c of windowCandles) {
-		const dateStr = formatDateWithDay(c.timestamp);
+		const dateStr = formatDateWithDayOfWeek(c.timestamp);
 		const change = c.close - c.open;
 		const changeSign = change >= 0 ? '+' : '-';
 		const candleType = change >= 0 ? '陽線' : '陰線';
@@ -364,7 +351,7 @@ export function generateContent(
 						...format1CandleDetail(
 							p,
 							windowCandles[idxStart],
-							formatDateWithDay(windowCandles[idxStart].timestamp),
+							formatDateWithDayOfWeek(windowCandles[idxStart].timestamp),
 							statusMark,
 						),
 					);

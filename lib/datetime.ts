@@ -138,5 +138,20 @@ export function parseIso8601(value: string): dayjs.Dayjs | null {
 	return null;
 }
 
+/**
+ * ISO日付文字列を "M/D(曜日)" 形式に変換
+ * 例: "2026-04-09T00:00:00Z" → "4/9(木)"
+ * @param isoDate ISO8601 日付文字列
+ */
+export function formatDateWithDayOfWeek(isoDate: string): string {
+	const days = ['日', '月', '火', '水', '木', '金', '土'];
+	const d = dayjs(isoDate).utc();
+	if (!d.isValid()) return 'n/a';
+	const m = d.month() + 1;
+	const day = d.date();
+	const dow = days[d.day()];
+	return `${m}/${day}(${dow})`;
+}
+
 // dayjs インスタンスを直接使いたい場合のエクスポート
 export { dayjs };
