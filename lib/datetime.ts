@@ -146,6 +146,7 @@ export function parseIso8601(value: string): dayjs.Dayjs | null {
 export function formatDateWithDayOfWeek(isoDate: string): string {
 	const days = ['日', '月', '火', '水', '木', '金', '土'];
 	const d = dayjs(isoDate).utc();
+	if (!d.isValid()) return 'n/a';
 	const m = d.month() + 1;
 	const day = d.date();
 	const dow = days[d.day()];

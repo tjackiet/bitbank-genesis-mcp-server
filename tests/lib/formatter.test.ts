@@ -219,8 +219,12 @@ describe('formatDeviation', () => {
 	it('ref が null の場合は n/a を返す', () => {
 		expect(formatDeviation(100, null)).toBe('n/a');
 	});
-	it('ref が 0 の場合は n/a を返す', () => {
-		expect(formatDeviation(100, 0)).toBe('n/a');
+	it('close が 0 の場合は n/a を返す（ゼロ除算防止）', () => {
+		expect(formatDeviation(0, 100)).toBe('n/a');
+	});
+	it('ref が 0 でも close が非ゼロなら計算する', () => {
+		const result = formatDeviation(100, 0);
+		expect(result).toContain('下方');
 	});
 });
 

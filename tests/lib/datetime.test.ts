@@ -102,4 +102,7 @@ describe('formatDateWithDayOfWeek', () => {
 		// 2026-04-05 is Sunday (日)
 		expect(formatDateWithDayOfWeek('2026-04-05T00:00:00Z')).toBe('4/5(日)');
 	});
+	it('無効な日付は n/a を返す', () => {
+		expect(formatDateWithDayOfWeek('invalid')).toBe('n/a');
+	});
 });

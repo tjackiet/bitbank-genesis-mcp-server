@@ -188,8 +188,9 @@ export function formatTrendArrow(
  * @param ref 基準価格（SMA等）
  */
 export function formatDeviation(close: number | null, ref: number | null | undefined): string {
-	if (close == null || ref == null || !Number.isFinite(close) || !Number.isFinite(ref) || ref === 0) return 'n/a';
+	if (close == null || ref == null || !Number.isFinite(close) || !Number.isFinite(ref) || close === 0) return 'n/a';
 	const pct = ((ref - close) / Math.abs(close)) * 100;
+	if (!Number.isFinite(pct)) return 'n/a';
 	const dir = ref >= close ? '上方' : '下方';
 	return `${formatPercent(pct, { sign: true, digits: 1 })} ${dir}`;
 }
