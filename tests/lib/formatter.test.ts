@@ -2,11 +2,18 @@ import { describe, expect, it } from 'vitest';
 import {
 	formatCurrency,
 	formatCurrencyShort,
+	formatDeviation,
+	formatFixed,
+	formatInt,
 	formatPair,
+	formatPctFromRatio,
 	formatPercent,
 	formatPrice,
 	formatPriceJPY,
+	formatRounded,
 	formatSummary,
+	formatTrendArrow,
+	formatTrendSymbol,
 	formatVolumeJPY,
 } from '../../lib/formatter.js';
 
@@ -109,6 +116,111 @@ describe('formatVolumeJPY', () => {
 	});
 	it('null は n/a を返す', () => {
 		expect(formatVolumeJPY(null)).toBe('n/a');
+	});
+});
+
+describe('formatFixed', () => {
+	it('8桁固定小数点で整形する', () => {
+		expect(formatFixed(0.123456789)).toBe('0.12345679');
+	});
+	it('桁数を指定できる', () => {
+		expect(formatFixed(1.5, 2)).toBe('1.50');
+	});
+	it('null/undefined/NaN は n/a を返す', () => {
+		expect(formatFixed(null)).toBe('n/a');
+		expect(formatFixed(undefined)).toBe('n/a');
+		expect(formatFixed('abc')).toBe('n/a');
+	});
+});
+
+describe('formatRounded', () => {
+	it('四捨五入してロケール整形する', () => {
+		expect(formatRounded(12345.6)).toBe('12,346');
+	});
+	it('null/NaN は n/a を返す', () => {
+		expect(formatRounded(null)).toBe('n/a');
+		expect(formatRounded('abc')).toBe('n/a');
+	});
+});
+
+describe('formatInt', () => {
+	it('数値を文字列化する', () => {
+		expect(formatInt(42)).toBe('42');
+	});
+	it('null/NaN は n/a を返す', () => {
+		expect(formatInt(null)).toBe('n/a');
+		expect(formatInt('abc')).toBe('n/a');
+	});
+});
+
+describe('formatPctFromRatio', () => {
+	it('比率を百分率に変換する', () => {
+		expect(formatPctFromRatio(0.05)).toBe('5.0%');
+	});
+	it('桁数を指定できる', () => {
+		expect(formatPctFromRatio(0.1234, 2)).toBe('12.34%');
+	});
+	it('null/NaN は n/a を返す', () => {
+		expect(formatPctFromRatio(null)).toBe('n/a');
+	});
+});
+
+describe('formatTrendSymbol', () => {
+	it('正の傾きは 📈 を返す', () => {
+		expect(formatTrendSymbol(1)).toBe('📈');
+	});
+	it('負の傾きは 📉 を返す', () => {
+		expect(formatTrendSymbol(-1)).toBe('📉');
+	});
+	it('ゼロは ➡️ を返す', () => {
+		expect(formatTrendSymbol(0)).toBe('➡️');
+	});
+	it('null は ➡️ を返す', () => {
+		expect(formatTrendSymbol(null)).toBe('➡️');
+	});
+});
+
+describe('formatTrendArrow', () => {
+	it('大幅に上回る場合は ⬆⬆ を返す', () => {
+		expect(formatTrendArrow(1.1, 1.0)).toBe('⬆⬆');
+	});
+	it('やや上回る場合は ⬆ を返す', () => {
+		expect(formatTrendArrow(1.03, 1.0)).toBe('⬆');
+	});
+	it('同等の場合は → を返す', () => {
+		expect(formatTrendArrow(1.0, 1.0)).toBe('→');
+	});
+	it('やや下回る場合は ⬇ を返す', () => {
+		expect(formatTrendArrow(0.97, 1.0)).toBe('⬇');
+	});
+	it('大幅に下回る場合は ⬇⬇ を返す', () => {
+		expect(formatTrendArrow(0.9, 1.0)).toBe('⬇⬇');
+	});
+	it('null は → を返す', () => {
+		expect(formatTrendArrow(null, 1.0)).toBe('→');
+		expect(formatTrendArrow(1.0, null)).toBe('→');
+	});
+});
+
+describe('formatDeviation', () => {
+	it('上方乖離を整形する', () => {
+		const result = formatDeviation(100, 102);
+		expect(result).toContain('+2.0%');
+		expect(result).toContain('上方');
+	});
+	it('下方乖離を整形する', () => {
+		const result = formatDeviation(100, 98);
+		expect(result).toContain('-2.0%');
+		expect(result).toContain('下方');
+	});
+	it('close が null の場合は n/a を返す', () => {
+		expect(formatDeviation(null, 100)).toBe('n/a');
+	});
+	it('ref が null の場合は n/a を返す', () => {
+		expect(formatDeviation(100, null)).toBe('n/a');
+	});
+	it('ref が 0 の場合は n/a を返す', () => {
+		expect(formatDeviation(100, 0)).toBe('n/a');
 	});
 });
 

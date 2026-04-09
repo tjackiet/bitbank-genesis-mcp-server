@@ -1,5 +1,15 @@
 import { describe, expect, it } from 'vitest';
-import { dayjs, daysAgo, nowIso, toDisplayTime, today, toIsoMs, toIsoTime, toIsoWithTz } from '../../lib/datetime.js';
+import {
+	dayjs,
+	daysAgo,
+	formatDateWithDayOfWeek,
+	nowIso,
+	toDisplayTime,
+	today,
+	toIsoMs,
+	toIsoTime,
+	toIsoWithTz,
+} from '../../lib/datetime.js';
 
 describe('toIsoTime', () => {
 	it('ミリ秒タイムスタンプを ISO8601 に変換する', () => {
@@ -80,5 +90,16 @@ describe('today', () => {
 	});
 	it('dayjs と一致する', () => {
 		expect(today('YYYY-MM-DD')).toBe(dayjs().format('YYYY-MM-DD'));
+	});
+});
+
+describe('formatDateWithDayOfWeek', () => {
+	it('ISO日付を M/D(曜日) 形式に変換する', () => {
+		// 2026-04-09 is Thursday (木)
+		expect(formatDateWithDayOfWeek('2026-04-09T00:00:00Z')).toBe('4/9(木)');
+	});
+	it('日曜日を正しく表示する', () => {
+		// 2026-04-05 is Sunday (日)
+		expect(formatDateWithDayOfWeek('2026-04-05T00:00:00Z')).toBe('4/5(日)');
 	});
 });

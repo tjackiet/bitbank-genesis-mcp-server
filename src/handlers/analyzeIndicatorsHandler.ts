@@ -1,6 +1,6 @@
 import type { z } from 'zod';
 import { nowIso, toDisplayTime } from '../../lib/datetime.js';
-import { formatPercent, formatPriceJPY } from '../../lib/formatter.js';
+import { formatDeviation, formatPercent, formatPriceJPY, formatTrendSymbol } from '../../lib/formatter.js';
 import { toStructured } from '../../lib/result.js';
 import analyzeIndicators from '../../tools/analyze_indicators.js';
 import { GetIndicatorsInputSchema } from '../schemas.js';
@@ -126,15 +126,7 @@ export function buildIndicatorsText(input: BuildIndicatorsTextInput): string {
 		obvUnit,
 	} = input;
 
-	const fmtJPY = formatPriceJPY;
-	const fmtPct = (v: number | null | undefined, digits = 1) => formatPercent(v, { sign: true, digits });
-	const vsCurPct = (ref?: number | null) => {
-		if (close == null || ref == null || !Number.isFinite(close) || !Number.isFinite(ref) || ref === 0) return 'n/a';
-		const pct = ((ref - close) / Math.abs(close)) * 100;
-		const dir = ref >= close ? '上方' : '下方';
-		return `${fmtPct(pct, 1)} ${dir}`;
-	};
-	const slopeSym = (s: number | null | undefined) => (s == null ? '➡️' : s > 0 ? '📈' : s < 0 ? '📉' : '➡️');
+	const vsCurPct = (ref?: number | null) => formatDeviation(close, ref);
 	const rsiInterp = (val: number | null) => {
 		if (val == null) return '—';
 		if (val < 30) return '売られすぎ圏（反発の可能性）';
@@ -147,8 +139,8 @@ export function buildIndicatorsText(input: BuildIndicatorsTextInput): string {
 	// Header with time and 24h change
 	lines.push(`=== ${String(pair).toUpperCase()} ${String(type)} 分析 ===`);
 	lines.push(`${nowJst} 現在`);
-	const chgLine = deltaPrev ? `(${deltaLabel}: ${fmtPct(deltaPrev.pct, 1)})` : '';
-	lines.push(deltaPrev ? `${fmtJPY(close)} ${chgLine}` : fmtJPY(close));
+	const chgLine = deltaPrev ? `(${deltaLabel}: ${formatPercent(deltaPrev.pct, { sign: true, digits: 1 })})` : '';
+	lines.push(deltaPrev ? `${formatPriceJPY(close)} ${chgLine}` : formatPriceJPY(close));
 	lines.push('');
 	// 総合判定（簡潔）
 	lines.push('【総合判定】');
@@ -184,9 +176,9 @@ export function buildIndicatorsText(input: BuildIndicatorsTextInput): string {
 	// Trend (SMA)
 	lines.push('【トレンド（移動平均線）】');
 	lines.push(`  配置: ${arrangement}`);
-	lines.push(`  SMA(25): ${fmtJPY(sma25)} (${vsCurPct(sma25)}) ${slopeSym(s25Slope)}`);
-	lines.push(`  SMA(75): ${fmtJPY(sma75)} (${vsCurPct(sma75)}) ${slopeSym(s75Slope)}`);
-	lines.push(`  SMA(200): ${fmtJPY(sma200)} (${vsCurPct(sma200)}) ${slopeSym(s200Slope)}`);
+	lines.push(`  SMA(25): ${formatPriceJPY(sma25)} (${vsCurPct(sma25)}) ${formatTrendSymbol(s25Slope)}`);
+	lines.push(`  SMA(75): ${formatPriceJPY(sma75)} (${vsCurPct(sma75)}) ${formatTrendSymbol(s75Slope)}`);
+	lines.push(`  SMA(200): ${formatPriceJPY(sma200)} (${vsCurPct(sma200)}) ${formatTrendSymbol(s200Slope)}`);
 	if (crossInfo) lines.push(`  ${crossInfo}`);
 	lines.push('');
 	// Volatility (BB)
@@ -194,10 +186,10 @@ export function buildIndicatorsText(input: BuildIndicatorsTextInput): string {
 	lines.push(
 		`  現在位置: ${sigmaZ != null ? `${sigmaZ}σ` : 'n/a'} → ${sigmaZ != null ? (sigmaZ <= -1 ? '売られすぎ' : sigmaZ >= 1 ? '買われすぎ' : '中立') : '—'}`,
 	);
-	lines.push(`  middle: ${fmtJPY(bbMid)} (${vsCurPct(bbMid)})`);
-	lines.push(`  upper:  ${fmtJPY(bbUp)} (${vsCurPct(bbUp)})`);
+	lines.push(`  middle: ${formatPriceJPY(bbMid)} (${vsCurPct(bbMid)})`);
+	lines.push(`  upper:  ${formatPriceJPY(bbUp)} (${vsCurPct(bbUp)})`);
 	lines.push(
-		`  lower:  ${fmtJPY(bbLo)} (${vsCurPct(bbLo)})${bbLo != null && close != null && Number(bbLo) < Number(close) ? '' : ' ← 現在価格に近い'}`,
+		`  lower:  ${formatPriceJPY(bbLo)} (${vsCurPct(bbLo)})${bbLo != null && close != null && Number(bbLo) < Number(close) ? '' : ' ← 現在価格に近い'}`,
 	);
 	if (bandWidthPct != null) lines.push(`  バンド幅: ${bandWidthPct}% → ${bwTrend ?? '—'}`);
 	if (sigmaHistory?.[0] && sigmaHistory[1]) {
@@ -213,10 +205,10 @@ export function buildIndicatorsText(input: BuildIndicatorsTextInput): string {
 	lines.push(
 		`  現在位置: ${cloudPos === 'below_cloud' ? '雲の下 → 弱気' : cloudPos === 'above_cloud' ? '雲の上 → 強気' : '雲の中 → 中立'}`,
 	);
-	lines.push(`  転換線: ${fmtJPY(tenkan)} (${vsCurPct(tenkan)}) ${slopeSym(ichimokuConvSlope)}`);
-	lines.push(`  基準線: ${fmtJPY(kijun)} (${vsCurPct(kijun)}) ${slopeSym(ichimokuBaseSlope)}`);
-	lines.push(`  先行スパンA: ${fmtJPY(spanA)} (${vsCurPct(spanA)})`);
-	lines.push(`  先行スパンB: ${fmtJPY(spanB)} (${vsCurPct(spanB)})`);
+	lines.push(`  転換線: ${formatPriceJPY(tenkan)} (${vsCurPct(tenkan)}) ${formatTrendSymbol(ichimokuConvSlope)}`);
+	lines.push(`  基準線: ${formatPriceJPY(kijun)} (${vsCurPct(kijun)}) ${formatTrendSymbol(ichimokuBaseSlope)}`);
+	lines.push(`  先行スパンA: ${formatPriceJPY(spanA)} (${vsCurPct(spanA)})`);
+	lines.push(`  先行スパンB: ${formatPriceJPY(spanB)} (${vsCurPct(spanB)})`);
 	if (cloudThickness != null)
 		lines.push(
 			`  雲の厚さ: ${Math.round(cloudThickness).toLocaleString('ja-JP')}円（${cloudThicknessPct != null ? `${cloudThicknessPct.toFixed(1)}%` : 'n/a'}）`,
