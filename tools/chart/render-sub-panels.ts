@@ -2,7 +2,12 @@
  * chart/render-sub-panels — MACD / RSI / Volume のサブパネル SVG 描画。
  */
 
+import { RSI_OVERBOUGHT, RSI_OVERSOLD } from '../../lib/indicator-config.js';
 import { niceTicks } from './svg-utils.js';
+
+// ── Configuration ──
+const RSI_MIDLINE = 50;
+const PRICE_PANEL_HEIGHT = 420;
 
 /** サブパネル描画に必要なコンテキスト */
 export interface SubPanelContext {
@@ -34,7 +39,7 @@ export function renderSubPanels(
 	if (panelTypes.length === 0) return { svg: '', totalHeight: 0 };
 
 	const { padding, plotW, w } = ctx;
-	const h = 420; // price panel height
+	const h = PRICE_PANEL_HEIGHT;
 	const pricePanelBottom = h - padding.bottom;
 	let currentTop = pricePanelBottom + SUB_PANEL_GAP;
 	let svgOut = '';
@@ -137,13 +142,13 @@ function renderRsiPanel(currentTop: number, ctx: SubPanelContext): string {
 	let pc = '';
 
 	const rsiSeries = (indicators?.RSI_14_series || []) as Array<number | null>;
-	pc += `<rect x="${padding.left}" y="${py(100)}" width="${plotW}" height="${Math.abs(py(70) - py(100))}" fill="rgba(239,68,68,0.06)"/>`;
-	pc += `<rect x="${padding.left}" y="${py(30)}" width="${plotW}" height="${Math.abs(py(0) - py(30))}" fill="rgba(34,197,94,0.06)"/>`;
+	pc += `<rect x="${padding.left}" y="${py(100)}" width="${plotW}" height="${Math.abs(py(RSI_OVERBOUGHT) - py(100))}" fill="rgba(239,68,68,0.06)"/>`;
+	pc += `<rect x="${padding.left}" y="${py(RSI_OVERSOLD)}" width="${plotW}" height="${Math.abs(py(0) - py(RSI_OVERSOLD))}" fill="rgba(34,197,94,0.06)"/>`;
 	(
 		[
-			{ v: 70, c: '#ef4444', d: '2 2' },
-			{ v: 50, c: '#4b5563', d: '4 4' },
-			{ v: 30, c: '#22c55e', d: '2 2' },
+			{ v: RSI_OVERBOUGHT, c: '#ef4444', d: '2 2' },
+			{ v: RSI_MIDLINE, c: '#4b5563', d: '4 4' },
+			{ v: RSI_OVERSOLD, c: '#22c55e', d: '2 2' },
 		] as const
 	).forEach(({ v, c, d }) => {
 		pc += `<line x1="${padding.left}" y1="${py(v)}" x2="${w - padding.right}" y2="${py(v)}" stroke="${c}" stroke-width="0.5" stroke-dasharray="${d}"/>`;
@@ -156,7 +161,7 @@ function renderRsiPanel(currentTop: number, ctx: SubPanelContext): string {
 		}
 	});
 	if (rPts.length > 1) pc += `<path d="M ${rPts.join(' L ')}" fill="none" stroke="#a78bfa" stroke-width="1.5"/>`;
-	[0, 30, 50, 70, 100].forEach((v) => {
+	[0, RSI_OVERSOLD, RSI_MIDLINE, RSI_OVERBOUGHT, 100].forEach((v) => {
 		pc += `<text x="${padding.left - 8}" y="${py(v)}" text-anchor="end" dominant-baseline="middle" fill="#9ca3af" font-size="10">${v}</text>`;
 	});
 	pc += `<text x="${padding.left + 4}" y="${currentTop + 12}" fill="#9ca3af" font-size="10" font-weight="bold">RSI (14)</text>`;

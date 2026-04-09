@@ -18,8 +18,9 @@ import {
 	tryGet,
 } from './types.js';
 
-/** ページネーション付きで入金履歴を取得（最大 MAX_PAGES ページ） */
+// ── Configuration ──
 const MAX_PAGES = 10;
+const PAGE_SIZE = 1000;
 
 async function paginateDeposits(
 	client: BitbankPrivateClient,
@@ -29,14 +30,14 @@ async function paginateDeposits(
 	const all: RawDeposit[] = [];
 	let since: string | undefined = sinceMs != null ? String(sinceMs) : undefined;
 	for (let page = 0; page < MAX_PAGES; page++) {
-		const params = { ...baseParams, count: '1000', ...(since ? { since } : {}) };
+		const params = { ...baseParams, count: String(PAGE_SIZE), ...(since ? { since } : {}) };
 		const result = await tryGet<{ deposits: RawDeposit[] }>(client, '/v1/user/deposit_history', params);
 		if (!result.ok) {
 			return { deposits: all, complete: false, error: result.error };
 		}
 		const batch = result.data.deposits || [];
 		all.push(...batch);
-		if (batch.length < 1000) {
+		if (batch.length < PAGE_SIZE) {
 			return { deposits: all, complete: true };
 		}
 		// 次ページ: 最後のレコードの confirmed_at + 1ms を since に
@@ -55,14 +56,14 @@ async function paginateWithdrawals(
 	const all: RawWithdrawal[] = [];
 	let since: string | undefined = sinceMs != null ? String(sinceMs) : undefined;
 	for (let page = 0; page < MAX_PAGES; page++) {
-		const params = { ...baseParams, count: '1000', ...(since ? { since } : {}) };
+		const params = { ...baseParams, count: String(PAGE_SIZE), ...(since ? { since } : {}) };
 		const result = await tryGet<{ withdrawals: RawWithdrawal[] }>(client, '/v1/user/withdrawal_history', params);
 		if (!result.ok) {
 			return { withdrawals: all, complete: false, error: result.error };
 		}
 		const batch = result.data.withdrawals || [];
 		all.push(...batch);
-		if (batch.length < 1000) {
+		if (batch.length < PAGE_SIZE) {
 			return { withdrawals: all, complete: true };
 		}
 		const lastTs = batch[batch.length - 1]?.requested_at;
@@ -80,20 +81,20 @@ export async function paginateTrades(
 	const all: RawTrade[] = [];
 	let since: string | undefined = sinceMs != null ? String(sinceMs) : undefined;
 	for (let page = 0; page < MAX_PAGES; page++) {
-		const params: Record<string, string> = { count: '1000', order: 'asc' };
+		const params: Record<string, string> = { count: String(PAGE_SIZE), order: 'asc' };
 		if (since) params.since = since;
 		const result = await tryGet<{ trades: RawTrade[] }>(client, '/v1/user/spot/trade_history', params);
 		if (!result.ok) break;
 		const batch = result.data.trades || [];
 		all.push(...batch);
-		if (batch.length < 1000) return { trades: all, truncated: false };
+		if (batch.length < PAGE_SIZE) return { trades: all, truncated: false };
 		// 次ページ: 最後の約定の executed_at + 1ms を since に
 		const lastTs = batch[batch.length - 1]?.executed_at;
 		if (!lastTs) break;
 		since = String(lastTs + 1);
 	}
 	// MAX_PAGES 到達 or エラーで抜けた場合、最終バッチが満杯なら打ち切り
-	const truncated = all.length > 0 && all.length % 1000 === 0;
+	const truncated = all.length > 0 && all.length % PAGE_SIZE === 0;
 	return { trades: all, truncated };
 }
 

@@ -11,6 +11,7 @@
  * 4b) 回帰ベース（完成済みの主力検出）
  * 4d) 形成中ウェッジ検出（緩い条件）
  */
+import { EPSILON } from '../../lib/math.js';
 import { generatePatternDiagram, type PatternDiagramData } from '../../lib/pattern-diagrams.js';
 import {
 	calcAlternationScoreEx,
@@ -30,6 +31,64 @@ import {
 import { smoothCandleExtremes } from './smoothing.js';
 import type { CandDebugEntry, DeduplicablePattern, DetectContext, DetectResult } from './types.js';
 
+// ── Configuration ──
+
+// SG Filter
+const SG_WINDOW_MIN = 5;
+const SG_WINDOW_MAX = 11;
+const SG_CANDLE_RATIO = 20;
+const MIN_SG_PIVOTS = 6;
+
+// Wedge Detection params
+const WINDOW_SIZE_MIN = 25;
+const WINDOW_SIZE_MAX = 90;
+const WINDOW_STEP = 5;
+const MIN_SLOPE = 0.00005;
+const MAX_SLOPE = 0.08;
+const SLOPE_RATIO_MIN = 1.15;
+const SLOPE_RATIO_MIN_RISING = 1.2;
+const MIN_WEAKER_SLOPE_RATIO = 0.3;
+const MIN_TOUCHES_PER_LINE = 3;
+const MIN_SCORE = 0.5;
+const MIN_CONTAINMENT = 0.85;
+
+// Touch Validation
+const MAX_TOUCH_GAP_BARS = 25;
+const MAX_START_GAP_BARS = 10;
+const MIN_ALTERNATION = 0.25;
+const MIN_TOUCH_BALANCE = 0.45;
+
+// R2 threshold
+const MIN_R2_THRESHOLD = 0.55;
+const MIN_HIGHS_RATIO = 0.99;
+
+// Scoring weights
+const CONVERGENCE_WEIGHT = 0.4;
+const SLOPE_WEIGHT = 0.3;
+const DURATION_WEIGHT = 0.3;
+
+// Confidence bounds
+const CONFIDENCE_MIN = 0.65;
+const CONFIDENCE_MAX = 0.95;
+const CONFIDENCE_BOOST = 0.3;
+
+// Forming wedge params
+const FORMING_WINDOW_MIN = 20;
+const FORMING_WINDOW_MAX = 120;
+const FORMING_MIN_CONTAINMENT = 0.75;
+const FORMING_MAX_CONV_RATIO = 0.8;
+const FORMING_BREAKOUT_FACTOR = 0.015;
+
+// ATR multiplier for break direction
+const ATR_BREAK_THRESHOLD = 0.3;
+
+// Downsample
+const MAX_DIAGRAM_POINTS = 6;
+
+// Forming duration
+const FORMING_MIN_BARS_BEFORE_BREAK = 15;
+const FORMING_PRICE_TOLERANCE_PCT = 0.01;
+
 export function detectWedges(ctx: DetectContext): DetectResult {
 	const { candles, pivots, want, tolerancePct, minDist, swingDepth, lrWithR2, debugCandidates } = ctx;
 	const patterns: DeduplicablePattern[] = [];
@@ -37,7 +96,10 @@ export function detectWedges(ctx: DetectContext): DetectResult {
 	// --- SG フィルタによる平滑化ピボットの生成 ---
 	// 元の pivots はそのまま使い、追加で SG 平滑化ピボットも用意する。
 	// 4b では SG ピボットを優先し、フォールバックとして元 pivots を使う。
-	const sgWindowSize = Math.max(5, Math.min(11, Math.floor(candles.length / 20) * 2 + 1));
+	const sgWindowSize = Math.max(
+		SG_WINDOW_MIN,
+		Math.min(SG_WINDOW_MAX, Math.floor(candles.length / SG_CANDLE_RATIO) * 2 + 1),
+	);
 	const { smoothHigh, smoothLow } = smoothCandleExtremes(candles, sgWindowSize, 2);
 
 	// SG 平滑化データからスイングポイントを検出
@@ -63,18 +125,18 @@ export function detectWedges(ctx: DetectContext): DetectResult {
 			swingDepth,
 			minBarsBetweenSwings: minDist,
 			tolerancePct,
-			windowSizeMin: 25,
-			windowSizeMax: 90,
-			windowStep: 5,
-			minSlope: 0.00005,
-			maxSlope: 0.08,
-			slopeRatioMin: 1.15,
-			slopeRatioMinRising: 1.2,
-			minWeakerSlopeRatio: 0.3,
-			minTouchesPerLine: 3,
-			minScore: 0.5,
-			minContainment: 0.85, // 包含率: 85%以上の終値が境界内
-			slopeRatioMinFalling: 1.15,
+			windowSizeMin: WINDOW_SIZE_MIN,
+			windowSizeMax: WINDOW_SIZE_MAX,
+			windowStep: WINDOW_STEP,
+			minSlope: MIN_SLOPE,
+			maxSlope: MAX_SLOPE,
+			slopeRatioMin: SLOPE_RATIO_MIN,
+			slopeRatioMinRising: SLOPE_RATIO_MIN_RISING,
+			minWeakerSlopeRatio: MIN_WEAKER_SLOPE_RATIO,
+			minTouchesPerLine: MIN_TOUCHES_PER_LINE,
+			minScore: MIN_SCORE,
+			minContainment: MIN_CONTAINMENT, // 包含率: 85%以上の終値が境界内
+			slopeRatioMinFalling: SLOPE_RATIO_MIN,
 		};
 
 		// SG ピボットと元ピボットをマージ（SG 優先、元で補完）
@@ -82,7 +144,7 @@ export function detectWedges(ctx: DetectContext): DetectResult {
 		const origLows = pivots.filter((p) => p.kind === 'L').map((p) => ({ index: p.idx, price: p.price }));
 
 		// SG ピボットが十分にある場合はそちらを使用
-		const useSmoothed = sgPeaks.length >= 6 && sgValleys.length >= 6;
+		const useSmoothed = sgPeaks.length >= MIN_SG_PIVOTS && sgValleys.length >= MIN_SG_PIVOTS;
 		const swings = {
 			highs: useSmoothed ? sgPeaks : origHighs,
 			lows: useSmoothed ? sgValleys : origLows,
@@ -98,7 +160,7 @@ export function detectWedges(ctx: DetectContext): DetectResult {
 			if (highsIn.length < 4 || lowsIn.length < 4) continue;
 			const upper = lrWithR2(highsIn.map((s) => ({ x: s.index, y: s.price })));
 			const lower = lrWithR2(lowsIn.map((s) => ({ x: s.index, y: s.price })));
-			if (upper.r2 < 0.55 || lower.r2 < 0.55) {
+			if (upper.r2 < MIN_R2_THRESHOLD || lower.r2 < MIN_R2_THRESHOLD) {
 				// 緩やかな収束なのでフラッグほど厳しくなくてよい — 0.40 から引き上げ
 				const dbgType =
 					upper.slope < 0 && lower.slope < 0
@@ -116,7 +178,7 @@ export function detectWedges(ctx: DetectContext): DetectResult {
 						r2Low: lower.r2,
 						slopeHigh: upper.slope,
 						slopeLow: lower.slope,
-						r2MinRequired: 0.55,
+						r2MinRequired: MIN_R2_THRESHOLD,
 					},
 				});
 				continue;
@@ -152,8 +214,8 @@ export function detectWedges(ctx: DetectContext): DetectResult {
 					const secondHalf = highsIn.slice(mid);
 					const firstAvg = firstHalf.reduce((s, p) => s + Number(p.price), 0) / Math.max(1, firstHalf.length);
 					const secondAvg = secondHalf.reduce((s, p) => s + Number(p.price), 0) / Math.max(1, secondHalf.length);
-					const ratio = Number((secondAvg / Math.max(1e-12, firstAvg)).toFixed(4));
-					if (Number.isFinite(firstAvg) && Number.isFinite(secondAvg) && ratio < 0.99) {
+					const ratio = Number((secondAvg / Math.max(EPSILON, firstAvg)).toFixed(4));
+					if (Number.isFinite(firstAvg) && Number.isFinite(secondAvg) && ratio < MIN_HIGHS_RATIO) {
 						debugCandidates.push({
 							type: 'rising_wedge',
 							accepted: false,
@@ -169,8 +231,8 @@ export function detectWedges(ctx: DetectContext): DetectResult {
 			if (!wedgeType) {
 				const absHi = Math.abs(upper.slope);
 				const absLo = Math.abs(lower.slope);
-				const slopeRatioHL = absHi / Math.max(1e-12, absLo);
-				const slopeRatioLH = absLo / Math.max(1e-12, absHi);
+				const slopeRatioHL = absHi / Math.max(EPSILON, absLo);
+				const slopeRatioLH = absLo / Math.max(EPSILON, absHi);
 				let failureReason: 'slope_ratio_too_small' | 'slopes_too_flat' | 'wrong_side_steeper' = 'slope_ratio_too_small';
 				if (upper.slope > 0 && lower.slope > 0) {
 					if (absHi < (params.minSlope ?? 0.0001) || absLo < (params.minSlope ?? 0.0001)) {
@@ -205,7 +267,7 @@ export function detectWedges(ctx: DetectContext): DetectResult {
 					details: {
 						slopeHigh: upper.slope,
 						slopeLow: lower.slope,
-						slopeRatio: Number((Math.abs(upper.slope) / Math.max(1e-12, Math.abs(lower.slope))).toFixed(4)),
+						slopeRatio: Number((Math.abs(upper.slope) / Math.max(EPSILON, Math.abs(lower.slope))).toFixed(4)),
 						minSlope: params.minSlope ?? 0.0001,
 						maxSlope: params.maxSlope ?? 0.05,
 						slopeRatioMin:
@@ -303,7 +365,7 @@ export function detectWedges(ctx: DetectContext): DetectResult {
 				}
 				return maxGap;
 			};
-			const maxTouchGap = 25;
+			const maxTouchGap = MAX_TOUCH_GAP_BARS;
 			const upperMaxGap = calcMaxGap(touches.upperTouches);
 			const lowerMaxGap = calcMaxGap(touches.lowerTouches);
 			const maxGap = Math.max(upperMaxGap, lowerMaxGap);
@@ -318,7 +380,7 @@ export function detectWedges(ctx: DetectContext): DetectResult {
 				continue;
 			}
 			// 開始日ギャップチェック
-			const maxStartGap = 10;
+			const maxStartGap = MAX_START_GAP_BARS;
 			const firstUpperTouch = touches.upperTouches.find((t) => !t.isBreak);
 			const firstLowerTouch = touches.lowerTouches.find((t) => !t.isBreak);
 			if (firstUpperTouch && firstLowerTouch) {
@@ -346,7 +408,7 @@ export function detectWedges(ctx: DetectContext): DetectResult {
 				const loQ = Number(touches?.lowerQuality ?? 0);
 				const denom = Math.max(upQ, loQ, 1);
 				const touchBalance = Math.min(upQ, loQ) / denom;
-				const minTouchBalance = 0.45;
+				const minTouchBalance = MIN_TOUCH_BALANCE;
 				if (touchBalance < minTouchBalance) {
 					debugCandidates.push({
 						type: wedgeType,
@@ -374,7 +436,7 @@ export function detectWedges(ctx: DetectContext): DetectResult {
 			});
 			// 最低交互性チェック
 			{
-				const minAlternation = 0.25;
+				const minAlternation = MIN_ALTERNATION;
 				if (Number(alternation ?? 0) < minAlternation) {
 					debugCandidates.push({
 						type: wedgeType,
@@ -431,9 +493,9 @@ export function detectWedges(ctx: DetectContext): DetectResult {
 				const breakPrice = breakInfo.breakPrice as number;
 				const lLineAtBreak = lower.valueAt(breakInfo.breakIdx);
 				const uLineAtBreak = upper.valueAt(breakInfo.breakIdx);
-				if (breakPrice < lLineAtBreak - atr * 0.3) {
+				if (breakPrice < lLineAtBreak - atr * ATR_BREAK_THRESHOLD) {
 					breakoutDirection = 'down';
-				} else if (breakPrice > uLineAtBreak + atr * 0.3) {
+				} else if (breakPrice > uLineAtBreak + atr * ATR_BREAK_THRESHOLD) {
 					breakoutDirection = 'up';
 				}
 			}
@@ -450,7 +512,7 @@ export function detectWedges(ctx: DetectContext): DetectResult {
 				breakoutTarget = Math.round(breakoutTarget);
 				// 進捗率: 最新価格がターゲットにどれだけ近づいたか
 				const currentPrice = Number(candles[candles.length - 1]?.close);
-				if (Number.isFinite(currentPrice) && Math.abs(breakoutTarget - bp) > 1e-12) {
+				if (Number.isFinite(currentPrice) && Math.abs(breakoutTarget - bp) > EPSILON) {
 					targetReachedPct = Math.round(((currentPrice - bp) / (breakoutTarget - bp)) * 100);
 				}
 			}
@@ -463,7 +525,7 @@ export function detectWedges(ctx: DetectContext): DetectResult {
 				.filter((t) => !t.isBreak)
 				.map((t) => ({ idx: t.index, kind: 'L' as const }));
 			const allPts = [...upTouchPts, ...loTouchPts].sort((a, b) => a.idx - b.idx);
-			const downsample = (pts: Array<{ idx: number; kind: 'H' | 'L' }>, maxPoints = 6) => {
+			const downsample = (pts: Array<{ idx: number; kind: 'H' | 'L' }>, maxPoints = MAX_DIAGRAM_POINTS) => {
 				if (pts.length <= maxPoints) return pts;
 				const out: typeof pts = [];
 				const lastIdxPts = pts.length - 1;
@@ -473,7 +535,7 @@ export function detectWedges(ctx: DetectContext): DetectResult {
 				}
 				return out.filter((p, i, arr) => arr.findIndex((q) => q.idx === p.idx && q.kind === p.kind) === i);
 			};
-			const sel = downsample(allPts, 6);
+			const sel = downsample(allPts, MAX_DIAGRAM_POINTS);
 			const pivForDiagram = sel.map((p) => ({
 				idx: p.idx,
 				price: Number(candles[p.idx]?.close ?? NaN),
@@ -563,9 +625,9 @@ export function detectWedges(ctx: DetectContext): DetectResult {
 	// 4b（回帰ベース）が完成済みの主力。4d は形成中向け（緩い条件）
 	{
 		const formingWedgeDebug: CandDebugEntry[] = [];
-		const fWindowSizeMin = 20;
-		const fWindowSizeMax = 120;
-		const fWindowStep = 5;
+		const fWindowSizeMin = FORMING_WINDOW_MIN;
+		const fWindowSizeMax = FORMING_WINDOW_MAX;
+		const fWindowStep = WINDOW_STEP;
 
 		const fAllowFalling = want.size === 0 || want.has('falling_wedge');
 		const fAllowRising = want.size === 0 || want.has('rising_wedge');
@@ -692,7 +754,7 @@ export function detectWedges(ctx: DetectContext): DetectResult {
 		for (const w of fWindows) {
 			const { startIdx, endIdx } = w;
 			const avgPrice = (Number(candles[startIdx]?.close) + Number(candles[endIdx]?.close)) / 2;
-			const tolerance = avgPrice * 0.01;
+			const tolerance = avgPrice * FORMING_PRICE_TOLERANCE_PCT;
 
 			const highsForWindow = relaxedPeaks
 				.filter((p) => p.idx >= startIdx && p.idx <= endIdx)
@@ -725,7 +787,7 @@ export function detectWedges(ctx: DetectContext): DetectResult {
 			const absU = Math.abs(upperLine.slope),
 				absL = Math.abs(lowerLine.slope);
 			const weakerRatio = Math.min(absU, absL) / Math.max(absU, absL);
-			if (weakerRatio < 0.3) {
+			if (weakerRatio < MIN_WEAKER_SLOPE_RATIO) {
 				formingWedgeDebug.push({
 					type: bothDown ? 'falling_wedge' : 'rising_wedge',
 					accepted: false,
@@ -754,7 +816,7 @@ export function detectWedges(ctx: DetectContext): DetectResult {
 				continue;
 			}
 			const convRatio = gapEnd / gapStart;
-			if (convRatio >= 0.8) {
+			if (convRatio >= FORMING_MAX_CONV_RATIO) {
 				formingWedgeDebug.push({
 					type: wedgeType,
 					accepted: false,
@@ -784,7 +846,7 @@ export function detectWedges(ctx: DetectContext): DetectResult {
 
 			// 包含チェック（形成中は緩めに 75%）
 			const fContainment = checkContainment(candles, upperLine, lowerLine, startIdx, endIdx, 0.005);
-			if (fContainment.closeInsideRatio < 0.75) {
+			if (fContainment.closeInsideRatio < FORMING_MIN_CONTAINMENT) {
 				formingWedgeDebug.push({
 					type: wedgeType,
 					accepted: false,
@@ -798,17 +860,21 @@ export function detectWedges(ctx: DetectContext): DetectResult {
 			// ブレイク検出（終値ベース、トレンドライン乖離1.5%）
 			let breakoutIdx = -1;
 			let breakoutDirection: 'up' | 'down' | null = null;
-			for (let i = startIdx + Math.max(15, Math.floor((endIdx - startIdx) * 0.3)); i <= lastIdx; i++) {
+			for (
+				let i = startIdx + Math.max(FORMING_MIN_BARS_BEFORE_BREAK, Math.floor((endIdx - startIdx) * 0.3));
+				i <= lastIdx;
+				i++
+			) {
 				const close = Number(candles[i]?.close);
 				const uVal = upperLine.valueAt(i);
 				const lVal = lowerLine.valueAt(i);
 
-				if (close > uVal * 1.015) {
+				if (close > uVal * (1 + FORMING_BREAKOUT_FACTOR)) {
 					breakoutIdx = i;
 					breakoutDirection = 'up';
 					break;
 				}
-				if (close < lVal * 0.985) {
+				if (close < lVal * (1 - FORMING_BREAKOUT_FACTOR)) {
 					breakoutIdx = i;
 					breakoutDirection = 'down';
 					break;
@@ -839,8 +905,8 @@ export function detectWedges(ctx: DetectContext): DetectResult {
 			const slopeScore = Math.min(absU, absL) / Math.max(absU, absL);
 			const durationDays = actualEndIdx - startIdx;
 			const durationScore = durationDays >= 20 && durationDays <= 60 ? 1.0 : 0.8;
-			const score = convergenceScore * 0.4 + slopeScore * 0.3 + durationScore * 0.3;
-			const confidence = Math.max(0.65, Math.min(0.95, score + 0.3));
+			const score = convergenceScore * CONVERGENCE_WEIGHT + slopeScore * SLOPE_WEIGHT + durationScore * DURATION_WEIGHT;
+			const confidence = Math.max(CONFIDENCE_MIN, Math.min(CONFIDENCE_MAX, score + CONFIDENCE_BOOST));
 
 			// ステータス判定
 			let status: 'forming' | 'near_completion' | 'completed' | 'invalid' = 'forming';
@@ -868,7 +934,7 @@ export function detectWedges(ctx: DetectContext): DetectResult {
 					fBreakoutTarget = breakoutDirection === 'up' ? bp + fPatternHeight : bp - fPatternHeight;
 					fBreakoutTarget = Math.round(fBreakoutTarget);
 					const curPrice = Number(candles[candles.length - 1]?.close);
-					if (Number.isFinite(curPrice) && Math.abs(fBreakoutTarget - bp) > 1e-12) {
+					if (Number.isFinite(curPrice) && Math.abs(fBreakoutTarget - bp) > EPSILON) {
 						fTargetReachedPct = Math.round(((curPrice - bp) / (fBreakoutTarget - bp)) * 100);
 					}
 				}
