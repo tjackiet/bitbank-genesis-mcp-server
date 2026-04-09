@@ -2,6 +2,7 @@
  * portfolio/types — analyzeMyPortfolioHandler で使用する型定義。
  */
 
+import { getErrorMessage } from '../../../lib/error.js';
 import type { BitbankPrivateClient } from '../../private/client.js';
 
 // ── Private API レスポンス型 ──
@@ -164,7 +165,6 @@ export async function tryGet<T>(
 		const data = await client.get<T>(path, params);
 		return { ok: true, data };
 	} catch (err) {
-		const msg = err instanceof Error ? err.message : String(err);
-		return { ok: false, error: msg };
+		return { ok: false, error: getErrorMessage(err) };
 	}
 }

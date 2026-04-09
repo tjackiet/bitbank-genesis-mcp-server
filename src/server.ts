@@ -131,7 +131,7 @@ function registerToolWithLog(
 			} catch (err: unknown) {
 				const ms = Date.now() - t0;
 				logError(name, err, input);
-				const message = err instanceof Error ? err.message : String(err);
+				const message = getErrorMessage(err);
 				return {
 					content: [{ type: 'text', text: `内部エラー: ${message || '不明なエラー'}` }],
 					structuredContent: {
