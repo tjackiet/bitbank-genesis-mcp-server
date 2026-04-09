@@ -50,6 +50,19 @@ export interface DetectedCandlePattern {
 	history_stats: HistoryStats | null;
 }
 
+// ── Lookup Maps ──
+
+const TREND_LABELS: Record<string, string> = { down: '下落傾向', up: '上昇傾向' };
+const DIRECTION_LABELS: Record<string, string> = {
+	bullish: '上昇転換のサイン',
+	bearish: '下落転換のサイン',
+};
+const DIRECTION_DETAIL_LABELS: Record<string, string> = {
+	bullish: '強気（上昇転換シグナル）',
+	bearish: '弱気（下落転換シグナル）',
+};
+const TREND_SHORT_LABELS: Record<string, string> = { up: '上昇', down: '下落' };
+
 // ── ヘルパー ──
 
 function formatPrice(price: number): string {
@@ -72,19 +85,9 @@ export function generateSummary(patterns: DetectedCandlePattern[], windowCandles
 	const parts: string[] = [];
 
 	for (const p of patterns) {
-		const trendText =
-			p.local_context.trend_before === 'down'
-				? '下落傾向'
-				: p.local_context.trend_before === 'up'
-					? '上昇傾向'
-					: '横ばい';
+		const trendText = TREND_LABELS[p.local_context.trend_before] ?? '横ばい';
 		const statusText = p.status === 'forming' ? '形成中（未確定）' : '確定';
-		const directionText =
-			p.direction === 'bullish'
-				? '上昇転換のサイン'
-				: p.direction === 'bearish'
-					? '下落転換のサイン'
-					: '方向感の迷いを示すサイン';
+		const directionText = DIRECTION_LABELS[p.direction] ?? '方向感の迷いを示すサイン';
 
 		let statsPart = '';
 		if (p.history_stats?.horizons['1']) {
@@ -324,18 +327,11 @@ export function generateContent(
 	} else {
 		for (const p of patterns) {
 			lines.push(`■ ${p.pattern_jp}（${p.pattern}）`);
-			const dirLabel =
-				p.direction === 'bullish'
-					? '強気（上昇転換シグナル）'
-					: p.direction === 'bearish'
-						? '弱気（下落転換シグナル）'
-						: '中立（方向性の迷い）';
+			const dirLabel = DIRECTION_DETAIL_LABELS[p.direction] ?? '中立（方向性の迷い）';
 			lines.push(`  方向性: ${dirLabel}`);
 			lines.push(`  状態: ${p.status === 'forming' ? '形成中（終値未確定）' : '確定'}`);
 			lines.push(`  強度: ${(p.strength * 100).toFixed(0)}%`);
-			lines.push(
-				`  直前トレンド: ${p.local_context.trend_before === 'up' ? '上昇' : p.local_context.trend_before === 'down' ? '下落' : '中立'}`,
-			);
+			lines.push(`  直前トレンド: ${TREND_SHORT_LABELS[p.local_context.trend_before] ?? '中立'}`);
 			lines.push('');
 
 			// === 3. パターン該当箇所の詳細 ===

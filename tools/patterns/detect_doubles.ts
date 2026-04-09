@@ -2,10 +2,28 @@
  * Double Top / Double Bottom 検出（完成済み＋形成中）
  * detect_patterns.ts Section 2 から抽出
  */
+import { EPSILON } from '../../lib/math.js';
 import { generatePatternDiagram } from '../../lib/pattern-diagrams.js';
 import { deduplicatePatterns, finalizeConf, periodScoreDays } from './helpers.js';
 import { clamp01, marginFromRelDev, relDev } from './regression.js';
 import { type DetectContext, type DetectResult, type PatternEntry, pushCand } from './types.js';
+
+// ── Configuration ──
+const MIN_PIVOT_DISTANCE_BARS = 5;
+const MIN_PATTERN_HEIGHT_PCT = 0.03;
+const MIN_DEPTH_PCT = 0.05;
+const BREAKOUT_BUFFER_PCT = 0.015;
+const MAX_BARS_FROM_EXTREMUM = 20;
+const RELAXED_TOLERANCE_FACTOR = 1.3;
+const RELAXED_CONFIDENCE_PENALTY = 0.85;
+const MAX_FORMING_DAYS = 90;
+const FORMING_PEAK_TOLERANCE_PCT = 0.05;
+const FORMING_BASE_COMPLETION = 0.66;
+const FORMING_COMPLETION_RANGE = 0.34;
+const MIN_FORMING_COMPLETION = 0.4;
+const MIN_PATTERN_DAYS = 14;
+const FORMING_TOLERANCE_MULTIPLIER = 1.5;
+const FORMING_VALLEY_INVALID_PCT = 0.02;
 
 export function detectDoubles(ctx: DetectContext): DetectResult {
 	const { candles, pivots, allPeaks, allValleys, tolerancePct, minDist: _minDist, want, includeForming, near } = ctx;
@@ -18,7 +36,7 @@ export function detectDoubles(ctx: DetectContext): DetectResult {
 	let foundDoubleTop = false,
 		foundDoubleBottom = false;
 	if (want.size === 0 || want.has('double_top') || want.has('double_bottom')) {
-		const minDistDB = 5; // ダブル系: 最低5本の間隔を要求（ノイズ除去）
+		const minDistDB = MIN_PIVOT_DISTANCE_BARS; // ダブル系: 最低5本の間隔を要求（ノイズ除去）
 		for (let i = 0; i < pivots.length - 3; i++) {
 			const a = pivots[i];
 			const b = pivots[i + 1];
@@ -28,14 +46,14 @@ export function detectDoubles(ctx: DetectContext): DetectResult {
 			if (a.kind === 'H' && b.kind === 'L' && c.kind === 'H') {
 				const patternHeight = Math.abs(a.price - b.price);
 				const heightPct = patternHeight / Math.max(1, Math.max(a.price, b.price));
-				if (heightPct < 0.03) {
+				if (heightPct < MIN_PATTERN_HEIGHT_PCT) {
 					pcand({ type: 'double_top', accepted: false, reason: 'pattern_too_small', idxs: [a.idx, b.idx, c.idx] });
 					continue;
 				}
 				// 谷深さ: 山と谷の落差が山の5%以上必要（浅い窪みでの誤検知防止）
 				const peakAvg = (a.price + c.price) / 2;
 				const valleyDepthPct = (peakAvg - b.price) / Math.max(1, peakAvg);
-				if (valleyDepthPct < 0.05) {
+				if (valleyDepthPct < MIN_DEPTH_PCT) {
 					pcand({ type: 'double_top', accepted: false, reason: 'valley_too_shallow', idxs: [a.idx, b.idx, c.idx] });
 					continue;
 				}
@@ -43,10 +61,10 @@ export function detectDoubles(ctx: DetectContext): DetectResult {
 			// double top: H-L-H with H~H + ネックライン下抜け（終値ベース1.5%バッファ）必須
 			if (a.kind === 'H' && b.kind === 'L' && c.kind === 'H' && near(a.price, c.price)) {
 				const necklinePrice = b.price;
-				const breakoutBuffer = 0.015;
+				const breakoutBuffer = BREAKOUT_BUFFER_PCT;
 				let breakoutIdx = -1;
 				// 山2から最大20本以内にネックライン下抜けが必要
-				const maxBarsFromPeak2 = 20;
+				const maxBarsFromPeak2 = MAX_BARS_FROM_EXTREMUM;
 				for (let k = c.idx + 1; k < Math.min(c.idx + maxBarsFromPeak2 + 1, candles.length); k++) {
 					const closeK = Number(candles[k]?.close ?? NaN);
 					if (Number.isFinite(closeK) && closeK < necklinePrice * (1 - breakoutBuffer)) {
@@ -84,7 +102,7 @@ export function detectDoubles(ctx: DetectContext): DetectResult {
 						const dtBp = Number(candles[breakoutIdx]?.close ?? NaN);
 						let dtTargetPct: number | undefined;
 						const dtCurPrice = Number(candles[candles.length - 1]?.close);
-						if (Number.isFinite(dtCurPrice) && Number.isFinite(dtBp) && Math.abs(dtTarget - dtBp) > 1e-12) {
+						if (Number.isFinite(dtCurPrice) && Number.isFinite(dtBp) && Math.abs(dtTarget - dtBp) > EPSILON) {
 							dtTargetPct = Math.round(((dtCurPrice - dtBp) / (dtTarget - dtBp)) * 100);
 						}
 						push(patterns, {
@@ -149,14 +167,14 @@ export function detectDoubles(ctx: DetectContext): DetectResult {
 			if (a.kind === 'L' && b.kind === 'H' && c.kind === 'L') {
 				const patternHeight = Math.abs(a.price - b.price);
 				const heightPct = patternHeight / Math.max(1, Math.max(a.price, b.price));
-				if (heightPct < 0.03) {
+				if (heightPct < MIN_PATTERN_HEIGHT_PCT) {
 					pcand({ type: 'double_bottom', accepted: false, reason: 'pattern_too_small', idxs: [a.idx, b.idx, c.idx] });
 					continue;
 				}
 				// 山高さ: 谷と山の落差が谷の5%以上必要（浅い突起での誤検知防止）
 				const valleyAvg = (a.price + c.price) / 2;
 				const peakHeightPct = (b.price - valleyAvg) / Math.max(1, valleyAvg);
-				if (peakHeightPct < 0.05) {
+				if (peakHeightPct < MIN_DEPTH_PCT) {
 					pcand({ type: 'double_bottom', accepted: false, reason: 'peak_too_shallow', idxs: [a.idx, b.idx, c.idx] });
 					continue;
 				}
@@ -164,10 +182,10 @@ export function detectDoubles(ctx: DetectContext): DetectResult {
 			if (a.kind === 'L' && b.kind === 'H' && c.kind === 'L' && near(a.price, c.price)) {
 				// ネックライン突破（終値ベース＋1.5%バッファ）を c 以降で確認
 				const necklinePrice = b.price;
-				const breakoutBuffer = 0.015;
+				const breakoutBuffer = BREAKOUT_BUFFER_PCT;
 				let breakoutIdx = -1;
 				// 谷2から最大20本以内にネックライン上抜けが必要
-				const maxBarsFromValley2 = 20;
+				const maxBarsFromValley2 = MAX_BARS_FROM_EXTREMUM;
 				for (let k = c.idx + 1; k < Math.min(c.idx + maxBarsFromValley2 + 1, candles.length); k++) {
 					const closeK = Number(candles[k]?.close ?? NaN);
 					if (Number.isFinite(closeK) && closeK > necklinePrice * (1 + breakoutBuffer)) {
@@ -206,7 +224,7 @@ export function detectDoubles(ctx: DetectContext): DetectResult {
 						const dbBp = Number(candles[breakoutIdx]?.close ?? NaN);
 						let dbTargetPct: number | undefined;
 						const dbCurPrice = Number(candles[candles.length - 1]?.close);
-						if (Number.isFinite(dbCurPrice) && Number.isFinite(dbBp) && Math.abs(dbTarget - dbBp) > 1e-12) {
+						if (Number.isFinite(dbCurPrice) && Number.isFinite(dbBp) && Math.abs(dbTarget - dbBp) > EPSILON) {
 							dbTargetPct = Math.round(((dbCurPrice - dbBp) / (dbTarget - dbBp)) * 100);
 						}
 						push(patterns, {
@@ -267,7 +285,7 @@ export function detectDoubles(ctx: DetectContext): DetectResult {
 			}
 		}
 		// relaxed fallback for double top/bottom: single-stage factor 1.3（×2.0 は過剰検知の原因として削除）
-		for (const f of [1.3]) {
+		for (const f of [RELAXED_TOLERANCE_FACTOR]) {
 			if (!foundDoubleTop && (want.size === 0 || want.has('double_top'))) {
 				const tolRelax = tolerancePct * f;
 				const nearRelaxed = (x: number, y: number) => Math.abs(x - y) <= Math.max(x, y) * tolRelax;
@@ -281,13 +299,13 @@ export function detectDoubles(ctx: DetectContext): DetectResult {
 					{
 						const patternHeight = Math.abs(a.price - b.price);
 						const heightPct = patternHeight / Math.max(1, Math.max(a.price, b.price));
-						if (heightPct < 0.03) {
+						if (heightPct < MIN_PATTERN_HEIGHT_PCT) {
 							pcand({ type: 'double_top', accepted: false, reason: 'pattern_too_small', idxs: [a.idx, b.idx, c.idx] });
 							continue;
 						}
 						const peakAvg = (a.price + c.price) / 2;
 						const valleyDepthPct = (peakAvg - b.price) / Math.max(1, peakAvg);
-						if (valleyDepthPct < 0.05) {
+						if (valleyDepthPct < MIN_DEPTH_PCT) {
 							pcand({
 								type: 'double_top',
 								accepted: false,
@@ -312,10 +330,10 @@ export function detectDoubles(ctx: DetectContext): DetectResult {
 					}
 					// 緩和判定でもネックライン下抜け必須
 					const necklinePrice = b.price;
-					const breakoutBuffer = 0.015;
+					const breakoutBuffer = BREAKOUT_BUFFER_PCT;
 					let breakoutIdx = -1;
 					// 山2から最大20本以内にネックライン下抜けが必要（緩和）
-					const maxBarsFromPeak2 = 20;
+					const maxBarsFromPeak2 = MAX_BARS_FROM_EXTREMUM;
 					for (let k = c.idx + 1; k < Math.min(c.idx + maxBarsFromPeak2 + 1, candles.length); k++) {
 						const closeK = Number(candles[k]?.close ?? NaN);
 						if (Number.isFinite(closeK) && closeK < necklinePrice * (1 - breakoutBuffer)) {
@@ -335,7 +353,7 @@ export function detectDoubles(ctx: DetectContext): DetectResult {
 						const symmetry = clamp01(1 - relDev(a.price, c.price));
 						const per = periodScoreDays(start, end);
 						const base = (tolMargin + symmetry + per) / 3;
-						const confidence = finalizeConf(base * 0.85, 'double_top'); // 緩和パスは大きめペナルティ
+						const confidence = finalizeConf(base * RELAXED_CONFIDENCE_PENALTY, 'double_top'); // 緩和パスは大きめペナルティ
 						const diagram = generatePatternDiagram(
 							'double_top',
 							[
@@ -392,7 +410,7 @@ export function detectDoubles(ctx: DetectContext): DetectResult {
 					{
 						const patternHeight = Math.abs(a.price - b.price);
 						const heightPct = patternHeight / Math.max(1, Math.max(a.price, b.price));
-						if (heightPct < 0.03) {
+						if (heightPct < MIN_PATTERN_HEIGHT_PCT) {
 							pcand({
 								type: 'double_bottom',
 								accepted: false,
@@ -403,7 +421,7 @@ export function detectDoubles(ctx: DetectContext): DetectResult {
 						}
 						const valleyAvg = (a.price + c.price) / 2;
 						const peakHeightPct = (b.price - valleyAvg) / Math.max(1, valleyAvg);
-						if (peakHeightPct < 0.05) {
+						if (peakHeightPct < MIN_DEPTH_PCT) {
 							pcand({
 								type: 'double_bottom',
 								accepted: false,
@@ -428,10 +446,10 @@ export function detectDoubles(ctx: DetectContext): DetectResult {
 					}
 					// 緩和判定でもネックライン突破必須
 					const necklinePrice = b.price;
-					const breakoutBuffer = 0.015;
+					const breakoutBuffer = BREAKOUT_BUFFER_PCT;
 					let breakoutIdx = -1;
 					// 谷2から最大20本以内にネックライン上抜けが必要（緩和）
-					const maxBarsFromValley2 = 20;
+					const maxBarsFromValley2 = MAX_BARS_FROM_EXTREMUM;
 					for (let k = c.idx + 1; k < Math.min(c.idx + maxBarsFromValley2 + 1, candles.length); k++) {
 						const closeK = Number(candles[k]?.close ?? NaN);
 						if (Number.isFinite(closeK) && closeK > necklinePrice * (1 + breakoutBuffer)) {
@@ -505,7 +523,7 @@ export function detectDoubles(ctx: DetectContext): DetectResult {
 		const lastIdx = candles.length - 1;
 		const currentPrice = Number(candles[lastIdx]?.close ?? NaN);
 		const isoAt = (i: number) => candles[i]?.isoTime || '';
-		const maxFormingDays = 90; // 形成中パターンは3ヶ月以内に制限
+		const maxFormingDays = MAX_FORMING_DAYS; // 形成中パターンは3ヶ月以内に制限
 		const daysPerBar = ctx.type === '1day' ? 1 : ctx.type === '1week' ? 7 : 1;
 
 		// 形成中 double_top: 確定ピーク1つ + 確定谷 + 現在価格がピーク付近まで上昇中
@@ -522,7 +540,7 @@ export function detectDoubles(ctx: DetectContext): DetectResult {
 
 				// 現在価格が左ピーク付近（±許容範囲内）まで上昇している
 				const leftPct = currentPrice / Math.max(1, leftPeak.price);
-				const rightPeakTolerancePct = 0.05; // 5%許容
+				const rightPeakTolerancePct = FORMING_PEAK_TOLERANCE_PCT; // 5%許容
 
 				if (
 					leftPct >= 1 - rightPeakTolerancePct &&
@@ -530,15 +548,15 @@ export function detectDoubles(ctx: DetectContext): DetectResult {
 					currentPrice > valley.price
 				) {
 					// 進捗率: 谷から左ピークレベルへの回復度
-					const ratio = (currentPrice - valley.price) / Math.max(1e-12, leftPeak.price - valley.price);
+					const ratio = (currentPrice - valley.price) / Math.max(EPSILON, leftPeak.price - valley.price);
 					const progress = Math.max(0, Math.min(1, ratio));
-					const completion = Math.min(1, 0.66 + progress * 0.34);
+					const completion = Math.min(1, FORMING_BASE_COMPLETION + progress * FORMING_COMPLETION_RANGE);
 
-					const minCompletion = 0.4;
+					const minCompletion = MIN_FORMING_COMPLETION;
 					if (completion >= minCompletion) {
 						const formationBars = Math.max(0, lastIdx - leftPeak.idx);
 						const patternDays = Math.round(formationBars * (ctx.type === '1day' ? 1 : ctx.type === '1week' ? 7 : 1));
-						const minPatternDays = 14;
+						const minPatternDays = MIN_PATTERN_DAYS;
 
 						if (patternDays >= minPatternDays && patternDays <= maxFormingDays) {
 							const neckline = [
@@ -583,7 +601,7 @@ export function detectDoubles(ctx: DetectContext): DetectResult {
 				for (let j = confirmedValleys.length - 1; j >= 1; j--) {
 					const rightValley = confirmedValleys[j];
 					const leftValley = confirmedValleys[j - 1];
-					if (rightValley.idx - leftValley.idx < 5) continue; // 谷の間隔が短すぎる
+					if (rightValley.idx - leftValley.idx < MIN_PIVOT_DISTANCE_BARS) continue; // 谷の間隔が短すぎる
 
 					// 2つの谷の間に存在する戻り高値（ネックライン候補）を抽出
 					const peaksBetween = allPeaks.filter((p) => p.idx > leftValley.idx && p.idx < rightValley.idx);
@@ -591,22 +609,22 @@ export function detectDoubles(ctx: DetectContext): DetectResult {
 					const midPeak = peaksBetween.reduce((best, p) => (p.price > best.price ? p : best), peaksBetween[0]);
 
 					// 谷の深さチェック
-					const leftDepth = (midPeak.price - leftValley.price) / Math.max(1e-12, midPeak.price);
-					const rightDepth = (midPeak.price - rightValley.price) / Math.max(1e-12, midPeak.price);
-					const minValleyDepthPct = 0.03;
+					const leftDepth = (midPeak.price - leftValley.price) / Math.max(EPSILON, midPeak.price);
+					const rightDepth = (midPeak.price - rightValley.price) / Math.max(EPSILON, midPeak.price);
+					const minValleyDepthPct = MIN_PATTERN_HEIGHT_PCT;
 					if (!(leftDepth >= minValleyDepthPct && rightDepth >= minValleyDepthPct)) continue;
 
 					// 谷の等高チェック
 					const valleyDiff =
 						Math.abs(leftValley.price - rightValley.price) / Math.max(1, Math.max(leftValley.price, rightValley.price));
-					if (valleyDiff > tolerancePct * 1.5) continue;
+					if (valleyDiff > tolerancePct * FORMING_TOLERANCE_MULTIPLIER) continue;
 
 					// 無効化: 現在値が右谷を大きく割り込んでいないこと
-					const rightValleyInvalidBelowPct = 0.02;
+					const rightValleyInvalidBelowPct = FORMING_VALLEY_INVALID_PCT;
 					if (currentPrice < rightValley.price * (1 - rightValleyInvalidBelowPct)) continue;
 
 					// 完成度: 右谷からネックラインへ向けた戻り具合
-					const upRatio = (currentPrice - rightValley.price) / Math.max(1e-12, midPeak.price - rightValley.price);
+					const upRatio = (currentPrice - rightValley.price) / Math.max(EPSILON, midPeak.price - rightValley.price);
 					const progress = Math.max(0, Math.min(1, upRatio));
 					const completion = Math.min(1, 0.66 + 0.34 * progress);
 

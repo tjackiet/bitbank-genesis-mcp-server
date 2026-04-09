@@ -25,9 +25,21 @@
  */
 import { dayjs } from '../lib/datetime.js';
 import { formatPair } from '../lib/formatter.js';
+import { ICHIMOKU_MIN_BARS_FOR_CLOUD, ICHIMOKU_SHIFT } from '../lib/indicator-config.js';
 import { fail, ok } from '../lib/result.js';
 import type { CandleType, ChartPayload, Pair, RenderChartSvgOptions, Result } from '../src/schemas.js';
 import analyzeIndicators from './analyze_indicators.js';
+
+// ── Chart Dimensions ──
+const CHART_WIDTH = 860;
+const CHART_HEIGHT = 420;
+const PADDING_TIGHT = { top: 36, right: 12, bottom: 32 } as const;
+const PADDING_NORMAL = { top: 48, right: 16, bottom: 40 } as const;
+const Y_HEADROOM_PCT = 0.02;
+const LABEL_CHAR_WIDTH_PX = 8;
+const LABEL_EXTRA_PADDING = 16;
+const HEAVY_CHART_THRESHOLD = 500;
+
 import { createCloudPaths } from './chart/ichimoku-cloud.js';
 import { renderDepthChart } from './chart/render-depth.js';
 import { renderSubPanels } from './chart/render-sub-panels.js';
@@ -135,7 +147,7 @@ export default async function renderChartSvg(
 	const estimatedLayers =
 		(withIchimoku ? 5 : 0) + (withBB ? (bbMode === 'extended' ? 3 : 1) : 0) + withSMA.length + withEMA.length + 1; // +1 for base series
 	const summaryNotes: string[] = [];
-	if (!forceLayers && limit * estimatedLayers > 500) {
+	if (!forceLayers && limit * estimatedLayers > HEAVY_CHART_THRESHOLD) {
 		if (withBB || withSMA.length > 0 || withEMA.length > 0 || withIchimoku) {
 			withBB = false;
 			withSMA = [];
@@ -147,17 +159,17 @@ export default async function renderChartSvg(
 
 	// ★ データ取得はバッファ計算をgetIndicatorsに任せる
 	// 一目均衡表の雲を適切に表示するには limit >= 60 が必要（先行スパンB: 52期間 + シフト: 26日）
-	const ICHIMOKU_MIN_LIMIT_FOR_CLOUD = 60;
+	const ichimokuMinLimit = ICHIMOKU_MIN_BARS_FOR_CLOUD;
 	const warnings: string[] = [];
 
 	// 一目均衡表使用時に limit が小さすぎる場合は自動調整
 	let effectiveLimit = limit;
-	if (withIchimoku && limit < ICHIMOKU_MIN_LIMIT_FOR_CLOUD) {
-		effectiveLimit = ICHIMOKU_MIN_LIMIT_FOR_CLOUD;
+	if (withIchimoku && limit < ichimokuMinLimit) {
+		effectiveLimit = ichimokuMinLimit;
 		summaryNotes.push(`一目均衡表の雲表示のため limit を ${limit} → ${effectiveLimit} に自動調整`);
 	}
 
-	const internalLimit = withIchimoku ? effectiveLimit + 26 : effectiveLimit;
+	const internalLimit = withIchimoku ? effectiveLimit + ICHIMOKU_SHIFT : effectiveLimit;
 	const res = await analyzeIndicators(pair, type, internalLimit);
 	if (!res?.ok) {
 		return fail(
@@ -238,7 +250,7 @@ export default async function renderChartSvg(
 	const yPad = Math.min(0.2, Math.max(0, Number(args.yPaddingPct ?? 0.06)));
 	const yRange = dataYMax - dataYMin;
 	// クリップ回避用の安全ヘッドルーム（レンジの2%）
-	const autoHeadroom = yRange * 0.02;
+	const autoHeadroom = yRange * Y_HEADROOM_PCT;
 	// データレンジに対する相対パディング（値幅に比例してタイトに描画）
 	const yAxisMinWithBuffer = yRange > 0 ? dataYMin - yRange * yPad : dataYMin * (1 - yPad);
 	const yAxisMaxTarget = yRange > 0 ? dataYMax + yRange * yPad + autoHeadroom : dataYMax * (1 + yPad) + autoHeadroom;
@@ -248,15 +260,15 @@ export default async function renderChartSvg(
 
 	// Y軸ラベルの最大幅に基づいてpadding.leftを動的に調整
 	const maxLabelWidth = Math.max(...yTicks.map((v) => fmtYLabel(v).length));
-	const dynamicPaddingLeft = maxLabelWidth * 8 + 16; // 1文字8pxと仮定 + 余白
+	const dynamicPaddingLeft = maxLabelWidth * LABEL_CHAR_WIDTH_PX + LABEL_EXTRA_PADDING;
 
 	// スケール計算
-	const w = 860;
-	const h = 420;
+	const w = CHART_WIDTH;
+	const h = CHART_HEIGHT;
 	// 上部に余白を多めに確保（凡例が詰まらないように）
 	const padding = viewBoxTight
-		? { top: 36, right: 12, bottom: 32, left: dynamicPaddingLeft }
-		: { top: 48, right: 16, bottom: 40, left: dynamicPaddingLeft };
+		? { top: PADDING_TIGHT.top, right: PADDING_TIGHT.right, bottom: PADDING_TIGHT.bottom, left: dynamicPaddingLeft }
+		: { top: PADDING_NORMAL.top, right: PADDING_NORMAL.right, bottom: PADDING_NORMAL.bottom, left: dynamicPaddingLeft };
 	const plotW = w - padding.left - padding.right;
 	const plotH = h - padding.top - padding.bottom;
 
@@ -501,13 +513,13 @@ export default async function renderChartSvg(
 		const tenkanPath = createLinePath(ichiSeries.tenkan, '#00a3ff', { width: '1', offset: 0 });
 		const kijunPath = createLinePath(ichiSeries.kijun, '#ff4d4d', { width: '1', offset: 0 });
 		const chikouPath = drawChikou
-			? createLinePath(ichiSeries.chikou, '#16a34a', { width: '1', dash: '2 2', offset: -26 })
+			? createLinePath(ichiSeries.chikou, '#16a34a', { width: '1', dash: '2 2', offset: -ICHIMOKU_SHIFT })
 			: '';
-		const spanAPath = createLinePath(ichiSeries.spanA, '#16a34a', { width: '1', offset: 26 });
-		const spanBPath = createLinePath(ichiSeries.spanB, '#ef4444', { width: '1', offset: 26 });
+		const spanAPath = createLinePath(ichiSeries.spanA, '#16a34a', { width: '1', offset: ICHIMOKU_SHIFT });
+		const spanBPath = createLinePath(ichiSeries.spanB, '#ef4444', { width: '1', offset: ICHIMOKU_SHIFT });
 
 		// 雲の描画（交点で色切替）— 抽出済みモジュールに委譲
-		const { greenCloudPath, redCloudPath } = createCloudPaths(ichiSeries.spanA, ichiSeries.spanB, 26, {
+		const { greenCloudPath, redCloudPath } = createCloudPaths(ichiSeries.spanA, ichiSeries.spanB, ICHIMOKU_SHIFT, {
 			x,
 			y,
 			pastBuffer,

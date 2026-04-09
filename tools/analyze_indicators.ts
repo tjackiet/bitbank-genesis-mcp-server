@@ -2,6 +2,25 @@ import { TtlCache } from '../lib/cache.js';
 import { formatSummary } from '../lib/formatter.js';
 import { getFetchCount } from '../lib/indicator_buffer.js';
 import {
+	BB_PERIOD,
+	BB_STDDEV,
+	ICHIMOKU_SHIFT,
+	INDICATOR_CACHE_MAX_ENTRIES,
+	INDICATOR_CACHE_TTL_MS,
+	MACD_FAST,
+	MACD_SIGNAL,
+	MACD_SLOW,
+	OBV_SMA_PERIOD,
+	OBV_TREND_THRESHOLD,
+	RSI_OVERBOUGHT,
+	RSI_OVERSOLD,
+	RSI_PERIOD,
+	SMA_DEFAULT_PERIOD,
+	STOCH_PERIOD,
+	STOCH_SMOOTH_D,
+	STOCH_SMOOTH_K,
+} from '../lib/indicator-config.js';
+import {
 	ichimokuSnapshot,
 	bollingerBands as rawBollingerBands,
 	ema as rawEma,
@@ -49,7 +68,10 @@ interface IndicatorCacheComputed {
 	fetchCount: number;
 }
 
-const indicatorCache = new TtlCache<IndicatorCacheComputed>({ ttlMs: 30_000, maxEntries: 20 });
+const indicatorCache = new TtlCache<IndicatorCacheComputed>({
+	ttlMs: INDICATOR_CACHE_TTL_MS,
+	maxEntries: INDICATOR_CACHE_MAX_ENTRIES,
+});
 
 /** Clear the indicator cache (useful for testing). */
 export function clearIndicatorCache(): void {
@@ -58,18 +80,18 @@ export function clearIndicatorCache(): void {
 
 // --- Indicators (delegates to lib/indicators.ts) ---
 
-export function sma(values: number[], period: number = 25): NumericSeries {
+export function sma(values: number[], period: number = SMA_DEFAULT_PERIOD): NumericSeries {
 	return toNumericSeries(rawSma(values, period), 2);
 }
 
-export function rsi(values: number[], period: number = 14): NumericSeries {
+export function rsi(values: number[], period: number = RSI_PERIOD): NumericSeries {
 	return toNumericSeries(rawRsi(values, period), 2);
 }
 
 export function bollingerBands(
 	values: number[],
-	period: number = 20,
-	stdDev: number = 2,
+	period: number = BB_PERIOD,
+	stdDev: number = BB_STDDEV,
 ): { upper: NumericSeries; middle: NumericSeries; lower: NumericSeries } {
 	const raw = rawBollingerBands(values, period, stdDev);
 	return {
@@ -87,9 +109,9 @@ export function ema(values: number[], period: number): NumericSeries {
 
 export function macd(
 	values: number[],
-	fast = 12,
-	slow = 26,
-	signal = 9,
+	fast = MACD_FAST,
+	slow = MACD_SLOW,
+	signal = MACD_SIGNAL,
 ): { line: NumericSeries; signal: NumericSeries; hist: NumericSeries } {
 	const raw = rawMacd(values, fast, slow, signal);
 	return {
@@ -119,10 +141,10 @@ export function ichimokuSeries(
  */
 export function computeStochRSI(
 	closes: number[],
-	rsiPeriod = 14,
-	stochPeriod = 14,
-	smoothK = 3,
-	smoothD = 3,
+	rsiPeriod = RSI_PERIOD,
+	stochPeriod = STOCH_PERIOD,
+	smoothK = STOCH_SMOOTH_K,
+	smoothD = STOCH_SMOOTH_D,
 ): { k: number | null; d: number | null; prevK: number | null; prevD: number | null } {
 	const raw = rawStochRSI(closes, rsiPeriod, stochPeriod, smoothK, smoothD);
 	const kNs = toNumericSeries(raw.kSeries, 2);
@@ -142,9 +164,9 @@ export function computeClassicStochastic(
 	highs: number[],
 	lows: number[],
 	closes: number[],
-	kPeriod = 14,
-	smoothK = 3,
-	smoothD = 3,
+	kPeriod = STOCH_PERIOD,
+	smoothK = STOCH_SMOOTH_K,
+	smoothD = STOCH_SMOOTH_D,
 ): {
 	kSeries: (number | null)[];
 	dSeries: (number | null)[];
@@ -171,7 +193,7 @@ export function computeClassicStochastic(
  */
 export function computeOBV(
 	candles: Candle[],
-	smaPeriod = 20,
+	smaPeriod = OBV_SMA_PERIOD,
 ): { obv: number | null; obvSma: number | null; prevObv: number | null; trend: 'rising' | 'falling' | 'flat' | null } {
 	if (candles.length < 2) return { obv: null, obvSma: null, prevObv: null, trend: null };
 
@@ -193,7 +215,7 @@ export function computeOBV(
 	let trend: 'rising' | 'falling' | 'flat' | null = null;
 	if (obvVal != null && obvSma != null) {
 		const diff = obvVal - obvSma;
-		const threshold = Math.abs(obvSma) * 0.02; // 2% threshold
+		const threshold = Math.abs(obvSma) * OBV_TREND_THRESHOLD;
 		if (diff > threshold) trend = 'rising';
 		else if (diff < -threshold) trend = 'falling';
 		else trend = 'flat';
@@ -225,7 +247,7 @@ function createChartData(
 	const fullLength = normalized.length;
 	const recent = normalized.slice(-limit);
 	const pastBuffer = fullLength - recent.length;
-	const shift = 26;
+	const shift = ICHIMOKU_SHIFT;
 
 	return {
 		candles: normalized,
@@ -308,8 +330,8 @@ function analyzeTrend(
 		return 'downtrend';
 	}
 
-	if (rsi != null && rsi > 70) return 'overbought';
-	if (rsi != null && rsi < 30) return 'oversold';
+	if (rsi != null && rsi >= RSI_OVERBOUGHT) return 'overbought';
+	if (rsi != null && rsi <= RSI_OVERSOLD) return 'oversold';
 	return 'sideways';
 }
 
@@ -357,11 +379,11 @@ export default async function analyzeIndicators(
 		const allLows = normalized.map((c) => c.low);
 		const allCloses = normalized.map((c) => c.close);
 
-		const rsi14_series = rsi(allCloses, 14);
-		const macdSeries = macd(allCloses, 12, 26, 9);
-		const bb1 = bollingerBands(allCloses, 20, 1);
-		const bb2Val = bollingerBands(allCloses, 20, 2);
-		const bb3 = bollingerBands(allCloses, 20, 3);
+		const rsi14_series = rsi(allCloses, RSI_PERIOD);
+		const macdSeries = macd(allCloses, MACD_FAST, MACD_SLOW, MACD_SIGNAL);
+		const bb1 = bollingerBands(allCloses, BB_PERIOD, 1);
+		const bb2Val = bollingerBands(allCloses, BB_PERIOD, BB_STDDEV);
+		const bb3 = bollingerBands(allCloses, BB_PERIOD, 3);
 		const ichi = ichimokuSeries(allHighs, allLows, allCloses);
 		const sma_5_series = sma(allCloses, 5);
 		const sma_20_series = sma(allCloses, 20);
@@ -376,9 +398,9 @@ export default async function analyzeIndicators(
 
 		// Pre-compute values needed for the indicators object
 		const ichiSimple = ichimoku(allHighs, allLows, allCloses);
-		const stoch = computeClassicStochastic(allHighs, allLows, allCloses, 14, 3, 3);
-		const stochRsi = computeStochRSI(allCloses, 14, 14, 3, 3);
-		const obvResult = computeOBV(normalized, 20);
+		const stoch = computeClassicStochastic(allHighs, allLows, allCloses, STOCH_PERIOD, STOCH_SMOOTH_K, STOCH_SMOOTH_D);
+		const stochRsi = computeStochRSI(allCloses, RSI_PERIOD, STOCH_PERIOD, STOCH_SMOOTH_K, STOCH_SMOOTH_D);
+		const obvResult = computeOBV(normalized, OBV_SMA_PERIOD);
 
 		const indicators: GetIndicatorsData['indicators'] = {
 			SMA_5: sma_5_series.at(-1),

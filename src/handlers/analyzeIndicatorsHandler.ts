@@ -1,6 +1,8 @@
 import type { z } from 'zod';
 import { nowIso, toDisplayTime } from '../../lib/datetime.js';
 import { formatDeviation, formatPercent, formatPriceJPY, formatTrendSymbol } from '../../lib/formatter.js';
+import { ICHIMOKU_SHIFT, RSI_OVERBOUGHT, RSI_OVERSOLD } from '../../lib/indicator-config.js';
+import { EPSILON } from '../../lib/math.js';
 import { toStructured } from '../../lib/result.js';
 import analyzeIndicators from '../../tools/analyze_indicators.js';
 import { GetIndicatorsInputSchema } from '../schemas.js';
@@ -129,9 +131,9 @@ export function buildIndicatorsText(input: BuildIndicatorsTextInput): string {
 	const vsCurPct = (ref?: number | null) => formatDeviation(close, ref);
 	const rsiInterp = (val: number | null) => {
 		if (val == null) return '—';
-		if (val < 30) return '売られすぎ圏（反発の可能性）';
+		if (val <= RSI_OVERSOLD) return '売られすぎ圏（反発の可能性）';
 		if (val < 50) return '弱め（反発余地）';
-		if (val < 70) return '中立〜強め';
+		if (val < RSI_OVERBOUGHT) return '中立〜強め';
 		return '買われすぎ圏（反落の可能性）';
 	};
 
@@ -146,7 +148,14 @@ export function buildIndicatorsText(input: BuildIndicatorsTextInput): string {
 	lines.push('【総合判定】');
 	const trendText =
 		trend === 'strong_downtrend' ? '強い下降トレンド ⚠️' : trend === 'uptrend' ? '上昇トレンド' : '中立/レンジ';
-	const rsiHint = rsi == null ? '—' : Number(rsi) < 30 ? '売られすぎ' : Number(rsi) > 70 ? '買われすぎ' : '中立圏';
+	const rsiHint =
+		rsi == null
+			? '—'
+			: Number(rsi) <= RSI_OVERSOLD
+				? '売られすぎ'
+				: Number(rsi) >= RSI_OVERBOUGHT
+					? '買われすぎ'
+					: '中立圏';
 	const bwState =
 		bandWidthPct == null ? '—' : bandWidthPct < 8 ? 'スクイーズ' : bandWidthPct > 20 ? 'エクスパンション' : '標準';
 	lines.push(`  トレンド: ${trendText}`);
@@ -157,7 +166,7 @@ export function buildIndicatorsText(input: BuildIndicatorsTextInput): string {
 	lines.push('');
 	// Momentum
 	lines.push('【モメンタム】');
-	lines.push(`  RSI(14): ${rsi ?? 'n/a'} → ${rsiInterp(Number(rsi))}`);
+	lines.push(`  RSI(14): ${rsi ?? 'n/a'} → ${rsiInterp(rsi)}`);
 	if (recentRsiFormatted.length >= 2) {
 		lines.push(`    【RSI推移（直近${recentRsiFormatted.length}${rsiUnitLabel}）】`);
 		lines.push('');
@@ -285,6 +294,209 @@ export function buildIndicatorsText(input: BuildIndicatorsTextInput): string {
 	return lines.join('\n');
 }
 
+// ── IIFE → 名前付き純粋関数 ──
+
+function calcDeltaPrev(close: number | null, prev: number | null): { amt: number; pct: number } | null {
+	if (close == null || prev == null || !Number.isFinite(prev) || prev === 0) return null;
+	const amt = Number(close) - Number(prev);
+	const pct = (amt / Math.abs(Number(prev))) * 100;
+	return { amt, pct };
+}
+
+function calcDeltaLabel(type: string): string {
+	const t = String(type ?? '').toLowerCase();
+	if (t.includes('day')) return '前日比';
+	if (t.includes('week')) return '前週比';
+	if (t.includes('month')) return '前月比';
+	if (t.includes('hour')) return '前時間比';
+	if (t.includes('min')) return '前足比';
+	return '前回比';
+}
+
+function extractRecentRsi(rsiSeries: unknown[] | null, count: number): (number | null)[] {
+	if (!Array.isArray(rsiSeries) || rsiSeries.length === 0) return [];
+	return rsiSeries.slice(-count).map((v: unknown) => {
+		const num = Number(v);
+		return Number.isFinite(num) ? num : null;
+	});
+}
+
+function calcRsiUnitLabel(type: string): string {
+	const t = String(type ?? '').toLowerCase();
+	if (t.includes('day')) return '日';
+	if (t.includes('week')) return '週';
+	if (t.includes('month')) return '月';
+	if (t.includes('hour')) return '時間';
+	if (t.includes('min')) return '本';
+	return '本';
+}
+
+function findLastMacdCross(
+	macdArr: number[] | null,
+	sigArr: number[] | null,
+): { type: 'golden' | 'dead'; barsAgo: number } | null {
+	if (!macdArr || !sigArr) return null;
+	const L = Math.min(macdArr.length, sigArr.length);
+	let lastIdx: number | null = null;
+	let lastType: 'golden' | 'dead' | null = null;
+	for (let i = L - 2; i >= 0; i--) {
+		const a0 = Number(macdArr[i]),
+			b0 = Number(sigArr[i]);
+		const a1 = Number(macdArr[i + 1]),
+			b1 = Number(sigArr[i + 1]);
+		if ([a0, b0, a1, b1].some((v) => !Number.isFinite(v))) continue;
+		const prevDiff = a0 - b0;
+		const nextDiff = a1 - b1;
+		if (prevDiff === 0) continue;
+		if ((prevDiff < 0 && nextDiff > 0) || (prevDiff > 0 && nextDiff < 0)) {
+			lastIdx = i + 1;
+			lastType = nextDiff > 0 ? 'golden' : 'dead';
+			break;
+		}
+	}
+	if (lastIdx == null) return null;
+	const barsAgo = L - 1 - lastIdx;
+	return { type: lastType as 'golden' | 'dead', barsAgo };
+}
+
+function detectDivergence(
+	candles: Array<{ close?: number }>,
+	histSeries: number[] | null,
+	lookback: number,
+): string | null {
+	// simple divergence check over last N bars using linear slope
+	const N = Math.min(lookback, candles.length);
+	if (N < 5) return null;
+	const pxA = Number(candles.at(-N)?.close ?? NaN),
+		pxB = Number(candles.at(-1)?.close ?? NaN);
+	if (!Number.isFinite(pxA) || !Number.isFinite(pxB) || !histSeries || histSeries.length < N) return null;
+	const hA = Number(histSeries.at(-N) ?? NaN),
+		hB = Number(histSeries.at(-1) ?? NaN);
+	if (!Number.isFinite(hA) || !Number.isFinite(hB)) return null;
+	const pxSlopeUp = pxB > pxA,
+		pxSlopeDn = pxB < pxA;
+	const histSlopeUp = hB > hA,
+		histSlopeDn = hB < hA;
+	if (pxSlopeUp && histSlopeDn) return 'ベアリッシュ（価格↑・モメンタム↓）';
+	if (pxSlopeDn && histSlopeUp) return 'ブルリッシュ（価格↓・モメンタム↑）';
+	return 'なし';
+}
+
+function calcSmaArrangement(curNum: number, s25n: number, s75n: number, s200n: number): string {
+	const pts: Array<{ label: string; v: number }> = [];
+	if (Number.isFinite(curNum)) pts.push({ label: '価格', v: curNum });
+	if (Number.isFinite(s25n)) pts.push({ label: '25日', v: s25n });
+	if (Number.isFinite(s75n)) pts.push({ label: '75日', v: s75n });
+	if (Number.isFinite(s200n)) pts.push({ label: '200日', v: s200n });
+	if (pts.length < 3) return 'n/a';
+	pts.sort((a, b) => a.v - b.v);
+	return pts.map((p) => p.label).join(' < ');
+}
+
+function calcBandWidthTrend(bbSeries: {
+	upper: number[] | null;
+	lower: number[] | null;
+	middle: number[] | null;
+}): string | null {
+	try {
+		if (!bbSeries.upper || !bbSeries.lower || !bbSeries.middle) return null;
+		const L = Math.min(bbSeries.upper.length, bbSeries.lower.length, bbSeries.middle.length);
+		if (L < 6) return null;
+		const cur =
+			((bbSeries.upper.at(-1) ?? 0) - (bbSeries.lower.at(-1) ?? 0)) / Math.max(EPSILON, bbSeries.middle.at(-1) ?? 0);
+		const prev5 =
+			((bbSeries.upper.at(-6) ?? 0) - (bbSeries.lower.at(-6) ?? 0)) / Math.max(EPSILON, bbSeries.middle.at(-6) ?? 0);
+		if (!Number.isFinite(cur) || !Number.isFinite(prev5)) return null;
+		return cur > prev5 ? '拡大中' : cur < prev5 ? '収縮中' : '不変';
+	} catch {
+		return null;
+	}
+}
+
+function calcSigmaHistory(
+	candles: Array<{ close?: number }>,
+	bbSeries: { upper: number[] | null; middle: number[] | null },
+): Array<{ off: number; z: number } | null> | null {
+	try {
+		if (!bbSeries.upper || !bbSeries.middle) return null;
+		const L = Math.min(candles.length, bbSeries.upper.length, bbSeries.middle.length);
+		if (L < 6) return null;
+		const { upper, middle } = bbSeries;
+		const idxs = [-6, -1];
+		const vals = idxs.map((off) => {
+			const c = Number(candles.at(off)?.close ?? NaN);
+			const m = Number(middle.at(off) ?? NaN);
+			const u = Number(upper.at(off) ?? NaN);
+			if (![c, m, u].every(Number.isFinite)) return null;
+			const z = Number(((2 * (c - m)) / Math.max(EPSILON, u - m)).toFixed(2));
+			return { off, z };
+		});
+		return vals;
+	} catch {
+		return null;
+	}
+}
+
+function calcChikouBull(candles: Array<{ close?: number }>, close: number | null): boolean | null {
+	const CHIKOU_LOOKBACK = ICHIMOKU_SHIFT + 1;
+	if (candles.length < CHIKOU_LOOKBACK || close == null) return null;
+	const past = Number(candles.at(-CHIKOU_LOOKBACK)?.close ?? NaN);
+	if (!Number.isFinite(past)) return null;
+	return Number(close) > past;
+}
+
+function calcThreeSignals(
+	cloudPos: string,
+	tenkan: number | null,
+	kijun: number | null,
+	chikouBull: boolean | null,
+): { judge: string; aboveCloud: boolean; convAboveBase: boolean | null; chikouAbove: boolean | null } {
+	const aboveCloud = cloudPos === 'above_cloud';
+	const convAboveBase = tenkan != null && kijun != null ? Number(tenkan) >= Number(kijun) : null;
+	const chikouAbove = chikouBull;
+	let judge: '三役好転' | '三役逆転' | '混在' = '混在';
+	if (aboveCloud && convAboveBase === true && chikouAbove === true) judge = '三役好転';
+	if (cloudPos === 'below_cloud' && convAboveBase === false && chikouAbove === false) judge = '三役逆転';
+	return { judge, aboveCloud, convAboveBase, chikouAbove };
+}
+
+function calcCloudDistance(
+	close: number | null,
+	cloudTop: number | null,
+	cloudBot: number | null,
+	cloudPos: string,
+): number | null {
+	if (close == null || cloudTop == null || cloudBot == null) return null;
+	if (cloudPos === 'below_cloud') {
+		const need = cloudBot - Number(close);
+		return need > 0 ? (need / Math.max(EPSILON, Number(close))) * 100 : 0;
+	}
+	if (cloudPos === 'above_cloud') {
+		const need = Number(close) - cloudTop;
+		return need > 0 ? (need / Math.max(EPSILON, Number(close))) * 100 : 0;
+	}
+	return 0;
+}
+
+function findSmaCross(s25: number[] | null, s75: number[] | null): string | null {
+	if (!s25 || !s75) return null;
+	const L = Math.min(s25.length, s75.length);
+	let lastIdx: number | null = null;
+	let t: 'golden' | 'dead' | null = null;
+	for (let i = L - 2; i >= 0; i--) {
+		const d0 = Number(s25[i]) - Number(s75[i]);
+		const d1 = Number(s25[i + 1]) - Number(s75[i + 1]);
+		if (![d0, d1].every(Number.isFinite)) continue;
+		if ((d0 < 0 && d1 > 0) || (d0 > 0 && d1 < 0)) {
+			lastIdx = i + 1;
+			t = d1 > 0 ? 'golden' : 'dead';
+			break;
+		}
+	}
+	if (lastIdx == null) return '直近クロス: なし';
+	return `直近クロス: ${t === 'golden' ? 'ゴールデン' : 'デッド'}（${L - 1 - lastIdx}本前）`;
+}
+
 export const toolDef: ToolDefinition = {
 	name: 'analyze_indicators',
 	description:
@@ -304,40 +516,13 @@ export const toolDef: ToolDefinition = {
 		const close = candles.at(-1)?.close ?? null;
 		const prev = candles.at(-2)?.close ?? null;
 		const nowJst = toDisplayTime(undefined) ?? nowIso();
-		const deltaPrev = (() => {
-			if (close == null || prev == null || !Number.isFinite(prev) || prev === 0) return null;
-			const amt = Number(close) - Number(prev);
-			const pct = (amt / Math.abs(Number(prev))) * 100;
-			return { amt, pct };
-		})();
-		const deltaLabel = (() => {
-			const t = String(type ?? '').toLowerCase();
-			if (t.includes('day')) return '前日比';
-			if (t.includes('week')) return '前週比';
-			if (t.includes('month')) return '前月比';
-			if (t.includes('hour')) return '前時間比';
-			if (t.includes('min')) return '前足比';
-			return '前回比';
-		})();
+		const deltaPrev = calcDeltaPrev(close, prev);
+		const deltaLabel = calcDeltaLabel(type);
 		const rsi = ind.RSI_14 ?? null;
 		const rsiSeries = Array.isArray(res?.data?.indicators?.RSI_14_series) ? res.data.indicators.RSI_14_series : null;
-		const recentRsiRaw = (() => {
-			if (!Array.isArray(rsiSeries) || rsiSeries.length === 0) return [];
-			return rsiSeries.slice(-7).map((v: unknown) => {
-				const num = Number(v);
-				return Number.isFinite(num) ? num : null;
-			});
-		})();
+		const recentRsiRaw = extractRecentRsi(rsiSeries, 7);
 		const recentRsiFormatted = recentRsiRaw.map((v) => (v == null ? 'n/a' : Number(v).toFixed(1)));
-		const rsiUnitLabel = (() => {
-			const t = String(type ?? '').toLowerCase();
-			if (t.includes('day')) return '日';
-			if (t.includes('week')) return '週';
-			if (t.includes('month')) return '月';
-			if (t.includes('hour')) return '時間';
-			if (t.includes('min')) return '本';
-			return '本';
-		})();
+		const rsiUnitLabel = calcRsiUnitLabel(type);
 		const sma25 = ind.SMA_25 ?? null;
 		const sma75 = ind.SMA_75 ?? null;
 		const sma200 = ind.SMA_200 ?? null;
@@ -376,66 +561,21 @@ export const toolDef: ToolDefinition = {
 			if (!Number.isFinite(a) || !Number.isFinite(b) || len <= 1) return null;
 			return (b - a) / (len - 1);
 		};
-		const lastMacdCross = (() => {
-			const macdArr = Array.isArray(ind?.series?.MACD_line) ? ind.series.MACD_line : null;
-			const sigArr = Array.isArray(ind?.series?.MACD_signal) ? ind.series.MACD_signal : null;
-			if (!macdArr || !sigArr) return null;
-			const L = Math.min(macdArr.length, sigArr.length);
-			let lastIdx: number | null = null;
-			let lastType: 'golden' | 'dead' | null = null;
-			for (let i = L - 2; i >= 0; i--) {
-				const a0 = Number(macdArr[i]),
-					b0 = Number(sigArr[i]);
-				const a1 = Number(macdArr[i + 1]),
-					b1 = Number(sigArr[i + 1]);
-				if ([a0, b0, a1, b1].some((v) => !Number.isFinite(v))) continue;
-				const prevDiff = a0 - b0;
-				const nextDiff = a1 - b1;
-				if (prevDiff === 0) continue;
-				if ((prevDiff < 0 && nextDiff > 0) || (prevDiff > 0 && nextDiff < 0)) {
-					lastIdx = i + 1;
-					lastType = nextDiff > 0 ? 'golden' : 'dead';
-					break;
-				}
-			}
-			if (lastIdx == null) return null;
-			const barsAgo = L - 1 - lastIdx;
-			return { type: lastType as 'golden' | 'dead', barsAgo };
-		})();
-		const divergence = (() => {
-			// simple divergence check over last 14 bars using linear slope
-			const N = Math.min(14, candles.length);
-			if (N < 5) return null;
-			const pxA = Number(candles.at(-N)?.close ?? NaN),
-				pxB = Number(candles.at(-1)?.close ?? NaN);
-			const histSeries = Array.isArray(ind?.series?.MACD_hist) ? ind.series.MACD_hist : null;
-			if (!Number.isFinite(pxA) || !Number.isFinite(pxB) || !histSeries || histSeries.length < N) return null;
-			const hA = Number(histSeries.at(-N) ?? NaN),
-				hB = Number(histSeries.at(-1) ?? NaN);
-			if (!Number.isFinite(hA) || !Number.isFinite(hB)) return null;
-			const pxSlopeUp = pxB > pxA,
-				pxSlopeDn = pxB < pxA;
-			const histSlopeUp = hB > hA,
-				histSlopeDn = hB < hA;
-			if (pxSlopeUp && histSlopeDn) return 'ベアリッシュ（価格↑・モメンタム↓）';
-			if (pxSlopeDn && histSlopeUp) return 'ブルリッシュ（価格↓・モメンタム↑）';
-			return 'なし';
-		})();
+		const lastMacdCross = findLastMacdCross(
+			Array.isArray(ind?.series?.MACD_line) ? ind.series.MACD_line : null,
+			Array.isArray(ind?.series?.MACD_signal) ? ind.series.MACD_signal : null,
+		);
+		const divergence = detectDivergence(
+			candles,
+			Array.isArray(ind?.series?.MACD_hist) ? ind.series.MACD_hist : null,
+			14,
+		);
 		// SMA arrangement and deviations
 		const curNum = Number(close ?? NaN);
 		const s25n = Number(sma25 ?? NaN),
 			s75n = Number(sma75 ?? NaN),
 			s200n = Number(sma200 ?? NaN);
-		const arrangement = (() => {
-			const pts: Array<{ label: string; v: number }> = [];
-			if (Number.isFinite(curNum)) pts.push({ label: '価格', v: curNum });
-			if (Number.isFinite(s25n)) pts.push({ label: '25日', v: s25n });
-			if (Number.isFinite(s75n)) pts.push({ label: '75日', v: s75n });
-			if (Number.isFinite(s200n)) pts.push({ label: '200日', v: s200n });
-			if (pts.length < 3) return 'n/a';
-			pts.sort((a, b) => a.v - b.v);
-			return pts.map((p) => p.label).join(' < ');
-		})();
+		const arrangement = calcSmaArrangement(curNum, s25n, s75n, s200n);
 		const s25Slope = slopeOf('SMA_25', 5),
 			s75Slope = slopeOf('SMA_75', 5),
 			s200Slope = slopeOf('SMA_200', 7);
@@ -457,92 +597,22 @@ export const toolDef: ToolDefinition = {
 					? ind.series.BB2_middle
 					: null,
 		};
-		const bwTrend = (() => {
-			try {
-				if (!bbSeries.upper || !bbSeries.lower || !bbSeries.middle) return null;
-				const L = Math.min(bbSeries.upper.length, bbSeries.lower.length, bbSeries.middle.length);
-				if (L < 6) return null;
-				const cur = (bbSeries.upper.at(-1)! - bbSeries.lower.at(-1)!) / Math.max(1e-12, bbSeries.middle.at(-1)!);
-				const prev5 = (bbSeries.upper.at(-6)! - bbSeries.lower.at(-6)!) / Math.max(1e-12, bbSeries.middle.at(-6)!);
-				if (!Number.isFinite(cur) || !Number.isFinite(prev5)) return null;
-				return cur > prev5 ? '拡大中' : cur < prev5 ? '収縮中' : '不変';
-			} catch {
-				return null;
-			}
-		})();
-		const sigmaHistory = (() => {
-			try {
-				if (!bbSeries.upper || !bbSeries.middle) return null;
-				const L = Math.min(candles.length, bbSeries.upper.length, bbSeries.middle.length);
-				if (L < 6) return null;
-				const idxs = [-6, -1];
-				const vals = idxs.map((off) => {
-					const c = Number(candles.at(off)?.close ?? NaN);
-					const m = Number(bbSeries.middle!.at(off) ?? NaN);
-					const u = Number(bbSeries.upper!.at(off) ?? NaN);
-					if (![c, m, u].every(Number.isFinite)) return null;
-					const z = Number(((2 * (c - m)) / Math.max(1e-12, u - m)).toFixed(2));
-					return { off, z };
-				});
-				return vals;
-			} catch {
-				return null;
-			}
-		})();
+		const bwTrend = calcBandWidthTrend(bbSeries);
+		const sigmaHistory = calcSigmaHistory(candles, bbSeries);
 		// Ichimoku extras: cloud thickness, chikou proxy, three signals, distance to cloud
 		const cloudThickness = cloudTop != null && cloudBot != null ? cloudTop - cloudBot : null;
 		const cloudThicknessPct =
 			cloudThickness != null && close != null && Number.isFinite(close)
-				? (cloudThickness / Math.max(1e-12, Number(close))) * 100
+				? (cloudThickness / Math.max(EPSILON, Number(close))) * 100
 				: null;
-		const chikouBull = (() => {
-			if (candles.length < 27 || close == null) return null;
-			const past = Number(candles.at(-27)?.close ?? NaN);
-			if (!Number.isFinite(past)) return null;
-			return Number(close) > past;
-		})();
-		const threeSignals = (() => {
-			const aboveCloud = cloudPos === 'above_cloud';
-			const convAboveBase = tenkan != null && kijun != null ? Number(tenkan) >= Number(kijun) : null;
-			const chikouAbove = chikouBull;
-			let judge: '三役好転' | '三役逆転' | '混在' = '混在';
-			if (aboveCloud && convAboveBase === true && chikouAbove === true) judge = '三役好転';
-			if (cloudPos === 'below_cloud' && convAboveBase === false && chikouAbove === false) judge = '三役逆転';
-			return { judge, aboveCloud, convAboveBase, chikouAbove };
-		})();
-		const toCloudDistance = (() => {
-			if (close == null || cloudTop == null || cloudBot == null) return null;
-			if (cloudPos === 'below_cloud') {
-				const need = cloudBot - Number(close);
-				return need > 0 ? (need / Math.max(1e-12, Number(close))) * 100 : 0;
-			}
-			if (cloudPos === 'above_cloud') {
-				const need = Number(close) - cloudTop;
-				return need > 0 ? (need / Math.max(1e-12, Number(close))) * 100 : 0;
-			}
-			return 0;
-		})();
+		const chikouBull = calcChikouBull(candles, close);
+		const threeSignals = calcThreeSignals(cloudPos, tenkan, kijun, chikouBull);
+		const toCloudDistance = calcCloudDistance(close, cloudTop, cloudBot, cloudPos);
 		// Simple cross info (SMA 25/75)
-		const crossInfo = (() => {
-			const s25 = Array.isArray(ind?.series?.SMA_25) ? ind.series.SMA_25 : null;
-			const s75 = Array.isArray(ind?.series?.SMA_75) ? ind.series.SMA_75 : null;
-			if (!s25 || !s75) return null;
-			const L = Math.min(s25.length, s75.length);
-			let lastIdx: number | null = null;
-			let t: 'golden' | 'dead' | null = null;
-			for (let i = L - 2; i >= 0; i--) {
-				const d0 = Number(s25[i]) - Number(s75[i]);
-				const d1 = Number(s25[i + 1]) - Number(s75[i + 1]);
-				if (![d0, d1].every(Number.isFinite)) continue;
-				if ((d0 < 0 && d1 > 0) || (d0 > 0 && d1 < 0)) {
-					lastIdx = i + 1;
-					t = d1 > 0 ? 'golden' : 'dead';
-					break;
-				}
-			}
-			if (lastIdx == null) return '直近クロス: なし';
-			return `直近クロス: ${t === 'golden' ? 'ゴールデン' : 'デッド'}（${L - 1 - lastIdx}本前）`;
-		})();
+		const crossInfo = findSmaCross(
+			Array.isArray(ind?.series?.SMA_25) ? ind.series.SMA_25 : null,
+			Array.isArray(ind?.series?.SMA_75) ? ind.series.SMA_75 : null,
+		);
 		// Stochastic RSI and OBV values
 		const stochK = ind.STOCH_RSI_K ?? null;
 		const stochD = ind.STOCH_RSI_D ?? null;
