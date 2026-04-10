@@ -39,3 +39,4 @@ npm run gen:types && npm run typecheck && npm test
 - `main` ブランチ保護。PR 経由でマージ。
 - `AGENTS.md` は `CLAUDE.md` への symlink。
 - `.cursorrules` は Cursor 評価エージェント専用の独立ファイル（symlink ではない）。
+  Cursor を使う場合は `.cursorrules` を参照すること。
