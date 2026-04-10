@@ -20,6 +20,7 @@ npm run typecheck           # tsc --noEmit
 
 - スキーマ変更は `src/schemas.ts`（Zod）を単一ソースとする
 - 全ツールは `Result<T, M>` パターン（`ok()` / `fail()`）で返す
+- `lib/` に共通ユーティリティがある処理は、外部ライブラリの直接利用や自前実装をせず `lib/` を使う
 
 ## リポジトリルール
 
