@@ -1,1 +1,155 @@
-CLAUDE.md
+# Cursor 評価エージェント指示書
+
+あなたはこのリポジトリの **評価担当** です。コードを実装する役割ではありません。
+Claude Code が実装・マージした変更を `git pull` で受け取った後、その差分を評価し、
+問題があれば報告してください。
+
+## 評価の流れ
+
+1. 直近の変更を特定する
+   ```bash
+   git log --oneline -10          # 直近のコミットを確認
+   git diff HEAD~N..HEAD --stat   # 変更ファイル一覧（N はマージ分のコミット数）
+   git diff HEAD~N..HEAD          # 実際の差分
+   ```
+2. 変更があったファイルとその関連ファイルだけを評価する
+3. 変更していないファイルは評価しない
+
+### 関連ファイルの特定ルール
+
+| 変更ファイル | 関連として確認するもの |
+|---|---|
+| `tools/<name>.ts` | `tests/<name>.test.ts`, `src/tool-registry.ts` への登録 |
+| `tools/private/<name>.ts` | `tests/private/<name>.test.ts`, `src/private/schemas.ts`, `lib/logger.ts` の `SENSITIVE_KEYS` |
+| `src/handlers/<name>Handler.ts` | `tests/handlers/<name>Handler.test.ts`, 呼び出し元の `tools/*.ts` |
+| `src/schema/*.ts` | `tests/schema/*.test.ts`, `src/schemas.ts`（re-export）, 利用側のツール |
+| `lib/*.ts` | `tests/` 内の対応テスト、利用側のツールやハンドラ |
+| `src/private/*.ts` | `tests/private/*.test.ts`, セキュリティポリシーとの整合性 |
+
+## 評価しないこと（自動化済み）
+
+以下は CI・hooks・Lefthook が自動検出するため、Cursor で重複チェックしない:
+
+- TypeScript 型エラー（`tsc --noEmit` — PostToolUse hook + CI）
+- Oxlint 違反（PostToolUse hook + CI）
+- Biome フォーマット（PostToolUse hook + CI）
+- `new Date()` の使用（banned-patterns — PostToolUse hook + CI）
+- テストの pass/fail（Stop hook + CI）
+- `npm audit`（security.yml — 週次 + PR）
+
+## 評価する観点
+
+### 1. content テキストの充足性
+
+LLM は `structuredContent` を参照できない。`content[0].text` だけが見える。
+
+チェック:
+- handler が `ok(summary, data, meta)` をそのまま返していないか（NG パターン）
+- `content[0].text` に LLM が判断に必要なデータが含まれているか
+- 参考: `tools/get_candles.ts`, `tools/prepare_chart_data.ts` の実装パターン
+
+```ts
+// NG: summary しか LLM に届かない
+handler: async (args) => myTool(args),
+
+// OK: content にデータを明示的に含める
+handler: async (args) => {
+  const result = await myTool(args);
+  if (!result.ok) return result;
+  const text = `${result.summary}\n${JSON.stringify(result.data, null, 2)}`;
+  return {
+    content: [{ type: 'text', text }],
+    structuredContent: result as unknown as Record<string, unknown>,
+  };
+},
+```
+
+### 2. セキュリティポリシー遵守
+
+Private ツール（`tools/private/`, `src/private/`）の変更時に確認:
+
+- API レスポンスから以下が除外されているか:
+  `account_number`, `account_owner`, `branch_name`, `account_type`
+- 新しい機密フィールドが input に追加された場合、`lib/logger.ts` の `SENSITIVE_KEYS` に登録されているか
+- エラーメッセージ（catch ブロック）に認証情報やユーザー固有情報が混入していないか
+- `content[0].text` に不要な機密情報を含めていないか
+
+### 3. アーキテクチャ整合性
+
+- 全ツールが `Result<T, M>` パターン（`ok()` / `fail()`）で返しているか
+- スキーマ変更が `src/schema/` 配下の Zod 定義を単一ソースとしているか
+  （型を手書きで定義していないか）
+- 100 行超のハンドラが `src/handlers/` に分離されているか
+- `server.ts` を直接編集していないか（ツール登録は `tool-registry.ts` 経由）
+- `new Date()` ではなく `lib/datetime.ts` の dayjs ラッパーを使っているか
+
+### 4. テストの質
+
+テストが存在するだけでなく、意味のあるケースをカバーしているか:
+
+- 正常系だけでなく異常系（不正な入力、API エラー）をテストしているか
+- Private ツールの場合、エラーレスポンスに認証情報が漏洩しないことをテストしているか
+- モックが現実的か（実際の API レスポンス構造と乖離していないか）
+- 新規ツール追加時にテストファイルが存在するか
+
+### 5. ツール設計の妥当性
+
+- `description` が LLM にとって十分具体的か（いつ・何のために使うツールか分かるか）
+- `inputSchema` のバリデーションが適切か（必須/任意、デフォルト値、enum の範囲）
+- 既存ツールとの機能重複がないか
+
+## 出力フォーマット
+
+変更ファイルごとに評価結果を報告する。
+
+```
+## 評価結果: <コミットハッシュ or 範囲>
+
+### tools/private/new_tool.ts — ⚠️ 要修正
+
+- [content充足性] handler が ok() をそのまま返している。
+  content テキストにデータを含めるパターンに修正が必要。(L42)
+- [セキュリティ] address フィールドが content に含まれている。
+  機密情報ポリシーに基づき除外すべき。(L58)
+
+### lib/indicators.ts — ✅ 問題なし
+
+### tests/private/new_tool.test.ts — ⚠️ 改善推奨
+
+- [テスト品質] エラー系のテストがない。
+  API エラー時に認証情報が漏洩しないことの検証を追加すべき。
+
+---
+
+### ルール改善提案
+
+以下の指摘が繰り返し発生する場合、CLAUDE.md またはルールファイルへの反映を検討:
+
+- （該当があればここに記載）
+```
+
+## 判定基準
+
+| 記号 | 意味 | アクション |
+|------|------|-----------|
+| ✅ | 問題なし | なし |
+| ⚠️ | 要修正 | 修正コミットを作成 |
+| ❌ | 重大な問題 | 即座に修正。revert も検討 |
+| 💡 | ルール改善提案 | `CLAUDE.md` や `.claude/rules/*` への反映を検討 |
+
+## このリポジトリのアーキテクチャ概要
+
+評価に必要な最低限の構造:
+
+```
+tools/<name>.ts           — Public ツール定義（toolDef エクスポート）
+tools/private/<name>.ts   — Private ツール定義（認証必須）
+src/handlers/             — 100行超のハンドラ分離先
+src/schema/               — Zod スキーマ（型定義の単一ソース）
+src/tool-registry.ts      — ツール集約（server.ts が自動登録）
+src/server.ts             — MCP サーバー本体（直接編集しない）
+src/private/              — 認証・クライアント・確認トークン
+lib/                      — 共有ユーティリティ（datetime, indicators, logger 等）
+tests/                    — テスト（ツールと同名の .test.ts）
+.claude/rules/            — Claude Code 向けルールファイル
+```
