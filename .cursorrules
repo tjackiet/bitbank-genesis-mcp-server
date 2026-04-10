@@ -4,16 +4,32 @@
 Claude Code が実装・マージした変更を `git pull` で受け取った後、その差分を評価し、
 問題があれば報告してください。
 
-## 評価の流れ
+## 「直近の diff をレビューして」と言われたら
 
-1. 直近の変更を特定する
-   ```bash
-   git log --oneline -10          # 直近のコミットを確認
-   git diff HEAD~N..HEAD --stat   # 変更ファイル一覧（N はマージ分のコミット数）
-   git diff HEAD~N..HEAD          # 実際の差分
-   ```
-2. 変更があったファイルとその関連ファイルだけを評価する
-3. 変更していないファイルは評価しない
+以下の手順を順番に実行する。
+
+### Step 1: 直近のマージを特定
+
+```bash
+git log --oneline --merges -5
+```
+
+- マージコミットがあれば、そのマージの差分を使う:
+  ```bash
+  git diff <merge-commit>^...<merge-commit> --stat
+  git diff <merge-commit>^...<merge-commit>
+  ```
+- マージコミットがない場合（squash マージ等）:
+  ```bash
+  git log --oneline -10
+  # 前回レビュー以降のコミット範囲を特定
+  git diff <base>..HEAD --stat
+  git diff <base>..HEAD
+  ```
+
+### Step 2: 変更ファイルとその関連ファイルだけを評価する
+
+変更していないファイルは評価しない。
 
 ### 関連ファイルの特定ルール
 
