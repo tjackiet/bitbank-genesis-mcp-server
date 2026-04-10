@@ -83,10 +83,6 @@ export const toolDef: ToolDefinition = {
 			[key: string]: unknown;
 		}>;
 
-		// フォーマット関数
-		const _formatVolume = formatVolumeJPY;
-		const _fmtPrice = formatPrice;
-
 		// normalize numeric fields（open/high/low 追加）
 		const norm = items.map((it) => {
 			const lastN = it?.last != null ? Number(it.last) : null;

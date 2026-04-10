@@ -11,6 +11,7 @@
  */
 
 import { nowIso, parseIso8601, toIsoMs } from '../../lib/datetime.js';
+import { getErrorMessage } from '../../lib/error.js';
 import { formatPrice } from '../../lib/formatter.js';
 import { fail, ok } from '../../lib/result.js';
 import { type BitbankPrivateClient, getDefaultClient, PrivateApiError } from '../../src/private/client.js';
@@ -31,8 +32,7 @@ async function tryGet<T>(
 		const data = await client.get<T>(path, params);
 		return { ok: true, data };
 	} catch (err) {
-		const msg = err instanceof Error ? err.message : String(err);
-		return { ok: false, error: msg };
+		return { ok: false, error: getErrorMessage(err) };
 	}
 }
 
