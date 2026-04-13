@@ -615,7 +615,6 @@ export function detectDoubles(ctx: DetectContext): DetectResult {
 						{ role: 'valley2', idx: c.idx, price: c.price },
 					],
 				});
-				continue;
 			}
 		}
 		// relaxed fallback for double top/bottom: single-stage factor 1.3
