@@ -17,7 +17,7 @@
 
 import { calcATR, deduplicatePatterns, finalizeConf } from './helpers.js';
 import { clamp01 } from './regression.js';
-import type { DetectContext, DetectResult, PatternEntry } from './types.js';
+import type { CandDebugEntry, DetectContext, DetectResult, PatternEntry } from './types.js';
 
 // ---------------------------------------------------------------------------
 // bars-per-day helper
@@ -162,6 +162,452 @@ function detectPole(
 	};
 }
 
+// ---------------------------------------------------------------------------
+// Shared type aliases
+// ---------------------------------------------------------------------------
+type RegLine = { slope: number; intercept: number; r2: number; valueAt: (x: number) => number };
+type SwingPoint = { idx: number; price: number };
+type LrWithR2Fn = (pts: Array<{ x: number; y: number }>) => RegLine;
+
+// ---------------------------------------------------------------------------
+// Robust regression helpers (extracted from detectTriangles inner function)
+// ---------------------------------------------------------------------------
+
+/** Find the index of the point with the largest absolute residual. */
+function findWorstResidualIdx(current: readonly SwingPoint[], line: Pick<RegLine, 'valueAt'>): number {
+	let worstIdx = 0;
+	let worstResidual = 0;
+	for (let j = 0; j < current.length; j++) {
+		const residual = Math.abs(current[j].price - line.valueAt(current[j].idx));
+		if (residual > worstResidual) {
+			worstResidual = residual;
+			worstIdx = j;
+		}
+	}
+	return worstIdx;
+}
+
+/**
+ * R²-based regression with robust outlier removal fallback.
+ * When initial R² is below threshold, iteratively remove the point
+ * with the largest residual and re-fit, keeping at least minPoints.
+ */
+function robustFit(
+	pts: SwingPoint[],
+	minPoints: number,
+	lrWithR2: LrWithR2Fn,
+	minR2: number,
+): { line: RegLine; filtered: SwingPoint[] } {
+	let current = [...pts];
+	let line = lrWithR2(current.map((p) => ({ x: p.idx, y: p.price })));
+	const maxRemovals = Math.max(0, pts.length - minPoints);
+	for (let r = 0; r < maxRemovals && line.r2 < minR2; r++) {
+		const worstIdx = findWorstResidualIdx(current, line);
+		current = current.filter((_, j) => j !== worstIdx);
+		if (current.length < minPoints) break;
+		line = lrWithR2(current.map((p) => ({ x: p.idx, y: p.price })));
+	}
+	return { line, filtered: current };
+}
+
+/**
+ * Flat-line fallback: when R² is low but points cluster around the same
+ * price level (low relative std deviation), use a horizontal line instead.
+ * Critical for descending triangles (flat support) and ascending triangles
+ * (flat resistance) where non-monotonic oscillation produces low R².
+ */
+function tryFlatFallback(line: RegLine, pts: readonly SwingPoint[], minR2: number, flatThreshold: number): RegLine {
+	if (line.r2 >= minR2) return line;
+	if (pts.length < 3) return line;
+	const mean = pts.reduce((s, p) => s + p.price, 0) / pts.length;
+	const variance = pts.reduce((s, p) => s + (p.price - mean) ** 2, 0) / pts.length;
+	const relStd = Math.sqrt(variance) / mean;
+	if (relStd >= flatThreshold) return line;
+	return {
+		slope: 0,
+		intercept: mean,
+		r2: clamp01(1 - relStd / flatThreshold),
+		valueAt: (_x: number) => mean,
+	};
+}
+
+// ---------------------------------------------------------------------------
+// Breakout detection
+// ---------------------------------------------------------------------------
+interface BreakoutResult {
+	breakoutIdx: number;
+	breakoutDirection: 'up' | 'down' | null;
+}
+
+/** Scan for triangle breakout (close exceeding trendline + ATR buffer). */
+function findTriangleBreakout(
+	candles: readonly { close: number }[],
+	upperLine: Pick<RegLine, 'valueAt'>,
+	lowerLine: Pick<RegLine, 'valueAt'>,
+	localATR: number,
+	scanStart: number,
+	lastIdx: number,
+): BreakoutResult {
+	for (let i = scanStart; i <= lastIdx; i++) {
+		const close = candles[i].close;
+		const uVal = upperLine.valueAt(i);
+		const lVal = lowerLine.valueAt(i);
+		if (close > uVal + localATR * 0.3) {
+			return { breakoutIdx: i, breakoutDirection: 'up' };
+		}
+		if (close < lVal - localATR * 0.3) {
+			return { breakoutIdx: i, breakoutDirection: 'down' };
+		}
+	}
+	return { breakoutIdx: -1, breakoutDirection: null };
+}
+
+// ---------------------------------------------------------------------------
+// Status determination (whipsaw + forming + apex proximity)
+// ---------------------------------------------------------------------------
+interface StatusResult {
+	status: 'completed' | 'invalid' | 'forming' | 'near_completion';
+	hasBreakout: boolean;
+	breakoutIdx: number;
+	breakoutDirection: 'up' | 'down' | null;
+	isExpectedBreakout: boolean;
+	resultEndIdx: number;
+	skip: boolean;
+}
+
+function determineTriangleStatus(
+	breakout: BreakoutResult,
+	candles: readonly { close: number }[],
+	upperLine: RegLine,
+	lowerLine: RegLine,
+	triangleType: 'triangle_ascending' | 'triangle_descending' | 'triangle_symmetrical',
+	patternEndIdx: number,
+	lastIdx: number,
+	winEnd: number,
+	windowSize: number,
+	includeForming: boolean,
+): StatusResult {
+	let { breakoutIdx, breakoutDirection } = breakout;
+	let hasBreakout = breakoutIdx !== -1;
+
+	// Whipsaw / false-breakout detection: if the breakout occurred but the
+	// latest candle's close is back inside the triangle boundaries, treat
+	// the breakout as a whipsaw and consider the pattern still forming.
+	if (hasBreakout && lastIdx > breakoutIdx) {
+		const latestClose = candles[lastIdx].close;
+		const uLatest = upperLine.valueAt(lastIdx);
+		const lLatest = lowerLine.valueAt(lastIdx);
+		if (latestClose > lLatest && latestClose < uLatest) {
+			hasBreakout = false;
+			breakoutIdx = -1;
+			breakoutDirection = null;
+		}
+	}
+
+	const resultEndIdx = hasBreakout ? breakoutIdx : patternEndIdx;
+	const expectedDirection: 'up' | 'down' | null =
+		triangleType === 'triangle_ascending' ? 'up' : triangleType === 'triangle_descending' ? 'down' : null;
+	const isExpectedBreakout = hasBreakout && (expectedDirection === null || breakoutDirection === expectedDirection);
+	const base = { hasBreakout, breakoutIdx, breakoutDirection, isExpectedBreakout, resultEndIdx };
+
+	if (hasBreakout) {
+		return { ...base, status: isExpectedBreakout ? 'completed' : 'invalid', skip: false };
+	}
+
+	// No breakout — skip old historical patterns that never broke out
+	if (lastIdx - winEnd > windowSize * 0.5) {
+		return { ...base, status: 'forming', skip: true };
+	}
+
+	// Check apex proximity for forming status
+	const slopeDiff = upperLine.slope - lowerLine.slope;
+	let status: StatusResult['status'] = 'forming';
+	if (Math.abs(slopeDiff) > 1e-12) {
+		const apexIdx = Math.round((lowerLine.intercept - upperLine.intercept) / slopeDiff);
+		const barsToApex = Math.max(0, apexIdx - lastIdx);
+		status = barsToApex <= 5 ? 'near_completion' : 'forming';
+	}
+
+	const skip = (status === 'forming' || status === 'near_completion') && !includeForming;
+	return { ...base, status, skip };
+}
+
+// ---------------------------------------------------------------------------
+// Pennant reclassification (Trendoscope 2-stage)
+// ---------------------------------------------------------------------------
+interface PennantInfo {
+	poleDirection: 'up' | 'down';
+	poleATRMult: number;
+	flagpoleHeight: number;
+	reclassifiedStartIso: string;
+	retracementRatio: number | undefined;
+	isTrendContinuation: boolean | undefined;
+}
+
+function buildPennantInfo(
+	candles: readonly { open: number; close: number; high: number; low: number; isoTime?: string }[],
+	peaks: readonly SwingPoint[],
+	valleys: readonly SwingPoint[],
+	winStart: number,
+	startIso: string,
+	tf: string,
+	hasBreakout: boolean,
+	breakoutDirection: 'up' | 'down' | null,
+): PennantInfo | null {
+	const pole = detectPole(candles, winStart, tf);
+	if (!pole) return null;
+
+	let reclassifiedStartIso = startIso;
+	const poleStartIso = candles[pole.poleStart]?.isoTime;
+	if (poleStartIso) reclassifiedStartIso = poleStartIso;
+
+	// Calculate retracement ratio: how much of the pole move has been retraced
+	const poleEndPrice = candles[pole.poleEnd].close;
+	const triHigh = Math.max(...peaks.map((p) => p.price));
+	const triLow = Math.min(...valleys.map((p) => p.price));
+
+	let retracementRatio: number | undefined;
+	if (pole.poleHeight > 0) {
+		retracementRatio =
+			pole.poleDirection === 'up'
+				? (poleEndPrice - triLow) / pole.poleHeight
+				: (triHigh - poleEndPrice) / pole.poleHeight;
+		retracementRatio = Math.max(0, Math.min(1, retracementRatio));
+	}
+
+	// ペナント失敗（ダマシ）は構造的には有効なパターンなので status は 'completed' のまま維持
+	// outcome で success/failure を区別する（'invalid' にすると includeInvalid フィルタで除外されてしまう）
+	let isTrendContinuation: boolean | undefined;
+	if (hasBreakout) {
+		isTrendContinuation = pole.poleDirection === breakoutDirection;
+	}
+
+	return {
+		poleDirection: pole.poleDirection,
+		poleATRMult: pole.atrMult,
+		flagpoleHeight: pole.poleHeight,
+		reclassifiedStartIso,
+		retracementRatio,
+		isTrendContinuation,
+	};
+}
+
+// ---------------------------------------------------------------------------
+// Result construction (scoring, pennant, target, entry, debug)
+// ---------------------------------------------------------------------------
+interface TriangleCandidateCtx {
+	candles: readonly { open: number; close: number; high: number; low: number; isoTime?: string }[];
+	triangleType: 'triangle_ascending' | 'triangle_descending' | 'triangle_symmetrical';
+	upperLine: RegLine;
+	lowerLine: RegLine;
+	upperRelSlope: number;
+	lowerRelSlope: number;
+	convergenceRatio: number;
+	gapStart: number;
+	peaks: SwingPoint[];
+	valleys: SwingPoint[];
+	filteredPeaks: SwingPoint[];
+	filteredValleys: SwingPoint[];
+	winStart: number;
+	winEnd: number;
+	startIso: string;
+	endIso: string;
+	status: StatusResult['status'];
+	hasBreakout: boolean;
+	breakoutIdx: number;
+	breakoutDirection: 'up' | 'down' | null;
+	isExpectedBreakout: boolean;
+	resultEndIdx: number;
+	lastIdx: number;
+	wantPennant: boolean;
+	tf: string;
+}
+
+function buildTriangleResult(c: TriangleCandidateCtx): { pattern: PatternEntry; debug: CandDebugEntry } {
+	const {
+		candles,
+		triangleType,
+		upperLine,
+		lowerLine,
+		upperRelSlope,
+		lowerRelSlope,
+		convergenceRatio,
+		gapStart,
+		peaks,
+		valleys,
+		filteredPeaks,
+		filteredValleys,
+		winStart,
+		winEnd,
+		startIso,
+		endIso,
+		status,
+		hasBreakout,
+		breakoutIdx,
+		breakoutDirection,
+		resultEndIdx,
+		lastIdx,
+		wantPennant,
+		tf,
+	} = c;
+
+	// --- Neckline for aftermath ---
+	const necklineLine =
+		triangleType === 'triangle_ascending'
+			? upperLine
+			: triangleType === 'triangle_descending'
+				? lowerLine
+				: breakoutDirection === 'down'
+					? lowerLine
+					: upperLine;
+	const neckline = [
+		{ x: winStart, y: Number(necklineLine.valueAt(winStart).toFixed(2)) },
+		{ x: winEnd, y: Number(necklineLine.valueAt(winEnd).toFixed(2)) },
+	];
+
+	// --- Scoring ---
+	const fitScore = (upperLine.r2 + lowerLine.r2) / 2;
+	const convScore = clamp01((1 - convergenceRatio) / 0.5);
+	const touchScore = clamp01((filteredPeaks.length + filteredValleys.length) / 8);
+	const symScore =
+		triangleType === 'triangle_symmetrical'
+			? clamp01(
+					1 -
+						Math.abs(Math.abs(upperRelSlope) - Math.abs(lowerRelSlope)) /
+							Math.max(1e-12, Math.abs(upperRelSlope) + Math.abs(lowerRelSlope)),
+				)
+			: 0.5;
+	const baseScore = fitScore * 0.25 + convScore * 0.25 + touchScore * 0.3 + symScore * 0.2;
+	const confidence = finalizeConf(baseScore, triangleType);
+
+	// Pivot points
+	const allPivots = [
+		...peaks.map((p) => ({ idx: p.idx, price: p.price, kind: 'H' as const })),
+		...valleys.map((p) => ({ idx: p.idx, price: p.price, kind: 'L' as const })),
+	].sort((a, b) => a.idx - b.idx);
+
+	// --- Pennant reclassification ---
+	const pennant = wantPennant
+		? buildPennantInfo(candles, peaks, valleys, winStart, startIso, tf, hasBreakout, breakoutDirection)
+		: null;
+	const finalType: string = pennant ? 'pennant' : triangleType;
+	const reclassifiedStartIso = pennant?.reclassifiedStartIso ?? startIso;
+	const poleDirection = pennant?.poleDirection;
+	const poleATRMult = pennant?.poleATRMult;
+	const flagpoleHeight = pennant?.flagpoleHeight;
+	const retracementRatio = pennant?.retracementRatio;
+	const isTrendContinuation = pennant?.isTrendContinuation;
+
+	// Confidence adjustment for pennants
+	let finalConfidence: number;
+	if (finalType === 'pennant') {
+		let pennantScore = baseScore * 0.9 + clamp01((poleATRMult ?? 0) / 6) * 0.05;
+		if (retracementRatio !== undefined && retracementRatio > 0.38) {
+			const penalty = Math.min(0.15, (retracementRatio - 0.38) * 0.25);
+			pennantScore -= penalty;
+		}
+		finalConfidence = finalizeConf(Math.max(0, pennantScore), 'pennant');
+	} else {
+		finalConfidence = confidence;
+	}
+
+	// --- ターゲット価格計算 ---
+	const patternHeight = gapStart;
+	let breakoutTarget: number | undefined;
+	let targetReachedPct: number | undefined;
+	let targetMethod: 'flagpole_projection' | 'pattern_height' | undefined;
+	if (hasBreakout && breakoutDirection) {
+		const bp = candles[breakoutIdx].close;
+		if (finalType === 'pennant' && flagpoleHeight !== undefined) {
+			breakoutTarget = breakoutDirection === 'up' ? bp + flagpoleHeight : bp - flagpoleHeight;
+			targetMethod = 'flagpole_projection';
+		} else {
+			breakoutTarget = breakoutDirection === 'up' ? bp + patternHeight : bp - patternHeight;
+			targetMethod = 'pattern_height';
+		}
+		breakoutTarget = Math.round(breakoutTarget);
+		const curPrice = Number(candles[lastIdx]?.close);
+		if (Number.isFinite(curPrice) && Math.abs(breakoutTarget - bp) > 1e-12) {
+			targetReachedPct = Math.round(((curPrice - bp) / (breakoutTarget - bp)) * 100);
+		}
+	}
+
+	// --- 用語正規化ラベル ---
+	let trendlineLabel: string | undefined;
+	if (finalType === 'pennant') {
+		trendlineLabel = 'コンソリデーション境界線';
+	} else if (triangleType === 'triangle_ascending') {
+		trendlineLabel = '上限トレンドライン（レジスタンス）';
+	} else if (triangleType === 'triangle_descending') {
+		trendlineLabel = '下限トレンドライン（サポート）';
+	} else {
+		trendlineLabel = 'トレンドライン（ブレイク側）';
+	}
+
+	const pattern: PatternEntry = {
+		type: finalType,
+		confidence: finalConfidence,
+		range: { start: reclassifiedStartIso, end: endIso },
+		status,
+		pivots: allPivots,
+		neckline,
+		trendlineLabel,
+		breakoutDirection: breakoutDirection ?? undefined,
+		outcome: hasBreakout
+			? finalType === 'pennant'
+				? isTrendContinuation
+					? 'success'
+					: 'failure'
+				: status === 'completed'
+					? 'success'
+					: 'failure'
+			: undefined,
+		breakoutBarIndex: hasBreakout ? breakoutIdx : undefined,
+		...(breakoutTarget !== undefined ? { breakoutTarget, targetMethod } : {}),
+		...(targetReachedPct !== undefined ? { targetReachedPct } : {}),
+		...(poleDirection
+			? {
+					poleDirection,
+					priorTrendDirection: poleDirection === 'up' ? 'bullish' : 'bearish',
+					...(flagpoleHeight !== undefined ? { flagpoleHeight: Math.round(flagpoleHeight) } : {}),
+					...(retracementRatio !== undefined ? { retracementRatio: Number(retracementRatio.toFixed(2)) } : {}),
+					...(isTrendContinuation !== undefined ? { isTrendContinuation } : {}),
+				}
+			: {}),
+	};
+
+	const debug: CandDebugEntry = {
+		type: finalType,
+		accepted: true,
+		reason: finalType === 'pennant' ? 'reclassified_from_triangle' : 'detected',
+		indices: [winStart, resultEndIdx],
+		details: {
+			convergenceRatio: Number(convergenceRatio.toFixed(3)),
+			r2Upper: Number(upperLine.r2.toFixed(3)),
+			r2Lower: Number(lowerLine.r2.toFixed(3)),
+			upperRelSlope: Number(upperRelSlope.toFixed(4)),
+			lowerRelSlope: Number(lowerRelSlope.toFixed(4)),
+			touchCount: filteredPeaks.length + filteredValleys.length,
+			outlierPeaksRemoved: peaks.length - filteredPeaks.length,
+			outlierValleysRemoved: valleys.length - filteredValleys.length,
+			breakout: hasBreakout ? { idx: breakoutIdx, direction: breakoutDirection } : null,
+			status,
+			confidence: finalConfidence,
+			...(poleDirection
+				? {
+						poleDirection,
+						poleATRMult: Number((poleATRMult ?? 0).toFixed(2)),
+						...(flagpoleHeight !== undefined ? { flagpoleHeight: Math.round(flagpoleHeight) } : {}),
+						...(retracementRatio !== undefined ? { retracementRatio: Number(retracementRatio.toFixed(2)) } : {}),
+						...(isTrendContinuation !== undefined ? { isTrendContinuation } : {}),
+					}
+				: {}),
+		},
+	};
+
+	return { pattern, debug };
+}
+
 export function detectTriangles(ctx: DetectContext): DetectResult {
 	const { candles, want, includeForming, debugCandidates, lrWithR2 } = ctx;
 	const type = ctx.type;
@@ -218,67 +664,12 @@ export function detectTriangles(ctx: DetectContext): DetectResult {
 
 			if (peaks.length < 2 || valleys.length < 2) continue;
 
-			// R²-based regression with robust outlier removal fallback.
-			// When initial R² is below threshold, iteratively remove the point
-			// with the largest residual and re-fit, keeping at least 3 points.
-			// This handles noisy relaxed-swing valleys that don't sit on the
-			// true support/resistance line (common in descending/ascending triangles).
-			const robustFit = (
-				pts: Array<{ idx: number; price: number }>,
-				minPoints: number,
-			): { line: ReturnType<typeof lrWithR2>; filtered: typeof pts } => {
-				let current = [...pts];
-				let line = lrWithR2(current.map((p) => ({ x: p.idx, y: p.price })));
-				const maxRemovals = Math.max(0, pts.length - minPoints);
-				for (let r = 0; r < maxRemovals && line.r2 < params.minR2; r++) {
-					// Find point with largest absolute residual
-					let worstIdx = 0;
-					let worstResidual = 0;
-					for (let j = 0; j < current.length; j++) {
-						const residual = Math.abs(current[j].price - line.valueAt(current[j].idx));
-						if (residual > worstResidual) {
-							worstResidual = residual;
-							worstIdx = j;
-						}
-					}
-					current = current.filter((_, j) => j !== worstIdx);
-					if (current.length < minPoints) break;
-					line = lrWithR2(current.map((p) => ({ x: p.idx, y: p.price })));
-				}
-				return { line, filtered: current };
-			};
-
 			const minPtsForFit = 3;
-			let { line: upperLine, filtered: filteredPeaks } = robustFit(peaks, minPtsForFit);
-			let { line: lowerLine, filtered: filteredValleys } = robustFit(valleys, minPtsForFit);
+			let { line: upperLine, filtered: filteredPeaks } = robustFit(peaks, minPtsForFit, lrWithR2, params.minR2);
+			let { line: lowerLine, filtered: filteredValleys } = robustFit(valleys, minPtsForFit, lrWithR2, params.minR2);
 
-			// Flat-line fallback: when R² is low but points cluster around the same
-			// price level (low relative std deviation), use a horizontal line instead.
-			// This is critical for descending triangles (flat support) and ascending
-			// triangles (flat resistance) where non-monotonic oscillation around a
-			// level produces artificially low R² despite genuine flatness.
-			const tryFlatFallback = (
-				line: ReturnType<typeof lrWithR2>,
-				pts: Array<{ idx: number; price: number }>,
-			): ReturnType<typeof lrWithR2> => {
-				if (line.r2 >= params.minR2 || pts.length < 3) return line;
-				const mean = pts.reduce((s, p) => s + p.price, 0) / pts.length;
-				const variance = pts.reduce((s, p) => s + (p.price - mean) ** 2, 0) / pts.length;
-				const relStd = Math.sqrt(variance) / mean;
-				if (relStd < params.flatThreshold) {
-					// Points are level enough — use horizontal fit
-					return {
-						slope: 0,
-						intercept: mean,
-						r2: clamp01(1 - relStd / params.flatThreshold),
-						valueAt: (_x: number) => mean,
-					};
-				}
-				return line;
-			};
-
-			upperLine = tryFlatFallback(upperLine, filteredPeaks);
-			lowerLine = tryFlatFallback(lowerLine, filteredValleys);
+			upperLine = tryFlatFallback(upperLine, filteredPeaks, params.minR2, params.flatThreshold);
+			lowerLine = tryFlatFallback(lowerLine, filteredValleys, params.minR2, params.flatThreshold);
 
 			if (upperLine.r2 < params.minR2 || lowerLine.r2 < params.minR2) {
 				debugCandidates.push({
@@ -361,272 +752,65 @@ export function detectTriangles(ctx: DetectContext): DetectResult {
 				filteredValleys[filteredValleys.length - 1].idx,
 			);
 
-			let breakoutIdx = -1;
-			let breakoutDirection: 'up' | 'down' | null = null;
-
-			// Scan from 50% into the pattern (triangle breakout typically happens in latter half)
 			const scanStart = winStart + Math.max(3, Math.floor(barsSpan * 0.5));
-			for (let i = scanStart; i <= lastIdx; i++) {
-				const close = candles[i].close;
-				const uVal = upperLine.valueAt(i);
-				const lVal = lowerLine.valueAt(i);
+			let { breakoutIdx, breakoutDirection } = findTriangleBreakout(
+				candles,
+				upperLine,
+				lowerLine,
+				localATR,
+				scanStart,
+				lastIdx,
+			);
 
-				if (close > uVal + localATR * 0.3) {
-					breakoutIdx = i;
-					breakoutDirection = 'up';
-					break;
-				}
-				if (close < lVal - localATR * 0.3) {
-					breakoutIdx = i;
-					breakoutDirection = 'down';
-					break;
-				}
-			}
-
-			// --- Status determination ---
-			let hasBreakout = breakoutIdx !== -1;
-
-			// Whipsaw / false-breakout detection: if the breakout occurred but the
-			// latest candle's close is back inside the triangle boundaries, treat
-			// the breakout as a whipsaw and consider the pattern still forming.
-			let _isWhipsaw = false;
-			if (hasBreakout && lastIdx > breakoutIdx) {
-				const latestClose = candles[lastIdx].close;
-				const uLatest = upperLine.valueAt(lastIdx);
-				const lLatest = lowerLine.valueAt(lastIdx);
-				if (latestClose > lLatest && latestClose < uLatest) {
-					_isWhipsaw = true;
-					hasBreakout = false;
-					breakoutIdx = -1;
-					breakoutDirection = null;
-				}
-			}
-
-			const resultEndIdx = hasBreakout ? breakoutIdx : patternEndIdx;
-
-			// Expected breakout direction by type
-			const expectedDirection: 'up' | 'down' | null =
-				triangleType === 'triangle_ascending' ? 'up' : triangleType === 'triangle_descending' ? 'down' : null; // symmetrical: either direction is valid
-
-			const isExpectedBreakout = hasBreakout && (expectedDirection === null || breakoutDirection === expectedDirection);
-
-			let status: 'completed' | 'invalid' | 'forming' | 'near_completion';
-			if (hasBreakout) {
-				status = isExpectedBreakout ? 'completed' : 'invalid';
-			} else {
-				// No breakout — skip old historical patterns that never broke out
-				if (lastIdx - winEnd > windowSize * 0.5) continue;
-
-				// Check apex proximity for forming status
-				const slopeDiff = upperLine.slope - lowerLine.slope;
-				if (Math.abs(slopeDiff) > 1e-12) {
-					const apexIdx = Math.round((lowerLine.intercept - upperLine.intercept) / slopeDiff);
-					const barsToApex = Math.max(0, apexIdx - lastIdx);
-					status = barsToApex <= 5 ? 'near_completion' : 'forming';
-				} else {
-					status = 'forming';
-				}
-			}
-
-			// Skip forming if not requested
-			if ((status === 'forming' || status === 'near_completion') && !includeForming) continue;
+			const statusResult = determineTriangleStatus(
+				{ breakoutIdx, breakoutDirection },
+				candles,
+				upperLine,
+				lowerLine,
+				triangleType,
+				patternEndIdx,
+				lastIdx,
+				winEnd,
+				windowSize,
+				includeForming,
+			);
+			if (statusResult.skip) continue;
+			const { status, hasBreakout, isExpectedBreakout, resultEndIdx } = statusResult;
+			({ breakoutIdx, breakoutDirection } = statusResult);
 
 			const startIso = candles[winStart]?.isoTime;
 			const endIso = candles[resultEndIdx]?.isoTime;
 			if (!startIso || !endIso) continue;
 
-			// --- Neckline for aftermath ---
-			// ascending: upper (flat) line / descending: lower (flat) line / symmetrical: breakout side
-			const necklineLine =
-				triangleType === 'triangle_ascending'
-					? upperLine
-					: triangleType === 'triangle_descending'
-						? lowerLine
-						: breakoutDirection === 'down'
-							? lowerLine
-							: upperLine;
-
-			const neckline = [
-				{ x: winStart, y: Number(necklineLine.valueAt(winStart).toFixed(2)) },
-				{ x: winEnd, y: Number(necklineLine.valueAt(winEnd).toFixed(2)) },
-			];
-
-			// --- Scoring ---
-			const fitScore = (upperLine.r2 + lowerLine.r2) / 2;
-			const convScore = clamp01((1 - convergenceRatio) / 0.5);
-			const touchScore = clamp01((filteredPeaks.length + filteredValleys.length) / 8);
-			// Symmetry: how close are the two slope magnitudes? (relevant for symmetrical type)
-			const symScore =
-				triangleType === 'triangle_symmetrical'
-					? clamp01(
-							1 -
-								Math.abs(Math.abs(upperRelSlope) - Math.abs(lowerRelSlope)) /
-									Math.max(1e-12, Math.abs(upperRelSlope) + Math.abs(lowerRelSlope)),
-						)
-					: 0.5; // neutral for asc/desc
-
-			const baseScore = fitScore * 0.25 + convScore * 0.25 + touchScore * 0.3 + symScore * 0.2;
-			const confidence = finalizeConf(baseScore, triangleType);
-
-			const _outcome = hasBreakout ? (isExpectedBreakout ? 'success' : 'failure') : undefined;
-
-			// Pivot points for aftermath target calculation
-			const allPivots = [
-				...peaks.map((p) => ({ idx: p.idx, price: p.price, kind: 'H' as const })),
-				...valleys.map((p) => ({ idx: p.idx, price: p.price, kind: 'L' as const })),
-			].sort((a, b) => a.idx - b.idx);
-
-			// --- Trendoscope 2-stage: pole detection → pennant reclassification ---
-			let finalType: string = triangleType;
-			let poleDirection: 'up' | 'down' | undefined;
-			let poleATRMult: number | undefined;
-			let reclassifiedStartIso = startIso;
-			let flagpoleHeight: number | undefined;
-			let retracementRatio: number | undefined;
-			let isTrendContinuation: boolean | undefined;
-
-			if (wantPennant) {
-				const pole = detectPole(candles, winStart, type);
-				if (pole) {
-					finalType = 'pennant';
-					poleDirection = pole.poleDirection;
-					poleATRMult = pole.atrMult;
-					flagpoleHeight = pole.poleHeight;
-
-					// Extend range start to pole start
-					const poleStartIso = candles[pole.poleStart]?.isoTime;
-					if (poleStartIso) reclassifiedStartIso = poleStartIso;
-
-					// Calculate retracement ratio: how much of the pole move has been retraced
-					const poleEndPrice = candles[pole.poleEnd].close;
-					const triHigh = Math.max(...peaks.map((p) => p.price));
-					const triLow = Math.min(...valleys.map((p) => p.price));
-					if (pole.poleHeight > 0) {
-						retracementRatio =
-							pole.poleDirection === 'up'
-								? (poleEndPrice - triLow) / pole.poleHeight
-								: (triHigh - poleEndPrice) / pole.poleHeight;
-						retracementRatio = Math.max(0, Math.min(1, retracementRatio));
-					}
-
-					// Set isTrendContinuation for pennant
-					// ペナント失敗（ダマシ）は構造的には有効なパターンなので status は 'completed' のまま維持
-					// outcome で success/failure を区別する（'invalid' にすると includeInvalid フィルタで除外されてしまう）
-					if (hasBreakout) {
-						isTrendContinuation = pole.poleDirection === breakoutDirection;
-					}
-				}
-			}
-
-			// Confidence adjustment for pennants
-			let finalConfidence: number;
-			if (finalType === 'pennant') {
-				let pennantScore = baseScore * 0.9 + clamp01((poleATRMult ?? 0) / 6) * 0.05;
-				// Retracement penalty: >38% retracement reduces confidence (more triangle-like)
-				if (retracementRatio !== undefined && retracementRatio > 0.38) {
-					const penalty = Math.min(0.15, (retracementRatio - 0.38) * 0.25);
-					pennantScore -= penalty;
-				}
-				finalConfidence = finalizeConf(Math.max(0, pennantScore), 'pennant');
-			} else {
-				finalConfidence = confidence;
-			}
-
-			// --- ターゲット価格計算 ---
-			const patternHeight = gapStart; // パターン入口の高さ
-			let breakoutTarget: number | undefined;
-			let targetReachedPct: number | undefined;
-			let targetMethod: 'flagpole_projection' | 'pattern_height' | undefined;
-			if (hasBreakout && breakoutDirection) {
-				const bp = candles[breakoutIdx].close;
-				if (finalType === 'pennant' && flagpoleHeight !== undefined) {
-					// ペナント: フラッグポール投影
-					breakoutTarget = breakoutDirection === 'up' ? bp + flagpoleHeight : bp - flagpoleHeight;
-					targetMethod = 'flagpole_projection';
-				} else {
-					// トライアングル: パターン高さ投影
-					breakoutTarget = breakoutDirection === 'up' ? bp + patternHeight : bp - patternHeight;
-					targetMethod = 'pattern_height';
-				}
-				breakoutTarget = Math.round(breakoutTarget);
-				const curPrice = Number(candles[lastIdx]?.close);
-				if (Number.isFinite(curPrice) && Math.abs(breakoutTarget - bp) > 1e-12) {
-					targetReachedPct = Math.round(((curPrice - bp) / (breakoutTarget - bp)) * 100);
-				}
-			}
-
-			// --- 用語正規化ラベル ---
-			let trendlineLabel: string | undefined;
-			if (finalType === 'pennant') {
-				trendlineLabel = 'コンソリデーション境界線';
-			} else if (triangleType === 'triangle_ascending') {
-				trendlineLabel = '上限トレンドライン（レジスタンス）';
-			} else if (triangleType === 'triangle_descending') {
-				trendlineLabel = '下限トレンドライン（サポート）';
-			} else {
-				trendlineLabel = 'トレンドライン（ブレイク側）';
-			}
-
-			patterns.push({
-				type: finalType,
-				confidence: finalConfidence,
-				range: { start: reclassifiedStartIso, end: endIso },
+			const { pattern, debug } = buildTriangleResult({
+				candles,
+				triangleType,
+				upperLine,
+				lowerLine,
+				upperRelSlope,
+				lowerRelSlope,
+				convergenceRatio,
+				gapStart,
+				peaks,
+				valleys,
+				filteredPeaks,
+				filteredValleys,
+				winStart,
+				winEnd,
+				startIso,
+				endIso,
 				status,
-				pivots: allPivots,
-				neckline,
-				trendlineLabel,
-				breakoutDirection: breakoutDirection ?? undefined,
-				outcome: hasBreakout
-					? finalType === 'pennant'
-						? isTrendContinuation
-							? 'success'
-							: 'failure'
-						: status === 'completed'
-							? 'success'
-							: 'failure'
-					: undefined,
-				breakoutBarIndex: hasBreakout ? breakoutIdx : undefined,
-				...(breakoutTarget !== undefined ? { breakoutTarget, targetMethod } : {}),
-				...(targetReachedPct !== undefined ? { targetReachedPct } : {}),
-				...(poleDirection
-					? {
-							poleDirection,
-							priorTrendDirection: poleDirection === 'up' ? 'bullish' : 'bearish',
-							...(flagpoleHeight !== undefined ? { flagpoleHeight: Math.round(flagpoleHeight) } : {}),
-							...(retracementRatio !== undefined ? { retracementRatio: Number(retracementRatio.toFixed(2)) } : {}),
-							...(isTrendContinuation !== undefined ? { isTrendContinuation } : {}),
-						}
-					: {}),
+				hasBreakout,
+				breakoutIdx,
+				breakoutDirection,
+				isExpectedBreakout,
+				resultEndIdx,
+				lastIdx,
+				wantPennant,
+				tf: type,
 			});
-
-			debugCandidates.push({
-				type: finalType,
-				accepted: true,
-				reason: finalType === 'pennant' ? 'reclassified_from_triangle' : 'detected',
-				indices: [winStart, resultEndIdx],
-				details: {
-					convergenceRatio: Number(convergenceRatio.toFixed(3)),
-					r2Upper: Number(upperLine.r2.toFixed(3)),
-					r2Lower: Number(lowerLine.r2.toFixed(3)),
-					upperRelSlope: Number(upperRelSlope.toFixed(4)),
-					lowerRelSlope: Number(lowerRelSlope.toFixed(4)),
-					touchCount: filteredPeaks.length + filteredValleys.length,
-					outlierPeaksRemoved: peaks.length - filteredPeaks.length,
-					outlierValleysRemoved: valleys.length - filteredValleys.length,
-					breakout: hasBreakout ? { idx: breakoutIdx, direction: breakoutDirection } : null,
-					status,
-					confidence: finalConfidence,
-					...(poleDirection
-						? {
-								poleDirection,
-								poleATRMult: Number((poleATRMult ?? 0).toFixed(2)),
-								...(flagpoleHeight !== undefined ? { flagpoleHeight: Math.round(flagpoleHeight) } : {}),
-								...(retracementRatio !== undefined ? { retracementRatio: Number(retracementRatio.toFixed(2)) } : {}),
-								...(isTrendContinuation !== undefined ? { isTrendContinuation } : {}),
-							}
-						: {}),
-				},
-			});
+			patterns.push(pattern);
+			debugCandidates.push(debug);
 		}
 	}
 
