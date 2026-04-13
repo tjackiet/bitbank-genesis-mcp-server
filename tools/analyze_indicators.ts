@@ -303,6 +303,254 @@ function createChartData(
 	};
 }
 
+function computeAllIndicators(normalized: Candle[]): GetIndicatorsData['indicators'] {
+	const allHighs = normalized.map((c) => c.high);
+	const allLows = normalized.map((c) => c.low);
+	const allCloses = normalized.map((c) => c.close);
+
+	const rsi14_series = rsi(allCloses, RSI_PERIOD);
+	const macdSeries = macd(allCloses, MACD_FAST, MACD_SLOW, MACD_SIGNAL);
+	const bb1 = bollingerBands(allCloses, BB_PERIOD, 1);
+	const bb2Val = bollingerBands(allCloses, BB_PERIOD, BB_STDDEV);
+	const bb3 = bollingerBands(allCloses, BB_PERIOD, 3);
+	const ichi = ichimokuSeries(allHighs, allLows, allCloses);
+	const sma_5_series = sma(allCloses, 5);
+	const sma_20_series = sma(allCloses, 20);
+	const sma_25_series = sma(allCloses, 25);
+	const sma_50_series = sma(allCloses, 50);
+	const sma_75_series = sma(allCloses, 75);
+	const sma_200_series = sma(allCloses, 200);
+	const ema_12_series = ema(allCloses, 12);
+	const ema_26_series = ema(allCloses, 26);
+	const ema_50_series = ema(allCloses, 50);
+	const ema_200_series = ema(allCloses, 200);
+
+	const ichiSimple = ichimoku(allHighs, allLows, allCloses);
+	const stoch = computeClassicStochastic(allHighs, allLows, allCloses, STOCH_PERIOD, STOCH_SMOOTH_K, STOCH_SMOOTH_D);
+	const stochRsi = computeStochRSI(allCloses, RSI_PERIOD, STOCH_PERIOD, STOCH_SMOOTH_K, STOCH_SMOOTH_D);
+	const obvResult = computeOBV(normalized, OBV_SMA_PERIOD);
+
+	return {
+		SMA_5: sma_5_series.at(-1),
+		SMA_20: sma_20_series.at(-1),
+		SMA_25: sma_25_series.at(-1),
+		SMA_50: sma_50_series.at(-1),
+		SMA_75: sma_75_series.at(-1),
+		SMA_200: sma_200_series.at(-1),
+		RSI_14: rsi14_series.at(-1),
+		RSI_14_series: rsi14_series,
+		BB_upper: bb2Val.upper.at(-1),
+		BB_middle: bb2Val.middle.at(-1),
+		BB_lower: bb2Val.lower.at(-1),
+		BB1_upper: bb1.upper.at(-1),
+		BB1_middle: bb1.middle.at(-1),
+		BB1_lower: bb1.lower.at(-1),
+		BB2_upper: bb2Val.upper.at(-1),
+		BB2_middle: bb2Val.middle.at(-1),
+		BB2_lower: bb2Val.lower.at(-1),
+		BB3_upper: bb3.upper.at(-1),
+		BB3_middle: bb3.middle.at(-1),
+		BB3_lower: bb3.lower.at(-1),
+		bb1_series: bb1,
+		bb2_series: bb2Val,
+		bb3_series: bb3,
+		ichi_series: ichi,
+		macd_series: macdSeries,
+		sma_5_series,
+		sma_20_series,
+		sma_25_series,
+		sma_50_series,
+		sma_75_series,
+		sma_200_series,
+		EMA_12: ema_12_series.at(-1),
+		EMA_26: ema_26_series.at(-1),
+		EMA_50: ema_50_series.at(-1),
+		EMA_200: ema_200_series.at(-1),
+		ema_12_series,
+		ema_26_series,
+		ema_50_series,
+		ema_200_series,
+		MACD_line: macdSeries.line.at(-1),
+		MACD_signal: macdSeries.signal.at(-1),
+		MACD_hist: macdSeries.hist.at(-1),
+		...(ichiSimple
+			? {
+					ICHIMOKU_conversion: ichiSimple.conversion,
+					ICHIMOKU_base: ichiSimple.base,
+					ICHIMOKU_spanA: ichiSimple.spanA,
+					ICHIMOKU_spanB: ichiSimple.spanB,
+				}
+			: {}),
+		STOCH_K: stoch.k,
+		STOCH_D: stoch.d,
+		STOCH_prevK: stoch.prevK,
+		STOCH_prevD: stoch.prevD,
+		stoch_k_series: stoch.kSeries,
+		stoch_d_series: stoch.dSeries,
+		STOCH_RSI_K: stochRsi.k,
+		STOCH_RSI_D: stochRsi.d,
+		STOCH_RSI_prevK: stochRsi.prevK,
+		STOCH_RSI_prevD: stochRsi.prevD,
+		OBV: obvResult.obv,
+		OBV_SMA20: obvResult.obvSma,
+		OBV_prevObv: obvResult.prevObv,
+		OBV_trend: obvResult.trend,
+	};
+}
+
+function buildWarnings(dataLength: number, candleCount: number): string[] {
+	const warnings: string[] = [];
+	if (dataLength < 5) warnings.push('SMA_5: データ不足');
+	if (dataLength < 20) warnings.push('SMA_20: データ不足');
+	if (dataLength < 25) warnings.push('SMA_25: データ不足');
+	if (dataLength < 50) warnings.push('SMA_50: データ不足');
+	if (dataLength < 75) warnings.push('SMA_75: データ不足');
+	if (dataLength < 200) warnings.push('SMA_200: データ不足');
+	if (dataLength < 12) warnings.push('EMA_12: データ不足');
+	if (dataLength < 26) warnings.push('EMA_26: データ不足');
+	if (dataLength < 50) warnings.push('EMA_50: データ不足');
+	if (dataLength < 200) warnings.push('EMA_200: データ不足');
+	if (dataLength < 15) warnings.push('RSI_14: データ不足');
+	if (dataLength < 20) warnings.push('Bollinger_Bands: データ不足');
+	if (dataLength < 52) warnings.push('Ichimoku: データ不足');
+	if (dataLength < 20) warnings.push('Stochastic: データ不足');
+	if (dataLength < 34) warnings.push('StochRSI: データ不足');
+	if (candleCount < 2) warnings.push('OBV: データ不足');
+	return warnings;
+}
+
+function padSeriesLengths(chartIndicators: Record<string, unknown>, targetLength: number): void {
+	const keys = [
+		'SMA_5',
+		'SMA_20',
+		'SMA_25',
+		'SMA_50',
+		'SMA_75',
+		'SMA_200',
+		'EMA_12',
+		'EMA_26',
+		'EMA_50',
+		'EMA_200',
+		'BB_upper',
+		'BB_middle',
+		'BB_lower',
+		'BB1_upper',
+		'BB1_middle',
+		'BB1_lower',
+		'BB2_upper',
+		'BB2_middle',
+		'BB2_lower',
+		'BB3_upper',
+		'BB3_middle',
+		'BB3_lower',
+		'ICHI_tenkan',
+		'ICHI_kijun',
+		'ICHI_spanA',
+		'ICHI_spanB',
+		'ICHI_chikou',
+		'RSI_14_series',
+		'stoch_k_series',
+		'stoch_d_series',
+	];
+	keys.forEach((k) => {
+		const arr = chartIndicators[k] as NumericSeries | undefined;
+		if (!Array.isArray(arr)) return;
+		if (arr.length === targetLength) return;
+		if (arr.length < targetLength) {
+			const pad = Array.from<null>({ length: targetLength - arr.length }).fill(null);
+			(chartIndicators[k] as NumericSeries) = [...arr, ...pad];
+		} else {
+			(chartIndicators[k] as NumericSeries) = arr.slice(-targetLength);
+		}
+	});
+}
+
+function buildIndicatorsSummaryText(opts: {
+	pair: string;
+	type: string;
+	indicators: GetIndicatorsData['indicators'];
+	allCloses: number[];
+	rsi14_series: NumericSeries;
+	sma_25_series: NumericSeries;
+	sma_75_series: NumericSeries;
+	bb2: { upper: NumericSeries; middle: NumericSeries; lower: NumericSeries };
+	trend: TrendLabel;
+	normalized: Candle[];
+	displayCount: number;
+}): string {
+	const {
+		pair,
+		type,
+		indicators,
+		allCloses,
+		rsi14_series: rsi14_s,
+		sma_25_series: sma25_s,
+		sma_75_series: sma75_s,
+		bb2: bb2_s,
+		trend,
+		normalized,
+		displayCount,
+	} = opts;
+
+	const latestIndicators: Record<string, number | null | undefined> = {
+		SMA_25: indicators.SMA_25,
+		SMA_75: indicators.SMA_75,
+		SMA_200: indicators.SMA_200,
+		RSI_14: indicators.RSI_14,
+		MACD_line: indicators.MACD_line,
+		MACD_signal: indicators.MACD_signal,
+		MACD_hist: indicators.MACD_hist,
+	};
+	if (indicators.ICHIMOKU_conversion) {
+		latestIndicators.ICHIMOKU_conversion = indicators.ICHIMOKU_conversion;
+		latestIndicators.ICHIMOKU_base = indicators.ICHIMOKU_base;
+		latestIndicators.ICHIMOKU_spanA = indicators.ICHIMOKU_spanA;
+		latestIndicators.ICHIMOKU_spanB = indicators.ICHIMOKU_spanB;
+	}
+
+	const baseSummary = formatSummary({
+		pair,
+		timeframe: String(type),
+		latest: allCloses.at(-1) ?? undefined,
+		extra: `RSI=${latestIndicators.RSI_14} trend=${trend} (count=${allCloses.length})`,
+	});
+
+	const indLines: string[] = [];
+	for (const [k, v] of Object.entries(latestIndicators)) {
+		if (v != null) indLines.push(`${k}:${v}`);
+	}
+	if (indicators.ICHIMOKU_conversion != null) {
+		indLines.push(`ICHI_conv:${indicators.ICHIMOKU_conversion}`);
+		indLines.push(`ICHI_base:${indicators.ICHIMOKU_base}`);
+		indLines.push(`ICHI_spanA:${indicators.ICHIMOKU_spanA}`);
+		indLines.push(`ICHI_spanB:${indicators.ICHIMOKU_spanB}`);
+	}
+
+	const recentN = Math.min(displayCount, normalized.length);
+	const recentSlice = normalized.slice(-recentN);
+	const recentLines = recentSlice.map((c, i) => {
+		const idx = normalized.length - recentN + i;
+		const t = c.isoTime ? String(c.isoTime).replace(/\.000Z$/, 'Z') : '?';
+		const r = rsi14_s[idx] != null ? ` RSI:${rsi14_s[idx]}` : '';
+		const s25 = sma25_s[idx] != null ? ` S25:${sma25_s[idx]}` : '';
+		const s75 = sma75_s[idx] != null ? ` S75:${sma75_s[idx]}` : '';
+		const bbu = bb2_s.upper[idx] != null ? ` BBu:${bb2_s.upper[idx]}` : '';
+		const bbl = bb2_s.lower[idx] != null ? ` BBl:${bb2_s.lower[idx]}` : '';
+		return `[${idx}] ${t} C:${c.close}${r}${s25}${s75}${bbu}${bbl}`;
+	});
+
+	return (
+		baseSummary +
+		`\n\n📊 最新インジケーター値:\n` +
+		indLines.join(' | ') +
+		`\n\n📋 直近${recentN}本のデータ:\n` +
+		recentLines.join('\n') +
+		`\n\n---\n📌 含まれるもの: RSI・MACD・SMA・BB・一目均衡表の計算値と時系列、トレンド判定` +
+		`\n📌 含まれないもの: 板情報、出来高フロー（CVD・売買内訳）、大口動向、チャートパターン` +
+		`\n📌 補完ツール: get_flow_metrics（フロー・CVD）, get_orderbook（板情報）, detect_whale_events（大口）, detect_patterns（パターン）`
+	);
+}
+
 function analyzeTrend(
 	indicators: GetIndicatorsData['indicators'],
 	currentPrice: number | null | undefined,
@@ -375,123 +623,10 @@ export default async function analyzeIndicators(
 		if (!candlesResult.ok) return fail(candlesResult.summary.replace(/^Error: /, ''), candlesResult.meta.errorType);
 
 		const normalized = candlesResult.data.normalized;
-		const allHighs = normalized.map((c) => c.high);
-		const allLows = normalized.map((c) => c.low);
 		const allCloses = normalized.map((c) => c.close);
 
-		const rsi14_series = rsi(allCloses, RSI_PERIOD);
-		const macdSeries = macd(allCloses, MACD_FAST, MACD_SLOW, MACD_SIGNAL);
-		const bb1 = bollingerBands(allCloses, BB_PERIOD, 1);
-		const bb2Val = bollingerBands(allCloses, BB_PERIOD, BB_STDDEV);
-		const bb3 = bollingerBands(allCloses, BB_PERIOD, 3);
-		const ichi = ichimokuSeries(allHighs, allLows, allCloses);
-		const sma_5_series = sma(allCloses, 5);
-		const sma_20_series = sma(allCloses, 20);
-		const sma_25_series = sma(allCloses, 25);
-		const sma_50_series = sma(allCloses, 50);
-		const sma_75_series = sma(allCloses, 75);
-		const sma_200_series = sma(allCloses, 200);
-		const ema_12_series = ema(allCloses, 12);
-		const ema_26_series = ema(allCloses, 26);
-		const ema_50_series = ema(allCloses, 50);
-		const ema_200_series = ema(allCloses, 200);
-
-		// Pre-compute values needed for the indicators object
-		const ichiSimple = ichimoku(allHighs, allLows, allCloses);
-		const stoch = computeClassicStochastic(allHighs, allLows, allCloses, STOCH_PERIOD, STOCH_SMOOTH_K, STOCH_SMOOTH_D);
-		const stochRsi = computeStochRSI(allCloses, RSI_PERIOD, STOCH_PERIOD, STOCH_SMOOTH_K, STOCH_SMOOTH_D);
-		const obvResult = computeOBV(normalized, OBV_SMA_PERIOD);
-
-		const indicators: GetIndicatorsData['indicators'] = {
-			SMA_5: sma_5_series.at(-1),
-			SMA_20: sma_20_series.at(-1),
-			SMA_25: sma_25_series.at(-1),
-			SMA_50: sma_50_series.at(-1),
-			SMA_75: sma_75_series.at(-1),
-			SMA_200: sma_200_series.at(-1),
-			RSI_14: rsi14_series.at(-1),
-			RSI_14_series: rsi14_series,
-			BB_upper: bb2Val.upper.at(-1),
-			BB_middle: bb2Val.middle.at(-1),
-			BB_lower: bb2Val.lower.at(-1),
-			BB1_upper: bb1.upper.at(-1),
-			BB1_middle: bb1.middle.at(-1),
-			BB1_lower: bb1.lower.at(-1),
-			BB2_upper: bb2Val.upper.at(-1),
-			BB2_middle: bb2Val.middle.at(-1),
-			BB2_lower: bb2Val.lower.at(-1),
-			BB3_upper: bb3.upper.at(-1),
-			BB3_middle: bb3.middle.at(-1),
-			BB3_lower: bb3.lower.at(-1),
-			bb1_series: bb1,
-			bb2_series: bb2Val,
-			bb3_series: bb3,
-			ichi_series: ichi,
-			macd_series: macdSeries,
-			sma_5_series,
-			sma_20_series,
-			sma_25_series,
-			sma_50_series,
-			sma_75_series,
-			sma_200_series,
-			EMA_12: ema_12_series.at(-1),
-			EMA_26: ema_26_series.at(-1),
-			EMA_50: ema_50_series.at(-1),
-			EMA_200: ema_200_series.at(-1),
-			ema_12_series,
-			ema_26_series,
-			ema_50_series,
-			ema_200_series,
-			// MACD latest values
-			MACD_line: macdSeries.line.at(-1),
-			MACD_signal: macdSeries.signal.at(-1),
-			MACD_hist: macdSeries.hist.at(-1),
-			// Ichimoku latest values
-			...(ichiSimple
-				? {
-						ICHIMOKU_conversion: ichiSimple.conversion,
-						ICHIMOKU_base: ichiSimple.base,
-						ICHIMOKU_spanA: ichiSimple.spanA,
-						ICHIMOKU_spanB: ichiSimple.spanB,
-					}
-				: {}),
-			// Classic Stochastic Oscillator
-			STOCH_K: stoch.k,
-			STOCH_D: stoch.d,
-			STOCH_prevK: stoch.prevK,
-			STOCH_prevD: stoch.prevD,
-			stoch_k_series: stoch.kSeries,
-			stoch_d_series: stoch.dSeries,
-			// Stochastic RSI
-			STOCH_RSI_K: stochRsi.k,
-			STOCH_RSI_D: stochRsi.d,
-			STOCH_RSI_prevK: stochRsi.prevK,
-			STOCH_RSI_prevD: stochRsi.prevD,
-			// OBV (On-Balance Volume)
-			OBV: obvResult.obv,
-			OBV_SMA20: obvResult.obvSma,
-			OBV_prevObv: obvResult.prevObv,
-			OBV_trend: obvResult.trend,
-		};
-
-		const warnings: string[] = [];
-		if (allCloses.length < 5) warnings.push('SMA_5: データ不足');
-		if (allCloses.length < 20) warnings.push('SMA_20: データ不足');
-		if (allCloses.length < 25) warnings.push('SMA_25: データ不足');
-		if (allCloses.length < 50) warnings.push('SMA_50: データ不足');
-		if (allCloses.length < 75) warnings.push('SMA_75: データ不足');
-		if (allCloses.length < 200) warnings.push('SMA_200: データ不足');
-		if (allCloses.length < 12) warnings.push('EMA_12: データ不足');
-		if (allCloses.length < 26) warnings.push('EMA_26: データ不足');
-		if (allCloses.length < 50) warnings.push('EMA_50: データ不足');
-		if (allCloses.length < 200) warnings.push('EMA_200: データ不足');
-		if (allCloses.length < 15) warnings.push('RSI_14: データ不足');
-		if (allCloses.length < 20) warnings.push('Bollinger_Bands: データ不足');
-		if (allCloses.length < 52) warnings.push('Ichimoku: データ不足');
-		if (allCloses.length < 20) warnings.push('Stochastic: データ不足'); // 14(kPeriod) + 3(smoothK) + 3(smoothD)
-		if (allCloses.length < 34) warnings.push('StochRSI: データ不足'); // 14(RSI) + 14(stoch) + 3(smoothK) + 3(smoothD)
-		if (normalized.length < 2) warnings.push('OBV: データ不足');
-
+		const indicators = computeAllIndicators(normalized);
+		const warnings = buildWarnings(allCloses.length, normalized.length);
 		const trend = analyzeTrend(indicators, allCloses.at(-1));
 
 		computed = {
@@ -499,137 +634,37 @@ export default async function analyzeIndicators(
 			raw: candlesResult.data.raw,
 			indicators,
 			allCloses,
-			rsi14_series,
-			sma_25_series,
-			sma_75_series,
-			bb2: bb2Val,
+			rsi14_series: indicators.RSI_14_series ?? [],
+			sma_25_series: indicators.sma_25_series ?? [],
+			sma_75_series: indicators.sma_75_series ?? [],
+			bb2: indicators.bb2_series ?? { upper: [], middle: [], lower: [] },
 			warnings,
 			trend,
 			fetchCount,
 		};
 
-		// Store computed data in cache
 		indicatorCache.set(cacheKey, computed);
 	}
 
 	// --- Build result from computed data (always uses current displayCount/fetchCount) ---
-	const {
-		normalized,
-		indicators,
-		allCloses,
-		rsi14_series: rsi14_s,
-		sma_25_series: sma25_s,
-		sma_75_series: sma75_s,
-		bb2: bb2_s,
-		warnings,
-		trend,
-	} = computed;
+	const { normalized, indicators, allCloses, warnings, trend } = computed;
 
 	const chartData = createChartData(normalized, indicators, displayCount);
+	padSeriesLengths(chartData.indicators as Record<string, unknown>, chartData.candles.length);
 
-	(function padSeriesLengths() {
-		const len = chartData.candles.length;
-		// ChartIndicators の各フィールドを動的に走査・パディングするため Record でアクセスする
-		const seriesMap = chartData.indicators as Record<string, unknown>;
-		const keys = [
-			'SMA_5',
-			'SMA_20',
-			'SMA_25',
-			'SMA_50',
-			'SMA_75',
-			'SMA_200',
-			'EMA_12',
-			'EMA_26',
-			'EMA_50',
-			'EMA_200',
-			'BB_upper',
-			'BB_middle',
-			'BB_lower',
-			'BB1_upper',
-			'BB1_middle',
-			'BB1_lower',
-			'BB2_upper',
-			'BB2_middle',
-			'BB2_lower',
-			'BB3_upper',
-			'BB3_middle',
-			'BB3_lower',
-			'ICHI_tenkan',
-			'ICHI_kijun',
-			'ICHI_spanA',
-			'ICHI_spanB',
-			'ICHI_chikou',
-			'RSI_14_series',
-			'stoch_k_series',
-			'stoch_d_series',
-		];
-		keys.forEach((k) => {
-			const arr = seriesMap[k] as NumericSeries | undefined;
-			if (!Array.isArray(arr)) return;
-			if (arr.length === len) return;
-			if (arr.length < len) {
-				const pad = Array.from<null>({ length: len - arr.length }).fill(null);
-				(seriesMap[k] as NumericSeries) = [...arr, ...pad];
-			} else {
-				(seriesMap[k] as NumericSeries) = arr.slice(-len);
-			}
-		});
-	})();
-
-	const latestIndicators: Record<string, number | null | undefined> = {
-		SMA_25: indicators.SMA_25,
-		SMA_75: indicators.SMA_75,
-		SMA_200: indicators.SMA_200,
-		RSI_14: indicators.RSI_14,
-		MACD_line: indicators.MACD_line,
-		MACD_signal: indicators.MACD_signal,
-		MACD_hist: indicators.MACD_hist,
-	};
-	if (indicators.ICHIMOKU_conversion) {
-		latestIndicators.ICHIMOKU_conversion = indicators.ICHIMOKU_conversion;
-		latestIndicators.ICHIMOKU_base = indicators.ICHIMOKU_base;
-		latestIndicators.ICHIMOKU_spanA = indicators.ICHIMOKU_spanA;
-		latestIndicators.ICHIMOKU_spanB = indicators.ICHIMOKU_spanB;
-	}
-
-	const baseSummary = formatSummary({
+	const summary = buildIndicatorsSummaryText({
 		pair: chk.pair,
-		timeframe: String(type),
-		latest: allCloses.at(-1) ?? undefined,
-		extra: `RSI=${latestIndicators.RSI_14} trend=${trend} (count=${allCloses.length})`,
+		type: String(type),
+		indicators,
+		allCloses,
+		rsi14_series: computed.rsi14_series,
+		sma_25_series: computed.sma_25_series,
+		sma_75_series: computed.sma_75_series,
+		bb2: computed.bb2,
+		trend,
+		normalized,
+		displayCount,
 	});
-	// テキスト summary にインジケーター最新値＋主要系列を含める（LLM が structuredContent.data を読めない対策）
-	const indLines: string[] = [];
-	for (const [k, v] of Object.entries(latestIndicators)) {
-		if (v != null) indLines.push(`${k}:${v}`);
-	}
-	if (indicators.ICHIMOKU_conversion != null) {
-		indLines.push(`ICHI_conv:${indicators.ICHIMOKU_conversion}`);
-		indLines.push(`ICHI_base:${indicators.ICHIMOKU_base}`);
-		indLines.push(`ICHI_spanA:${indicators.ICHIMOKU_spanA}`);
-		indLines.push(`ICHI_spanB:${indicators.ICHIMOKU_spanB}`);
-	}
-	const recentN = Math.min(displayCount, normalized.length);
-	const recentSlice = normalized.slice(-recentN);
-	const recentLines = recentSlice.map((c, i) => {
-		const idx = normalized.length - recentN + i;
-		const t = c.isoTime ? String(c.isoTime).replace(/\.000Z$/, 'Z') : '?';
-		const r = rsi14_s[idx] != null ? ` RSI:${rsi14_s[idx]}` : '';
-		const s25 = sma25_s[idx] != null ? ` S25:${sma25_s[idx]}` : '';
-		const s75 = sma75_s[idx] != null ? ` S75:${sma75_s[idx]}` : '';
-		const bbu = bb2_s.upper[idx] != null ? ` BBu:${bb2_s.upper[idx]}` : '';
-		const bbl = bb2_s.lower[idx] != null ? ` BBl:${bb2_s.lower[idx]}` : '';
-		return `[${idx}] ${t} C:${c.close}${r}${s25}${s75}${bbu}${bbl}`;
-	});
-	const summary =
-		baseSummary +
-		`\n\n📊 最新インジケーター値:\n` +
-		indLines.join(' | ') +
-		`\n\n📋 直近${recentN}本のデータ:\n` +
-		recentLines.join('\n') +
-		`\n\n---\n📌 含まれるもの: RSI・MACD・SMA・BB・一目均衡表の計算値と時系列、トレンド判定` +
-		`\n📌 含まれないもの: 板情報、出来高フロー（CVD・売買内訳）、大口動向、チャートパターン` +
-		`\n📌 補完ツール: get_flow_metrics（フロー・CVD）, get_orderbook（板情報）, detect_whale_events（大口）, detect_patterns（パターン）`;
 
 	const data: GetIndicatorsData = {
 		summary,
