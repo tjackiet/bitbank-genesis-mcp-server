@@ -169,12 +169,9 @@ describe('detectTriangles — whipsaw boundary tests', () => {
 		const completed = syms.filter((p) => p.status === 'completed');
 		const forming = syms.filter((p) => p.status === 'forming' || p.status === 'near_completion');
 
-		// whipsaw が効いている → completed は 0 件、または forming が存在
-		if (syms.length > 0) {
-			// whipsaw 発動時: breakout が無効化され completed にならない
-			// forming パターンがあるか、completed が 0 件
-			expect(completed.length === 0 || forming.length > 0).toBe(true);
-		}
+		// whipsaw が効いている → completed は 0 件、forming が存在
+		expect(syms.length).toBeGreaterThan(0);
+		expect(completed.length === 0 || forming.length > 0).toBe(true);
 
 		// breakoutDirection が設定されたパターンがないことを確認
 		// （whipsaw で breakout 自体が無効化されるため）
@@ -199,14 +196,11 @@ describe('detectTriangles — whipsaw boundary tests', () => {
 		const result = detectTriangles(ctx);
 
 		const syms = result.patterns.filter((p) => p.type === 'triangle_symmetrical');
-		// close が upper 以上なら whipsaw は発動しないので completed パターンが残る可能性がある
-		// 少なくとも breakout ありのパターンが存在しうる
-		if (syms.length > 0) {
-			const hasBreakoutPattern = syms.some((p) => p.breakoutDirection === 'up' && p.status === 'completed');
-			const hasFormingPattern = syms.some((p) => p.status === 'forming' || p.status === 'near_completion');
-			// どちらかが存在する（アルゴリズムの判定次第）
-			expect(hasBreakoutPattern || hasFormingPattern).toBe(true);
-		}
+		// close が upper 以上なら whipsaw は発動しないので completed パターンが残る
+		expect(syms.length).toBeGreaterThan(0);
+		const hasBreakoutPattern = syms.some((p) => p.breakoutDirection === 'up' && p.status === 'completed');
+		const hasFormingPattern = syms.some((p) => p.status === 'forming' || p.status === 'near_completion');
+		expect(hasBreakoutPattern || hasFormingPattern).toBe(true);
 	});
 
 	it('直近足が下限トレンドラインと一致 → whipsaw は発動しない（strict >）', () => {
@@ -230,17 +224,14 @@ describe('detectTriangles — whipsaw boundary tests', () => {
 
 		const syms = result.patterns.filter((p) => p.type === 'triangle_symmetrical');
 		// 下方ブレイクアウトが検出された場合、close ≤ lLatest なら whipsaw 不発
-		if (syms.length > 0) {
-			const downBreakouts = syms.filter((p) => p.breakoutDirection === 'down');
-			const formingOrCompleted = syms.filter(
-				(p) => p.status === 'completed' || p.status === 'forming' || p.status === 'near_completion',
-			);
-			expect(formingOrCompleted.length).toBeGreaterThanOrEqual(1);
-			// 下方ブレイクアウトが存在する場合は invalid (expected=null for sym)
-			// or completed, いずれにせよパターンとして存在すること
-			if (downBreakouts.length > 0) {
-				expect(downBreakouts[0]?.breakoutBarIndex).toBeDefined();
-			}
+		expect(syms.length).toBeGreaterThan(0);
+		const formingOrCompleted = syms.filter(
+			(p) => p.status === 'completed' || p.status === 'forming' || p.status === 'near_completion',
+		);
+		expect(formingOrCompleted.length).toBeGreaterThanOrEqual(1);
+		const downBreakouts = syms.filter((p) => p.breakoutDirection === 'down');
+		if (downBreakouts.length > 0) {
+			expect(downBreakouts[0]?.breakoutBarIndex).toBeDefined();
 		}
 	});
 
@@ -309,13 +300,12 @@ describe('detectTriangles — whipsaw boundary tests', () => {
 		const result = detectTriangles(ctx);
 
 		const syms = result.patterns.filter((p) => p.type === 'triangle_symmetrical');
-		if (syms.length > 0) {
-			expect(syms[0]?.confidence).toBeGreaterThan(0);
-			expect(syms[0]?.range?.start).toBeDefined();
-			expect(syms[0]?.range?.end).toBeDefined();
-			const validStatuses = ['forming', 'near_completion'];
-			expect(validStatuses).toContain(syms[0]?.status);
-		}
+		expect(syms.length).toBeGreaterThan(0);
+		expect(syms[0]?.confidence).toBeGreaterThan(0);
+		expect(syms[0]?.range?.start).toBeDefined();
+		expect(syms[0]?.range?.end).toBeDefined();
+		const validStatuses = ['forming', 'near_completion'];
+		expect(validStatuses).toContain(syms[0]?.status);
 	});
 
 	it('deduplicatePatterns で同一 range の重複が除去される', () => {
