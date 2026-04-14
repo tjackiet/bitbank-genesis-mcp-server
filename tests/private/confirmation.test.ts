@@ -32,6 +32,22 @@ describe('generateToken', () => {
 		expect(result.expiresAt).toBe(now + 30_000);
 	});
 
+	it('ORDER_CONFIRM_TTL_MS が上限（5分）を超える場合はキャップされる', () => {
+		process.env.ORDER_CONFIRM_TTL_MS = '600000'; // 10分
+		const now = 1700000000000;
+		const result = generateToken('create_order', { pair: 'btc_jpy' }, now);
+
+		expect(result.expiresAt).toBe(now + 300_000); // 5分にキャップ
+	});
+
+	it('ORDER_CONFIRM_TTL_MS がちょうど上限の場合はそのまま使われる', () => {
+		process.env.ORDER_CONFIRM_TTL_MS = '300000';
+		const now = 1700000000000;
+		const result = generateToken('create_order', { pair: 'btc_jpy' }, now);
+
+		expect(result.expiresAt).toBe(now + 300_000);
+	});
+
 	it('同じパラメータで同じトークンを生成する（決定的）', () => {
 		const now = 1700000000000;
 		const params = { pair: 'btc_jpy', amount: '0.001', side: 'buy', type: 'limit' };

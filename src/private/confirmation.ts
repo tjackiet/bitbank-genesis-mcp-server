@@ -12,11 +12,14 @@ import { createHmac, timingSafeEqual } from 'node:crypto';
 /** デフォルト有効期限: 60秒 */
 const DEFAULT_TTL_MS = 60_000;
 
+/** TTL 上限: 5分 */
+const MAX_TTL_MS = 300_000;
+
 function getTtlMs(): number {
 	const env = process.env.ORDER_CONFIRM_TTL_MS;
 	if (env) {
 		const n = Number(env);
-		if (Number.isFinite(n) && n > 0) return n;
+		if (Number.isFinite(n) && n > 0) return Math.min(n, MAX_TTL_MS);
 	}
 	return DEFAULT_TTL_MS;
 }
