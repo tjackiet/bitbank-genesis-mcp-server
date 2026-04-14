@@ -108,6 +108,24 @@ describe('validateToken', () => {
 		expect(error).toContain('無効');
 	});
 
+	it('長さ不一致のトークンを拒否する（タイミングセーフ）', () => {
+		const now = 1700000000000;
+		const params = { pair: 'btc_jpy', amount: '0.001' };
+		const { expiresAt } = generateToken('create_order', params, now);
+
+		const error = validateToken('short', 'create_order', params, expiresAt, now + 1000);
+		expect(error).toContain('無効');
+	});
+
+	it('空文字列トークンを拒否する', () => {
+		const now = 1700000000000;
+		const params = { pair: 'btc_jpy', amount: '0.001' };
+		const { expiresAt } = generateToken('create_order', params, now);
+
+		const error = validateToken('', 'create_order', params, expiresAt, now + 1000);
+		expect(error).toContain('無効');
+	});
+
 	it('異なる action でのトークン使い回しを拒否する', () => {
 		const now = 1700000000000;
 		const params = { pair: 'btc_jpy', order_id: 123 };

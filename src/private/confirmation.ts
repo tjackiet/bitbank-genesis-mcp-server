@@ -7,7 +7,7 @@
  * パラメータ一致 + 有効期限を検証する。
  */
 
-import { createHmac } from 'node:crypto';
+import { createHmac, timingSafeEqual } from 'node:crypto';
 
 /** デフォルト有効期限: 60秒 */
 const DEFAULT_TTL_MS = 60_000;
@@ -93,7 +93,7 @@ export function validateToken(
 	const payload = canonicalize({ action, ...params, expiresAt });
 	const expected = hmac(getSecret(), payload);
 
-	if (token !== expected) {
+	if (token.length !== expected.length || !timingSafeEqual(Buffer.from(token), Buffer.from(expected))) {
 		return '確認トークンが無効です。パラメータが変更された可能性があります。preview を再実行してください';
 	}
 
