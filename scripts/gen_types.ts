@@ -1,6 +1,6 @@
 // Generate .d.ts from Zod schemas in src/schemas.ts (TSX版)
-import fs from 'fs/promises';
-import path from 'path';
+import fs from 'node:fs/promises';
+import path from 'node:path';
 
 const outPath = path.join(process.cwd(), 'src/types/schemas.generated.d.ts');
 
@@ -33,7 +33,7 @@ chunks.push('export type ChartPayloadFromSchema = z.infer<typeof ChartPayloadSch
 chunks.push('export type GetIndicatorsDataFromSchema = z.infer<typeof GetIndicatorsDataSchema>;');
 chunks.push('export type GetIndicatorsMetaFromSchema = z.infer<typeof GetIndicatorsMetaSchema>;');
 
-const content = chunks.join('\n') + '\n';
+const content = `${chunks.join('\n')}\n`;
 await fs.mkdir(path.dirname(outPath), { recursive: true });
 await fs.writeFile(outPath, content, 'utf8');
 console.log(`Generated: ${path.relative(process.cwd(), outPath)}`);
