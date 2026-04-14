@@ -159,7 +159,7 @@ export class BitbankPrivateClient {
 				// HTTP エラー（4xx 等）
 				if (!res.ok) {
 					const errorCode = this.extractErrorCode(body);
-					throw this.classifyBitbankError(res.status, errorCode, body);
+					throw this.classifyBitbankError(res.status, errorCode);
 				}
 
 				// Success レスポンスのパース
@@ -185,7 +185,7 @@ export class BitbankPrivateClient {
 						}
 					}
 
-					throw this.classifyBitbankError(200, errorCode ?? null, body);
+					throw this.classifyBitbankError(200, errorCode ?? null);
 				}
 
 				return json.data;
@@ -232,7 +232,7 @@ export class BitbankPrivateClient {
 	 * - 60000 番台: 数値制限超過
 	 * - 70000 番台: 取引制限中
 	 */
-	private classifyBitbankError(httpStatus: number, errorCode: number | null, body: string): PrivateApiError {
+	private classifyBitbankError(httpStatus: number, errorCode: number | null): PrivateApiError {
 		// 認証エラー
 		if (errorCode != null && AUTH_ERROR_CODES.has(errorCode)) {
 			const details: Record<number, string> = {
@@ -279,7 +279,7 @@ export class BitbankPrivateClient {
 
 		// その他
 		return new PrivateApiError(
-			`bitbank API エラー (HTTP ${httpStatus}${errorCode ? `, code: ${errorCode}` : ''}): ${body.slice(0, 200)}`,
+			`bitbank API エラー (HTTP ${httpStatus}${errorCode ? `, code: ${errorCode}` : ''})`,
 			'upstream_error',
 			httpStatus,
 			errorCode ?? undefined,
