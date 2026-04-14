@@ -18,7 +18,7 @@ npm run typecheck           # tsc --noEmit
 
 ## アーキテクチャ
 
-- スキーマ変更は `src/schemas.ts`（Zod）を単一ソースとする
+- スキーマ変更は `src/schema/` 配下の Zod 定義を単一ソースとする（`src/schemas.ts` は re-export）
 - 全ツールは `Result<T, M>` パターン（`ok()` / `fail()`）で返す
 - `lib/` に共通ユーティリティがある処理は、外部ライブラリの直接利用や自前実装をせず `lib/` を使う
 

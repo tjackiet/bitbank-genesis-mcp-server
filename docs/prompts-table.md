@@ -1,4 +1,4 @@
-# プロンプト一覧（全 9 種）
+# プロンプト一覧（全 10 種：Public 9 + Private 1）
 
 このMCPサーバーでは、以下のプロンプトを提供しています。
 ツール名を指定する必要はなく、自然な質問でも適切なプロンプトが選択されます。
@@ -29,6 +29,14 @@
 | 7 | 中級：BTCのパターン分析をして | detect_patterns, analyze_candle_patterns | 完成済み＆形成中チャートパターン＋ローソク足パターンを統合検出 |
 | 8 | 中級：BTCのサポレジを分析して | analyze_support_resistance, get_orderbook, analyze_sma_snapshot | 過去90日の反応と現在の板・圧力を統合してサポレジ強度を評価 |
 | 9 | 🌅 おはようレポート | create_file, present_files | 直近8時間の価格動向をHTMLダッシュボードで視覚化（Claude Desktop推奨） |
+
+## Private（1 種）
+
+`BITBANK_API_KEY` + `BITBANK_API_SECRET` 設定時のみ表示されます。
+
+| # | プロンプト名 | 主な使用ツール | 概要 |
+|---|-------------|---------------|------|
+| 10 | 💼 ポートフォリオ分析レポート | analyze_my_portfolio | 保有資産・月初比/年初比パフォーマンス・構成比・テクニカル分析を視覚化（Visualizer / HTML） |
 
 ---
 
