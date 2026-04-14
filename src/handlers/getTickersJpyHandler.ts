@@ -63,10 +63,8 @@ export const toolDef: ToolDefinition = {
 		limit: z.number().int().min(1).max(50).optional().default(5),
 	}),
 	handler: async (args: Record<string, unknown>) => {
-		const view = (args?.view ?? 'ranked') as 'items' | 'ranked';
-		const sortBy = (args?.sortBy ?? 'change24h') as 'change24h' | 'volume' | 'name';
-		const order = (args?.order ?? 'desc') as 'asc' | 'desc';
-		const limit = Number(args?.limit ?? 5);
+		const parsed = toolDef.inputSchema.parse(args);
+		const { view, sortBy, order, limit } = parsed;
 		const res = await getTickersJpy();
 		if (!res?.ok) return res;
 		const items = (Array.isArray(res?.data) ? res.data : []) as Array<{
