@@ -37,7 +37,7 @@ git log --oneline --merges -5
 |---|---|
 | `tools/<name>.ts` | `tests/<name>.test.ts`, `src/tool-registry.ts` への登録 |
 | `tools/private/<name>.ts` | `tests/private/<name>.test.ts`, `src/private/schemas.ts`, `lib/logger.ts` の `SENSITIVE_KEYS` |
-| `src/handlers/<name>Handler.ts` | `tests/handlers/<name>Handler.test.ts`, 呼び出し元の `tools/*.ts` |
+| `src/handlers/<name>Handler.ts` | `tests/handlers/<name>Handler.test.ts` と `tests/<name>Handler.test.ts`、呼び出し元の `tools/*.ts` |
 | `src/schema/*.ts` | `tests/schema/*.test.ts`, `src/schemas.ts`（re-export）, 利用側のツール |
 | `lib/*.ts` | `tests/` 内の対応テスト、利用側のツールやハンドラ |
 | `src/private/*.ts` | `tests/private/*.test.ts`, セキュリティポリシーとの整合性 |

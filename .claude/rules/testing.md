@@ -21,19 +21,18 @@ globs: tests/**/*.test.ts
 
 ## モック規約
 
-`fetch` モックは `globalThis.fetch` を直接差し替える。`vi.spyOn` は使わない。
+`fetch` モックは `vi.spyOn(globalThis, 'fetch')` を基本とする。
+テストごとに戻し忘れを防ぐため、`afterEach` で `vi.restoreAllMocks()` を実行する。
 
 ```ts
-const originalFetch = globalThis.fetch;
-
 afterEach(() => {
-  globalThis.fetch = originalFetch;
+  vi.restoreAllMocks();
 });
 
 it('ネットワークエラー', async () => {
-  globalThis.fetch = vi.fn().mockRejectedValue(
+  vi.spyOn(globalThis, 'fetch').mockRejectedValue(
     new TypeError('fetch failed'),
-  ) as unknown as typeof fetch;
+  );
   // ...
 });
 ```
