@@ -1,4 +1,4 @@
-import http from 'node:http';
+import type http from 'node:http';
 import express from 'express';
 import rateLimit from 'express-rate-limit';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
