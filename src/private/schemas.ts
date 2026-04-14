@@ -83,6 +83,7 @@ export const GetMyTradeHistoryMetaSchema = z.object({
 	fetchedAt: z.string(),
 	tradeCount: z.number().int(),
 	pair: z.string().optional(),
+	isComplete: z.boolean().optional(),
 });
 
 export const GetMyTradeHistoryOutputSchema = z.union([
