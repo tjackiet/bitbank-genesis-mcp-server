@@ -150,7 +150,9 @@ export default async function getTickersJpy(opts?: { bypassCache?: boolean }) {
 			const buf = fs.readFileSync(abs, 'utf8');
 			const raw = JSON.parse(buf);
 			if (!raw || raw.success !== 1 || !Array.isArray(raw.data)) {
-				return GetTickersJpyOutputSchema.parse(fail(`UPSTREAM_ERROR ${JSON.stringify(raw?.data ?? raw)}`, 'upstream'));
+				return GetTickersJpyOutputSchema.parse(
+					fail('UPSTREAM_ERROR: unexpected response from bitbank API', 'upstream'),
+				);
 			}
 			const dataRaw: Item[] = raw.data as Item[];
 			const { data: filtered, filterInfo } = await filterByMode(dataRaw, timeoutMs, retries, retryWaitMs);
@@ -196,7 +198,7 @@ export default async function getTickersJpy(opts?: { bypassCache?: boolean }) {
 		}
 		if (!raw) throw lastErr ?? new Error('no response');
 		if (!raw || raw.success !== 1 || !Array.isArray(raw.data)) {
-			return GetTickersJpyOutputSchema.parse(fail(`UPSTREAM_ERROR ${JSON.stringify(raw?.data ?? raw)}`, 'upstream'));
+			return GetTickersJpyOutputSchema.parse(fail('UPSTREAM_ERROR: unexpected response from bitbank API', 'upstream'));
 		}
 		const dataRaw: Item[] = raw.data as Item[];
 		const { data: filtered, filterInfo } = await filterByMode(dataRaw, timeoutMs, retries, retryWaitMs);
