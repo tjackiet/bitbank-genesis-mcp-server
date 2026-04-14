@@ -63,6 +63,11 @@ export function _usedTokenCount(): number {
 	return usedTokens.size;
 }
 
+/** クリーンアップタイマーが動作中かどうか（テスト用） */
+export function _isCleanupTimerActive(): boolean {
+	return cleanupTimerId != null;
+}
+
 function getTtlMs(): number {
 	const env = process.env.ORDER_CONFIRM_TTL_MS;
 	if (env) {

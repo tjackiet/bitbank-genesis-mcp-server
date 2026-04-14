@@ -5,6 +5,7 @@
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
+	_isCleanupTimerActive,
 	_resetUsedTokens,
 	_usedTokenCount,
 	generateToken,
@@ -219,10 +220,13 @@ describe('validateToken', () => {
 		const params = { pair: 'btc_jpy', amount: '0.001' };
 		const { token, expiresAt } = generateToken('create_order', params, now);
 
+		// まずトークンを消費して使用済みにする
+		expect(validateToken(token, 'create_order', params, expiresAt, now + 1000)).toBeNull();
+		expect(_usedTokenCount()).toBe(1);
+
+		// 期限切れ後に再検証 → 「使用済み」ではなく「有効期限」エラーになる
 		const error = validateToken(token, 'create_order', params, expiresAt, expiresAt + 1);
 		expect(error).toContain('有効期限');
-		// 使用済みに登録されていない
-		expect(_usedTokenCount()).toBe(0);
 	});
 });
 
@@ -281,16 +285,34 @@ describe('purgeExpiredTokens', () => {
 });
 
 describe('startCleanupTimer / stopCleanupTimer', () => {
-	it('重複起動しない', () => {
+	it('startCleanupTimer でタイマーが有効になる', () => {
+		expect(_isCleanupTimerActive()).toBe(false);
 		startCleanupTimer();
+		expect(_isCleanupTimerActive()).toBe(true);
+	});
+
+	it('重複起動しない（2回呼んでもタイマーは1つ）', () => {
+		startCleanupTimer();
+		expect(_isCleanupTimerActive()).toBe(true);
 		startCleanupTimer(); // 2回目は no-op
+		expect(_isCleanupTimerActive()).toBe(true);
 		stopCleanupTimer();
+		expect(_isCleanupTimerActive()).toBe(false);
+	});
+
+	it('stopCleanupTimer でタイマーが停止する', () => {
+		startCleanupTimer();
+		expect(_isCleanupTimerActive()).toBe(true);
+		stopCleanupTimer();
+		expect(_isCleanupTimerActive()).toBe(false);
 	});
 
 	it('stopCleanupTimer は複数回呼んでも安全', () => {
 		stopCleanupTimer();
+		expect(_isCleanupTimerActive()).toBe(false);
 		startCleanupTimer();
 		stopCleanupTimer();
 		stopCleanupTimer(); // 2回目は no-op
+		expect(_isCleanupTimerActive()).toBe(false);
 	});
 });
