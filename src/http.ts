@@ -3,10 +3,16 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import express from 'express';
+import rateLimit from 'express-rate-limit';
 import type { NextFunction, Request, RequestHandler, Response } from 'express-serve-static-core';
 
 const PORT = Number(process.env.PORT ?? 8787);
 const ENDPOINT = '/mcp';
+
+/** レート制限: ウィンドウ（ミリ秒）。デフォルト 60 秒 */
+const RATE_LIMIT_WINDOW_MS = Number(process.env.RATE_LIMIT_WINDOW_MS ?? 60_000);
+/** レート制限: ウィンドウあたり最大リクエスト数。デフォルト 60 */
+const RATE_LIMIT_MAX = Number(process.env.RATE_LIMIT_MAX ?? 60);
 
 const app = express();
 app.use(express.json({ limit: '2mb' }));
@@ -75,6 +81,16 @@ const transport = new HttpTransport({
 });
 
 await server.connect(transport);
+
+// /mcp エンドポイントにレート制限を適用（stdio には影響しない）
+const mcpLimiter = rateLimit({
+	windowMs: RATE_LIMIT_WINDOW_MS,
+	max: RATE_LIMIT_MAX,
+	standardHeaders: 'draft-7',
+	legacyHeaders: false,
+	message: { error: 'Too many requests. Please try again later.' },
+});
+app.use(ENDPOINT, mcpLimiter as unknown as RequestHandler);
 
 // SDK 公式の handleRequest を使って HTTP リクエストを処理する
 const mw: RequestHandler =
