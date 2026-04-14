@@ -3,12 +3,16 @@
  *
  * bitbank Private API `/v1/user/spot/trade_history` を呼び出し、
  * LLM が分析しやすい形に整形して返す。
+ *
+ * - 自動ページネーション: count > PAGE_SIZE (1000) の場合、cursor ベースで
+ *   複数回リクエストし全件取得を試みる（最大 MAX_PAGES ページ）。
+ * - isComplete フラグ: 全件取得できたかどうかを meta に含める。
  */
 
 import { nowIso, parseIso8601, toIsoMs } from '../../lib/datetime.js';
 import { formatPair, formatPrice } from '../../lib/formatter.js';
 import { fail, ok } from '../../lib/result.js';
-import { getDefaultClient, PrivateApiError } from '../../src/private/client.js';
+import { type BitbankPrivateClient, getDefaultClient, PrivateApiError } from '../../src/private/client.js';
 import { GetMyTradeHistoryInputSchema, GetMyTradeHistoryOutputSchema } from '../../src/private/schemas.js';
 import type { ToolDefinition } from '../../src/tool-definition.js';
 
@@ -30,6 +34,56 @@ interface RawTrade {
 	executed_at: number;
 }
 
+// ── ページネーション設定 ──
+const PAGE_SIZE = 1000;
+const MAX_PAGES = 10;
+
+/**
+ * cursor ベースの自動ページネーション（asc 順で取得し、最後の executed_at + 1 を since に）。
+ * since/end が外部指定されている場合でもページネーションする。
+ */
+async function paginateTrades(
+	client: BitbankPrivateClient,
+	baseParams: Record<string, string>,
+	limit: number,
+): Promise<{ trades: RawTrade[]; isComplete: boolean }> {
+	const all: RawTrade[] = [];
+	let since: string | undefined = baseParams.since;
+
+	for (let page = 0; page < MAX_PAGES; page++) {
+		const params: Record<string, string> = {
+			...baseParams,
+			count: String(PAGE_SIZE),
+			order: 'asc',
+			...(since ? { since } : {}),
+		};
+		const rawData = await client.get<{ trades: RawTrade[] }>(
+			'/v1/user/spot/trade_history',
+			Object.keys(params).length > 0 ? params : undefined,
+		);
+		const batch = rawData.trades || [];
+		all.push(...batch);
+
+		// 取得件数が PAGE_SIZE 未満 → 全件取得完了
+		if (batch.length < PAGE_SIZE) {
+			return { trades: all.slice(0, limit), isComplete: true };
+		}
+
+		// limit に達したら打ち切り（全件取得済みかは不明）
+		if (all.length >= limit) {
+			return { trades: all.slice(0, limit), isComplete: true };
+		}
+
+		// 次ページ: 最後の約定の executed_at + 1ms を since に
+		const lastTs = batch[batch.length - 1]?.executed_at;
+		if (!lastTs) break;
+		since = String(lastTs + 1);
+	}
+
+	// MAX_PAGES 到達 → 打ち切り
+	return { trades: all.slice(0, limit), isComplete: false };
+}
+
 export default async function getMyTradeHistory(args: {
 	pair?: string;
 	count?: number;
@@ -42,10 +96,8 @@ export default async function getMyTradeHistory(args: {
 
 	try {
 		// クエリパラメータを組み立て
-		const params: Record<string, string> = {};
-		if (pair) params.pair = pair;
-		if (count !== 100) params.count = String(count);
-		if (order !== 'desc') params.order = order;
+		const baseParams: Record<string, string> = {};
+		if (pair) baseParams.pair = pair;
 
 		// ISO8601 → unix ms 変換（strict parse で不正日時を弾く）
 		if (since) {
@@ -53,25 +105,40 @@ export default async function getMyTradeHistory(args: {
 			if (!parsed) {
 				return GetMyTradeHistoryOutputSchema.parse(fail(`since の日時形式が不正です: ${since}`, 'validation_error'));
 			}
-			params.since = String(parsed.valueOf());
+			baseParams.since = String(parsed.valueOf());
 		}
 		if (end) {
 			const parsed = parseIso8601(end);
 			if (!parsed) {
 				return GetMyTradeHistoryOutputSchema.parse(fail(`end の日時形式が不正です: ${end}`, 'validation_error'));
 			}
-			params.end = String(parsed.valueOf());
+			baseParams.end = String(parsed.valueOf());
 		}
 
-		const rawData = await client.get<{ trades: RawTrade[] }>(
-			'/v1/user/spot/trade_history',
-			Object.keys(params).length > 0 ? params : undefined,
-		);
+		let rawTrades: RawTrade[];
+		let isComplete: boolean;
+
+		if (count <= PAGE_SIZE) {
+			// 単発リクエストで十分なケース
+			const params = { ...baseParams, count: String(count), order };
+			const rawData = await client.get<{ trades: RawTrade[] }>(
+				'/v1/user/spot/trade_history',
+				Object.keys(params).length > 0 ? params : undefined,
+			);
+			rawTrades = rawData.trades;
+			// 取得件数が count 未満なら全件取得済み
+			isComplete = rawTrades.length < count;
+		} else {
+			// 自動ページネーション
+			const result = await paginateTrades(client, baseParams, count);
+			rawTrades = result.trades;
+			isComplete = result.isComplete;
+		}
 
 		const timestamp = nowIso();
 
 		// 約定データの整形
-		const trades = rawData.trades.map((t) => ({
+		const trades = rawTrades.map((t) => ({
 			trade_id: t.trade_id,
 			pair: t.pair,
 			order_id: t.order_id,
@@ -85,10 +152,18 @@ export default async function getMyTradeHistory(args: {
 			executed_at: toIsoMs(t.executed_at) ?? String(t.executed_at),
 		}));
 
+		// desc 指定時は逆順にソート（ページネーションは asc で取得するため）
+		if (order === 'desc') {
+			trades.reverse();
+		}
+
 		// サマリー文字列の生成
 		const lines: string[] = [];
 		const pairLabel = pair ? formatPair(pair) : '全ペア';
 		lines.push(`約定履歴: ${pairLabel} ${trades.length}件`);
+		if (!isComplete) {
+			lines.push('※ 全件ではなく一部のみ取得されています。API件数上限に達した可能性があります');
+		}
 
 		if (trades.length > 0) {
 			lines.push('');
@@ -128,6 +203,7 @@ export default async function getMyTradeHistory(args: {
 			fetchedAt: timestamp,
 			tradeCount: trades.length,
 			pair: pair || undefined,
+			isComplete,
 			...(client.lastRateLimit ? { rateLimit: client.lastRateLimit } : {}),
 		};
 
