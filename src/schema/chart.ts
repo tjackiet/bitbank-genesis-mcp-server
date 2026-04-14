@@ -325,7 +325,7 @@ export const RenderChartSvgOutputSchema = z.object({
 	data: z
 		.object({
 			svg: z.string().optional(),
-			legend: z.record(z.string()).optional(),
+			legend: z.record(z.string(), z.string()).optional(),
 		})
 		.or(z.object({})),
 	meta: z

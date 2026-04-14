@@ -3,8 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
-import type { z } from 'zod';
-import { zodToJsonSchema } from 'zod-to-json-schema';
+import { z } from 'zod';
 import { getErrorMessage } from '../lib/error.js';
 import { logError, logToolRun } from '../lib/logger.js';
 import { type PromptDef, prompts as promptDefs } from './prompts.js';
@@ -67,28 +66,42 @@ const respond = (result: unknown): ToolReturn => {
 };
 
 /** Zod スキーマ → MCP inspector 用 JSON Schema に変換する。
- *  zod-to-json-schema に委譲し、MCP 不要の additionalProperties を除去する。 */
+ *  Zod 4 組み込みの toJSONSchema を使い、MCP 不要の additionalProperties を除去する。 */
 function zodToInputJsonSchema(schema: z.ZodTypeAny): Record<string, unknown> {
-	const json = zodToJsonSchema(schema, { target: 'openApi3', $refStrategy: 'none' }) as Record<string, unknown>;
-	// MCP ツール入力に additionalProperties は不要（SDK が検証する）
+	const json = z.toJSONSchema(schema, { target: 'openApi3' }) as Record<string, unknown>;
 	delete json.additionalProperties;
+	// default 付きフィールドは required から除外（Zod が parse 時に適用するため MCP 入力では不要）
+	const props = json.properties as Record<string, Record<string, unknown>> | undefined;
+	if (Array.isArray(json.required) && props) {
+		json.required = (json.required as string[]).filter((k) => !('default' in (props[k] ?? {})));
+		if ((json.required as string[]).length === 0) delete json.required;
+	}
 	return json;
 }
 
 /** SDK の registerTool に渡すための ZodRawShape を取得する。
  *  .describe() / .default() / .optional() 等のラッパーを再帰的にアンラップする。 */
 function getRawShape(s: z.ZodTypeAny): z.ZodRawShape {
-	let cur = s as { shape?: z.ZodRawShape; _def?: { schema?: z.ZodTypeAny; innerType?: z.ZodTypeAny } };
+	type Unwrappable = {
+		shape?: z.ZodRawShape;
+		_def?: { schema?: z.ZodTypeAny; innerType?: z.ZodTypeAny; in?: z.ZodTypeAny };
+	};
+	let cur = s as Unwrappable;
 	for (let i = 0; i < 6; i++) {
 		if (cur.shape) break;
 		const def = cur._def;
 		if (!def) break;
+		// Zod 3: ZodEffects uses _def.schema / Zod 4: uses _def.in
 		if (def.schema) {
-			cur = def.schema as typeof cur;
+			cur = def.schema as Unwrappable;
+			continue;
+		}
+		if (def.in) {
+			cur = def.in as Unwrappable;
 			continue;
 		}
 		if (def.innerType) {
-			cur = def.innerType as typeof cur;
+			cur = def.innerType as Unwrappable;
 			continue;
 		}
 		break;

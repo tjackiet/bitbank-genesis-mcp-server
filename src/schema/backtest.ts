@@ -30,7 +30,7 @@ export const StrategyTypeEnum = z.enum(['sma_cross', 'rsi', 'macd_cross', 'bb_br
 
 export const StrategyConfigSchema = z.object({
 	type: StrategyTypeEnum.describe('Strategy type'),
-	params: z.record(z.number()).optional().default({}).describe('Strategy parameters (overrides defaults)'),
+	params: z.record(z.string(), z.number()).optional().default({}).describe('Strategy parameters (overrides defaults)'),
 });
 
 export const RunBacktestInputSchema = z.object({

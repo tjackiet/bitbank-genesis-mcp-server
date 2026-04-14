@@ -139,10 +139,17 @@ export const DetectPatternsOutputSchema = z.union([
 				})
 				.optional(),
 			warnings: z
-				.array(z.object({ type: z.string(), message: z.string(), suggestedParams: z.record(z.any()).optional() }))
+				.array(
+					z.object({
+						type: z.string(),
+						message: z.string(),
+						suggestedParams: z.record(z.string(), z.any()).optional(),
+					}),
+				)
 				.optional(),
 			statistics: z
 				.record(
+					z.string(),
 					z.object({
 						detected: z.number().int(),
 						withAftermath: z.number().int(),

@@ -83,7 +83,7 @@ export const AnalyzeMarketSignalDataSchemaOut = z.object({
 			priority: z.enum(['high', 'medium', 'low']),
 			tool: z.string(),
 			reason: z.string(),
-			suggestedParams: z.record(z.any()).optional(),
+			suggestedParams: z.record(z.string(), z.any()).optional(),
 		}),
 	),
 	alerts: z.array(z.object({ level: z.enum(['info', 'warning', 'critical']), message: z.string() })).optional(),
@@ -358,7 +358,7 @@ const AnalyzeBbSnapshotDataSchemaStructured = z.object({
 	extreme_events: z.unknown().optional(),
 	context: z.unknown().optional(),
 	signals: z.array(z.string()).optional(),
-	next_steps: z.record(z.any()).optional(),
+	next_steps: z.record(z.string(), z.any()).optional(),
 	tags: z.array(z.string()).optional(),
 });
 
