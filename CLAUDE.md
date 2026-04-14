@@ -1,4 +1,4 @@
-# CLAUDE.md - AIForge
+# CLAUDE.md
 
 ## コマンド
 
