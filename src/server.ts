@@ -1,4 +1,4 @@
-import 'dotenv/config';
+import './env.js'; // must be first — loads .env before other modules read process.env
 import { randomUUID } from 'node:crypto';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
