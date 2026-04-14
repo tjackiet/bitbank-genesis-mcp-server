@@ -15,6 +15,59 @@ const DEFAULT_TTL_MS = 60_000;
 /** TTL 上限: 5分 */
 const MAX_TTL_MS = 300_000;
 
+/** 使用済みトークンのセット（再利用防止） */
+const usedTokens = new Map<string, number>(); // token → expiresAt
+
+/** クリーンアップ間隔: 60秒 */
+const CLEANUP_INTERVAL_MS = 60_000;
+
+let cleanupTimerId: ReturnType<typeof setInterval> | null = null;
+
+/** TTL 超過分の使用済みトークンを除去する */
+export function purgeExpiredTokens(nowMs: number = Date.now()): number {
+	let purged = 0;
+	for (const [token, expiresAt] of usedTokens) {
+		if (nowMs > expiresAt) {
+			usedTokens.delete(token);
+			purged++;
+		}
+	}
+	return purged;
+}
+
+/** 定期クリーンアップを開始する（重複起動しない） */
+export function startCleanupTimer(): void {
+	if (cleanupTimerId != null) return;
+	cleanupTimerId = setInterval(() => purgeExpiredTokens(), CLEANUP_INTERVAL_MS);
+	// プロセス終了をブロックしないよう unref
+	if (typeof cleanupTimerId === 'object' && 'unref' in cleanupTimerId) {
+		cleanupTimerId.unref();
+	}
+}
+
+/** 定期クリーンアップを停止する（テスト用） */
+export function stopCleanupTimer(): void {
+	if (cleanupTimerId != null) {
+		clearInterval(cleanupTimerId);
+		cleanupTimerId = null;
+	}
+}
+
+/** 使用済みトークンセットをクリアする（テスト用） */
+export function _resetUsedTokens(): void {
+	usedTokens.clear();
+}
+
+/** 使用済みトークン数を返す（テスト用） */
+export function _usedTokenCount(): number {
+	return usedTokens.size;
+}
+
+/** クリーンアップタイマーが動作中かどうか（テスト用） */
+export function _isCleanupTimerActive(): boolean {
+	return cleanupTimerId != null;
+}
+
 function getTtlMs(): number {
 	const env = process.env.ORDER_CONFIRM_TTL_MS;
 	if (env) {
@@ -92,6 +145,11 @@ export function validateToken(
 		return '確認トークンの有効期限が切れています。preview を再実行してください';
 	}
 
+	// 使用済みチェック
+	if (usedTokens.has(token)) {
+		return '確認トークンは既に使用されています。preview を再実行してください';
+	}
+
 	// HMAC 再計算で検証
 	const payload = canonicalize({ action, ...params, expiresAt });
 	const expected = hmac(getSecret(), payload);
@@ -99,6 +157,9 @@ export function validateToken(
 	if (token.length !== expected.length || !timingSafeEqual(Buffer.from(token), Buffer.from(expected))) {
 		return '確認トークンが無効です。パラメータが変更された可能性があります。preview を再実行してください';
 	}
+
+	// 検証成功 → 使用済みとして登録
+	usedTokens.set(token, expiresAt);
 
 	return null;
 }

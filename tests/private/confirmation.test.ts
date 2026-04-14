@@ -4,7 +4,16 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { generateToken, validateToken } from '../../src/private/confirmation.js';
+import {
+	_isCleanupTimerActive,
+	_resetUsedTokens,
+	_usedTokenCount,
+	generateToken,
+	purgeExpiredTokens,
+	startCleanupTimer,
+	stopCleanupTimer,
+	validateToken,
+} from '../../src/private/confirmation.js';
 
 beforeEach(() => {
 	process.env.BITBANK_API_SECRET = 'test_secret_for_hmac';
@@ -13,6 +22,8 @@ beforeEach(() => {
 afterEach(() => {
 	delete process.env.BITBANK_API_SECRET;
 	delete process.env.ORDER_CONFIRM_TTL_MS;
+	_resetUsedTokens();
+	stopCleanupTimer();
 });
 
 describe('generateToken', () => {
@@ -168,5 +179,140 @@ describe('validateToken', () => {
 
 		const error = validateToken(token, 'cancel_orders', params, expiresAt, now + 1000);
 		expect(error).toBeNull();
+	});
+
+	it('使用済みトークンの再利用を拒否する', () => {
+		const now = 1700000000000;
+		const params = { pair: 'btc_jpy', amount: '0.001', side: 'buy', type: 'limit' };
+		const { token, expiresAt } = generateToken('create_order', params, now);
+
+		// 1回目: 成功
+		const first = validateToken(token, 'create_order', params, expiresAt, now + 1000);
+		expect(first).toBeNull();
+
+		// 2回目: 使用済みで拒否
+		const second = validateToken(token, 'create_order', params, expiresAt, now + 2000);
+		expect(second).toContain('既に使用されています');
+	});
+
+	it('使用済みトークンは usedTokens に登録される', () => {
+		const now = 1700000000000;
+		const params = { pair: 'btc_jpy', amount: '0.001' };
+		const { token, expiresAt } = generateToken('create_order', params, now);
+
+		expect(_usedTokenCount()).toBe(0);
+		validateToken(token, 'create_order', params, expiresAt, now + 1000);
+		expect(_usedTokenCount()).toBe(1);
+	});
+
+	it('検証失敗したトークンは使用済みに登録されない', () => {
+		const now = 1700000000000;
+		const params = { pair: 'btc_jpy', amount: '0.001' };
+		const { expiresAt } = generateToken('create_order', params, now);
+
+		// 不正トークンで検証失敗
+		validateToken('deadbeef'.repeat(8), 'create_order', params, expiresAt, now + 1000);
+		expect(_usedTokenCount()).toBe(0);
+	});
+
+	it('期限切れトークンは使用済みチェックの前に拒否される', () => {
+		const now = 1700000000000;
+		const params = { pair: 'btc_jpy', amount: '0.001' };
+		const { token, expiresAt } = generateToken('create_order', params, now);
+
+		// まずトークンを消費して使用済みにする
+		expect(validateToken(token, 'create_order', params, expiresAt, now + 1000)).toBeNull();
+		expect(_usedTokenCount()).toBe(1);
+
+		// 期限切れ後に再検証 → 「使用済み」ではなく「有効期限」エラーになる
+		const error = validateToken(token, 'create_order', params, expiresAt, expiresAt + 1);
+		expect(error).toContain('有効期限');
+	});
+});
+
+describe('purgeExpiredTokens', () => {
+	it('期限切れトークンを除去する', () => {
+		const now = 1700000000000;
+		const params = { pair: 'btc_jpy', amount: '0.001' };
+		const { token, expiresAt } = generateToken('create_order', params, now);
+
+		// トークンを使用済みにする
+		validateToken(token, 'create_order', params, expiresAt, now + 1000);
+		expect(_usedTokenCount()).toBe(1);
+
+		// 期限切れ後にパージ
+		const purged = purgeExpiredTokens(expiresAt + 1);
+		expect(purged).toBe(1);
+		expect(_usedTokenCount()).toBe(0);
+	});
+
+	it('有効期限内のトークンは除去しない', () => {
+		const now = 1700000000000;
+		const params = { pair: 'btc_jpy', amount: '0.001' };
+		const { token, expiresAt } = generateToken('create_order', params, now);
+
+		validateToken(token, 'create_order', params, expiresAt, now + 1000);
+		expect(_usedTokenCount()).toBe(1);
+
+		// 期限内にパージ → 除去されない
+		const purged = purgeExpiredTokens(expiresAt);
+		expect(purged).toBe(0);
+		expect(_usedTokenCount()).toBe(1);
+	});
+
+	it('複数トークンのうち期限切れ分のみ除去する', () => {
+		const now = 1700000000000;
+		const params1 = { pair: 'btc_jpy', amount: '0.001' };
+		const params2 = { pair: 'eth_jpy', amount: '0.01' };
+
+		const t1 = generateToken('create_order', params1, now);
+		const t2 = generateToken('create_order', params2, now + 30_000); // 30秒後に生成
+
+		validateToken(t1.token, 'create_order', params1, t1.expiresAt, now + 1000);
+		validateToken(t2.token, 'create_order', params2, t2.expiresAt, now + 31_000);
+		expect(_usedTokenCount()).toBe(2);
+
+		// t1 のみ期限切れ
+		const purged = purgeExpiredTokens(t1.expiresAt + 1);
+		expect(purged).toBe(1);
+		expect(_usedTokenCount()).toBe(1);
+	});
+
+	it('空の場合は 0 を返す', () => {
+		const purged = purgeExpiredTokens(Date.now());
+		expect(purged).toBe(0);
+	});
+});
+
+describe('startCleanupTimer / stopCleanupTimer', () => {
+	it('startCleanupTimer でタイマーが有効になる', () => {
+		expect(_isCleanupTimerActive()).toBe(false);
+		startCleanupTimer();
+		expect(_isCleanupTimerActive()).toBe(true);
+	});
+
+	it('重複起動しない（2回呼んでもタイマーは1つ）', () => {
+		startCleanupTimer();
+		expect(_isCleanupTimerActive()).toBe(true);
+		startCleanupTimer(); // 2回目は no-op
+		expect(_isCleanupTimerActive()).toBe(true);
+		stopCleanupTimer();
+		expect(_isCleanupTimerActive()).toBe(false);
+	});
+
+	it('stopCleanupTimer でタイマーが停止する', () => {
+		startCleanupTimer();
+		expect(_isCleanupTimerActive()).toBe(true);
+		stopCleanupTimer();
+		expect(_isCleanupTimerActive()).toBe(false);
+	});
+
+	it('stopCleanupTimer は複数回呼んでも安全', () => {
+		stopCleanupTimer();
+		expect(_isCleanupTimerActive()).toBe(false);
+		startCleanupTimer();
+		stopCleanupTimer();
+		stopCleanupTimer(); // 2回目は no-op
+		expect(_isCleanupTimerActive()).toBe(false);
 	});
 });

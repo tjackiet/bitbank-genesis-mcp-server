@@ -42,6 +42,7 @@ import { toolDef as getVolatilityMetrics } from './handlers/getVolatilityMetrics
 import { toolDef as renderChartSvg } from './handlers/renderChartSvgHandler.js';
 import { toolDef as runBacktest } from './handlers/runBacktestHandler.js';
 import { isPrivateApiEnabled } from './private/config.js';
+import { startCleanupTimer } from './private/confirmation.js';
 import type { ToolDefinition } from './tool-definition.js';
 
 /**
@@ -139,6 +140,7 @@ if (isPrivateApiEnabled()) {
 		getMarginPositions,
 		getMarginTradeHistory,
 	);
+	startCleanupTimer();
 	log('info', {
 		type: 'private_api',
 		message: 'Private API tools enabled',
