@@ -57,47 +57,20 @@ git log --oneline --merges -5
 
 ### 1. content テキストの充足性
 
-LLM は `structuredContent` を参照できない。`content[0].text` だけが見える。
-
-チェック:
-- handler が `ok(summary, data, meta)` をそのまま返していないか（NG パターン）
 - `content[0].text` に LLM が判断に必要なデータが含まれているか
-- 参考: `tools/get_candles.ts`, `tools/prepare_chart_data.ts` の実装パターン
-
-```ts
-// NG: summary しか LLM に届かない
-handler: async (args) => myTool(args),
-
-// OK: content にデータを明示的に含める
-handler: async (args) => {
-  const result = await myTool(args);
-  if (!result.ok) return result;
-  const text = `${result.summary}\n${JSON.stringify(result.data, null, 2)}`;
-  return {
-    content: [{ type: 'text', text }],
-    structuredContent: result as unknown as Record<string, unknown>,
-  };
-},
-```
+- ルールと NG/OK パターンは `.claude/rules/tools.md` の「content テキストにデータを含める」節を参照
 
 ### 2. セキュリティポリシー遵守
 
 Private ツール（`tools/private/`, `src/private/`）の変更時に確認:
 
-- API レスポンスから以下が除外されているか:
-  `account_number`, `account_owner`, `branch_name`, `account_type`
-- 新しい機密フィールドが input に追加された場合、`lib/logger.ts` の `SENSITIVE_KEYS` に登録されているか
+- 除外すべきフィールド・マスク対象・チェックリストは `.claude/rules/sensitive-data.md` を参照
 - エラーメッセージ（catch ブロック）に認証情報やユーザー固有情報が混入していないか
-- `content[0].text` に不要な機密情報を含めていないか
 
 ### 3. アーキテクチャ整合性
 
-- 全ツールが `Result<T, M>` パターン（`ok()` / `fail()`）で返しているか
-- スキーマ変更が `src/schema/` 配下の Zod 定義を単一ソースとしているか
-  （型を手書きで定義していないか）
-- 100 行超のハンドラが `src/handlers/` に分離されているか
+- `CLAUDE.md` のアーキテクチャ節と `.claude/rules/tools.md` のルールに準拠しているか
 - `server.ts` を直接編集していないか（ツール登録は `tool-registry.ts` 経由）
-- `new Date()` ではなく `lib/datetime.ts` の dayjs ラッパーを使っているか
 
 ### 4. テストの質
 
