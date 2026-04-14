@@ -52,18 +52,20 @@ export function buildTickersJpyItemsText(items: NormalizedTicker[]): string {
 	return lines.join('\n');
 }
 
+const InputSchema = z.object({
+	view: z.enum(['items', 'ranked']).optional().default('ranked'),
+	sortBy: z.enum(['change24h', 'volume', 'name']).optional().default('change24h'),
+	order: z.enum(['asc', 'desc']).optional().default('desc'),
+	limit: z.number().int().min(1).max(50).optional().default(5),
+});
+
 export const toolDef: ToolDefinition = {
 	name: 'get_tickers_jpy',
 	description:
 		'[All Tickers / Market Overview] 全JPYペアのティッカー一覧（tickers / ranking / market overview）を取得。変化率・出来高でランキング表示可能。',
-	inputSchema: z.object({
-		view: z.enum(['items', 'ranked']).optional().default('ranked'),
-		sortBy: z.enum(['change24h', 'volume', 'name']).optional().default('change24h'),
-		order: z.enum(['asc', 'desc']).optional().default('desc'),
-		limit: z.number().int().min(1).max(50).optional().default(5),
-	}),
+	inputSchema: InputSchema,
 	handler: async (args: Record<string, unknown>) => {
-		const parsed = toolDef.inputSchema.parse(args);
+		const parsed = InputSchema.parse(args);
 		const { view, sortBy, order, limit } = parsed;
 		const res = await getTickersJpy();
 		if (!res?.ok) return res;

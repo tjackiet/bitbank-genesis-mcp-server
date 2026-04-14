@@ -1,3 +1,4 @@
+import type { z } from 'zod';
 import { dayjs } from '../lib/datetime.js';
 import { fail, failFromError, ok } from '../lib/result.js';
 import { DetectPatternsOutputSchema, type PatternTypeEnum } from '../src/schemas.js';
@@ -62,7 +63,7 @@ export default async function detectPatterns(
 		tolerancePct: number;
 		minBarsBetweenSwings: number;
 		strictPivots: boolean;
-		patterns: Array<typeof PatternTypeEnum._type>;
+		patterns: Array<z.infer<typeof PatternTypeEnum>>;
 		requireCurrentInPattern: boolean;
 		currentRelevanceDays: number;
 		// 統合オプション

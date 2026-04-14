@@ -3,13 +3,14 @@
  * generateSummary / generateContent + 共有型定義
  */
 
+import type { z } from 'zod';
 import { formatDateWithDayOfWeek } from '../../lib/datetime.js';
 import { formatPrice as fmtPrice } from '../../lib/formatter.js';
 import type { CandlePatternTypeEnum } from '../schemas.js';
 
 // ── 共有型定義 ──
 
-export type CandlePatternType = typeof CandlePatternTypeEnum._type;
+export type CandlePatternType = z.infer<typeof CandlePatternTypeEnum>;
 
 export interface WindowCandle {
 	timestamp: string;
