@@ -4,16 +4,38 @@ set -euo pipefail
 # tsconfig.json, etc). If code has lint/type errors, fix the code — not the config.
 
 input="$(cat)"
-file="$(jq -r '.tool_input.file_path // .tool_input.path // empty' <<< "$input")"
+tool_name="$(jq -r '.tool_name // empty' <<< "$input")"
 
 # 保護対象の設定ファイル
 PROTECTED="biome.json tsconfig.json lefthook.yml .claude/settings.json package.json .github/workflows/ci.yml"
 
+# --- Write/Edit/MultiEdit: file_path ベースのチェック ---
+if [[ "$tool_name" != "Bash" ]]; then
+  file="$(jq -r '.tool_input.file_path // .tool_input.path // empty' <<< "$input")"
+  for p in $PROTECTED; do
+    case "$file" in
+      *"$p"*)
+        echo "BLOCKED: $file is a protected config file. Fix the code, not the linter/compiler config." >&2
+        exit 2
+        ;;
+    esac
+  done
+  exit 0
+fi
+
+# --- Bash: コマンドに保護ファイル名 AND 書き込みパターンが含まれるかチェック ---
+cmd="$(jq -r '.tool_input.command // empty' <<< "$input")"
+
+# 書き込みパターン（リダイレクト・cp・mv・rm・tee・sed -i・install）
+WRITE_RE='(^|[[:space:]])(cp|mv|rm|tee|install)([[:space:]]|$)|sed[[:space:]]+-i|>'
+
 for p in $PROTECTED; do
-  case "$file" in
+  case "$cmd" in
     *"$p"*)
-      echo "BLOCKED: $file is a protected config file. Fix the code, not the linter/compiler config." >&2
-      exit 2
+      if echo "$cmd" | grep -qE "$WRITE_RE"; then
+        echo "BLOCKED: Bash command targets protected config file '$p'. Fix the code, not the linter/compiler config." >&2
+        exit 2
+      fi
       ;;
   esac
 done
