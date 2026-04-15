@@ -1,4 +1,5 @@
 import type { z } from 'zod';
+import { toNum } from '../lib/conversions.js';
 import { dayjs, toIsoMs } from '../lib/datetime.js';
 import { formatPair, formatPrice } from '../lib/formatter.js';
 import { BITBANK_API_BASE, DEFAULT_RETRIES, fetchJsonWithRateLimit } from '../lib/http.js';
@@ -15,9 +16,8 @@ import type { ToolDefinition } from '../src/tool-definition.js';
 type TxnRaw = Record<string, unknown>;
 
 function toMs(input: unknown): number | null {
-	if (input == null) return null;
-	const n = Number(input);
-	if (!Number.isFinite(n)) return null;
+	const n = toNum(input);
+	if (n == null) return null;
 	return n < 1e12 ? Math.floor(n * 1000) : Math.floor(n);
 }
 
@@ -94,12 +94,12 @@ export default async function getTransactions(pair: string = 'btc_jpy', limit: n
 
 		const items = arr
 			.map((t) => {
-				const price = Number(t.price);
-				const amount = Number(t.amount ?? t.size);
+				const price = toNum(t.price);
+				const amount = toNum(t.amount ?? t.size);
 				const side = normalizeSide(t.side);
 				const ms = toMs(t.executed_at ?? t.timestamp ?? t.date);
 				const isoTime = toIsoMs(ms);
-				if (!Number.isFinite(price) || !Number.isFinite(amount) || side == null || isoTime == null) return null;
+				if (price == null || amount == null || side == null || isoTime == null) return null;
 				return { price, amount, side, timestampMs: ms as number, isoTime };
 			})
 			.filter(Boolean) as NormalizedTxn[];

@@ -1,4 +1,5 @@
 import type { z } from 'zod';
+import { toNum } from '../lib/conversions.js';
 import { nowIso } from '../lib/datetime.js';
 import { formatSummary } from '../lib/formatter.js';
 import { trueRange } from '../lib/indicators.js';
@@ -112,8 +113,7 @@ function periodsPerYear(type: string): number {
 
 function toMs(iso: string | null | undefined): number | null {
 	if (!iso) return null;
-	const t = Date.parse(iso);
-	return Number.isFinite(t) ? t : null;
+	return toNum(Date.parse(iso));
 }
 
 export default async function getVolatilityMetrics(
@@ -146,13 +146,23 @@ export default async function getVolatilityMetrics(
 		const high: number[] = [];
 		const low: number[] = [];
 		for (const c of candles) {
+			const o = toNum(c.open);
+			const h = toNum(c.high);
+			const l = toNum(c.low);
+			const cl = toNum(c.close);
+			if (o == null || h == null || l == null || cl == null) continue;
+
 			const t = toMs(c.isoTime ?? null);
 			if (t != null) ts.push(t);
 			else ts.push(ts.length > 0 ? ts[ts.length - 1] + baseIntervalMsOf(type) : Date.now());
-			open.push(Number(c.open));
-			high.push(Number(c.high));
-			low.push(Number(c.low));
-			close.push(Number(c.close));
+			open.push(o);
+			high.push(h);
+			low.push(l);
+			close.push(cl);
+		}
+
+		if (close.length < 20) {
+			return GetVolMetricsOutputSchema.parse(fail('有効なOHLCデータ不足（最低20本必要）', 'user'));
 		}
 
 		const ret = logReturns(close, useLog);

@@ -11,6 +11,7 @@
  * | raw         | get_depth                 | 生の bids/asks 配列＋壁ゾーン自動推定          |
  */
 
+import { toNum } from '../lib/conversions.js';
 import { toIsoTime } from '../lib/datetime.js';
 import { estimateZones } from '../lib/depth-analysis.js';
 import { formatSummary, formatTimestampJST } from '../lib/formatter.js';
@@ -428,7 +429,7 @@ function buildRaw(
 		ask_market: d.ask_market,
 		bid_market: d.bid_market,
 		timestamp,
-		sequenceId: d.sequenceId != null ? Number(d.sequenceId) : d.sequence_id != null ? Number(d.sequence_id) : undefined,
+		sequenceId: toNum(d.sequenceId) ?? toNum(d.sequence_id) ?? undefined,
 		overlays: {
 			depth_zones: [...estimateZones(bidsNum.slice(0, 50), 'bid'), ...estimateZones(asksNum.slice(0, 50), 'ask')],
 		},
@@ -478,7 +479,7 @@ export default async function getOrderbook(params: GetOrderbookParams | string =
 		}
 		const rawAsks: RawLevel[] = (d.asks as RawLevel[]).slice(0, maxLevels);
 		const rawBids: RawLevel[] = (d.bids as RawLevel[]).slice(0, maxLevels);
-		const timestamp = Number(d.timestamp ?? d.timestamp_ms ?? Date.now());
+		const timestamp = toNum(d.timestamp ?? d.timestamp_ms) ?? Date.now();
 
 		// NumLevel 変換（summary / statistics で使用）
 		const bidsNum: NumLevel[] = rawBids.map(([p, s]) => [Number(p), Number(s)]);

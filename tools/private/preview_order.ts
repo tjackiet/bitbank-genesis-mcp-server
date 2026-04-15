@@ -5,6 +5,7 @@
  * create_order に渡す確認トークンを発行する。実際の発注は行わない。
  */
 
+import { toNum } from '../../lib/conversions.js';
 import { formatPair, formatPrice } from '../../lib/formatter.js';
 import { BITBANK_API_BASE, fetchJson } from '../../lib/http.js';
 import { fail, ok, toStructured } from '../../lib/result.js';
@@ -60,8 +61,8 @@ async function validateTriggerPrice(pair: string, side: 'buy' | 'sell', triggerP
 			data?: { last?: string };
 		};
 		if (json?.success !== 1 || !json.data?.last) return null;
-		const currentPrice = Number(json.data.last);
-		if (!Number.isFinite(currentPrice)) return null;
+		const currentPrice = toNum(json.data.last);
+		if (currentPrice == null) return null;
 
 		if (side === 'sell' && triggerPrice >= currentPrice) {
 			return [

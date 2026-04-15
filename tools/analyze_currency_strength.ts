@@ -1,4 +1,5 @@
 import type { z } from 'zod';
+import { toNum } from '../lib/conversions.js';
 import { nowIso } from '../lib/datetime.js';
 import { formatPercent, formatPriceJPY, formatVolumeJPY } from '../lib/formatter.js';
 import { fail, failFromError, ok } from '../lib/result.js';
@@ -79,14 +80,14 @@ export default async function analyzeCurrencyStrength(topN: number = 10, type: s
 			return true;
 		});
 		const withVolume = uniqueTickers.map((t) => {
-			const lastN = Number(t.last);
-			const volN = Number(t.vol);
-			const volumeJPY = Number.isFinite(lastN) && Number.isFinite(volN) ? lastN * volN : 0;
-			const openN = Number(t.open);
+			const lastN = toNum(t.last);
+			const volN = toNum(t.vol);
+			const volumeJPY = lastN != null && volN != null ? lastN * volN : 0;
+			const openN = toNum(t.open);
 			const change24h =
 				t.change24hPct != null
-					? Number(t.change24hPct)
-					: Number.isFinite(openN) && openN > 0 && Number.isFinite(lastN)
+					? toNum(t.change24hPct)
+					: openN != null && openN > 0 && lastN != null
 						? Number((((lastN - openN) / openN) * 100).toFixed(2))
 						: null;
 			return { ...t, lastN, volumeJPY, change24h };
