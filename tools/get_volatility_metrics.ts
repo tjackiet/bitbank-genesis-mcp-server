@@ -146,13 +146,23 @@ export default async function getVolatilityMetrics(
 		const high: number[] = [];
 		const low: number[] = [];
 		for (const c of candles) {
+			const o = toNum(c.open);
+			const h = toNum(c.high);
+			const l = toNum(c.low);
+			const cl = toNum(c.close);
+			if (o == null || h == null || l == null || cl == null) continue;
+
 			const t = toMs(c.isoTime ?? null);
 			if (t != null) ts.push(t);
 			else ts.push(ts.length > 0 ? ts[ts.length - 1] + baseIntervalMsOf(type) : Date.now());
-			open.push(toNum(c.open) ?? 0);
-			high.push(toNum(c.high) ?? 0);
-			low.push(toNum(c.low) ?? 0);
-			close.push(toNum(c.close) ?? 0);
+			open.push(o);
+			high.push(h);
+			low.push(l);
+			close.push(cl);
+		}
+
+		if (close.length < 20) {
+			return GetVolMetricsOutputSchema.parse(fail('有効なOHLCデータ不足（最低20本必要）', 'user'));
 		}
 
 		const ret = logReturns(close, useLog);

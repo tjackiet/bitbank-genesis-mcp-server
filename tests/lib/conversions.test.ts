@@ -25,9 +25,11 @@ describe('toNum', () => {
 		expect(toNum(undefined)).toBeNull();
 	});
 
-	// 空文字列（Number("") === 0 だが意図しない変換）
-	it('空文字列は null を返す', () => {
+	// 空文字列・空白文字列（Number("") === 0, Number("  ") === 0 だが意図しない変換）
+	it('空文字列・空白文字列は null を返す', () => {
 		expect(toNum('')).toBeNull();
+		expect(toNum('   ')).toBeNull();
+		expect(toNum('\t\n')).toBeNull();
 	});
 
 	// NaN / Infinity

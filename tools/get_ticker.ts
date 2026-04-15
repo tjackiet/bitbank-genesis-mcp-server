@@ -93,6 +93,7 @@ export default async function getTicker(
 		const d = jsonObj.data;
 		const summary = formatTickerSummary(chk.pair, d);
 
+		const tsNum = toNum(d.timestamp);
 		const data: GetTickerData = {
 			raw: json,
 			normalized: {
@@ -104,8 +105,8 @@ export default async function getTicker(
 				high: toNum(d.high),
 				low: toNum(d.low),
 				volume: toNum(d.vol),
-				timestamp: toNum(d.timestamp),
-				isoTime: toIsoTime(d.timestamp),
+				timestamp: tsNum,
+				isoTime: tsNum != null ? toIsoTime(tsNum) : null,
 			},
 		};
 
