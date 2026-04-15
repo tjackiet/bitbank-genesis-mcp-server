@@ -1,3 +1,4 @@
+import { toNum } from '../lib/conversions.js';
 import { toDisplayTime, toIsoTime } from '../lib/datetime.js';
 import { formatPair, formatPercent, formatPrice } from '../lib/formatter.js';
 import { BITBANK_API_BASE, DEFAULT_RETRIES, fetchJsonWithRateLimit } from '../lib/http.js';
@@ -18,13 +19,13 @@ function formatTickerSummary(pair: string, d: Record<string, unknown>): string {
 	const pairDisplay = formatPair(pair);
 	const _isJpy = pair.toLowerCase().includes('jpy');
 
-	const last = d.last != null ? Number(d.last) : null;
-	const open = d.open != null ? Number(d.open) : null;
-	const high = d.high != null ? Number(d.high) : null;
-	const low = d.low != null ? Number(d.low) : null;
-	const buy = d.buy != null ? Number(d.buy) : null;
-	const sell = d.sell != null ? Number(d.sell) : null;
-	const vol = d.vol != null ? Number(d.vol) : null;
+	const last = toNum(d.last);
+	const open = toNum(d.open);
+	const high = toNum(d.high);
+	const low = toNum(d.low);
+	const buy = toNum(d.buy);
+	const sell = toNum(d.sell);
+	const vol = toNum(d.vol);
 
 	// 通貨単位
 	const baseCurrency = pair.split('_')[0]?.toUpperCase() ?? '';
@@ -64,7 +65,7 @@ function formatTickerSummary(pair: string, d: Record<string, unknown>): string {
 	lines.push(`出来高: ${formatVolume(vol)}`);
 	lines.push(`Bid: ${fmtPx(buy)} / Ask: ${fmtPx(sell)}${spreadStr ? `（スプレッド: ${spreadStr}）` : ''}`);
 
-	const tsNum = d.timestamp != null ? Number(d.timestamp) : null;
+	const tsNum = toNum(d.timestamp);
 	const timeStr = tsNum != null ? toDisplayTime(tsNum) : null;
 	if (timeStr) lines.push(`📸 ${timeStr} 時点`);
 
@@ -96,14 +97,14 @@ export default async function getTicker(
 			raw: json,
 			normalized: {
 				pair: chk.pair,
-				last: d.last != null ? Number(d.last) : null,
-				buy: d.buy != null ? Number(d.buy) : null,
-				sell: d.sell != null ? Number(d.sell) : null,
-				open: d.open != null ? Number(d.open) : null,
-				high: d.high != null ? Number(d.high) : null,
-				low: d.low != null ? Number(d.low) : null,
-				volume: d.vol != null ? Number(d.vol) : null,
-				timestamp: d.timestamp != null ? Number(d.timestamp) : null,
+				last: toNum(d.last),
+				buy: toNum(d.buy),
+				sell: toNum(d.sell),
+				open: toNum(d.open),
+				high: toNum(d.high),
+				low: toNum(d.low),
+				volume: toNum(d.vol),
+				timestamp: toNum(d.timestamp),
 				isoTime: toIsoTime(d.timestamp),
 			},
 		};

@@ -5,6 +5,7 @@
  * 保有建玉・追証・不足金情報を取得して返す。
  */
 
+import { toNum } from '../../lib/conversions.js';
 import { nowIso, toIsoMs } from '../../lib/datetime.js';
 import { formatPair, formatPrice } from '../../lib/formatter.js';
 import { fail, ok } from '../../lib/result.js';
@@ -90,8 +91,8 @@ export default async function getMarginPositions(args: { pair?: string }) {
 			lines.push('');
 			lines.push(`⚠ ${n.what}: ${formatPrice(Number(n.amount))} 円（期日: ${dueDate}）`);
 		}
-		if (Number(raw.payables.amount) > 0) {
-			lines.push(`⚠ 不足金: ${formatPrice(Number(raw.payables.amount))} 円`);
+		if ((toNum(raw.payables.amount) ?? 0) > 0) {
+			lines.push(`⚠ 不足金: ${formatPrice(toNum(raw.payables.amount))} 円`);
 		}
 
 		const summary = lines.join('\n');

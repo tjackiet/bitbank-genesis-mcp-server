@@ -5,6 +5,7 @@
  * ticker 連携で円評価額・構成比を自動算出する。
  */
 
+import { toNum } from '../../lib/conversions.js';
 import { nowIso } from '../../lib/datetime.js';
 import { formatPrice } from '../../lib/formatter.js';
 import { fail, ok } from '../../lib/result.js';
@@ -50,8 +51,8 @@ async function fetchTickerPrices(): Promise<{ prices: Map<string, number>; error
 		const prices = new Map<string, number>();
 		for (const item of json.data) {
 			const asset = item.pair.replace('_jpy', '');
-			const last = Number(item.last);
-			if (Number.isFinite(last) && last > 0) {
+			const last = toNum(item.last);
+			if (last != null && last > 0) {
 				prices.set(asset, last);
 			}
 		}
@@ -71,8 +72,8 @@ export default async function getMyAssets(args: { include_jpy_valuation?: boolea
 
 		// ゼロでない資産のみ抽出
 		const nonZeroAssets = rawAssets.assets.filter((a) => {
-			const amount = Number(a.onhand_amount);
-			return Number.isFinite(amount) && amount > 0;
+			const amount = toNum(a.onhand_amount);
+			return amount != null && amount > 0;
 		});
 
 		// ticker 連携（オプション）
@@ -95,11 +96,12 @@ export default async function getMyAssets(args: { include_jpy_valuation?: boolea
 			let jpyValue: number | undefined;
 			if (include_jpy_valuation) {
 				if (a.asset === 'jpy') {
-					jpyValue = Number(amount);
+					jpyValue = toNum(amount) ?? undefined;
 				} else {
 					const price = prices.get(a.asset);
-					if (price) {
-						jpyValue = Number(amount) * price;
+					const amountN = toNum(amount);
+					if (price && amountN != null) {
+						jpyValue = amountN * price;
 					}
 				}
 			}
@@ -149,7 +151,7 @@ export default async function getMyAssets(args: { include_jpy_valuation?: boolea
 				}
 				line += ')';
 			}
-			if (Number(a.locked_amount) > 0) {
+			if ((toNum(a.locked_amount) ?? 0) > 0) {
 				line += ` [ロック: ${a.locked_amount}]`;
 			}
 			lines.push(line);

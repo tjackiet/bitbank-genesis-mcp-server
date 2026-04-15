@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { TtlCache } from '../lib/cache.js';
+import { toNum } from '../lib/conversions.js';
 import { nowIso } from '../lib/datetime.js';
 import { getErrorMessage } from '../lib/error.js';
 import { BITBANK_API_BASE } from '../lib/http.js';
@@ -158,12 +159,10 @@ export default async function getTickersJpy(opts?: { bypassCache?: boolean }) {
 			const { data: filtered, filterInfo } = await filterByMode(dataRaw, timeoutMs, retries, retryWaitMs);
 			// 24h変動率を open/last から算出（%）
 			const data = filtered.map((it) => {
-				const openN = Number(it.open);
-				const lastN = Number(it.last);
+				const openN = toNum(it.open);
+				const lastN = toNum(it.last);
 				const change =
-					Number.isFinite(openN) && openN > 0 && Number.isFinite(lastN)
-						? Number((((lastN - openN) / openN) * 100).toFixed(2))
-						: null;
+					openN != null && openN > 0 && lastN != null ? Number((((lastN - openN) / openN) * 100).toFixed(2)) : null;
 				return { ...it, change24h: change, change24hPct: change };
 			});
 			tickerCache.set(CACHE_KEY, data);

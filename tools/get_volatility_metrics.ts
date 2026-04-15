@@ -1,4 +1,5 @@
 import type { z } from 'zod';
+import { toNum } from '../lib/conversions.js';
 import { nowIso } from '../lib/datetime.js';
 import { formatSummary } from '../lib/formatter.js';
 import { trueRange } from '../lib/indicators.js';
@@ -112,8 +113,7 @@ function periodsPerYear(type: string): number {
 
 function toMs(iso: string | null | undefined): number | null {
 	if (!iso) return null;
-	const t = Date.parse(iso);
-	return Number.isFinite(t) ? t : null;
+	return toNum(Date.parse(iso));
 }
 
 export default async function getVolatilityMetrics(
@@ -149,10 +149,10 @@ export default async function getVolatilityMetrics(
 			const t = toMs(c.isoTime ?? null);
 			if (t != null) ts.push(t);
 			else ts.push(ts.length > 0 ? ts[ts.length - 1] + baseIntervalMsOf(type) : Date.now());
-			open.push(Number(c.open));
-			high.push(Number(c.high));
-			low.push(Number(c.low));
-			close.push(Number(c.close));
+			open.push(toNum(c.open) ?? 0);
+			high.push(toNum(c.high) ?? 0);
+			low.push(toNum(c.low) ?? 0);
+			close.push(toNum(c.close) ?? 0);
 		}
 
 		const ret = logReturns(close, useLog);
