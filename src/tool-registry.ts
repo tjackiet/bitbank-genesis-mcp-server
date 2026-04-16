@@ -33,6 +33,7 @@ import { toolDef as getTransactions } from '../tools/get_transactions.js';
 import { toolDef as prepareChartData } from '../tools/prepare_chart_data.js';
 import { toolDef as renderCandlePatternDiagram } from '../tools/render_candle_pattern_diagram.js';
 import { toolDef as renderDepthSvg } from '../tools/render_depth_svg.js';
+import { toolDef as validateCandleData } from '../tools/validate_candle_data.js';
 import { toolDef as analyzeFibonacci } from './handlers/analyzeFibonacciHandler.js';
 import { toolDef as analyzeIndicators } from './handlers/analyzeIndicatorsHandler.js';
 import { toolDef as analyzeMarketSignal } from './handlers/analyzeMarketSignalHandler.js';
@@ -93,6 +94,9 @@ export const allToolDefs: ToolDefinition[] = [
 	renderChartSvg,
 	renderDepthSvg,
 	renderCandlePatternDiagram,
+
+	// ── Data Quality (1) ──
+	validateCandleData,
 
 	// ── Backtesting (1) ──
 	runBacktest,

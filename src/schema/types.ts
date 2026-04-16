@@ -1,5 +1,6 @@
 import type { z } from 'zod';
 import type { CandleSchema, CandleTypeEnum, NumericSeriesSchema, TrendLabelEnum } from './base.js';
+import type { ValidateCandleDataDataSchema, ValidateCandleDataMetaSchema } from './candle-validate.js';
 import type {
 	BollingerBandsSeriesSchema,
 	ChartIndicatorsSchema,
@@ -90,3 +91,7 @@ export interface FailResult<M = Record<string, unknown>> {
 }
 
 export type Result<T = unknown, M = unknown> = OkResult<T, M> | FailResult<M>;
+
+// --- Candle validation ---
+export type ValidateCandleDataData = z.infer<typeof ValidateCandleDataDataSchema>;
+export type ValidateCandleDataMeta = z.infer<typeof ValidateCandleDataMetaSchema>;
