@@ -221,7 +221,7 @@ export const toolDef: ToolDefinition = {
 		const result = await validateCandleData(pair, type, date, limit, price_sigma, volume_multiplier, tz);
 		if (!result.ok) return result;
 
-		const text = `${result.summary}\n\n${JSON.stringify(result.data, null, 2)}`;
+		const text = `${result.summary}\n\n${JSON.stringify({ meta: result.meta, data: result.data }, null, 2)}`;
 		return {
 			content: [{ type: 'text', text }],
 			structuredContent: toStructured(result),

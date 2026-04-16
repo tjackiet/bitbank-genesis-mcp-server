@@ -6,7 +6,11 @@ import { BaseMetaSchema, CandleTypeEnum, toolResultSchema } from './base.js';
 export const ValidateCandleDataInputSchema = z.object({
 	pair: z.string().optional().default('btc_jpy'),
 	type: CandleTypeEnum.optional().default('1day'),
-	date: z.string().optional().describe('YYYYMMDD or YYYY format. If omitted, uses latest data.'),
+	date: z
+		.string()
+		.regex(/^\d{4}(\d{4})?$/, 'YYYYMMDD or YYYY format')
+		.optional()
+		.describe('YYYYMMDD or YYYY format. If omitted, uses latest data.'),
 	limit: z.number().int().min(10).max(1000).optional().default(200).describe('検証対象のローソク足本数（10〜1000）'),
 	price_sigma: z
 		.number()
