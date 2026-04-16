@@ -86,12 +86,35 @@ describe('validateCandleData', () => {
 		assertFail(res);
 	});
 
-	it('meta に thresholds が含まれる', async () => {
+	it('meta にユーザー指定の thresholds と tier が含まれる', async () => {
 		globalThis.fetch = mockFetchOk(makeOhlcv(30)) as unknown as typeof fetch;
 
 		const res = await validateCandleData('btc_jpy', '1day', '2024', 30, 2.5, 5);
 		assertOk(res);
 
-		expect(res.meta.thresholds).toEqual({ priceSigma: 2.5, volumeMultiplier: 5 });
+		expect(res.meta.tier).toBe('major');
+		expect(res.meta.thresholds.priceSigma).toBe(2.5);
+		expect(res.meta.thresholds.volumeMultiplier).toBe(5);
+	});
+
+	it('閾値省略時はティアに応じたデフォルトが適用される', async () => {
+		globalThis.fetch = mockFetchOk(makeOhlcv(30)) as unknown as typeof fetch;
+
+		// btc_jpy = major → priceSigma=4, volumeMultiplier=15
+		const res = await validateCandleData('btc_jpy', '1day', '2024', 30);
+		assertOk(res);
+
+		expect(res.meta.tier).toBe('major');
+		expect(res.meta.thresholds.priceSigma).toBe(4);
+		expect(res.meta.thresholds.volumeMultiplier).toBe(15);
+	});
+
+	it('summary にペアティアが表示される', async () => {
+		globalThis.fetch = mockFetchOk(makeOhlcv(30)) as unknown as typeof fetch;
+
+		const res = await validateCandleData('btc_jpy', '1day', '2024', 30);
+		assertOk(res);
+
+		expect(res.summary).toContain('major');
 	});
 });

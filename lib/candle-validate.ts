@@ -4,6 +4,11 @@
  * Vol.01（データ取得とクレンジング）のバリデーション手法をベースに、
  * OHLCV データの完全性・整合性・異常値を検出する純粋関数群。
  *
+ * 【暗号資産ドメイン考慮】
+ * - ファットテール分布: σ閾値は株式より広め（Vol.01 の教え）
+ * - 出来高ゼロ: 「取引がなかった」= 正常（Vol.01 の補完戦略: 0埋め）
+ * - ペアティア: major/mid/minor で流動性・スプレッドが大きく異なる
+ *
  * 【共通仕様】
  * - 入力: CandleRow[]（古い順、isoTime 付き）
  * - 出力: 各検証結果オブジェクト
@@ -21,6 +26,68 @@ export interface CandleRow {
 	close: number;
 	volume?: number;
 	isoTime?: string | null;
+}
+
+// ── ペアティア分類 ──
+// 参考: bitbank-cli-skills pair-classification.md
+// 24h出来高シェア（JPY建て売買代金割合）に基づく分類
+
+export type PairTier = 'major' | 'mid' | 'minor';
+
+const MAJOR_PAIRS = new Set(['btc_jpy', 'xrp_jpy', 'eth_jpy']);
+
+const MID_PAIRS = new Set([
+	'doge_jpy',
+	'sol_jpy',
+	'ltc_jpy',
+	'ada_jpy',
+	'avax_jpy',
+	'dot_jpy',
+	'bnb_jpy',
+	'sui_jpy',
+	'link_jpy',
+]);
+
+/**
+ * ペア名からティアを判定する。
+ * major: 出来高シェア10%以上（板が厚く、スプレッド狭い）
+ * mid:   出来高シェア1-10%（深夜帯は板が薄くなることがある）
+ * minor: 出来高シェア1%未満（出来高ゼロが散発、スプレッド広い、ヒゲが出やすい）
+ */
+export function classifyPairTier(pair: string): PairTier {
+	const normalized = pair.toLowerCase();
+	if (MAJOR_PAIRS.has(normalized)) return 'major';
+	if (MID_PAIRS.has(normalized)) return 'mid';
+	return 'minor';
+}
+
+/**
+ * ティアに応じたデフォルト閾値を返す。
+ *
+ * Vol.01 の教え:
+ * - 暗号資産はファットテール → σ閾値は広めが妥当
+ * - 出来高ゼロ = 取引がなかった（正常）
+ *
+ * ペア分類の教え:
+ * - minor は出来高ゼロが日常的、スプレッド由来のヒゲも頻出
+ * - major は板が厚く、異常値はより信号として意味がある
+ */
+export interface TierDefaults {
+	priceSigma: number;
+	volumeMultiplier: number;
+	/** 出来高ゼロを品質スコアで減点する重み (0=減点なし, 1=フル減点) */
+	zeroVolumePenaltyWeight: number;
+}
+
+export function getTierDefaults(tier: PairTier): TierDefaults {
+	switch (tier) {
+		case 'major':
+			return { priceSigma: 4, volumeMultiplier: 15, zeroVolumePenaltyWeight: 1 };
+		case 'mid':
+			return { priceSigma: 4, volumeMultiplier: 25, zeroVolumePenaltyWeight: 0.5 };
+		case 'minor':
+			return { priceSigma: 5, volumeMultiplier: 50, zeroVolumePenaltyWeight: 0 };
+	}
 }
 
 // ── 時間足ごとのインターバル（ミリ秒） ──
@@ -311,12 +378,18 @@ export interface QualityScore {
 
 /**
  * 各チェック結果を総合して 0–100 の品質スコアを算出。
+ *
+ * @param zeroVolumePenaltyWeight 出来高ゼロの減点重み (0–1)。
+ *   Vol.01: 出来高ゼロ = 「取引がなかった」= 正常な解釈。
+ *   minor ペアでは日常的に発生するため 0（減点なし）、
+ *   major ペアでは異常の可能性があるため 1（フル減点）。
  */
 export function computeQualityScore(
 	completeness: CompletenessResult,
 	integrity: IntegrityResult,
 	priceAnomalies: PriceAnomalyResult,
 	volumeAnomalies: VolumeAnomalyResult,
+	zeroVolumePenaltyWeight = 1,
 ): QualityScore {
 	// 完全性（30点）: 欠損率に応じて減点
 	const completenessScore = Math.round(completeness.ratio * 30);
@@ -330,10 +403,10 @@ export function computeQualityScore(
 		priceAnomalies.totalBars > 1 ? 1 - Math.min(priceAnomalies.anomalyCount / (priceAnomalies.totalBars - 1), 1) : 1;
 	const priceScore = Math.round(priceRatio * 25);
 
-	// 出来高健全性（20点）: ゼロ率とスパイク率で減点
+	// 出来高健全性（20点）: ゼロ率（重み付き）とスパイク率で減点
 	const zeroRatio = volumeAnomalies.totalBars > 0 ? volumeAnomalies.zeroCount / volumeAnomalies.totalBars : 0;
 	const spikeRatio = volumeAnomalies.totalBars > 0 ? volumeAnomalies.spikeCount / volumeAnomalies.totalBars : 0;
-	const volumeScore = Math.round((1 - Math.min(zeroRatio + spikeRatio, 1)) * 20);
+	const volumeScore = Math.round((1 - Math.min(zeroRatio * zeroVolumePenaltyWeight + spikeRatio, 1)) * 20);
 
 	const score = completenessScore + integrityScore + priceScore + volumeScore;
 

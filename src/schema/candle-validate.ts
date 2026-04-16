@@ -17,15 +17,13 @@ export const ValidateCandleDataInputSchema = z.object({
 		.min(1)
 		.max(10)
 		.optional()
-		.default(3)
-		.describe('価格変化率がこの σ を超えたら異常値とみなす（デフォルト: 3）'),
+		.describe('価格変化率がこの σ を超えたら異常値とみなす。省略時はペアのティア（major/mid/minor）に応じて自動設定'),
 	volume_multiplier: z
 		.number()
 		.min(2)
 		.max(100)
 		.optional()
-		.default(10)
-		.describe('出来高が全体平均の何倍を超えたらスパイクとみなすか（デフォルト: 10）'),
+		.describe('出来高が全体平均の何倍を超えたらスパイクとみなすか。省略時はペアのティアに応じて自動設定'),
 	tz: z.string().optional().default('Asia/Tokyo').describe('タイムゾーン（デフォルト: Asia/Tokyo）'),
 });
 
@@ -123,9 +121,11 @@ export const ValidateCandleDataDataSchema = z.object({
 export const ValidateCandleDataMetaSchema = BaseMetaSchema.extend({
 	type: CandleTypeEnum,
 	count: z.number().int(),
+	tier: z.enum(['major', 'mid', 'minor']),
 	thresholds: z.object({
 		priceSigma: z.number(),
 		volumeMultiplier: z.number(),
+		zeroVolumePenaltyWeight: z.number(),
 	}),
 });
 

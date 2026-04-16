@@ -5,7 +5,10 @@ import {
 	checkIntegrity,
 	checkPriceAnomalies,
 	checkVolumeAnomalies,
+	classifyPairTier,
 	computeQualityScore,
+	getTierDefaults,
+	type PairTier,
 } from '../lib/candle-validate.js';
 import { formatPair, timeframeLabel } from '../lib/formatter.js';
 import { fail, failFromError, failFromValidation, ok, parseAsResult, toStructured } from '../lib/result.js';
@@ -26,12 +29,18 @@ export default async function validateCandleData(
 	type: CandleType = '1day',
 	date: string | undefined,
 	limit = 200,
-	priceSigma = 3,
-	volumeMultiplier = 10,
+	priceSigmaOverride?: number,
+	volumeMultiplierOverride?: number,
 	tz = 'Asia/Tokyo',
 ): Promise<OkResult<ValidateCandleDataData, ValidateCandleDataMeta> | FailResult> {
 	const chk = ensurePair(pair);
 	if (!chk.ok) return failFromValidation(chk);
+
+	// ティア判定 → デフォルト閾値を決定（ユーザー指定があればそちらを優先）
+	const tier: PairTier = classifyPairTier(chk.pair);
+	const defaults = getTierDefaults(tier);
+	const priceSigma = priceSigmaOverride ?? defaults.priceSigma;
+	const volumeMultiplier = volumeMultiplierOverride ?? defaults.volumeMultiplier;
 
 	try {
 		// 1. 既存の getCandles でデータ取得
@@ -66,10 +75,16 @@ export default async function validateCandleData(
 		const integrity = checkIntegrity(rows);
 		const priceAnomalies = checkPriceAnomalies(rows, priceSigma);
 		const volumeAnomalies = checkVolumeAnomalies(rows, volumeMultiplier);
-		const qualityScore = computeQualityScore(completeness, integrity, priceAnomalies, volumeAnomalies);
+		const qualityScore = computeQualityScore(
+			completeness,
+			integrity,
+			priceAnomalies,
+			volumeAnomalies,
+			defaults.zeroVolumePenaltyWeight,
+		);
 
 		// 4. LLM 向けテキスト構築
-		const summary = buildValidationText(chk.pair, type, {
+		const summary = buildValidationText(chk.pair, type, tier, {
 			completeness,
 			duplicates,
 			integrity,
@@ -91,7 +106,12 @@ export default async function validateCandleData(
 		const meta = createMeta(chk.pair, {
 			type,
 			count: rows.length,
-			thresholds: { priceSigma, volumeMultiplier },
+			tier,
+			thresholds: {
+				priceSigma,
+				volumeMultiplier,
+				zeroVolumePenaltyWeight: defaults.zeroVolumePenaltyWeight,
+			},
 		});
 
 		const result = ok<ValidateCandleDataData, ValidateCandleDataMeta>(summary, data, meta as ValidateCandleDataMeta);
@@ -107,12 +127,19 @@ export default async function validateCandleData(
 
 // ── テキスト構築 ──
 
-function buildValidationText(pair: string, type: string, r: ValidateCandleDataData): string {
+const TIER_LABELS: Record<PairTier, string> = {
+	major: '高流動性',
+	mid: '中流動性',
+	minor: '低流動性',
+};
+
+function buildValidationText(pair: string, type: string, tier: PairTier, r: ValidateCandleDataData): string {
 	const lines: string[] = [];
 	const pairLabel = formatPair(pair);
 	const tfLabel = timeframeLabel(type);
 
 	lines.push(`${pairLabel} ${tfLabel} データ品質レポート`);
+	lines.push(`ペアティア: ${tier} (${TIER_LABELS[tier]})`);
 	lines.push(`品質スコア: ${r.qualityScore.score}/100 (${r.qualityScore.grade})`);
 	lines.push('');
 
@@ -198,8 +225,11 @@ function buildValidationText(pair: string, type: string, r: ValidateCandleDataDa
 
 export const toolDef: ToolDefinition = {
 	name: 'validate_candle_data',
-	description: `[Data Quality / Validation] OHLCVローソク足データの品質検証。完全性・重複・OHLCV整合性・価格異常値・出来高異常値を検出し、0-100の品質スコアを算出。
-異常値の閾値はパラメータで調整可能（price_sigma, volume_multiplier）。`,
+	description: `[Data Quality / Validation] OHLCVローソク足データの品質検証。
+分析やバックテスト前に「このデータ信用できる？」を確認するためのツール。
+完全性（歯抜け）・重複・OHLCV整合性・価格異常値・出来高異常値を検出し、0-100の品質スコア（A-F）を算出。
+ペアの流動性ティア（major/mid/minor）を自動判定し、暗号資産のファットテール分布や低流動性ペアの出来高ゼロを考慮した適切なデフォルト閾値を適用。
+閾値は price_sigma, volume_multiplier で手動調整も可能。`,
 	inputSchema: ValidateCandleDataInputSchema,
 	handler: async ({
 		pair,
@@ -214,8 +244,8 @@ export const toolDef: ToolDefinition = {
 		type: CandleType;
 		date?: string;
 		limit: number;
-		price_sigma: number;
-		volume_multiplier: number;
+		price_sigma?: number;
+		volume_multiplier?: number;
 		tz: string;
 	}) => {
 		const result = await validateCandleData(pair, type, date, limit, price_sigma, volume_multiplier, tz);

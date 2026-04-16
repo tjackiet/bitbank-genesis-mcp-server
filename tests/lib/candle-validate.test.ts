@@ -6,7 +6,9 @@ import {
 	checkIntegrity,
 	checkPriceAnomalies,
 	checkVolumeAnomalies,
+	classifyPairTier,
 	computeQualityScore,
+	getTierDefaults,
 } from '../../lib/candle-validate.js';
 import { dayjs } from '../../lib/datetime.js';
 
@@ -219,5 +221,65 @@ describe('computeQualityScore', () => {
 			{ totalBars: 20, anomalyCount: 15, zeroCount: 10, spikeCount: 5, anomalies: [], stats: null },
 		);
 		expect(score.grade).toBe('F');
+	});
+
+	it('zeroVolumePenaltyWeight=0 なら出来高ゼロは減点されない', () => {
+		const score = computeQualityScore(
+			{ expected: 100, actual: 100, missing: 0, missingTimestamps: [], ratio: 1 },
+			{ totalChecked: 100, invalidCount: 0, issues: [] },
+			{ totalBars: 100, anomalyCount: 0, anomalies: [], stats: null },
+			{ totalBars: 100, anomalyCount: 50, zeroCount: 50, spikeCount: 0, anomalies: [], stats: null },
+			0, // minor ペア: ゼロ減点なし
+		);
+		expect(score.breakdown.volumeHealth).toBe(20); // フルスコア
+	});
+
+	it('zeroVolumePenaltyWeight=0.5 なら出来高ゼロの減点が半分', () => {
+		const score = computeQualityScore(
+			{ expected: 100, actual: 100, missing: 0, missingTimestamps: [], ratio: 1 },
+			{ totalChecked: 100, invalidCount: 0, issues: [] },
+			{ totalBars: 100, anomalyCount: 0, anomalies: [], stats: null },
+			{ totalBars: 100, anomalyCount: 50, zeroCount: 50, spikeCount: 0, anomalies: [], stats: null },
+			0.5, // mid ペア
+		);
+		// zeroRatio=0.5, weight=0.5 → 実効ペナルティ=0.25 → (1-0.25)*20=15
+		expect(score.breakdown.volumeHealth).toBe(15);
+	});
+});
+
+describe('classifyPairTier', () => {
+	it('btc_jpy / eth_jpy / xrp_jpy は major', () => {
+		expect(classifyPairTier('btc_jpy')).toBe('major');
+		expect(classifyPairTier('eth_jpy')).toBe('major');
+		expect(classifyPairTier('xrp_jpy')).toBe('major');
+	});
+
+	it('doge_jpy / sol_jpy は mid', () => {
+		expect(classifyPairTier('doge_jpy')).toBe('mid');
+		expect(classifyPairTier('sol_jpy')).toBe('mid');
+	});
+
+	it('grt_jpy / mona_jpy は minor', () => {
+		expect(classifyPairTier('grt_jpy')).toBe('minor');
+		expect(classifyPairTier('mona_jpy')).toBe('minor');
+	});
+
+	it('大文字でも正しく判定する', () => {
+		expect(classifyPairTier('BTC_JPY')).toBe('major');
+	});
+});
+
+describe('getTierDefaults', () => {
+	it('major は厳しめの閾値を返す', () => {
+		const d = getTierDefaults('major');
+		expect(d.zeroVolumePenaltyWeight).toBe(1);
+		expect(d.priceSigma).toBeLessThanOrEqual(4);
+	});
+
+	it('minor はゼロ出来高を減点しない', () => {
+		const d = getTierDefaults('minor');
+		expect(d.zeroVolumePenaltyWeight).toBe(0);
+		expect(d.priceSigma).toBeGreaterThanOrEqual(5);
+		expect(d.volumeMultiplier).toBeGreaterThanOrEqual(50);
 	});
 });
