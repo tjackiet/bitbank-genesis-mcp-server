@@ -129,15 +129,16 @@ export function checkCompleteness(candles: CandleRow[], candleType: string): Com
 	}
 
 	const timestamps = candles.map((c) => (c.isoTime ? dayjs(c.isoTime).valueOf() : NaN)).filter((t) => !Number.isNaN(t));
+	const uniqueTimestamps = [...new Set(timestamps)];
 
-	if (timestamps.length < 2) {
+	if (uniqueTimestamps.length < 2) {
 		return { expected: candles.length, actual: candles.length, missing: 0, missingTimestamps: [], ratio: 1 };
 	}
 
-	const first = timestamps[0];
-	const last = timestamps[timestamps.length - 1];
+	const first = uniqueTimestamps[0];
+	const last = uniqueTimestamps[uniqueTimestamps.length - 1];
 	const expected = Math.floor((last - first) / intervalMs) + 1;
-	const tsSet = new Set(timestamps);
+	const tsSet = new Set(uniqueTimestamps);
 
 	const missingTimestamps: string[] = [];
 	for (let t = first; t <= last; t += intervalMs) {
@@ -148,10 +149,10 @@ export function checkCompleteness(candles: CandleRow[], candleType: string): Com
 
 	return {
 		expected,
-		actual: timestamps.length,
+		actual: uniqueTimestamps.length,
 		missing: missingTimestamps.length,
 		missingTimestamps: missingTimestamps.slice(0, 50), // 上限50件
-		ratio: expected > 0 ? timestamps.length / expected : 1,
+		ratio: expected > 0 ? Math.min(uniqueTimestamps.length / expected, 1) : 1,
 	};
 }
 
@@ -330,7 +331,10 @@ export function checkVolumeAnomalies(candles: CandleRow[], multiplierThreshold: 
 		return { totalBars: 0, anomalyCount: 0, zeroCount: 0, spikeCount: 0, anomalies: [], stats: null };
 	}
 
-	const avgVol = avg(volumes) ?? 0;
+	// スパイク検出のベースラインはゼロ出来高を除外して算出
+	// Vol.01: 出来高ゼロ = 「取引がなかった」なのでベースラインに含めるべきではない
+	const nonZeroVolumes = volumes.filter((v) => v > 0);
+	const avgVol = avg(nonZeroVolumes) ?? 0;
 	const anomalies: VolumeAnomaly[] = [];
 	let zeroCount = 0;
 	let spikeCount = 0;
