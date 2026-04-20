@@ -1632,7 +1632,8 @@ MACD（中央が0、左が弱気・右が強気）:
    - レスポンスの「📸 YYYY/MM/DD HH:MM:SS JST 時点」をヘッダーに表示
 2. get_candles(pair="btc_jpy", type="1hour", limit=24)
    → 直近24時間の1時間足。各ローソクの isoTimeLocal から実期間を読み取る
-   → 進行中の最新1本は「進行中」と明記（volume が極端に小さいことで判別可能）
+   → 最新1本の開始時刻 + 足種（1hour）から算出される終了時刻が get_ticker の取得時刻より未来であれば「進行中」と明記する
+   → タイムスタンプから確定できない場合は「進行中」と推測せず、状態不明として扱う（volume の大小で判定しない）
 3. get_flow_metrics(pair="btc_jpy", hours=8, bucketMs=60000, view="summary")
    → 売買バランス・スパイク・CVD
    - レスポンスの実レンジ（例: "22:55〜23:05 JST"）と約定件数をそのまま表記
@@ -1694,10 +1695,11 @@ MACD（中央が0、左が弱気・右が強気）:
 - サブタイトル: get_ticker レスポンスの取得時刻をそのまま表記（例: "取得時刻: 2026-04-20 23:06 JST"）
 
 ### 2. 価格サマリーカード
-- 8時間前の価格 → 現在価格
+- レンジ開始価格 → 現在価格（併せて実レンジを併記。例: "22:00 JST → 現在"）
+  - レンジ開始価格は スパークラインに使う最古ローソクの open を使用
 - 変動率（±X.X%）と方向アイコン（📈上昇 / 📉下落 / ➡️横ばい）
 - 高値・安値とその時刻
-- インライン SVG スパークライン（get_candles の直近8本 close 値から生成）
+- インライン SVG スパークライン（get_candles の直近8本 close 値から生成。ハイライト期間の値動きを表示）
   - 生成手順: close 配列の min/max を求め、各値を viewBox="0 0 600 150" 内の座標に正規化。チャート描画エリアは x: 10〜590、y: 10〜110 とし、y=120〜150 を X 軸ラベル用の余白として確保する
   - \`<polyline>\` で折れ線、\`<polygon>\` で半透明の面塗り、始点・終点に \`<circle>\` マーカー
   - X 軸に時刻ラベルを表示。フォーマットは **HH:00**（例: 11:00, 18:00）。\`HHh\` 形式は使わない
@@ -1716,12 +1718,12 @@ MACD（中央が0、左が弱気・右が強気）:
 
 **出来高カード（棒グラフ）**
 - get_candles で取得した24本分だけを棒グラフで表示（データのない未来時間の枠は作らない）
-- 直近8本は色を変えてハイライト（例：緑系 bg-green-500）
+- 直近8本は色を変えてハイライト（例：緑系 bg-green-500）= スパークラインのハイライト期間と揃える
 - それ以前の16本は薄い色（例：グレー系 bg-gray-600）
 - **重要**: 棒の高さは px 単位で直接指定（例: style="height: 48px"）。パーセント指定は効かないため禁止
 - 棒の間隔は gap-1.5（6px）を使用。gap-1（4px）だと棒同士が近すぎて視認性が悪い
 - 最大出来高の棒を 96px とし、他は比率で計算（例: 出来高が最大の50%なら 48px）
-- 8時間合計: XXX BTC（≈ X.X億円）を明記。JPY換算は get_ticker の現在価格 × BTC数量で算出
+- ハイライト期間合計: XXX BTC（≈ X.X億円）を明記。JPY換算は get_ticker の現在価格 × BTC数量で算出
 - 突出した時間帯があれば注記（例：「09時台が突出」）
 
 **売買比率カード**
@@ -1798,7 +1800,7 @@ html モードでは sendPrompt 関連の記述をすべて無視する。
 | ボタンラベル | sendPrompt テキスト |
 |---|---|
 | 売買フロー詳細 ↗ | 直近の売買フロー（CVD）を詳しく分析して |
-| ボラティリティ ↗ | 直近8時間のボラティリティを分析して |
+| ボラティリティ ↗ | 直近のボラティリティを分析して |
 
 ### セクション 4: 売買バランス（出来高 + 売買比率）
 | ボタンラベル | sendPrompt テキスト |
@@ -1938,10 +1940,11 @@ sendPrompt() で飛んだ先の応答も Visualizer で表示する。
 
     <!-- 価格サマリー -->
     <section class="bg-card rounded-lg p-6">
-      <h2 class="font-bold mb-4">📊 BTC/JPY 価格の動き</h2>
+      <h2 class="font-bold mb-1">📊 BTC/JPY 価格の動き</h2>
+      <p class="text-xs text-gray-500 mb-4">出典: get_ticker ({ticker_time}) + get_candles 1h × {candle_count}本 ({candle_range})</p>
       <div class="flex justify-between items-center mb-4">
         <div>
-          <p class="text-gray-400 text-base">8時間前</p>
+          <p class="text-gray-400 text-base">{range_start_label}</p>
           <p class="text-2xl">{price_before}円</p>
         </div>
         <div class="text-4xl">{direction_icon}</div>
@@ -1963,7 +1966,9 @@ sendPrompt() で飛んだ先の応答も Visualizer で表示する。
 
     <!-- イベントタイムライン -->
     <section class="bg-card rounded-lg p-6">
-      <h2 class="font-bold mb-4">⚡ 主なイベント</h2>
+      <h2 class="font-bold mb-1">⚡ 主なイベント</h2>
+      <p class="text-xs text-gray-500 mb-4">出典: get_flow_metrics · 実レンジ {flow_range} ({flow_duration})</p>
+      <!-- {flow_warning} があれば下部に警告ボックスとして表示 -->
       <div class="space-y-3">
         <!-- イベント項目 or 「大きな急変動なし」 -->
       </div>
@@ -1971,31 +1976,35 @@ sendPrompt() で飛んだ先の応答も Visualizer で表示する。
 
     <!-- 出来高（棒グラフ: 取得した24本分のみ。未来の空枠は作らない） -->
     <section class="bg-card rounded-lg p-6">
-      <h2 class="font-bold mb-4">📈 出来高（直近24時間）</h2>
+      <h2 class="font-bold mb-1">📈 出来高</h2>
+      <p class="text-xs text-gray-500 mb-4">出典: get_candles 1h × {candle_count}本 ({candle_range})</p>
       <!-- 取得データ24本分の棒グラフ: 高さは必ず px 単位で指定（%は効かない） -->
       <!-- 各棒は flex:1 でコンテナ幅いっぱいに均等分配。w-3 固定だと右側に空白ができるため -->
       <div class="flex items-end gap-1.5" style="height: 96px;">
         <!-- 例: 最大出来高=96px, 50%なら48px, 25%なら24px -->
-        <!-- 直近8時間: #4ade80(green), それ以前: #4b5563(gray) -->
+        <!-- ハイライト期間: #4ade80(green), それ以前: #4b5563(gray) -->
         <div class="rounded-t" style="flex:1; min-width:0; height: 24px; background:#4b5563;"></div>
         <div class="rounded-t" style="flex:1; min-width:0; height: 36px; background:#4b5563;"></div>
         <!-- ... 残り22本 ... -->
         <div class="rounded-t" style="flex:1; min-width:0; height: 72px; background:#4ade80;"></div>
         <div class="rounded-t" style="flex:1; min-width:0; height: 96px; background:#4ade80;"></div>
       </div>
-      <p class="text-sm text-gray-500 mt-1">※ 時刻はJST。■ 直近8時間 / ■ それ以前</p>
-      <p class="text-base text-gray-400 mt-2">直近8時間合計: XXX BTC</p>
+      <p class="text-sm text-gray-500 mt-1">※ 時刻はJST。■ ハイライト期間 / ■ それ以前</p>
+      <p class="text-base text-gray-400 mt-2">ハイライト期間合計: XXX BTC</p>
     </section>
 
     <!-- 売買比率 -->
     <section class="bg-card rounded-lg p-6">
-      <h2 class="font-bold mb-4">⚖️ 売買比率</h2>
+      <h2 class="font-bold mb-1">⚖️ 売買比率</h2>
+      <p class="text-xs text-gray-500 mb-4">出典: get_flow_metrics · 実レンジ {flow_range} ({flow_trade_count}約定)</p>
+      <!-- {flow_warning} があれば警告ボックスとして表示（「短期スナップショット」と判定ラベルに付記） -->
       <!-- 買い/売りの比率バー -->
     </section>
 
     <!-- 重要ライン（縦型構造図） -->
     <section class="bg-card rounded-lg p-6">
-      <h2 class="font-bold mb-4">📍 重要ラインとの関係</h2>
+      <h2 class="font-bold mb-1">📍 重要ラインとの関係</h2>
+      <p class="text-xs text-gray-500 mb-4">出典: analyze_support_resistance (過去{lookback_days}日 lookback)</p>
       <!-- 縦型で上から下へ: レジスタンス → 現在価格 → サポート -->
       <div class="font-mono text-base space-y-2">
         <!-- 各ラインを縦に並べる（横型は数字が重なるためNG） -->
@@ -2004,13 +2013,15 @@ sendPrompt() で飛んだ先の応答も Visualizer で表示する。
 
     <!-- 板状況 -->
     <section class="bg-card rounded-lg p-6">
-      <h2 class="font-bold mb-4">🔮 板状況（HH:MM JST 時点）</h2>
+      <h2 class="font-bold mb-1">🔮 板状況</h2>
+      <p class="text-xs text-gray-500 mb-4">出典: get_orderbook (スナップショット {orderbook_time})</p>
       <!-- ±1%帯域の買い/売り圧力バー -->
     </section>
 
     <!-- トレンド方向チェック（MTF） -->
     <section class="bg-card rounded-lg p-6">
       <h2 class="font-bold mb-1">🔀 トレンド方向チェック（MTF）</h2>
+      <p class="text-xs text-gray-500 mb-1">出典: analyze_mtf_sma (1h / 4h / 1d) + analyze_ichimoku_snapshot (1d)</p>
       <p class="text-base text-gray-400 mb-4">→ 移動平均線（SMA）を用いて短期〜長期の方向が揃っているかを確認</p>
       <div class="grid grid-cols-3 gap-4 mb-4">
         <!-- 1時間足 -->
