@@ -66,13 +66,25 @@ export function buildFlowMetricsText(input: BuildFlowMetricsTextInput): string {
 	);
 }
 
-/** 複数の getTransactions 結果をマージし重複を除去する（失敗数も返す） */
-function mergeTxResults(results: unknown[]): { txs: Tx[]; totalCount: number; failedCount: number } {
+type FetchFailure = { label: string; errorType: string; message: string };
+
+type TxResultLike = {
+	ok?: boolean;
+	data?: { normalized?: Tx[] };
+	summary?: string;
+	meta?: { errorType?: string };
+} | null;
+
+/** 複数の getTransactions 結果をマージし重複を除去する（失敗詳細も返す） */
+function mergeTxResults(
+	results: unknown[],
+	labels?: string[],
+): { txs: Tx[]; totalCount: number; failures: FetchFailure[] } {
 	const seen = new Set<string>();
 	const merged: Tx[] = [];
-	let failedCount = 0;
-	for (const res of results) {
-		const r = res as { ok?: boolean; data?: { normalized?: Tx[] } } | null;
+	const failures: FetchFailure[] = [];
+	for (let i = 0; i < results.length; i++) {
+		const r = results[i] as TxResultLike;
 		if (r?.ok && Array.isArray(r.data?.normalized)) {
 			for (const tx of r.data.normalized as Tx[]) {
 				const key = `${tx.timestampMs}:${tx.price}:${tx.amount}:${tx.side}`;
@@ -82,16 +94,19 @@ function mergeTxResults(results: unknown[]): { txs: Tx[]; totalCount: number; fa
 				}
 			}
 		} else {
-			failedCount++;
+			failures.push({
+				label: labels?.[i] ?? `#${i}`,
+				errorType: r?.meta?.errorType ?? 'unknown',
+				message: r?.summary ?? 'unknown error',
+			});
 		}
 	}
-	return { txs: merged, totalCount: results.length, failedCount };
+	return { txs: merged, totalCount: results.length, failures };
 }
 
-/** 部分失敗時の警告メッセージを生成する */
-function partialFailureWarning(totalCount: number, failedCount: number): string | null {
-	if (failedCount === 0) return null;
-	return `⚠️ ${totalCount}件中${failedCount}件のAPI取得に失敗しました。データが不完全な可能性があります。`;
+/** 失敗詳細をフォーマットする（"20260420(network: HTTP 503 ...)" 形式） */
+function formatFailures(failures: FetchFailure[]): string {
+	return failures.map((f) => `${f.label}(${f.errorType}: ${f.message})`).join(', ');
 }
 
 export default async function getFlowMetrics(
@@ -126,21 +141,63 @@ export default async function getFlowMetrics(
 				d = d.add(1, 'day');
 			}
 
-			// 全日付を日付指定エンドポイントで取得（当日含む）
-			// 当日分は日付指定だと直近数分が欠ける場合があるため latest も併用
-			const fetches: Promise<unknown>[] = dates.map((ds) => getTransactions(chk.pair, 1000, ds));
-			fetches.push(getTransactions(chk.pair, 1000)); // latest で最新約定を補完
+			// 日付ベース取得（authoritative: 時間範囲をカバー）と latest（supplement: 直近数分の補完）を区別。
+			// 当日分は日付指定だと直近数分が欠ける場合があるため latest も併用する。
+			const dateResults = await Promise.all(dates.map((ds) => getTransactions(chk.pair, 1000, ds)));
+			const latestResult = await getTransactions(chk.pair, 1000);
 
-			const results = await Promise.all(fetches);
-			const { txs: allTxs, totalCount, failedCount } = mergeTxResults(results);
+			// 失敗した date 取得を一度だけリトライ（fetchJsonWithRateLimit の内部リトライより長い間隔）
+			const retryIdx: number[] = [];
+			for (let i = 0; i < dateResults.length; i++) {
+				const r = dateResults[i] as TxResultLike;
+				if (!r?.ok) retryIdx.push(i);
+			}
+			if (retryIdx.length > 0) {
+				await new Promise((resolve) => setTimeout(resolve, 500));
+				const retried = await Promise.all(retryIdx.map((i) => getTransactions(chk.pair, 1000, dates[i])));
+				for (let j = 0; j < retryIdx.length; j++) {
+					const r = retried[j] as TxResultLike;
+					if (r?.ok) dateResults[retryIdx[j]] = retried[j];
+				}
+			}
 
-			// 過半数失敗なら信頼性が低いため fail
-			if (failedCount > 0 && failedCount >= totalCount / 2) {
+			const dateMerge = mergeTxResults(dateResults, dates);
+			const latestMerge = mergeTxResults([latestResult], ['latest']);
+
+			// 日付ベース取得が全滅 = 要求した時間範囲をカバーできない → fail
+			if (dateMerge.txs.length === 0 && dateMerge.failures.length > 0) {
 				return GetFlowMetricsOutputSchema.parse(
-					fail(`API取得の過半数が失敗しました（${totalCount}件中${failedCount}件失敗）`, 'upstream'),
+					fail(
+						`日付ベースの取得が全て失敗しました（${dateMerge.failures.length}件: ${formatFailures(dateMerge.failures)}）`,
+						'upstream',
+					),
 				);
 			}
-			fetchWarning = partialFailureWarning(totalCount, failedCount) ?? undefined;
+
+			// 部分失敗は警告のみ（latest 失敗は直近数分の欠落、一部 date 失敗は該当日のカバレッジ不足）
+			const warnMsgs: string[] = [];
+			if (dateMerge.failures.length > 0) {
+				warnMsgs.push(
+					`⚠️ 日付ベース取得で ${dateMerge.totalCount}件中 ${dateMerge.failures.length}件失敗: ${formatFailures(dateMerge.failures)}`,
+				);
+			}
+			if (latestMerge.failures.length > 0) {
+				warnMsgs.push(
+					`⚠️ 最新約定の補完取得に失敗 (${formatFailures(latestMerge.failures)}) — 直近数分のデータが欠落している可能性があります`,
+				);
+			}
+			if (warnMsgs.length > 0) fetchWarning = warnMsgs.join('\n');
+
+			// date + latest を統合して重複除去
+			const combined = new Set<string>();
+			const allTxs: Tx[] = [];
+			for (const tx of [...dateMerge.txs, ...latestMerge.txs]) {
+				const key = `${tx.timestampMs}:${tx.price}:${tx.amount}:${tx.side}`;
+				if (!combined.has(key)) {
+					combined.add(key);
+					allTxs.push(tx);
+				}
+			}
 
 			txs = allTxs
 				.filter((t) => t.timestampMs >= sinceMs && t.timestampMs <= nowMs)
@@ -179,18 +236,26 @@ export default async function getFlowMetrics(
 					}
 					const supplementResults = await Promise.all(supplementFetches);
 					const allResults = [latestRes, ...supplementResults];
-					const { txs: merged, totalCount, failedCount } = mergeTxResults(allResults);
+					const labels = ['latest', ...supplementFetches.map((_, i) => `supplement-${i + 1}`)];
+					const { txs: merged, totalCount, failures } = mergeTxResults(allResults, labels);
 					// 全て失敗した場合は network エラーとして返す
-					if (merged.length === 0 && failedCount > 0) {
-						return GetFlowMetricsOutputSchema.parse(fail('upstream fetch all failed', 'network'));
-					}
-					// 過半数失敗なら fail
-					if (failedCount > 0 && failedCount >= totalCount / 2) {
+					if (merged.length === 0 && failures.length > 0) {
 						return GetFlowMetricsOutputSchema.parse(
-							fail(`API取得の過半数が失敗しました（${totalCount}件中${failedCount}件失敗）`, 'upstream'),
+							fail(`upstream fetch all failed (${formatFailures(failures)})`, 'network'),
 						);
 					}
-					fetchWarning = partialFailureWarning(totalCount, failedCount) ?? undefined;
+					// 過半数失敗なら fail
+					if (failures.length > 0 && failures.length >= totalCount / 2) {
+						return GetFlowMetricsOutputSchema.parse(
+							fail(
+								`API取得の過半数が失敗しました（${totalCount}件中${failures.length}件失敗: ${formatFailures(failures)}）`,
+								'upstream',
+							),
+						);
+					}
+					if (failures.length > 0) {
+						fetchWarning = `⚠️ ${totalCount}件中 ${failures.length}件のAPI取得に失敗しました: ${formatFailures(failures)}`;
+					}
 					txs = merged.sort((a, b) => a.timestampMs - b.timestampMs).slice(-lim.value);
 				}
 			}
