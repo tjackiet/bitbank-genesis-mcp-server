@@ -32,6 +32,8 @@ export interface BuildFlowMetricsTextInput {
 	cvd: number;
 	buckets: FlowMetricsBucket[];
 	bucketMs: number;
+	/** "summary" はバケット行を省略, "compact" は非ゼロバケットのみ, "full" は全件 */
+	bucketsMode?: 'summary' | 'compact' | 'full';
 }
 
 /** テキスト組み立て（フロー分析結果）— テスト可能な純粋関数 */
@@ -47,23 +49,31 @@ export function buildFlowMetricsText(input: BuildFlowMetricsTextInput): string {
 		cvd,
 		buckets,
 		bucketMs,
+		bucketsMode = 'full',
 	} = input;
-	const bucketLines = buckets.map((b, i) => {
+	const warningLine = dataWarning ? `\n${dataWarning}` : '';
+	const aggregatesLine = `\naggregates: totalTrades=${totalTrades} buyVol=${Number(buyVolume.toFixed(4))} sellVol=${Number(sellVolume.toFixed(4))} netVol=${Number(netVolume.toFixed(4))} aggRatio=${aggressorRatio} finalCvd=${Number(cvd.toFixed(4))}`;
+	const footer =
+		`\n\n---\n📌 含まれるもの: 時系列バケット（買い/売り出来高・CVD・Zスコア・スパイク）、集計値` +
+		`\n📌 含まれないもの: 個別約定の詳細、OHLCV価格データ、板情報、テクニカル指標` +
+		`\n📌 補完ツール: get_transactions（個別約定）, get_candles（OHLCV）, get_orderbook（板情報）, analyze_indicators（指標）`;
+
+	if (bucketsMode === 'summary') {
+		return baseSummary + warningLine + aggregatesLine + footer;
+	}
+
+	const displayBuckets =
+		bucketsMode === 'compact' ? buckets.filter((b) => b.buyVolume > 0 || b.sellVolume > 0) : buckets;
+	const bucketLines = displayBuckets.map((b, i) => {
 		const t = b.displayTime || b.isoTimeJST || b.isoTime || '?';
 		const sp = b.spike ? ` spike:${b.spike}` : '';
 		return `[${i}] ${t} buy:${b.buyVolume} sell:${b.sellVolume} cvd:${b.cvd} z:${b.zscore ?? 'n/a'}${sp}`;
 	});
-	const warningLine = dataWarning ? `\n${dataWarning}` : '';
-	return (
-		baseSummary +
-		warningLine +
-		`\naggregates: totalTrades=${totalTrades} buyVol=${Number(buyVolume.toFixed(4))} sellVol=${Number(sellVolume.toFixed(4))} netVol=${Number(netVolume.toFixed(4))} aggRatio=${aggressorRatio} finalCvd=${Number(cvd.toFixed(4))}` +
-		`\n\n📋 全${buckets.length}件のバケット (${bucketMs}ms間隔):\n` +
-		bucketLines.join('\n') +
-		`\n\n---\n📌 含まれるもの: 時系列バケット（買い/売り出来高・CVD・Zスコア・スパイク）、集計値` +
-		`\n📌 含まれないもの: 個別約定の詳細、OHLCV価格データ、板情報、テクニカル指標` +
-		`\n📌 補完ツール: get_transactions（個別約定）, get_candles（OHLCV）, get_orderbook（板情報）, analyze_indicators（指標）`
-	);
+	const label =
+		bucketsMode === 'compact'
+			? `\n\n📋 非ゼロ${displayBuckets.length}/${buckets.length}件のバケット (${bucketMs}ms間隔):\n`
+			: `\n\n📋 全${displayBuckets.length}件のバケット (${bucketMs}ms間隔):\n`;
+	return baseSummary + warningLine + aggregatesLine + label + bucketLines.join('\n') + footer;
 }
 
 type FetchFailure = { label: string; errorType: string; message: string };
@@ -129,9 +139,12 @@ export default async function getFlowMetrics(
 			const nowMs = Date.now();
 			const sinceMs = nowMs - hours * 3600_000;
 
-			// bitbank API は JST 基準の日付を使用するため、JST で日付計算
+			// bitbank の /transactions/{YYYYMMDD} は JST 基準の日付アーカイブ。
+			// 当日分はアーカイブが未生成で 404 を返すことがあるため、当日 URL の失敗は
+			// fatal 扱いせず /transactions (latest) からの補完にフォールバックする。
 			const sinceDayjs = dayjs(sinceMs).tz('Asia/Tokyo');
 			const nowDayjs = dayjs(nowMs).tz('Asia/Tokyo');
+			const todayStr = nowDayjs.format('YYYYMMDD');
 
 			// 必要な日付を YYYYMMDD (JST) 形式で列挙（古い順）
 			const dates: string[] = [];
@@ -164,8 +177,14 @@ export default async function getFlowMetrics(
 			const dateMerge = mergeTxResults(dateResults, dates);
 			const latestMerge = mergeTxResults([latestResult], ['latest']);
 
-			// 日付ベース取得が全滅 = 要求した時間範囲をカバーできない → fail
-			if (dateMerge.txs.length === 0 && dateMerge.failures.length > 0) {
+			// 当日 (JST) のアーカイブ欠如は許容: その分は latest から補う。
+			// fatal 扱いするのは「過去日が要求されたのに全て失敗」または「当日のみ要求で latest も失敗」
+			const nonTodayFailures = dateMerge.failures.filter((f) => f.label !== todayStr);
+			const todayFailed = dateMerge.failures.some((f) => f.label === todayStr);
+			const historicalRequested = dates.some((ds) => ds !== todayStr);
+			const historicalAllFailed = historicalRequested && dateMerge.txs.length === 0 && nonTodayFailures.length > 0;
+
+			if (historicalAllFailed) {
 				return GetFlowMetricsOutputSchema.parse(
 					fail(
 						`日付ベースの取得が全て失敗しました（${dateMerge.failures.length}件: ${formatFailures(dateMerge.failures)}）`,
@@ -174,11 +193,27 @@ export default async function getFlowMetrics(
 				);
 			}
 
+			// 過去日が無く (today のみ) かつ today + latest 両方失敗 → 取得手段なし
+			if (!historicalRequested && todayFailed && latestMerge.txs.length === 0) {
+				const allFailures = [...dateMerge.failures, ...latestMerge.failures];
+				return GetFlowMetricsOutputSchema.parse(
+					fail(
+						`日付ベース取得（当日 ${todayStr}）と latest の両方が失敗しました（${allFailures.length}件: ${formatFailures(allFailures)}）`,
+						'upstream',
+					),
+				);
+			}
+
 			// 部分失敗は警告のみ（latest 失敗は直近数分の欠落、一部 date 失敗は該当日のカバレッジ不足）
 			const warnMsgs: string[] = [];
-			if (dateMerge.failures.length > 0) {
+			if (nonTodayFailures.length > 0) {
 				warnMsgs.push(
-					`⚠️ 日付ベース取得で ${dateMerge.totalCount}件中 ${dateMerge.failures.length}件失敗: ${formatFailures(dateMerge.failures)}`,
+					`⚠️ 日付ベース取得で ${dateMerge.totalCount}件中 ${nonTodayFailures.length}件失敗: ${formatFailures(nonTodayFailures)}`,
+				);
+			}
+			if (todayFailed) {
+				warnMsgs.push(
+					`⚠️ 当日 (${todayStr}) アーカイブが未公開または取得失敗のため /transactions (latest) から補完しました`,
 				);
 			}
 			if (latestMerge.failures.length > 0) {
@@ -208,13 +243,31 @@ export default async function getFlowMetrics(
 			if (!lim.ok) return failFromValidation(lim, GetFlowMetricsOutputSchema);
 
 			if (date) {
-				// 明示的な日付指定がある場合はそのまま取得
+				// 明示的な日付指定がある場合はそのまま取得。
+				// 当日 (JST) はアーカイブ未生成で 404 の可能性があるため latest にフォールバック。
 				const txRes = await getTransactions(chk.pair, Math.min(lim.value, 1000), date);
-				if (!txRes?.ok)
-					return GetFlowMetricsOutputSchema.parse(
-						fail(txRes?.summary || 'failed', txRes?.meta?.errorType || 'internal'),
-					);
-				txs = txRes.data.normalized as Tx[];
+				const isTodayJst = date === dayjs().tz('Asia/Tokyo').format('YYYYMMDD');
+				if (!txRes?.ok) {
+					if (isTodayJst) {
+						const latestRes = await getTransactions(chk.pair, Math.min(lim.value, 1000));
+						if (!latestRes?.ok) {
+							return GetFlowMetricsOutputSchema.parse(
+								fail(
+									`date=${date} (today JST) アーカイブ未公開かつ latest 取得も失敗: ${txRes?.summary || 'unknown'} / ${latestRes?.summary || 'unknown'}`,
+									latestRes?.meta?.errorType || 'upstream',
+								),
+							);
+						}
+						fetchWarning = `⚠️ 当日 (${date}) のアーカイブは未公開のため /transactions (latest) から取得しました`;
+						txs = latestRes.data.normalized as Tx[];
+					} else {
+						return GetFlowMetricsOutputSchema.parse(
+							fail(txRes?.summary || 'failed', txRes?.meta?.errorType || 'internal'),
+						);
+					}
+				} else {
+					txs = txRes.data.normalized as Tx[];
+				}
 			} else {
 				// 日付指定なし: latest で取得し、不足なら日付ベースで補完
 				const latestRes = await getTransactions(chk.pair, Math.min(lim.value, 1000));
@@ -400,7 +453,8 @@ export default async function getFlowMetrics(
 			latest: txs.at(-1)?.price,
 			extra: `trades=${totalTrades} buy%=${(aggressorRatio * 100).toFixed(1)} CVD=${cvd.toFixed(2)}${spikeInfo}${rangeLabel}`,
 		});
-		// テキスト summary に全バケットデータを含める（LLM が structuredContent.data を読めない対策）
+		// Result の summary は "summary" モード（集計値のみ、バケット行なし）。
+		// 呼び出し側 (handler) が view に応じて content テキストを差し替える。
 		const summary = buildFlowMetricsText({
 			baseSummary,
 			dataWarning,
@@ -412,6 +466,7 @@ export default async function getFlowMetrics(
 			cvd,
 			buckets: outBuckets,
 			bucketMs,
+			bucketsMode: 'summary',
 		});
 
 		const data = {
@@ -479,7 +534,7 @@ export const toolDef: ToolDefinition = {
 		limit?: number;
 		date?: string;
 		bucketMs?: number;
-		view?: 'summary' | 'buckets' | 'full';
+		view?: 'summary' | 'compact' | 'buckets' | 'full';
 		bucketsN?: number;
 		tz?: string;
 		hours?: number;
@@ -493,9 +548,33 @@ export const toolDef: ToolDefinition = {
 			hours != null ? Number(hours) : undefined,
 		);
 		if (!res?.ok) return res;
-		if (view === 'summary') return res;
-		const agg = res?.data?.aggregates ?? {};
+
+		const effectiveView = view ?? 'summary';
 		const buckets = (res?.data?.series?.buckets ?? []) as FlowMetricsBucket[];
+
+		// view=summary: バケットを structuredContent からも除外してトークン消費を抑える
+		if (effectiveView === 'summary') {
+			const { buckets: _omit, ...restSeries } = (res.data.series ?? {}) as { buckets?: unknown };
+			const data = { ...res.data, series: restSeries } as typeof res.data;
+			const trimmed = { ...res, data };
+			return { content: [{ type: 'text', text: res.summary }], structuredContent: trimmed as Record<string, unknown> };
+		}
+
+		// view=compact: 非ゼロバケットのみ
+		if (effectiveView === 'compact') {
+			const nonZero = buckets.filter((b) => b.buyVolume > 0 || b.sellVolume > 0);
+			const data = {
+				...res.data,
+				series: { ...res.data.series, buckets: nonZero },
+			} as typeof res.data;
+			const trimmed = { ...res, data };
+			const fmt = (b: FlowMetricsBucket) =>
+				`${b.displayTime || b.isoTime}  buy=${b.buyVolume} sell=${b.sellVolume} total=${b.totalVolume} cvd=${b.cvd}${b.spike ? ` spike=${b.spike}` : ''}`;
+			const text = `${res.summary}\n\nNon-zero ${nonZero.length}/${buckets.length} buckets:\n${nonZero.map(fmt).join('\n')}`;
+			return { content: [{ type: 'text', text }], structuredContent: trimmed as Record<string, unknown> };
+		}
+
+		const agg = res?.data?.aggregates ?? {};
 		const n = Number(bucketsN ?? 10);
 		const last = buckets.slice(-n);
 		const fmt = (b: FlowMetricsBucket) =>
@@ -507,7 +586,7 @@ export const toolDef: ToolDefinition = {
 		const warnStr = res?.meta?.warning ? `\n${res.meta.warning}` : '';
 		let text = `${String(pair).toUpperCase()} Flow Metrics (bucketMs=${res?.data?.params?.bucketMs ?? bucketMs})${rangeStr}\n`;
 		text += `Totals: trades=${agg.totalTrades} buyVol=${agg.buyVolume} sellVol=${agg.sellVolume} net=${agg.netVolume} buy%=${(agg.aggressorRatio * 100 || 0).toFixed(1)} CVD=${agg.finalCvd}${warnStr}`;
-		if (view === 'buckets') {
+		if (effectiveView === 'buckets') {
 			text += `\n\nRecent ${last.length} buckets:\n${last.map(fmt).join('\n')}`;
 			return { content: [{ type: 'text', text }], structuredContent: res as Record<string, unknown> };
 		}

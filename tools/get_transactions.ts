@@ -137,11 +137,23 @@ export default async function getTransactions(pair: string = 'btc_jpy', limit: n
 			),
 		);
 	} catch (e: unknown) {
-		return failFromError(e, {
+		// 失敗時は叩いた URL をエラーメッセージに含め、呼び出し側で原因を特定しやすくする。
+		// ただし AbortError は failFromError 側の timeout 判定で必要なのでそのまま渡す。
+		if (e instanceof Error && e.name === 'AbortError') {
+			return failFromError(e, {
+				schema: GetTransactionsOutputSchema,
+				timeoutMs: 4000,
+				defaultType: 'network',
+				defaultMessage: `ネットワークエラー [url: ${url}]`,
+			});
+		}
+		const baseMsg = e instanceof Error && e.message ? e.message : typeof e === 'string' ? e : 'ネットワークエラー';
+		const wrapped = new Error(`${baseMsg} [url: ${url}]`);
+		return failFromError(wrapped, {
 			schema: GetTransactionsOutputSchema,
 			timeoutMs: 4000,
 			defaultType: 'network',
-			defaultMessage: 'ネットワークエラー',
+			defaultMessage: `ネットワークエラー [url: ${url}]`,
 		});
 	}
 }

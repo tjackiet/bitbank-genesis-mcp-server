@@ -262,7 +262,7 @@ describe('get_flow_metrics', () => {
 		expect(res.content[0].text).toContain('All buckets');
 	});
 
-	it('handler: view=summary はそのまま Result を返す', async () => {
+	it('handler: view=summary は buckets を structuredContent から除外する', async () => {
 		mockFetch(txPayload());
 		const res = (await toolDef.handler({
 			pair: 'btc_jpy',
@@ -270,8 +270,37 @@ describe('get_flow_metrics', () => {
 			date: '20240101',
 			bucketMs: 60_000,
 			view: 'summary',
-		})) as { ok: boolean };
-		expect(res.ok).toBe(true);
+		})) as {
+			content: Array<{ text: string }>;
+			structuredContent: { ok: boolean; data: { series: Record<string, unknown> } };
+		};
+		expect(res.structuredContent.ok).toBe(true);
+		expect('buckets' in res.structuredContent.data.series).toBe(false);
+		// content テキストにもバケット行が含まれない
+		expect(res.content[0].text).not.toContain('📋 全');
+	});
+
+	it('handler: view=compact は非ゼロバケットのみを返す', async () => {
+		// ゼロ埋めバケットを生むため、時間的に離れた2約定のみで bucketMs を小さめに
+		const payload = {
+			success: 1,
+			data: {
+				transactions: [
+					{ price: '5000000', amount: '0.1', side: 'buy', executed_at: '1700000000000' },
+					{ price: '5000100', amount: '0.2', side: 'sell', executed_at: '1700000600000' },
+				],
+			},
+		};
+		mockFetch(payload);
+		const res = (await toolDef.handler({
+			pair: 'btc_jpy',
+			limit: 10,
+			date: '20240101',
+			bucketMs: 60_000,
+			view: 'compact',
+		})) as { structuredContent: { data: { series: { buckets: FlowMetricsBucket[] } } } };
+		const buckets = res.structuredContent.data.series.buckets;
+		expect(buckets.every((b) => b.buyVolume > 0 || b.sellVolume > 0)).toBe(true);
 	});
 
 	it('handler: 失敗時はそのまま返す', async () => {
