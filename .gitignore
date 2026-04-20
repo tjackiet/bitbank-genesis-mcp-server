@@ -6,6 +6,7 @@ cache/
 *.mcpb
 .claude/worktrees/
 .claude/completion-checklist
+.claude/settings.local.json
 output/
 coverage/
 .cursor/
