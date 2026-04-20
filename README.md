@@ -78,6 +78,37 @@ npm install
 - 追加後、Claude Desktop を `Cmd+Q`（Windows は完全終了）で再起動してください
 - Docker は不要です（[Docker起動](docs/ops.md#docker起動開発検証用)もできます）
 
+#### 具体例（macOS）
+
+プロジェクトを `/Users/taroyamada/bitbank-genesis-mcp-server` にクローンし、Homebrew で Node.js をインストールしている場合:
+
+```json
+{
+  "mcpServers": {
+    "bitbank": {
+      "command": "/opt/homebrew/bin/node",
+      "args": [
+        "/Users/taroyamada/bitbank-genesis-mcp-server/node_modules/tsx/dist/cli.mjs",
+        "/Users/taroyamada/bitbank-genesis-mcp-server/src/server.ts"
+      ],
+      "env": { "LOG_LEVEL": "info", "NO_COLOR": "1" }
+    }
+  }
+}
+```
+
+**自分の環境での値を確認する方法:**
+
+```bash
+# Node.js のパス
+which node
+
+# プロジェクトの絶対パス（クローンしたディレクトリで実行）
+pwd
+```
+
+`which node` の結果が `/opt/homebrew/bin/node` 以外（例: `/usr/local/bin/node`）なら、そのパスを `command` に指定してください。
+
 #### Windows の場合（ソースコードから）
 
 ```json
