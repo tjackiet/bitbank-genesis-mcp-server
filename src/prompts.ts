@@ -1600,7 +1600,7 @@ MACD（中央が0、左が弱気・右が強気）:
 	},
 	{
 		name: '🌅 おはようレポート',
-		description: '直近8時間の価格動向を視覚化。Visualizer（デフォルト）または HTML ファイルで出力。',
+		description: '直近の BTC/JPY の動きを視覚化。Visualizer（デフォルト）または HTML ファイルで出力。',
 		arguments: [
 			{
 				name: 'mode',
@@ -1614,7 +1614,10 @@ MACD（中央が0、左が弱気・右が強気）:
 				content: [
 					{
 						type: 'text',
-						text: `直近8時間で何が起きたかを視覚化してください。
+						text: `直近の BTC/JPY の動きを視覚化してください。
+
+各セクションには、そのデータが「いつ取得されたか・どの期間をカバーしているか」を必ず明示すること。
+データソース側が実測レンジや取得時刻を返すので、それを正直に表記する（推測や補完はしない）。
 
 【出力モード】
 - \`visualizer\`（デフォルト）: Visualizer（show_widget）でチャット内にインライン表示。
@@ -1626,14 +1629,26 @@ MACD（中央が0、左が弱気・右が強気）:
 
 【使用ツール】
 1. get_ticker(pair="btc_jpy") → リアルタイム現在価格
-2. get_candles(pair="btc_jpy", type="1hour", limit=24) → 直近24時間の1時間足（出来高棒グラフ＋スパークライン用）
-3. get_flow_metrics(pair="btc_jpy", hours=8, bucketMs=60000) → 直近8時間の急騰/急落スパイク、売買バランス
-4. analyze_support_resistance(pair="btc_jpy", lookbackDays=90, topN=3) → サポート/レジスタンスライン
-5. get_orderbook(pair="btc_jpy", mode=pressure, bandsPct=[0.005, 0.01, 0.02]) → 板の買い/売り圧力
+   - レスポンスの「📸 YYYY/MM/DD HH:MM:SS JST 時点」をヘッダーに表示
+2. get_candles(pair="btc_jpy", type="1hour", limit=24)
+   → 直近24時間の1時間足。各ローソクの isoTimeLocal から実期間を読み取る
+   → 進行中の最新1本は「進行中」と明記（volume が極端に小さいことで判別可能）
+3. get_flow_metrics(pair="btc_jpy", hours=8, bucketMs=60000, view="summary")
+   → 売買バランス・スパイク・CVD
+   - レスポンスの実レンジ（例: "22:55〜23:05 JST"）と約定件数をそのまま表記
+   - 「⚠️ 当日アーカイブが未公開のため /transactions (latest) から補完しました」警告が出たら併記
+   - カバー率（例: "8時間リクエスト → 10分取得（カバー率2%）"）もレポートに表示
+   - view="summary" により buckets 配列は省略される
+4. analyze_support_resistance(pair="btc_jpy", lookbackDays=90, topN=3)
+   → サポート/レジスタンスライン（「過去90日の分析」と明記）
+5. get_orderbook(pair="btc_jpy", mode=pressure, bandsPct=[0.005, 0.01, 0.02])
+   → 板の買い/売り圧力。レスポンスの「📸 HH:MM:SS JST」をセクション見出しに表示
 6. analyze_mtf_sma(pair="btc_jpy") → 1h/4h/日足の SMA 配列を一括取得＋方向合流判定（内部並列実行）
    - 各時間軸の SMA 値・乖離率・傾き・クロス状態・位置 (above_all/below_all/between) をすべて含む
+   - 構造化テキスト（price / order / SMA値 / 乖離% / slope / recent crosses）から詳細表示を組み立てる
    - ⚠️ analyze_sma_snapshot の個別呼び出しは不要（MTF が全データを返却済み）
-7. analyze_ichimoku_snapshot(pair="btc_jpy", type="1day") → 日足の一目均衡表（雲の位置関係・三役好転/逆転）
+7. analyze_ichimoku_snapshot(pair="btc_jpy", type="1day")
+   → 日足ベースの一目均衡表（雲の位置関係・三役好転/逆転）
 
 ※ 価格チャートは get_candles の直近8本の close 値からインライン SVG スパークラインを生成（render_chart_svg は不要）
 ※ 上記7ツールのみ使用すること。追加のツール呼び出しは行わない
@@ -1652,11 +1667,31 @@ MACD（中央が0、左が弱気・右が強気）:
 - Tailwind CSS（jsdelivr pre-built CSS）+ カスタムダークテーマ
 - sendPrompt() ボタンは配置しない
 
+## セクション見出しの「データ由来」メタ表記
+
+各セクション見出しの右側に、以下のメタ情報を小さいフォント・グレーで表示すること。
+これによりユーザーは「この数字がいつ・どの期間のものか」を一目で把握できる。
+
+| セクション | メタ表記の例 |
+|---|---|
+| 2. 価格サマリー | \`出典: get_ticker (HH:MM JST) + get_candles 1h × 24本 (00:00〜HH:00 JST)\` |
+| 3. イベント | \`出典: get_flow_metrics · 実レンジ HH:MM〜HH:MM JST (N分間)\` |
+| 4a. 出来高 | \`出典: get_candles 1h × 24本 (00:00〜HH:00 JST)\` |
+| 4b. 売買比率 | \`出典: get_flow_metrics · 実レンジ HH:MM〜HH:MM JST (N約定)\` |
+| 5. 重要ライン | \`出典: analyze_support_resistance (過去N日 lookback)\` |
+| 6. 板状況 | \`出典: get_orderbook (スナップショット HH:MM:SS JST)\` |
+| 7. MTF トレンド | \`出典: analyze_mtf_sma (1h / 4h / 1d) + analyze_ichimoku (1d)\` |
+
+表記の原則:
+- 推測や丸めをせず、ツールレスポンスに書かれている時刻・期間をそのまま使う
+- 「直近8時間」のようなハードコード値は書かない
+- カバー率が低い／警告が出ている場合は、該当セクション内に警告ボックスで併記する
+
 ## 必須コンポーネント
 
 ### 1. ヘッダー部
-- タイトル: 「直近8時間レポート」
-- 取得時刻（YYYY-MM-DD HH:MM JST）
+- タイトル: 「🌅 BTC/JPY 直近レポート」
+- サブタイトル: get_ticker レスポンスの取得時刻をそのまま表記（例: "取得時刻: 2026-04-20 23:06 JST"）
 
 ### 2. 価格サマリーカード
 - 8時間前の価格 → 現在価格
@@ -1690,11 +1725,12 @@ MACD（中央が0、左が弱気・右が強気）:
 - 突出した時間帯があれば注記（例：「09時台が突出」）
 
 **売買比率カード**
-- 見出しの期間は hours=8 の指定値ではなく、get_flow_metrics のレスポンス meta.actualRange の
-  **start〜end（実際のバケットデータの最古時刻〜最新時刻）**を読み取って表記する
-  例: 「売買比率（03/04 08:41〜18:39 JST）」
-- バケットが1本しかない、または meta.warning が存在する場合は警告を補記する
-- hours=8 を指定したのに実際のスパンが大きく異なる場合も、実データの時間範囲を正直に表示する（推測や補完はしない）
+- 見出しメタには get_flow_metrics のレスポンステキスト中の実レンジをそのまま転記する
+  例: 「実レンジ 22:55〜23:05 JST (59約定)」
+- レスポンスに以下の警告が含まれる場合、セクション内に警告ボックスで明示する:
+  - 「⚠️ 当日アーカイブが未公開のため /transactions (latest) から補完しました」
+  - 「⚠️ N時間分をリクエストしましたが、取得できたデータは約M分間（カバー率X%）です」
+- 警告が出ている場合、判定ラベル（買い優勢など）に「短期スナップショット」と付記する
 - 買い/売りの比率バー（CSS グラデーション）
 - パーセント表示
 - 判定ラベル（🟢買い優勢 / 🔴売り優勢 / 🟡拮抗）
@@ -1889,14 +1925,14 @@ sendPrompt() で飛んだ先の応答も Visualizer で表示する。
     .bg-card  { background-color: #16213e; }
     .bg-accent { background-color: #0f3460; }
   </style>
-  <title>直近8時間レポート</title>
+  <title>BTC/JPY 直近レポート</title>
 </head>
 <body class="bg-dark text-gray-100 min-h-screen p-6">
   <div class="max-w-3xl mx-auto space-y-6">
 
     <!-- ヘッダー -->
     <header class="text-center">
-      <h1 class="text-3xl font-bold">🌅 直近8時間レポート</h1>
+      <h1 class="text-3xl font-bold">🌅 BTC/JPY 直近レポート</h1>
       <p class="text-gray-400 text-base">取得時刻: {timestamp}</p>
     </header>
 
@@ -1918,7 +1954,7 @@ sendPrompt() で飛んだ先の応答も Visualizer で表示する。
         <span class="{change_color} text-xl font-bold">{change_pct}%</span>
       </div>
       <!-- 価格折れ線チャート（render_chart_svg の data URI を埋め込み） -->
-      <img src="{chart_data_uri}" alt="直近8時間の価格推移" class="w-full rounded" />
+      <img src="{chart_data_uri}" alt="直近の価格推移" class="w-full rounded" />
       <div class="flex justify-between text-base text-gray-400 mt-1">
         <span>安値: {low}円 ({low_time})</span>
         <span>高値: {high}円 ({high_time})</span>
