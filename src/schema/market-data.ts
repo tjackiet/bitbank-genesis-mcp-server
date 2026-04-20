@@ -244,7 +244,13 @@ export const GetFlowMetricsInputSchema = BasePairInputSchema.extend({
 		.optional()
 		.default(60_000)
 		.describe('バケットの時間幅（ミリ秒）。デフォルト60000=1分間隔'),
-	view: z.enum(['summary', 'buckets', 'full']).optional().default('summary'),
+	view: z
+		.enum(['summary', 'compact', 'buckets', 'full'])
+		.optional()
+		.default('summary')
+		.describe(
+			'summary: 集計値のみ (buckets 省略) / compact: 非ゼロバケットのみ / buckets: 直近 N バケット / full: 全バケット',
+		),
 	bucketsN: z.number().int().min(1).max(100).optional().default(10),
 	tz: z.string().optional().default('Asia/Tokyo'),
 });
