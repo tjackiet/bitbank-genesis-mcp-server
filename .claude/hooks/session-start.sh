@@ -1,84 +1,23 @@
 #!/usr/bin/env bash
-# Purpose: Ensure codebase is healthy at session start.
-# Runs type generation, typecheck, and tests so the AI never starts
-# from a broken state. Mirrors CLAUDE.md "セッション開始時" section.
+# Purpose: Claude Code web の Initialized session で実行される setup script。
+# コンテナ初回起動時に依存関係をインストールし、型生成・型チェックまで通して
+# リンターやテスト実行の前提環境を整える。
 #
-# 最適化: main ブランチの HEAD と差分がなければテストをスキップし、
-# 差分がある場合は変更に関連するテストのみ実行する。
-# gen:types と typecheck は常に実行（高速かつ全体の整合性に必須）。
+# 方針:
+# - `npm install` は必須（初回コンテナでは node_modules が無い）。
+# - `npm run gen:types` → `npm run typecheck` で健全性チェック。
+#   Zod スキーマからの型生成は他ツールの前提なので web 起動時にも必ず走らせる。
+# - テストは実行しない。web 起動で毎回走らせると重く、既に
+#   Stop hook / Lefthook / CI で担保されているため。
 set -euo pipefail
 
-# ── compact / resume イベントではスキップ ──
-# stdin の JSON から session_type を読み取り、init 以外は早期リターン。
-# フラグファイル方式は on-compact.sh との実行順序に依存するため廃止。
-INPUT="$(cat)"
-SESSION_TYPE="$(printf '%s' "$INPUT" | jq -r '.session_type // empty' 2>/dev/null || true)"
+echo "🔄 Setup: installing dependencies..."
+npm install
 
-if [ "$SESSION_TYPE" != "init" ] && [ -n "$SESSION_TYPE" ]; then
-  echo "⏭️  Session start: skipped (session_type=${SESSION_TYPE})"
-  exit 0
-fi
+echo "🔄 Setup: generating types..."
+npm run gen:types
 
-echo "🔄 Session start: generating types..."
-npm run gen:types 2>&1
+echo "🔄 Setup: typechecking..."
+npm run typecheck
 
-echo "🔄 Session start: typechecking..."
-npm run typecheck 2>&1
-
-# ── テスト実行の最適化 ──
-# 判定ロジック:
-#   1. main と HEAD が同一 かつ uncommitted changes なし → スキップ
-#   2. main との差分あり → vitest --changed で関連テストのみ実行
-#   3. フォールバック（main が不在、git 外など） → 全テスト実行
-
-run_mode="full"
-
-if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-  # main ブランチの参照を解決（origin/main → local main の順で試行）
-  main_ref=""
-  if git rev-parse --verify origin/main >/dev/null 2>&1; then
-    main_ref="origin/main"
-  elif git rev-parse --verify main >/dev/null 2>&1; then
-    main_ref="main"
-  fi
-
-  if [ -n "$main_ref" ]; then
-    main_sha="$(git rev-parse "$main_ref" 2>/dev/null || true)"
-    head_sha="$(git rev-parse HEAD 2>/dev/null || true)"
-    uncommitted="$(git status --porcelain 2>/dev/null || true)"
-
-    if [ "$main_sha" = "$head_sha" ] && [ -z "$uncommitted" ]; then
-      # main の HEAD にいて、未コミットの変更もない → テストスキップ
-      run_mode="skip"
-    else
-      # main との差分がある → 差分ベースで実行
-      run_mode="changed"
-    fi
-  fi
-fi
-
-case "$run_mode" in
-  skip)
-    echo "⏭️  Session start: tests skipped (HEAD = $main_ref, no uncommitted changes)"
-    echo "   型生成・型チェックは完了済み。テストは Stop hook / Lefthook / CI で担保。"
-    ;;
-  changed)
-    echo "🔄 Session start: running related tests (diff from $main_ref)..."
-    # --changed は差分ファイルに関連するテストのみ実行
-    # 関連テストが 0 件の場合も正常終了する（--passWithNoTests 相当）
-    test_out="$(npx vitest run --changed "$main_ref" 2>&1)" || true
-    echo "$test_out"
-
-    # テスト失敗があれば全テストにフォールバック（差分検出の漏れを補完）
-    if echo "$test_out" | grep -qE 'Tests\s+.*failed'; then
-      echo "⚠️  差分テストで失敗検出。全テストを実行して確認します..."
-      npm test 2>&1
-    fi
-    ;;
-  full)
-    echo "🔄 Session start: running all tests..."
-    npm test 2>&1
-    ;;
-esac
-
-echo "✅ Session start checks passed."
+echo "✅ Setup: ready."
