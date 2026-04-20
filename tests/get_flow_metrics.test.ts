@@ -142,6 +142,49 @@ describe('get_flow_metrics', () => {
 		expect(res.meta.hours).toBe(1);
 	});
 
+	it('hours: latest のみ失敗しても date が成功していれば ok（警告付き）', async () => {
+		// /transactions (latest) は失敗、/transactions/YYYYMMDD (date) は成功
+		const nowMs = Date.now();
+		const txs = [
+			{ price: '5000000', amount: '0.1', side: 'buy', executed_at: String(nowMs - 1000) },
+			{ price: '5000100', amount: '0.2', side: 'sell', executed_at: String(nowMs - 500) },
+		];
+		globalThis.fetch = vi.fn().mockImplementation((url: string) => {
+			if (/\/transactions\/\d{8}$/.test(url)) {
+				return Promise.resolve({
+					ok: true,
+					status: 200,
+					statusText: 'OK',
+					json: async () => txPayload(txs),
+				});
+			}
+			return Promise.resolve({
+				ok: false,
+				status: 503,
+				statusText: 'Service Unavailable',
+				json: async () => ({}),
+			});
+		}) as unknown as typeof fetch;
+		const res = await getFlowMetrics('btc_jpy', 100, undefined, 60_000, 'Asia/Tokyo', 1);
+		assertOk(res);
+		expect(res.meta.warning).toBeTruthy();
+		expect(res.meta.warning).toContain('latest');
+	});
+
+	it('hours: date 取得が全滅した場合は fail with 失敗詳細', async () => {
+		globalThis.fetch = vi.fn().mockResolvedValue({
+			ok: false,
+			status: 503,
+			statusText: 'Service Unavailable',
+			headers: { get: () => null },
+			json: async () => ({}),
+		}) as unknown as typeof fetch;
+		const res = await getFlowMetrics('btc_jpy', 100, undefined, 60_000, 'Asia/Tokyo', 1);
+		assertFail(res);
+		expect(res.summary).toContain('日付ベース');
+		expect(res.summary).toMatch(/HTTP 503|network|timeout|unknown/);
+	});
+
 	// ─── 空データ ─────────────────────────────────────────
 
 	it('取引0件の場合は aggregates が全て0', async () => {
