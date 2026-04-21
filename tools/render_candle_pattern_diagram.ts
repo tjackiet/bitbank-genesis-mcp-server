@@ -334,7 +334,8 @@ export const toolDef: ToolDefinition = {
 	name: 'render_candle_pattern_diagram',
 	description: `[Candle Pattern Diagram / Education] ローソク足パターンの教育用構造図（candle pattern diagram / education / visualization）。analyze_candle_patterns の結果を初心者向けに視覚化。
 
-ユーザーが「図で見せて」等と明示した場合のみ使用。自発的呼び出し禁止。data.svg をHTMLに埋め込んで表示。`,
+ユーザーが「図で見せて」等と明示した場合のみ使用。自発的呼び出し禁止。data.svg を受け取ったら、必ずビジュアルとしてレンダリングして表示すること。
+チャット本文へのSVGコード直接出力は禁止。`,
 	inputSchema: RenderCandlePatternDiagramInputSchema,
 	handler: async (args: {
 		candles: {
