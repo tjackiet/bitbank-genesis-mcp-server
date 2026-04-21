@@ -46,8 +46,9 @@
 | Tool | Description |
 |------|-------------|
 | `prepare_chart_data` | チャート描画の第一選択ツール。 |
+| `prepare_depth_data` | 板の深度チャート描画の第一選択ツール。 |
 | `render_chart_svg` | ローソク足・ラインチャートをサーバー側で SVG/PNG に生成。 |
-| `render_depth_svg` | 板の深さチャートをSVG生成（depth chart / order book visualization / bid-ask depth）。data.svg をHTMLに埋め込んで表示。 |
+| `render_depth_svg` | 板の深さチャートを SVG 生成（depth chart / order book visualization / bid-ask depth）。 |
 | `render_candle_pattern_diagram` | ローソク足パターンの教育用構造図（candle pattern diagram / education / visualization）。analyze_candle_patterns の結果を初心者向けに視覚化。 |
 
 ## Backtesting（バックテスト）
@@ -75,4 +76,4 @@
 
 ---
 
-Public: **29** tools / Private: **10** tools / Total: **39** tools
+Public: **30** tools / Private: **10** tools / Total: **40** tools

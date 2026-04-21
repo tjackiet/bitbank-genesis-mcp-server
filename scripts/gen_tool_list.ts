@@ -50,7 +50,13 @@ const categories: CategoryDef[] = [
 	},
 	{
 		label: 'Visualization（チャート描画）',
-		names: new Set(['prepare_chart_data', 'render_chart_svg', 'render_depth_svg', 'render_candle_pattern_diagram']),
+		names: new Set([
+			'prepare_chart_data',
+			'prepare_depth_data',
+			'render_chart_svg',
+			'render_depth_svg',
+			'render_candle_pattern_diagram',
+		]),
 	},
 	{
 		label: 'Backtesting（バックテスト）',
