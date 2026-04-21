@@ -6,6 +6,30 @@ import { avg as mathAvg, stddev } from './math.js';
 
 export type DepthZone = { low: number; high: number; label: string; color?: string };
 
+/** 価格・サイズのペア */
+export type PriceSize = readonly [number, number];
+
+/** 累積 volume 階段データ。[price, cumulativeVolume] */
+export type CumulativeStep = [number, number];
+
+/**
+ * bids / asks の [price, size] 配列から累積 volume 階段データを生成する。
+ *
+ * - bids: 高価格 → 低価格 の降順（best bid から遠ざかる方向）
+ * - asks: 低価格 → 高価格 の昇順（best ask から遠ざかる方向）
+ */
+export function buildCumulativeSteps(levels: ReadonlyArray<PriceSize>, side: 'bid' | 'ask'): CumulativeStep[] {
+	if (!levels.length) return [];
+	const sorted = [...levels].sort((a, b) => (side === 'bid' ? b[0] - a[0] : a[0] - b[0]));
+	const out: CumulativeStep[] = [];
+	let cum = 0;
+	for (const [p, s] of sorted) {
+		cum += s;
+		out.push([p, cum]);
+	}
+	return out;
+}
+
 /**
  * ゾーン自動推定（簡易）：レベル配列から平均+2σ超の価格帯を抽出
  */

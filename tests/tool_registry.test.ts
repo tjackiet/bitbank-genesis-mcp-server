@@ -29,6 +29,7 @@ const expectedToolNames = [
 	'detect_whale_events',
 	'validate_candle_data',
 	'prepare_chart_data',
+	'prepare_depth_data',
 	'render_chart_svg',
 	'render_depth_svg',
 	'render_candle_pattern_diagram',
@@ -36,10 +37,10 @@ const expectedToolNames = [
 ];
 
 describe('tool-registry', () => {
-	it('期待する 28 ツール名セットと一致する', () => {
+	it('期待する 31 ツール名セットと一致する', () => {
 		const actualNames = allToolDefs.map((toolDef) => toolDef.name);
 
-		expect(actualNames).toHaveLength(30);
+		expect(actualNames).toHaveLength(31);
 		expect([...actualNames].sort()).toEqual([...expectedToolNames].sort());
 	});
 
@@ -50,7 +51,7 @@ describe('tool-registry', () => {
 			actualNames.includes(name),
 		);
 
-		expect(docsToolNames).toHaveLength(30);
+		expect(docsToolNames).toHaveLength(31);
 		expect(new Set(docsToolNames).size).toBe(docsToolNames.length);
 		expect([...docsToolNames].sort()).toEqual([...actualNames].sort());
 	});

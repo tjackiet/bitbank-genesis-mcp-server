@@ -3,6 +3,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { z } from 'zod';
 import { nowIso, toDisplayTime } from '../lib/datetime.js';
+import { buildCumulativeSteps } from '../lib/depth-analysis.js';
 import { formatPair } from '../lib/formatter.js';
 import getDepth from '../lib/get-depth.js';
 import { fail, failFromError, failFromValidation, ok } from '../lib/result.js';
@@ -50,25 +51,15 @@ export default async function renderDepthSvg(
 		const xMinP = Math.min(minBid, Number(bids[0]?.[0] ?? minBid));
 		const xMaxP = Math.max(maxAsk, Number(asks[0]?.[0] ?? maxAsk));
 
-		// 累積量（左：bids 降順→小へ、右：asks 昇順→大へ）
+		// 累積量（bids: 降順、asks: 昇順）
 		const bidsSorted = [...bids]
 			.map(([p, s]) => [Number(p), Number(s)] as [number, number])
 			.sort((a, b) => b[0] - a[0]);
 		const asksSorted = [...asks]
 			.map(([p, s]) => [Number(p), Number(s)] as [number, number])
 			.sort((a, b) => a[0] - b[0]);
-		let cum = 0;
-		const bidSteps: Array<[number, number]> = [];
-		for (const [p, s] of bidsSorted) {
-			cum += s;
-			bidSteps.push([p, cum]);
-		}
-		cum = 0;
-		const askSteps: Array<[number, number]> = [];
-		for (const [p, s] of asksSorted) {
-			cum += s;
-			askSteps.push([p, cum]);
-		}
+		const bidSteps = buildCumulativeSteps(bidsSorted, 'bid');
+		const askSteps = buildCumulativeSteps(asksSorted, 'ask');
 		const maxQty = Math.max(bidSteps.at(-1)?.[1] || 0, askSteps.at(-1)?.[1] || 0) || 1;
 
 		// キャンバス
@@ -237,7 +228,9 @@ export default async function renderDepthSvg(
 // ── MCP ツール定義（tool-registry から自動収集） ──
 export const toolDef: ToolDefinition = {
 	name: 'render_depth_svg',
-	description: `[Depth Chart / Order Book Visualization] 板の深さチャートをSVG生成（depth chart / order book visualization / bid-ask depth）。data.svg をHTMLに埋め込んで表示。`,
+	description: `[Depth Chart / Order Book Visualization] 板の深さチャートを SVG 生成（depth chart / order book visualization / bid-ask depth）。
+クライアント側（Claude.ai の Visualizer 等）で描画可能な場合は prepare_depth_data を優先し、本ツールは SVG/PNG ファイル保存（preferFile / autoSave）やファイル埋め込み用途にフォールバックする位置づけ。
+data.svg を HTML に埋め込んで表示。`,
 	inputSchema: z.object({
 		pair: z.string().default('btc_jpy'),
 		type: z.string().default('1day'),
