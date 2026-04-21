@@ -51,6 +51,12 @@
 | `render_depth_svg` | 板の深さチャートを SVG 生成（depth chart / order book visualization / bid-ask depth）。 |
 | `render_candle_pattern_diagram` | ローソク足パターンの教育用構造図（candle pattern diagram / education / visualization）。analyze_candle_patterns の結果を初心者向けに視覚化。 |
 
+## Data Quality（データ品質）
+
+| Tool | Description |
+|------|-------------|
+| `validate_candle_data` | OHLCVローソク足データの品質検証。 |
+
 ## Backtesting（バックテスト）
 
 | Tool | Description |
@@ -65,15 +71,21 @@
 |------|------|
 | `get_my_assets` | `tools/private/get_my_assets.ts` |
 | `get_my_trade_history` | `tools/private/get_my_trade_history.ts` |
-| `get_my_orders` | `tools/private/get_my_orders.ts` |
-| `analyze_my_portfolio` | `tools/private/analyze_my_portfolio.ts` |
 | `get_my_deposit_withdrawal` | `tools/private/get_my_deposit_withdrawal.ts` |
-| `create_order` | `tools/private/create_order.ts` |
-| `cancel_order` | `tools/private/cancel_order.ts` |
-| `cancel_orders` | `tools/private/cancel_orders.ts` |
+| `analyze_my_portfolio` | `tools/private/analyze_my_portfolio.ts` |
+| `get_my_orders` | `tools/private/get_my_orders.ts` |
 | `get_order` | `tools/private/get_order.ts` |
 | `get_orders_info` | `tools/private/get_orders_info.ts` |
+| `preview_order` | `tools/private/preview_order.ts` |
+| `create_order` | `tools/private/create_order.ts` |
+| `preview_cancel_order` | `tools/private/preview_cancel_order.ts` |
+| `cancel_order` | `tools/private/cancel_order.ts` |
+| `preview_cancel_orders` | `tools/private/preview_cancel_orders.ts` |
+| `cancel_orders` | `tools/private/cancel_orders.ts` |
+| `get_margin_status` | `tools/private/get_margin_status.ts` |
+| `get_margin_positions` | `tools/private/get_margin_positions.ts` |
+| `get_margin_trade_history` | `tools/private/get_margin_trade_history.ts` |
 
 ---
 
-Public: **30** tools / Private: **10** tools / Total: **40** tools
+Public: **31** tools / Private: **16** tools / Total: **47** tools
