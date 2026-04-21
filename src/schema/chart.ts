@@ -200,6 +200,60 @@ export const PrepareChartDataOutputSchema = z.object({
 	}),
 });
 
+// ── prepare_depth_data ──
+
+export const PrepareDepthDataInputSchema = z.object({
+	pair: z.string().optional().default('btc_jpy'),
+	levels: z
+		.number()
+		.int()
+		.min(10)
+		.max(1000)
+		.optional()
+		.default(200)
+		.describe('取得する最大レベル数（片側）。10〜1000 の整数、デフォルト 200'),
+	bandPct: z
+		.number()
+		.positive()
+		.max(1)
+		.optional()
+		.default(0.01)
+		.describe('mid を中心とした ±range 比率。0.01 = ±1%。デフォルト 0.01'),
+});
+
+/** [price, cumulativeVolume] のタプル */
+const DepthStepTupleSchema = z.tuple([z.number(), z.number()]);
+
+export const PrepareDepthDataOutputSchema = z.object({
+	ok: z.literal(true),
+	summary: z.string(),
+	data: z.object({
+		bids: z.array(DepthStepTupleSchema),
+		asks: z.array(DepthStepTupleSchema),
+		bestBid: z.number().nullable(),
+		bestAsk: z.number().nullable(),
+		mid: z.number().nullable(),
+		spread: z.number().nullable(),
+		spreadPct: z.number().nullable(),
+		totalBidVolume: z.number(),
+		totalAskVolume: z.number(),
+		band: z.object({
+			pct: z.number(),
+			bidVolume: z.number(),
+			askVolume: z.number(),
+			ratio: z.number().nullable(),
+		}),
+		timestamp: z.number(),
+		isoTime: z.string().nullable(),
+	}),
+	meta: z.object({
+		pair: z.string(),
+		fetchedAt: z.string(),
+		levels: z.object({ bids: z.number().int(), asks: z.number().int() }),
+		volumeUnit: z.string(),
+	}),
+});
+
 /** render_chart_svg で使用可能なインジケーター */
 export const RenderChartSvgIndicatorEnum = z.enum([
 	'SMA_5',

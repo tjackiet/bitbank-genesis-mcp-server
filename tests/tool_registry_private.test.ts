@@ -40,8 +40,8 @@ describe('tool-registry — Private API 分岐', () => {
 		for (const privateName of PRIVATE_TOOL_NAMES) {
 			expect(names, `${privateName} が allToolDefs に含まれるべき`).toContain(privateName);
 		}
-		// 公開 30 + プライベート 16 = 46
-		expect(names).toHaveLength(46);
+		// 公開 31 + プライベート 16 = 47
+		expect(names).toHaveLength(47);
 	});
 
 	it('APIキー未設定時にプライベートツールが含まれない', async () => {
@@ -54,7 +54,7 @@ describe('tool-registry — Private API 分岐', () => {
 		for (const privateName of PRIVATE_TOOL_NAMES) {
 			expect(names, `${privateName} が含まれていてはいけない`).not.toContain(privateName);
 		}
-		expect(names).toHaveLength(30);
+		expect(names).toHaveLength(31);
 	});
 
 	it('プライベートツールも基本要素を持つ', async () => {
