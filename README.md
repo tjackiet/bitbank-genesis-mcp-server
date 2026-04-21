@@ -58,12 +58,56 @@ npm install
 
 ### 2. Claude Desktop に登録（最短）
 
-`~/Library/Application Support/Claude/claude_desktop_config.json` に以下を追加:
+`~/Library/Application Support/Claude/claude_desktop_config.json` に設定を追加します。
+
+設定方法は2通りあります。**まず方式Aを試し、動かない場合に方式Bをお試しください。**
+
+#### 方式A：npx 経由（推奨）
+
+Node.js のバージョンアップで設定を書き換える必要がないため、こちらを推奨します。nvm/volta などのバージョン管理ツールをお使いの方には特におすすめです。
+
 ```json
 {
   "mcpServers": {
     "bitbank": {
-      "command": "/usr/local/bin/node",
+      "command": "npx",
+      "args": [
+        "tsx",
+        "/ABS/PATH/to/src/server.ts"
+      ],
+      "workingDirectory": "/ABS/PATH/to/project",
+      "env": { "LOG_LEVEL": "info", "NO_COLOR": "1" }
+    }
+  }
+}
+```
+
+#### 方式B：node の絶対パスを指定（フォールバック）
+
+方式A で「サーバーに接続できません」エラーが出る場合、Claude Desktop から `npx` コマンドが見つけられていない可能性があります。その場合は、node の絶対パスを指定してください。
+
+まずターミナルで自分の環境の node パスを確認します：
+
+```bash
+which node
+```
+
+出力例と対応するインストール方法：
+
+| `which node` の出力 | インストール方法 |
+|---|---|
+| `/opt/homebrew/bin/node` | Homebrew（Apple Silicon Mac） |
+| `/usr/local/bin/node` | Homebrew（Intel Mac）または公式インストーラ |
+| `/Users/XXX/.nvm/versions/node/vXX.XX.X/bin/node` | nvm |
+| `/Users/XXX/.volta/bin/node` | volta |
+
+`which node` の結果を `command` に指定：
+
+```json
+{
+  "mcpServers": {
+    "bitbank": {
+      "command": "<which node の出力>",
       "args": [
         "/ABS/PATH/to/node_modules/tsx/dist/cli.mjs",
         "/ABS/PATH/to/src/server.ts"
@@ -74,41 +118,16 @@ npm install
   }
 }
 ```
-- `/ABS/PATH/to/` を実際のプロジェクトパスに置き換えてください
+
+> ⚠️ **nvm/volta ユーザーへの注意**: この方式では Node.js をバージョンアップするたびに `command` のパスの書き換えが必要です（例: `v22.22.2` → `v22.22.3`）。アップデート後に `which node` を再確認してください。
+
+#### 共通の注意事項
+
+- `/ABS/PATH/to/` を実際のプロジェクトの絶対パスに置き換えてください
+- プロジェクトの絶対パスはクローンしたディレクトリで `pwd` を実行して確認できます
 - ⚠️ macOS では Desktop フォルダに配置すると権限エラーが発生する場合があります（ホームディレクトリ直下を推奨）
 - 追加後、Claude Desktop を `Cmd+Q`（Windows は完全終了）で再起動してください
 - Docker は不要です（[Docker起動](docs/ops.md#docker起動開発検証用)もできます）
-
-#### 具体例（macOS）
-
-プロジェクトを `/Users/taroyamada/bitbank-genesis-mcp-server` にクローンし、Homebrew で Node.js をインストールしている場合:
-
-```json
-{
-  "mcpServers": {
-    "bitbank": {
-      "command": "/opt/homebrew/bin/node",
-      "args": [
-        "/Users/taroyamada/bitbank-genesis-mcp-server/node_modules/tsx/dist/cli.mjs",
-        "/Users/taroyamada/bitbank-genesis-mcp-server/src/server.ts"
-      ],
-      "env": { "LOG_LEVEL": "info", "NO_COLOR": "1" }
-    }
-  }
-}
-```
-
-**自分の環境での値を確認する方法:**
-
-```bash
-# Node.js のパス
-which node
-
-# プロジェクトの絶対パス（クローンしたディレクトリで実行）
-pwd
-```
-
-`which node` の結果が `/opt/homebrew/bin/node` 以外（例: `/usr/local/bin/node`）なら、そのパスを `command` に指定してください。
 
 #### Windows の場合（ソースコードから）
 
@@ -155,8 +174,7 @@ Claude Desktop 以外の MCP クライアントでも、同様にソースコー
 #### Claude Code
 
 ```bash
-claude mcp add --transport stdio bitbank \
-  -- /usr/local/bin/node /ABS/PATH/to/node_modules/tsx/dist/cli.mjs /ABS/PATH/to/src/server.ts
+claude mcp add --transport stdio bitbank -- npx tsx /ABS/PATH/to/src/server.ts
 ```
 
 #### Cursor（`.cursor/mcp.json`）
@@ -165,12 +183,10 @@ claude mcp add --transport stdio bitbank \
 {
   "mcpServers": {
     "bitbank": {
-      "command": "/usr/local/bin/node",
-      "args": [
-        "/ABS/PATH/to/node_modules/tsx/dist/cli.mjs",
-        "/ABS/PATH/to/src/server.ts"
-      ],
-      "env": { "LOG_LEVEL": "info", "NO_COLOR": "1" }
+      "command": "npx",
+      "args": ["tsx", "/ABS/PATH/to/src/server.ts"],
+      "workingDirectory": "/ABS/PATH/to/project",
+      "env": { "LOG_LEVEL": "info" }
     }
   }
 }
@@ -178,20 +194,9 @@ claude mcp add --transport stdio bitbank \
 
 #### Windsurf / 汎用 MCP クライアント
 
-```json
-{
-  "mcpServers": {
-    "bitbank": {
-      "command": "/usr/local/bin/node",
-      "args": [
-        "/ABS/PATH/to/node_modules/tsx/dist/cli.mjs",
-        "/ABS/PATH/to/src/server.ts"
-      ],
-      "env": { "LOG_LEVEL": "info", "NO_COLOR": "1" }
-    }
-  }
-}
-```
+Cursor と同じ設定を使用してください。
+
+> 将来 `@tjackiet/bitbank-mcp` が npm 公開された際は `npx -y @tjackiet/bitbank-mcp` でより簡単に利用できるようになります。
 
 ### 3. 使ってみる
 Claude にそのまま話しかけます:
@@ -310,7 +315,9 @@ npx @modelcontextprotocol/inspector -- tsx src/server.ts
 | 症状 | 原因・対処 |
 |------|-----------|
 | Claude Desktop にツールが表示されない | `claude_desktop_config.json` のパスが間違っている / Claude Desktop を `Cmd+Q`（Windows は完全終了）で再起動していない |
-| 「サーバーに接続できません」エラー | Node.js がインストールされていない / パスが絶対パスでない |
+| 「サーバーに接続できません」エラー（npx方式） | Claude Desktop から `npx` が見つからない可能性。方式B（node絶対パス）に切り替える |
+| `spawn /usr/local/bin/node ENOENT` エラー | `which node` の結果が異なるパス（例: `/opt/homebrew/bin/node`）を指している。`command` を正しいパスに書き換える |
+| Node.jsアップデート後にMCPが動かなくなった | nvm/volta の場合、Node.jsバージョンが変わると絶対パスも変わる。`which node` を再確認して `command` を更新するか、方式A（npx）に切り替える |
 | ツール実行時にタイムアウト | ネットワーク接続を確認 / [bitbank API の状態](https://status.bitbank.cc/)を確認 |
 | Private API ツールが表示されない | `BITBANK_API_KEY` と `BITBANK_API_SECRET` の両方が設定されているか確認（→ [docs/private-api.md](docs/private-api.md)） |
 | ログを確認したい | `LOG_LEVEL=debug` に設定して再起動 / `npm run stat` でログ統計を表示 |
