@@ -230,6 +230,57 @@ for (const p of promptDefs) {
 	registerPromptSafe(p.name, p);
 }
 
+// === Register resources (system prompt + MCP Apps UI resources) ===
+// SDK の `registerResource` を使うことで `resources/list` と `resources/read` の
+// JSON-RPC ルーティングが SDK 内部で正しく行われる。
+// （以前の `setHandler('resources/...')` は SDK が要求する Zod スキーマではなく
+//  文字列を渡していたため silently no-op となり、本番で `Method not found` を返していた）
+const sysPromptResource = {
+	name: 'test-bb System Prompt',
+	uri: 'prompt://system',
+	mimeType: 'text/plain',
+	description: 'System-level guidance for using test-bb MCP server',
+};
+(
+	server as unknown as {
+		registerResource: (
+			name: string,
+			uri: string,
+			config: Record<string, unknown>,
+			cb: (uri: URL) => Promise<unknown> | unknown,
+		) => void;
+	}
+).registerResource(sysPromptResource.name, sysPromptResource.uri, sysPromptResource, async () => ({
+	contents: [{ uri: sysPromptResource.uri, mimeType: sysPromptResource.mimeType, text: SYSTEM_PROMPT }],
+}));
+
+for (const r of appResourceRegistry) {
+	const config: Record<string, unknown> = {
+		description: r.description,
+		mimeType: r.mimeType,
+		...(r.listMeta ? { _meta: r.listMeta } : {}),
+	};
+	(
+		server as unknown as {
+			registerResource: (
+				name: string,
+				uri: string,
+				config: Record<string, unknown>,
+				cb: (uri: URL) => Promise<unknown> | unknown,
+			) => void;
+		}
+	).registerResource(r.name, r.uri, config, async () => ({
+		contents: [
+			{
+				uri: r.uri,
+				mimeType: r.mimeType,
+				text: await r.read(),
+				...(r.contentMeta ? { _meta: r.contentMeta } : {}),
+			},
+		],
+	}));
+}
+
 // === トランスポート接続 ===
 // SDK の McpServer.connect() は 1:1 でトランスポートを結合する (SDK issue #961)。
 // MCP_ENABLE_HTTP=1 + PORT が設定されている場合は HTTP を優先し、stdio は接続しない。
@@ -302,50 +353,6 @@ try {
 			console.error('[prompts/get] EXCEPTION:', getErrorMessage(error));
 			throw error;
 		}
-	});
-} catch {}
-
-// Resources: provide system-level prompt + MCP Apps UI resources
-try {
-	setHandler('resources/list', async () => ({
-		resources: [
-			{
-				uri: 'prompt://system',
-				name: 'test-bb System Prompt',
-				description: 'System-level guidance for using test-bb MCP server',
-				mimeType: 'text/plain',
-			},
-			...appResourceRegistry.map((r) => ({
-				uri: r.uri,
-				name: r.name,
-				description: r.description,
-				mimeType: r.mimeType,
-				...(r.listMeta ? { _meta: r.listMeta } : {}),
-			})),
-		],
-	}));
-	setHandler('resources/read', async (request: unknown) => {
-		const uri = (request as { params?: { uri?: string } })?.params?.uri;
-		if (uri === 'prompt://system') {
-			return {
-				contents: [{ uri: 'prompt://system', mimeType: 'text/plain', text: SYSTEM_PROMPT }],
-			};
-		}
-		const appResource = appResourceRegistry.find((r) => r.uri === uri);
-		if (appResource) {
-			const text = await appResource.read();
-			return {
-				contents: [
-					{
-						uri: appResource.uri,
-						mimeType: appResource.mimeType,
-						text,
-						...(appResource.contentMeta ? { _meta: appResource.contentMeta } : {}),
-					},
-				],
-			};
-		}
-		throw new Error(`Resource not found: ${uri}`);
 	});
 } catch {}
 
