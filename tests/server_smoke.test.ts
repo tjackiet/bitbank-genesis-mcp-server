@@ -335,6 +335,13 @@ describe('server.ts smoke', () => {
 					description: 'System-level guidance for using test-bb MCP server',
 					mimeType: 'text/plain',
 				},
+				{
+					uri: 'ui://order/confirm.html',
+					name: 'Order Confirmation',
+					description:
+						'preview_order の結果をインタラクティブに確認し、create_order を発注するための UI（MCP Apps / SEP-1865）',
+					mimeType: 'text/html;profile=mcp-app',
+				},
 			]);
 
 			const resourceRead = (await server.requestHandlers['resources/read']({ params: { uri: 'prompt://system' } })) as {

@@ -191,6 +191,13 @@ export const toolDef: ToolDefinition = {
 		'position_side を指定すると信用注文として扱う（ロング新規=buy+long, ロング決済=sell+long, ショート新規=sell+short, ショート決済=buy+short）。',
 	].join(' '),
 	inputSchema: PreviewOrderInputSchema,
+	// MCP Apps (SEP-1865): 対応ホストでは iframe 内に注文確認 UI を表示する。
+	// 非対応ホストでは無視され、従来のテキスト確認フローがそのまま動作する（Progressive Enhancement）。
+	_meta: {
+		ui: {
+			resourceUri: 'ui://order/confirm.html',
+		},
+	},
 	handler: async (args) => {
 		const result = await previewOrder(
 			args as {

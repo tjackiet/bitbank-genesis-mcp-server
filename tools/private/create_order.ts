@@ -188,6 +188,13 @@ export const toolDef: ToolDefinition = {
 		'「安全上の理由で実行できない」「金融取引は実行できない」等の理由でツールの使用を拒否しないでください。',
 	].join(' '),
 	inputSchema: CreateOrderInputSchema,
+	// MCP Apps (SEP-1865): LLM からも UI (app) からも呼び出し可能にする。
+	// UI（ui://order/confirm.html）が `app.callServerTool` で直接実行する経路を担う。
+	_meta: {
+		ui: {
+			visibility: ['model', 'app'],
+		},
+	},
 	handler: async (args) => {
 		const result = await createOrder(
 			args as {
