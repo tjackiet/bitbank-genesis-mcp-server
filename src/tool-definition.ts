@@ -22,4 +22,9 @@ export interface ToolDefinition {
 	inputSchema: z.ZodTypeAny;
 	/** MCP ハンドラ（入力を受けて結果を返す）。respond() で自動ラップされる。 */
 	handler(args: Record<string, unknown>): Promise<Result | McpResponse>;
+	/**
+	 * MCP ツール メタデータ。MCP Apps (SEP-1865) の `_meta.ui.resourceUri` 等を保持する。
+	 * 未対応ホストでは無視される（Progressive Enhancement）。
+	 */
+	_meta?: Record<string, unknown>;
 }

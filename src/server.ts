@@ -7,12 +7,18 @@ import { z } from 'zod';
 import { getErrorMessage } from '../lib/error.js';
 import { logError, logToolRun } from '../lib/logger.js';
 import { type PromptDef, prompts as promptDefs } from './prompts.js';
+import { appResourceRegistry } from './resources/app-resources.js';
 import { SYSTEM_PROMPT } from './system-prompt.js';
 import { allToolDefs } from './tool-registry.js';
 
 const server = new McpServer({ name: 'bitbank-mcp', version: '0.4.2' });
 // Explicit registries for tools/prompts to improve STDIO inspector compatibility
-const registeredTools: Array<{ name: string; description: string; inputSchema: Record<string, unknown> }> = [];
+const registeredTools: Array<{
+	name: string;
+	description: string;
+	inputSchema: Record<string, unknown>;
+	_meta?: Record<string, unknown>;
+}> = [];
 const registeredPrompts: Array<{ name: string; description: string }> = [];
 
 type TextContent = { type: 'text'; text: string; _meta?: Record<string, unknown> };
@@ -112,18 +118,28 @@ function getRawShape(s: z.ZodTypeAny): z.ZodRawShape {
 
 function registerToolWithLog(
 	name: string,
-	schema: { description: string; inputSchema: z.ZodTypeAny },
+	schema: { description: string; inputSchema: z.ZodTypeAny; _meta?: Record<string, unknown> },
 	handler: (input: Record<string, unknown>) => Promise<unknown>,
 ) {
 	// Build JSON Schema for listing
 	const inputSchemaJson = zodToInputJsonSchema(schema.inputSchema);
-	registeredTools.push({ name, description: schema.description, inputSchema: inputSchemaJson });
+	registeredTools.push({
+		name,
+		description: schema.description,
+		inputSchema: inputSchemaJson,
+		...(schema._meta ? { _meta: schema._meta } : {}),
+	});
 
 	// SDK の registerTool は第2引数に { inputSchema: ZodRawShape } を要求するが
 	// 型定義が厳密すぎて直接渡せないため、ここでキャストを集約する
+	const toolConfig: Record<string, unknown> = {
+		description: schema.description,
+		inputSchema: getRawShape(schema.inputSchema),
+	};
+	if (schema._meta) toolConfig._meta = schema._meta;
 	(server as unknown as { registerTool: (n: string, s: unknown, h: unknown) => void }).registerTool(
 		name,
-		{ description: schema.description, inputSchema: getRawShape(schema.inputSchema) },
+		toolConfig,
 		async (input: Record<string, unknown>) => {
 			const TOOL_TIMEOUT_MS = 60_000;
 			const t0 = Date.now();
@@ -160,7 +176,11 @@ function registerToolWithLog(
 
 // === Auto-register all tools from registry ===
 for (const def of allToolDefs) {
-	registerToolWithLog(def.name, { description: def.description, inputSchema: def.inputSchema }, def.handler);
+	registerToolWithLog(
+		def.name,
+		{ description: def.description, inputSchema: def.inputSchema, ...(def._meta ? { _meta: def._meta } : {}) },
+		def.handler,
+	);
 }
 
 // === Register prompts (SDK 形式に寄せた最小導入) ===
@@ -238,7 +258,12 @@ function setHandler(method: string, fn: HandlerFn) {
 // Fallback handlers to ensure list operations work over STDIO
 try {
 	setHandler('tools/list', async () => ({
-		tools: registeredTools.map((t) => ({ name: t.name, description: t.description, inputSchema: t.inputSchema })),
+		tools: registeredTools.map((t) => ({
+			name: t.name,
+			description: t.description,
+			inputSchema: t.inputSchema,
+			...(t._meta ? { _meta: t._meta } : {}),
+		})),
 	}));
 	setHandler('prompts/list', async () => ({
 		prompts: registeredPrompts.map((p) => ({ name: p.name, description: p.description })),
@@ -280,7 +305,7 @@ try {
 	});
 } catch {}
 
-// Resources: provide system-level prompt as MCP resource
+// Resources: provide system-level prompt + MCP Apps UI resources
 try {
 	setHandler('resources/list', async () => ({
 		resources: [
@@ -290,6 +315,13 @@ try {
 				description: 'System-level guidance for using test-bb MCP server',
 				mimeType: 'text/plain',
 			},
+			...appResourceRegistry.map((r) => ({
+				uri: r.uri,
+				name: r.name,
+				description: r.description,
+				mimeType: r.mimeType,
+				...(r.listMeta ? { _meta: r.listMeta } : {}),
+			})),
 		],
 	}));
 	setHandler('resources/read', async (request: unknown) => {
@@ -297,6 +329,20 @@ try {
 		if (uri === 'prompt://system') {
 			return {
 				contents: [{ uri: 'prompt://system', mimeType: 'text/plain', text: SYSTEM_PROMPT }],
+			};
+		}
+		const appResource = appResourceRegistry.find((r) => r.uri === uri);
+		if (appResource) {
+			const text = await appResource.read();
+			return {
+				contents: [
+					{
+						uri: appResource.uri,
+						mimeType: appResource.mimeType,
+						text,
+						...(appResource.contentMeta ? { _meta: appResource.contentMeta } : {}),
+					},
+				],
 			};
 		}
 		throw new Error(`Resource not found: ${uri}`);
