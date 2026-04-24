@@ -65,9 +65,20 @@ const respond = (result: unknown): ToolReturn => {
 			text = String(result);
 		}
 	}
+	// handler が McpResponse shape (`{ content, structuredContent: Result }`) を返している場合、
+	// 内側の structuredContent をそのまま採用する（二重ネストを防ぐ）。
+	// MCP Apps (SEP-1865) の iframe は `structuredContent` を直接参照するため、
+	// `{ structuredContent: { content, structuredContent: Result } }` のように包んでしまうと
+	// クライアント側で Result を取り出せない。
+	// Result shape (`{ ok, summary, data, meta }`) を直接返している場合は result 自体を採用する。
+	const structured = isPlainObject(result)
+		? isPlainObject(result.structuredContent)
+			? result.structuredContent
+			: result
+		: undefined;
 	return {
 		content: [{ type: 'text', text }],
-		...(isPlainObject(result) ? { structuredContent: result } : {}),
+		...(structured ? { structuredContent: structured } : {}),
 	};
 };
 
