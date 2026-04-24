@@ -52,7 +52,6 @@ interface PreviewResult {
 }
 
 type Status = 'idle' | 'submitting' | 'success' | 'error' | 'cancelled' | 'expired';
-type ConnState = 'connecting' | 'connected' | 'failed';
 
 function formatPair(pair: string): string {
 	return pair.toUpperCase().replace('_', '/');
@@ -112,11 +111,6 @@ export function App() {
 	const [status, setStatus] = useState<Status>('idle');
 	const [message, setMessage] = useState<string>('');
 	const [orderId, setOrderId] = useState<number | null>(null);
-	const [connState, setConnState] = useState<ConnState>('connecting');
-	const [connError, setConnError] = useState<string>('');
-	const [debugResult, setDebugResult] = useState<unknown>(null);
-	const [debugInput, setDebugInput] = useState<unknown>(null);
-	const [debugFiltered, setDebugFiltered] = useState<string>('');
 	const appRef = useRef<McpApp | null>(null);
 
 	useEffect(() => {
@@ -124,10 +118,10 @@ export function App() {
 		appRef.current = mcpApp;
 
 		mcpApp.ontoolresult = (params) => {
-			setDebugResult(params);
 			// preview_order の結果のみ取り込む。他ツール（特に create_order）の結果で
 			// state をリセットしないよう data.preview / confirmation_token の存在で
-			// フィルタする（meta.action は host が落とす実装もあるため必須にしない）。
+			// フィルタする（PreviewOrderMetaSchema は action: z.literal('create_order')、
+			// 他ツール応答に preview / confirmation_token は含まれないため安全）。
 			const structured = params?.structuredContent as PreviewResult | undefined;
 			if (structured?.ok && structured.data?.preview && structured.data.confirmation_token) {
 				setPreview(structured.data.preview);
@@ -136,17 +130,7 @@ export function App() {
 				setStatus('idle');
 				setMessage('');
 				setOrderId(null);
-				setDebugFiltered('matched: structuredContent.data.preview を採用');
-			} else {
-				setDebugFiltered(
-					`skipped (ok=${structured?.ok}, hasPreview=${!!structured?.data?.preview}, hasToken=${!!structured?.data
-						?.confirmation_token})`,
-				);
 			}
-		};
-
-		mcpApp.ontoolinput = (params) => {
-			setDebugInput(params);
 		};
 
 		mcpApp.onhostcontextchanged = (ctx) => {
@@ -158,17 +142,14 @@ export function App() {
 		mcpApp
 			.connect()
 			.then(() => {
-				setConnState('connected');
 				// 初期テーマ・スタイル適用
 				const ctx = mcpApp.getHostContext();
 				applyDocumentTheme(ctx?.theme ?? getDocumentTheme());
 				if (ctx?.styles) applyHostStyleVariables(ctx.styles);
 				if (ctx?.fontCss) applyHostFonts(ctx.fontCss);
 			})
-			.catch((err: unknown) => {
-				// 非対応ホスト or スタンドアロン表示
-				setConnState('failed');
-				setConnError(err instanceof Error ? err.message : String(err));
+			.catch(() => {
+				// 非対応ホスト or スタンドアロン表示。UI だけ表示する。
 			});
 
 		return () => {
@@ -249,23 +230,6 @@ export function App() {
 			<div className="app">
 				<div className="card">
 					<p className="muted">preview_order の結果を待機中…</p>
-					<div className="debug">
-						<div>
-							<strong>host 接続:</strong> {connState}
-							{connError && <span className="debug-err"> ({connError})</span>}
-						</div>
-						<div>
-							<strong>filter:</strong> {debugFiltered || '(まだ tool-result を受信していません)'}
-						</div>
-						<details open>
-							<summary>受信した tool-result params</summary>
-							<pre>{debugResult ? JSON.stringify(debugResult, null, 2) : '(none)'}</pre>
-						</details>
-						<details>
-							<summary>受信した tool-input params</summary>
-							<pre>{debugInput ? JSON.stringify(debugInput, null, 2) : '(none)'}</pre>
-						</details>
-					</div>
 				</div>
 			</div>
 		);
