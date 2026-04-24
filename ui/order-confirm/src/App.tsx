@@ -20,6 +20,13 @@ type Side = 'buy' | 'sell';
 type OrderType = 'limit' | 'market' | 'stop' | 'stop_limit';
 type PositionSide = 'long' | 'short';
 
+/** 暗号資産の最大小数桁数（bitbank の表示慣行に合わせる） */
+const CRYPTO_MAX_FRACTION_DIGITS = 8;
+/** JPY の最大小数桁数（整数表示） */
+const JPY_MAX_FRACTION_DIGITS = 0;
+/** create_order 呼び出しの timeout（ms）。サーバー側のツール timeout 60s より少し短く設定 */
+const CREATE_ORDER_TIMEOUT_MS = 45_000;
+
 interface PreviewArgs {
 	pair: string;
 	amount: string;
@@ -53,15 +60,15 @@ function formatPair(pair: string): string {
 function formatAmount(value: string): string {
 	const n = Number(value);
 	if (!Number.isFinite(n)) return value;
-	return n.toLocaleString('ja-JP', { maximumFractionDigits: 8 });
+	return n.toLocaleString('ja-JP', { maximumFractionDigits: CRYPTO_MAX_FRACTION_DIGITS });
 }
 
-function formatPriceJpy(value: string | undefined, isJpy: boolean): string {
+function formatPrice(value: string | undefined, isJpy: boolean): string {
 	if (!value) return '—';
 	const n = Number(value);
 	if (!Number.isFinite(n)) return value;
-	if (isJpy) return `¥${n.toLocaleString('ja-JP', { maximumFractionDigits: 0 })}`;
-	return value;
+	if (isJpy) return `¥${n.toLocaleString('ja-JP', { maximumFractionDigits: JPY_MAX_FRACTION_DIGITS })}`;
+	return n.toLocaleString('ja-JP', { maximumFractionDigits: CRYPTO_MAX_FRACTION_DIGITS });
 }
 
 function estimateTotal(preview: PreviewArgs): string | null {
@@ -71,8 +78,8 @@ function estimateTotal(preview: PreviewArgs): string | null {
 	if (!Number.isFinite(p) || !Number.isFinite(a)) return null;
 	const isJpy = preview.pair.includes('jpy');
 	const total = p * a;
-	if (isJpy) return `¥${total.toLocaleString('ja-JP', { maximumFractionDigits: 0 })}`;
-	return total.toLocaleString('ja-JP', { maximumFractionDigits: 8 });
+	if (isJpy) return `¥${total.toLocaleString('ja-JP', { maximumFractionDigits: JPY_MAX_FRACTION_DIGITS })}`;
+	return total.toLocaleString('ja-JP', { maximumFractionDigits: CRYPTO_MAX_FRACTION_DIGITS });
 }
 
 function sideLabel(side: Side, positionSide?: PositionSide): { text: string; className: string } {
@@ -111,9 +118,16 @@ export function App() {
 		appRef.current = mcpApp;
 
 		mcpApp.ontoolresult = (params) => {
-			// preview_order の結果（structuredContent）から注文パラメータとトークンを取り出す
+			// preview_order の結果のみ取り込む。他ツール（特に create_order）の結果で
+			// state をリセットしないよう meta.action === 'create_order' と data.preview の
+			// 存在でフィルタする（PreviewOrderMetaSchema は action: z.literal('create_order')）。
 			const structured = params?.structuredContent as PreviewResult | undefined;
-			if (structured?.ok && structured.data) {
+			if (
+				structured?.ok &&
+				structured.meta?.action === 'create_order' &&
+				structured.data?.preview &&
+				structured.data.confirmation_token
+			) {
 				setPreview(structured.data.preview);
 				setToken(structured.data.confirmation_token);
 				setTokenExpiresAt(structured.data.expires_at);
@@ -143,7 +157,12 @@ export function App() {
 			});
 
 		return () => {
+			// Strict Mode / HMR / アンマウント時に transport・pending request・timeout を解放する
+			const current = appRef.current;
 			appRef.current = null;
+			void current?.close().catch(() => {
+				// close 自体の失敗は無視（既に切断済み等）
+			});
 		};
 	}, []);
 
@@ -178,7 +197,10 @@ export function App() {
 			if (preview.post_only != null) args.post_only = preview.post_only;
 			if (preview.position_side) args.position_side = preview.position_side;
 
-			const result = await app.callServerTool({ name: 'create_order', arguments: args });
+			const result = await app.callServerTool(
+				{ name: 'create_order', arguments: args },
+				{ timeout: CREATE_ORDER_TIMEOUT_MS },
+			);
 			if (result.isError) {
 				const text = result.content?.find((c) => c.type === 'text')?.text ?? '注文に失敗しました';
 				setStatus('error');
@@ -250,13 +272,13 @@ export function App() {
 				<div className="row">
 					<span className="row-label">価格</span>
 					<span className="row-value">
-						{preview.type === 'market' ? '成行' : formatPriceJpy(preview.price, isJpy)}
+						{preview.type === 'market' ? '成行' : formatPrice(preview.price, isJpy)}
 					</span>
 				</div>
 				{preview.trigger_price && (
 					<div className="row">
 						<span className="row-label">トリガー価格</span>
-						<span className="row-value">{formatPriceJpy(preview.trigger_price, isJpy)}</span>
+						<span className="row-value">{formatPrice(preview.trigger_price, isJpy)}</span>
 					</div>
 				)}
 				{total && (
@@ -277,7 +299,7 @@ export function App() {
 				)}
 
 				{status === 'success' && (
-					<div className="status status-success">
+					<div className="status status-success" role="status" aria-live="polite" aria-atomic="true">
 						✅ {message}
 						{orderId != null && (
 							<>
@@ -287,9 +309,21 @@ export function App() {
 						)}
 					</div>
 				)}
-				{status === 'error' && <div className="status status-error">❌ {message}</div>}
-				{status === 'cancelled' && <div className="status status-cancelled">{message}</div>}
-				{status === 'expired' && <div className="status status-error">⏰ {message}</div>}
+				{status === 'error' && (
+					<div className="status status-error" role="alert" aria-live="assertive" aria-atomic="true">
+						❌ {message}
+					</div>
+				)}
+				{status === 'cancelled' && (
+					<div className="status status-cancelled" role="status" aria-live="polite" aria-atomic="true">
+						{message}
+					</div>
+				)}
+				{status === 'expired' && (
+					<div className="status status-error" role="alert" aria-live="assertive" aria-atomic="true">
+						⏰ {message}
+					</div>
+				)}
 
 				{!isTerminal && (
 					<div className="actions">
