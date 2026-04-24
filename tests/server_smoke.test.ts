@@ -13,10 +13,17 @@ interface FakePromptEntry {
 	options: Record<string, unknown>;
 	handler: () => Record<string, unknown>;
 }
+interface FakeResourceEntry {
+	name: string;
+	uri: string;
+	config: Record<string, unknown>;
+	read: (uri: URL) => Promise<unknown> | unknown;
+}
 interface FakeMcpServerShape {
 	info: Record<string, unknown>;
 	tools: FakeToolEntry[];
 	prompts: FakePromptEntry[];
+	resources: FakeResourceEntry[];
 	requestHandlers: Record<string, (request?: Record<string, unknown>) => Promise<unknown> | unknown>;
 	connections: Array<{ kind: string }>;
 }
@@ -56,6 +63,7 @@ vi.mock('@modelcontextprotocol/sdk/server/mcp.js', () => {
 		info: Record<string, unknown>;
 		tools: FakeToolEntry[];
 		prompts: FakePromptEntry[];
+		resources: FakeResourceEntry[];
 		requestHandlers: Record<string, (request?: Record<string, unknown>) => Promise<unknown> | unknown>;
 		connections: Array<{ kind: string }>;
 
@@ -63,6 +71,7 @@ vi.mock('@modelcontextprotocol/sdk/server/mcp.js', () => {
 			this.info = info;
 			this.tools = [];
 			this.prompts = [];
+			this.resources = [];
 			this.requestHandlers = {};
 			this.connections = [];
 			runtime.serverInstances.push(this);
@@ -78,6 +87,15 @@ vi.mock('@modelcontextprotocol/sdk/server/mcp.js', () => {
 
 		registerPrompt(name: string, options: Record<string, unknown>, handler: () => Record<string, unknown>) {
 			this.prompts.push({ name, options, handler });
+		}
+
+		registerResource(
+			name: string,
+			uri: string,
+			config: Record<string, unknown>,
+			read: (uri: URL) => Promise<unknown> | unknown,
+		) {
+			this.resources.push({ name, uri, config, read });
 		}
 
 		setRequestHandler(name: string, handler: (request?: Record<string, unknown>) => Promise<unknown> | unknown) {
@@ -252,14 +270,16 @@ describe('server.ts smoke', () => {
 		expect(server.tools.map((tool) => tool.name)).toEqual(['smoke_tool', 'second_tool']);
 		expect(server.prompts.map((prompt) => prompt.name)).toEqual(['smoke_prompt']);
 		expect(Object.keys(server.requestHandlers)).toEqual(
-			expect.arrayContaining(['tools/list', 'prompts/list', 'prompts/get', 'resources/list', 'resources/read']),
+			expect.arrayContaining(['tools/list', 'prompts/list', 'prompts/get']),
 		);
+		// Resources は SDK の registerResource 経由で正規ルートに登録される
+		expect(server.resources.map((r) => r.uri)).toEqual(['prompt://system', 'ui://order/confirm.html']);
 		expect(server.connections).toHaveLength(1);
 		expect(server.connections[0].kind).toBe('stdio');
 		expect(runtime.stdioTransports).toHaveLength(1);
 	});
 
-	it('tools/list・prompts/list・prompts/get・resources/read の fallback を返す', async () => {
+	it('tools/list・prompts/list・prompts/get と resources の登録内容を返す', async () => {
 		const { z } = await import('zod');
 		const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
 
@@ -325,10 +345,8 @@ describe('server.ts smoke', () => {
 				{ role: 'assistant', content: { type: 'text', text: 'assistant note' } },
 			]);
 
-			const resourcesList = (await server.requestHandlers['resources/list']()) as {
-				resources: Array<Record<string, unknown>>;
-			};
-			expect(resourcesList.resources).toEqual([
+			// Resources は SDK の registerResource 経由で登録され、`server.resources` に集約される
+			expect(server.resources.map((r) => ({ uri: r.uri, name: r.name, ...r.config }))).toEqual([
 				{
 					uri: 'prompt://system',
 					name: 'test-bb System Prompt',
@@ -344,10 +362,12 @@ describe('server.ts smoke', () => {
 				},
 			]);
 
-			const resourceRead = (await server.requestHandlers['resources/read']({ params: { uri: 'prompt://system' } })) as {
+			const sysPromptResource = server.resources.find((r) => r.uri === 'prompt://system');
+			if (!sysPromptResource) throw new Error('prompt://system resource not registered');
+			const sysPromptRead = (await sysPromptResource.read(new URL('prompt://system'))) as {
 				contents: Array<Record<string, unknown>>;
 			};
-			expect(resourceRead.contents).toEqual([
+			expect(sysPromptRead.contents).toEqual([
 				{
 					uri: 'prompt://system',
 					mimeType: 'text/plain',
@@ -357,9 +377,6 @@ describe('server.ts smoke', () => {
 
 			await expect(server.requestHandlers['prompts/get']({ params: { name: 'missing_prompt' } })).rejects.toThrow(
 				'Prompt not found: missing_prompt',
-			);
-			await expect(server.requestHandlers['resources/read']({ params: { uri: 'prompt://missing' } })).rejects.toThrow(
-				'Resource not found: prompt://missing',
 			);
 		} finally {
 			consoleErrorSpy.mockRestore();
