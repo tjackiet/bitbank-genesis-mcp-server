@@ -44,6 +44,16 @@ export function log(level: 'error' | 'warn' | 'info' | 'debug', event: Record<st
 }
 
 /** ログ出力前に機密フィールドをマスクする */
+// 方針（残高・注文数量・価格）:
+// - SENSITIVE_KEYS は「認証・署名・確認トークン」系のみを対象とする。bitbank API キー／シークレット／
+//   confirmation_token のログ混入を防ぐのが主目的。
+// - balance / amount / price / free_amount 等はマスクしていない。ツール入力（例: create_order の amount）
+//   は maskSensitiveFields 後も数値文字列として jsonl に残り得る。これはサーバー管理者が MCP 利用者の
+//   操作監査・障害調査のためにローカルログを読む前提の設計であり、LOG_LEVEL=debug でも現状コードは
+//   `log('debug', …)` を呼ばない（閾値は THRESH のみ）。tool_run の result は ok/summary/meta のみで
+//   残高や約定一覧の data 本体は載せない。
+// - 取引操作の `logTradeAction` は amount/price を平文で含むが、改ざん検知用チェーンハッシュ付きの
+//   監査ログであり、集計・統計目的とは別レーンとして許容している。
 const SENSITIVE_KEYS = new Set(['confirmation_token', 'token', 'key', 'secret', 'apiKey', 'apiSecret']);
 
 function maskSensitiveFields(obj: unknown): unknown {
