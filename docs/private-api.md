@@ -80,7 +80,8 @@ Claude Desktop の場合は `claude_desktop_config.json` の `env` に追加:
 ### エラーハンドリング（クレデンシャル漏洩防止）
 
 - 認証エラー（20001〜20005）は静的メッセージを返し、レスポンスボディをエコーしない
-- 汎用エラーはレスポンスボディを 200 文字に切り詰め
+- Private API クライアント（`src/private/client.ts`）は `PrivateApiError` に分類し、bitbank の JSON 本文をそのままユーザー向けメッセージに載せない設計（認証・レート制限・HTTP 401/403 は固定文言）
+- 予期しない例外のメッセージは `fail()` / `failFromError()` 経由で `Error.message` 等に依存するが、**現状コードベースでは「200 文字への一律切り詰め」は実装していない**（将来追加する場合は `lib/error.ts` または `failFromError` 側の集約が望ましい）
 - HTTP 401/403 でも API キーを露出しない
 - ログへのクレデンシャル混入防止テスト済み
 
