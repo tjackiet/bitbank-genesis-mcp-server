@@ -7,7 +7,6 @@ import { z } from 'zod';
 import { getErrorMessage } from '../lib/error.js';
 import { logError, logToolRun } from '../lib/logger.js';
 import { type PromptDef, prompts as promptDefs } from './prompts.js';
-import { SYSTEM_PROMPT } from './system-prompt.js';
 import { allToolDefs } from './tool-registry.js';
 
 const server = new McpServer({ name: 'bitbank-mcp', version: '0.4.2' });
@@ -277,29 +276,6 @@ try {
 			console.error('[prompts/get] EXCEPTION:', getErrorMessage(error));
 			throw error;
 		}
-	});
-} catch {}
-
-// Resources: provide system-level prompt as MCP resource
-try {
-	setHandler('resources/list', async () => ({
-		resources: [
-			{
-				uri: 'prompt://system',
-				name: 'test-bb System Prompt',
-				description: 'System-level guidance for using test-bb MCP server',
-				mimeType: 'text/plain',
-			},
-		],
-	}));
-	setHandler('resources/read', async (request: unknown) => {
-		const uri = (request as { params?: { uri?: string } })?.params?.uri;
-		if (uri === 'prompt://system') {
-			return {
-				contents: [{ uri: 'prompt://system', mimeType: 'text/plain', text: SYSTEM_PROMPT }],
-			};
-		}
-		throw new Error(`Resource not found: ${uri}`);
 	});
 } catch {}
 

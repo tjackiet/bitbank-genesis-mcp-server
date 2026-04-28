@@ -1,5 +1,4 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { SYSTEM_PROMPT } from '../src/system-prompt.js';
 import type { ToolDefinition } from '../src/tool-definition.js';
 
 // ── Mock 用ローカル型 ──────────────────────────────────────────
@@ -252,14 +251,16 @@ describe('server.ts smoke', () => {
 		expect(server.tools.map((tool) => tool.name)).toEqual(['smoke_tool', 'second_tool']);
 		expect(server.prompts.map((prompt) => prompt.name)).toEqual(['smoke_prompt']);
 		expect(Object.keys(server.requestHandlers)).toEqual(
-			expect.arrayContaining(['tools/list', 'prompts/list', 'prompts/get', 'resources/list', 'resources/read']),
+			expect.arrayContaining(['tools/list', 'prompts/list', 'prompts/get']),
 		);
+		expect(server.requestHandlers).not.toHaveProperty('resources/list');
+		expect(server.requestHandlers).not.toHaveProperty('resources/read');
 		expect(server.connections).toHaveLength(1);
 		expect(server.connections[0].kind).toBe('stdio');
 		expect(runtime.stdioTransports).toHaveLength(1);
 	});
 
-	it('tools/list・prompts/list・prompts/get・resources/read の fallback を返す', async () => {
+	it('tools/list・prompts/list・prompts/get の fallback を返す', async () => {
 		const { z } = await import('zod');
 		const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
 
@@ -325,34 +326,11 @@ describe('server.ts smoke', () => {
 				{ role: 'assistant', content: { type: 'text', text: 'assistant note' } },
 			]);
 
-			const resourcesList = (await server.requestHandlers['resources/list']()) as {
-				resources: Array<Record<string, unknown>>;
-			};
-			expect(resourcesList.resources).toEqual([
-				{
-					uri: 'prompt://system',
-					name: 'test-bb System Prompt',
-					description: 'System-level guidance for using test-bb MCP server',
-					mimeType: 'text/plain',
-				},
-			]);
-
-			const resourceRead = (await server.requestHandlers['resources/read']({ params: { uri: 'prompt://system' } })) as {
-				contents: Array<Record<string, unknown>>;
-			};
-			expect(resourceRead.contents).toEqual([
-				{
-					uri: 'prompt://system',
-					mimeType: 'text/plain',
-					text: SYSTEM_PROMPT,
-				},
-			]);
+			expect(server.requestHandlers['resources/list']).toBeUndefined();
+			expect(server.requestHandlers['resources/read']).toBeUndefined();
 
 			await expect(server.requestHandlers['prompts/get']({ params: { name: 'missing_prompt' } })).rejects.toThrow(
 				'Prompt not found: missing_prompt',
-			);
-			await expect(server.requestHandlers['resources/read']({ params: { uri: 'prompt://missing' } })).rejects.toThrow(
-				'Resource not found: prompt://missing',
 			);
 		} finally {
 			consoleErrorSpy.mockRestore();
