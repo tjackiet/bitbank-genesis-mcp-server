@@ -1,7 +1,7 @@
 # ADR-0006: `src/system-prompt.ts` の削除 — Server Instructions の責務逸脱
 
 - **Status**: Accepted
-- **Date**: 2026-04-27
+- **Date**: 2026-04-28
 - **Decision**: `src/system-prompt.ts` および `prompt://system` リソース配信を削除する
 
 ## 背景
