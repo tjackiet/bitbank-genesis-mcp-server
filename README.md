@@ -6,8 +6,6 @@
 
 > bitbank API のデータを使った暗号資産市場分析を、Claude（LLM）から簡単に実行できる MCP サーバーです。
 
-> 📌 **位置付け**: 本リポジトリは **bitbank 公式版**（[`bitbankinc/bitbank-mcp-server`](https://github.com/bitbankinc/bitbank-mcp-server)）の **先行実験版**です。「ビットバンク botters lab」コミュニティ向けに、新機能を先行リリースしています。安定運用したい方は公式版の利用を推奨します。
-
 ## ⚠️ Disclaimer
 
 本 MCP サーバーが提供するデータを AI エージェントが受け取り処理した結果は、必ずしも正確性・完全性を保証するものではありません。
