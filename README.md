@@ -4,7 +4,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![npm](https://img.shields.io/npm/v/bitbank-lab-mcp.svg)](https://www.npmjs.com/package/bitbank-lab-mcp)
 
-> bitbank API のデータを使った暗号資産市場分析を、Claude（LLM）から簡単に実行できる MCP サーバーです。
+> bitbank API のデータを使った暗号資産市場分析を、Claude / Cursor / Codex / Gemini CLI など各種 AI クライアントから簡単に実行できる MCP サーバーです。
 
 ## ⚠️ Disclaimer
 
@@ -250,7 +250,7 @@ claude mcp add --transport stdio bitbank-lab -- npx -y bitbank-lab-mcp
 Cursor と同じ JSON 形式で登録できます。クライアント固有の設定ファイルパスについては各クライアントのドキュメントを参照してください。
 
 ### 4. 使ってみる
-Claude にそのまま話しかけます:
+AI クライアントにそのまま話しかけます:
 ```
 BTCの今の市場状況を分析して
 ビットコインは買いと売りどちらが優勢？
