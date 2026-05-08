@@ -92,7 +92,7 @@ Node.js のバージョンアップで設定を書き換える必要がないた
 }
 ```
 
-API キーは [bitbank 設定画面](https://app.bitbank.cc/account/api) で発行できます（「参照」+「取引」権限、出金権限は不要）。詳細: [Private API ガイド](docs/private-api.md)。
+API キーは [bitbank 設定画面](https://app.bitbank.cc/account/api) で発行できます。**「参照」+「取引」権限のみを付与してください。「出金」権限は絶対に有効化しないでください**（漏洩時の資産流出を避けるため／本 MCP サーバーも出金系ツールは実装していません）。詳細: [Private API ガイド](docs/private-api.md)。
 
 #### 方式B：`npx` の絶対パスを指定（フォールバック）
 
@@ -299,7 +299,7 @@ export BITBANK_API_SECRET="your_api_secret"
 }
 ```
 
-API キーは [bitbank 設定画面](https://app.bitbank.cc/account/api) で発行できます（「参照」+「取引」権限、出金権限は不要）。
+API キーは [bitbank 設定画面](https://app.bitbank.cc/account/api) で発行できます。**「参照」+「取引」権限のみを付与してください。「出金」権限は絶対に有効化しないでください**（漏洩時の資産流出を避けるため／本 MCP サーバーも出金系ツールは実装していません）。
 
 | カテゴリ | ツール | 説明 |
 |---|---|---|
