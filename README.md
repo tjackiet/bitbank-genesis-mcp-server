@@ -92,7 +92,16 @@ Node.js のバージョンアップで設定を書き換える必要がないた
 }
 ```
 
-API キーは [bitbank 設定画面](https://app.bitbank.cc/account/api) で発行できます。**「参照」+「取引」権限のみを付与してください。「出金」権限は絶対に有効化しないでください**（漏洩時の資産流出を避けるため／本 MCP サーバーも出金系ツールは実装していません）。詳細: [Private API ガイド](docs/private-api.md)。
+API キーは [bitbank 設定画面](https://app.bitbank.cc/account/api) で発行してください。**必要最小限の権限のみ付与する**ことを強く推奨します（最小権限の原則）。
+
+| やりたいこと | 必要な権限 |
+|---|---|
+| 資産確認・ポートフォリオ分析（読み取り専用） | **「参照」のみ** ← 最も安全、迷ったらこちら |
+| 上記 + AI に発注・キャンセル操作も任せたい | 「参照」+「取引」 |
+
+⚠️ **「出金」権限は絶対に有効化しないでください**。本 MCP サーバーは出金系ツールを実装していないため、この権限を付ける必要は一切ありません。漏洩時の資産流出を避けるためです。
+
+**IP 制限**: bitbank 側で API キーに IP 制限を設定できる場合は、可能な限り設定を推奨します。詳細: [Private API ガイド](docs/private-api.md)。
 
 #### 方式B：`npx` の絶対パスを指定（フォールバック）
 
@@ -299,19 +308,28 @@ export BITBANK_API_SECRET="your_api_secret"
 }
 ```
 
-API キーは [bitbank 設定画面](https://app.bitbank.cc/account/api) で発行できます。**「参照」+「取引」権限のみを付与してください。「出金」権限は絶対に有効化しないでください**（漏洩時の資産流出を避けるため／本 MCP サーバーも出金系ツールは実装していません）。
+API キーは [bitbank 設定画面](https://app.bitbank.cc/account/api) で発行してください。**必要最小限の権限のみ付与する**ことを強く推奨します（最小権限の原則）。
 
-| カテゴリ | ツール | 説明 |
-|---|---|---|
-| 口座情報 | `get_my_assets` | 保有資産一覧 |
-| 注文照会 | `get_my_orders`, `get_order`, `get_orders_info` | 注文の照会 |
-| 約定履歴 | `get_my_trade_history` | 約定履歴の取得 |
-| ポートフォリオ | `analyze_my_portfolio` | 損益分析・パフォーマンス |
-| 入出金 | `get_my_deposit_withdrawal` | 入出金履歴 |
-| 発注 | `preview_order` → `create_order` | 2ステップ確認付き発注 |
-| キャンセル | `preview_cancel_order` → `cancel_order` | 2ステップ確認付きキャンセル |
-| 一括キャンセル | `preview_cancel_orders` → `cancel_orders` | 2ステップ確認付き一括キャンセル |
-| 信用取引 | `get_margin_status`, `get_margin_positions`, `get_margin_trade_history` | 証拠金・ポジション・約定履歴 |
+| やりたいこと | 必要な権限 |
+|---|---|
+| 資産確認・ポートフォリオ分析（読み取り専用） | **「参照」のみ** ← 最も安全、迷ったらこちら |
+| 上記 + AI に発注・キャンセル操作も任せたい | 「参照」+「取引」 |
+
+⚠️ **「出金」権限は絶対に有効化しないでください**。本 MCP サーバーは出金系ツールを実装していないため、この権限を付ける必要は一切ありません。漏洩時の資産流出を避けるためです。
+
+**IP 制限**: bitbank 側で API キーに IP 制限を設定できる場合は、可能な限り設定を推奨します。
+
+| カテゴリ | ツール | 説明 | 必要な権限 |
+|---|---|---|---|
+| 口座情報 | `get_my_assets` | 保有資産一覧 | 参照 |
+| 注文照会 | `get_my_orders`, `get_order`, `get_orders_info` | 注文の照会 | 参照 |
+| 約定履歴 | `get_my_trade_history` | 約定履歴の取得 | 参照 |
+| ポートフォリオ | `analyze_my_portfolio` | 損益分析・パフォーマンス | 参照 |
+| 入出金 | `get_my_deposit_withdrawal` | 入出金履歴 | 参照 |
+| 信用取引 | `get_margin_status`, `get_margin_positions`, `get_margin_trade_history` | 証拠金・ポジション・約定履歴 | 参照 |
+| 発注 | `preview_order` → `create_order` | 2ステップ確認付き発注 | 取引 |
+| キャンセル | `preview_cancel_order` → `cancel_order` | 2ステップ確認付きキャンセル | 取引 |
+| 一括キャンセル | `preview_cancel_orders` → `cancel_orders` | 2ステップ確認付き一括キャンセル | 取引 |
 
 取引操作（発注・キャンセル）は **preview → execute の2ステップ確認**が必須です。preview ツールが発行する確認トークン（HMAC-SHA256、デフォルト60秒有効）なしでは実行できません。
 
