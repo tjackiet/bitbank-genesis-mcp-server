@@ -3,6 +3,7 @@
 [![CI](https://github.com/tjackiet/bitbank-genesis-mcp-server/actions/workflows/ci.yml/badge.svg)](https://github.com/tjackiet/bitbank-genesis-mcp-server/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![npm](https://img.shields.io/npm/v/bitbank-lab-mcp.svg)](https://www.npmjs.com/package/bitbank-lab-mcp)
+[![CodeRabbit Pull Request Reviews](https://img.shields.io/coderabbit/prs/github/tjackiet/bitbank-genesis-mcp-server?utm_source=oss&utm_medium=github&utm_campaign=tjackiet%2Fbitbank-genesis-mcp-server&labelColor=171717&color=FF570A&link=https%3A%2F%2Fcoderabbit.ai&label=CodeRabbit+Reviews)](https://coderabbit.ai)
 
 > bitbank API のデータを使った暗号資産市場分析を、Claude / Cursor / Codex / Gemini CLI など各種 AI クライアントから簡単に実行できる MCP サーバーです。
 
