@@ -1,0 +1,22 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+inheritance: true
+knowledge_base:
+  linked_repositories:
+    - repository: "bitbankinc/bitbank-api-docs"
+      instructions: |
+        bitbank.cc の公式 API 仕様書。以下の観点で MCP サーバー実装と照合する:
+
+        - rest-api.md (Private REST API): create_order / cancel_order /
+          cancel_orders / fetch_active_orders / fetch_assets などの
+          MCP tool 実装が、公式仕様のエンドポイント・HTTP メソッド・
+          パスパラメータ・リクエストボディの型と一致しているか
+        - public-api.md (Public API): ticker / depth / transactions /
+          candlestick などの公開エンドポイントの仕様準拠
+        - private-stream.md / public-stream.md: WebSocket ストリームの
+          チャネル名・メッセージ形式の準拠
+        - errors.md: エラーコードの扱い、特に MCP tool から返す
+          エラーレスポンスの整形が公式エラーコードと整合しているか
+        - CHANGELOG.md: 公式 API の最近の変更で MCP 側が追随すべき項目がないか
+
+        HMAC-SHA256 署名対象文字列の構築仕様（ACCESS-NONCE +
+        request_path + query / body）も rest-api.md に従う。
