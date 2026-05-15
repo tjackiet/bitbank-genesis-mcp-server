@@ -324,18 +324,19 @@ describe('fetchCandlesForBacktest', () => {
 
 	it('absolute: 取得上限未達なら最古足が start_date より新しくても通常返却（リグレッション防止）', async () => {
 		// fetchLimit は maxBars (5000) より遥かに小さく fetchHitCap=false。
-		// 最古足 (2024-01-01) は start_date (2024-01-10) より古いので、shortfall ガードは発動しない。
+		// 最古足 (2024-01-15) は start_date (2024-01-10) より新しいが、fetchHitCap=false なので
+		// "Insufficient historical data" は発動しないことを確認する。
 		vi.mocked(getCandles).mockResolvedValue({
 			ok: true,
 			summary: 'ok',
-			data: { normalized: makeNormalized(50, '2024-01-01') },
+			data: { normalized: makeNormalized(20, '2024-01-15') },
 		} as never);
 		const result = await fetchCandlesForBacktest(
 			'btc_jpy',
 			'1D',
 			{ type: 'absolute', start: '2024-01-10', end: '2024-01-20' },
-			5,
+			0,
 		);
-		expect(result[0].time).toBe('2024-01-05');
+		expect(result[0].time).toBe('2024-01-15');
 	});
 });
