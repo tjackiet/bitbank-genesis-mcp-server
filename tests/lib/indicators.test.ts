@@ -59,6 +59,46 @@ describe('sma', () => {
 		expect(result[1]).toBeNaN();
 		expect(result[2]).toBeCloseTo(4, 10);
 	});
+
+	it('NaN 通過後に窓が回復する（中間の NaN）', () => {
+		// 窓 [1,2]→1.5、[2,NaN]→NaN、[NaN,4]→NaN、[4,5]→4.5、[5,6]→5.5
+		const result = sma([1, 2, NaN, 4, 5, 6], 2);
+		expect(result[0]).toBeNaN();
+		expect(result[1]).toBeCloseTo(1.5, 10);
+		expect(result[2]).toBeNaN();
+		expect(result[3]).toBeNaN();
+		expect(result[4]).toBeCloseTo(4.5, 10);
+		expect(result[5]).toBeCloseTo(5.5, 10);
+	});
+
+	it('先頭 NaN からの回復', () => {
+		// 窓 [NaN,2]→NaN、[2,3]→2.5、[3,4]→3.5
+		const result = sma([NaN, 2, 3, 4], 2);
+		expect(result[0]).toBeNaN();
+		expect(result[1]).toBeNaN();
+		expect(result[2]).toBeCloseTo(2.5, 10);
+		expect(result[3]).toBeCloseTo(3.5, 10);
+	});
+
+	it('連続 NaN を含むケース', () => {
+		// 窓 [1,NaN]→NaN、[NaN,NaN]→NaN、[NaN,4]→NaN、[4,5]→4.5、[5,6]→5.5
+		const result = sma([1, NaN, NaN, 4, 5, 6], 2);
+		expect(result[0]).toBeNaN();
+		expect(result[1]).toBeNaN();
+		expect(result[2]).toBeNaN();
+		expect(result[3]).toBeNaN();
+		expect(result[4]).toBeCloseTo(4.5, 10);
+		expect(result[5]).toBeCloseTo(5.5, 10);
+	});
+
+	it('末尾 NaN は NaN のまま', () => {
+		// 窓 [1,2]→1.5、[2,3]→2.5、[3,NaN]→NaN
+		const result = sma([1, 2, 3, NaN], 2);
+		expect(result[0]).toBeNaN();
+		expect(result[1]).toBeCloseTo(1.5, 10);
+		expect(result[2]).toBeCloseTo(2.5, 10);
+		expect(result[3]).toBeNaN();
+	});
 });
 
 // --- EMA ---
@@ -245,6 +285,31 @@ describe('bollingerBands', () => {
 			expect(upper[i]).toBeCloseTo(middle[i], 10);
 			expect(lower[i]).toBeCloseTo(middle[i], 10);
 		}
+	});
+
+	it('NaN 窓内では upper/middle/lower すべて NaN、外れたら回復する', () => {
+		// values = [1, 2, NaN, 4, 5, 6, 7], period=3, stdDev=2
+		// 窓 [1,2,NaN]→NaN、[2,NaN,4]→NaN、[NaN,4,5]→NaN
+		// 窓 [4,5,6]→ mean=5, sumSq=2, std=sqrt(2/3)
+		// 窓 [5,6,7]→ mean=6, sumSq=2, std=sqrt(2/3)
+		const { upper, middle, lower } = bollingerBands([1, 2, NaN, 4, 5, 6, 7], 3, 2);
+		// 先頭2つは period 不足
+		expect(middle[0]).toBeNaN();
+		expect(middle[1]).toBeNaN();
+		// NaN を含む窓
+		for (const i of [2, 3, 4]) {
+			expect(upper[i]).toBeNaN();
+			expect(middle[i]).toBeNaN();
+			expect(lower[i]).toBeNaN();
+		}
+		// 回復後
+		const std = Math.sqrt(2 / 3);
+		expect(middle[5]).toBeCloseTo(5, 10);
+		expect(upper[5]).toBeCloseTo(5 + 2 * std, 10);
+		expect(lower[5]).toBeCloseTo(5 - 2 * std, 10);
+		expect(middle[6]).toBeCloseTo(6, 10);
+		expect(upper[6]).toBeCloseTo(6 + 2 * std, 10);
+		expect(lower[6]).toBeCloseTo(6 - 2 * std, 10);
 	});
 });
 
@@ -489,14 +554,49 @@ describe('atr', () => {
 		expect(result.every((v) => Number.isNaN(v))).toBe(true);
 	});
 
-	it('seed 区間に NaN（非有限値）が含まれる場合、全 ATR が NaN になる', () => {
-		// TR[0] は常に NaN。TR[1] は有効だが TR[2] の high が Infinity → NaN。
-		// seed 区間 TR[1..3] に NaN が混在 → 早期リターンで全 NaN。
-		const highs = [110, 115, Infinity, 118, 120];
-		const lows = [100, 105, 108, 110, 112];
-		const closes = [105, 110, 109, 115, 118];
+	it('TR 窓内に NaN があるバーは ATR=NaN、窓から抜けると回復する', () => {
+		// 構成: closes は全て 100、lows も全て 100、
+		// highs = [100, 101, 101, NaN, 101, 101] とすると
+		// TR[0]=NaN(prevClose 無し), TR[1]=1, TR[2]=1, TR[3]=NaN(high=NaN),
+		// TR[4]=max(1,1,0)=1, TR[5]=1
+		const highs = [100, 101, 101, NaN, 101, 101];
+		const lows = [100, 100, 100, 100, 100, 100];
+		const closes = [100, 100, 100, 100, 100, 100];
+		const result = atr(highs, lows, closes, 2);
+		// シード窓 tr[1..2]=[1,1] は有限 → result[2]=1
+		expect(result[0]).toBeNaN();
+		expect(result[1]).toBeNaN();
+		expect(result[2]).toBeCloseTo(1, 10);
+		// 窓 tr[2..3]=[1,NaN] → NaN
+		expect(result[3]).toBeNaN();
+		// 窓 tr[3..4]=[NaN,1] → NaN
+		expect(result[4]).toBeNaN();
+		// 窓 tr[4..5]=[1,1] → 1（NaN が抜けて回復）
+		expect(result[5]).toBeCloseTo(1, 10);
+	});
+
+	it('シード窓に NaN を含んでも後続が回復する（Infinity → NaN）', () => {
+		// highs[2]=Infinity → trueRange で TR[2]=NaN。
+		// period=3, シード窓 tr[1..3] に NaN が混在 → result[3]=NaN。
+		// データを延ばすことで NaN が窓から完全に外れて以降は回復する。
+		const highs = [110, 115, Infinity, 118, 120, 121, 122];
+		const lows = [100, 105, 108, 110, 112, 113, 114];
+		const closes = [105, 110, 109, 115, 118, 120, 121];
+		// TR[1]=max(115-105,|115-105|,|105-105|)=10
+		// TR[2]=NaN (high=Infinity)
+		// TR[3]=max(118-110,|118-109|,|110-109|)=max(8,9,1)=9
+		// TR[4]=max(120-112,|120-115|,|112-115|)=max(8,5,3)=8
+		// TR[5]=max(121-113,|121-118|,|113-118|)=max(8,3,5)=8
+		// TR[6]=max(122-114,|122-120|,|114-120|)=max(8,2,6)=8
 		const result = atr(highs, lows, closes, 3);
-		expect(result.every((v) => Number.isNaN(v))).toBe(true);
+		// シード窓 [10, NaN, 9] → result[3]=NaN
+		expect(result[3]).toBeNaN();
+		// 窓 [NaN, 9, 8] → NaN
+		expect(result[4]).toBeNaN();
+		// 窓 [9, 8, 8]=25/3 → 8.333… （NaN が抜けて回復）
+		expect(result[5]).toBeCloseTo(25 / 3, 10);
+		// 窓 [8, 8, 8]=8
+		expect(result[6]).toBeCloseTo(8, 10);
 	});
 });
 

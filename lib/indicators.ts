@@ -17,6 +17,8 @@ const nanArray = (len: number): number[] => Array.from<number>({ length: len }).
 /**
  * 単純移動平均 (SMA)
  *
+ * 窓内に NaN を含む場合は NaN を返し、窓が完全に有限値で埋まった時点で計算を再開する。
+ *
  * @param prices 価格配列（古い順）
  * @param period 期間（正の整数）
  * @returns SMA配列（先頭 period-1 個は NaN）
@@ -30,16 +32,25 @@ export function sma(prices: number[], period: number): number[] {
 	}
 
 	const result: number[] = nanArray(prices.length);
-
 	let sum = 0;
+	let nanCount = 0;
+
 	for (let i = 0; i < period; i++) {
-		sum += prices[i];
+		if (Number.isNaN(prices[i])) nanCount++;
+		else sum += prices[i];
 	}
-	result[period - 1] = sum / period;
+	result[period - 1] = nanCount === 0 ? sum / period : NaN;
 
 	for (let i = period; i < prices.length; i++) {
-		sum = sum - prices[i - period] + prices[i];
-		result[i] = sum / period;
+		const oldVal = prices[i - period];
+		if (Number.isNaN(oldVal)) nanCount--;
+		else sum -= oldVal;
+
+		const newVal = prices[i];
+		if (Number.isNaN(newVal)) nanCount++;
+		else sum += newVal;
+
+		result[i] = nanCount === 0 ? sum / period : NaN;
 	}
 
 	return result;
@@ -149,6 +160,9 @@ export function toNumericSeries(values: number[], decimals?: number): (number | 
 /**
  * ボリンジャーバンド
  *
+ * 窓内に NaN を含む場合は upper/middle/lower すべて NaN を返し、
+ * 窓が完全に有限値で埋まった時点で計算を再開する。
+ *
  * @param values 価格配列（古い順）
  * @param period SMA 期間（デフォルト 20）
  * @param stdDev 標準偏差倍率（デフォルト 2）
@@ -166,14 +180,26 @@ export function bollingerBands(
 
 	if (n < period) return { upper, middle, lower };
 
-	// 最初の window の合計
 	let sum = 0;
-	for (let i = 0; i < period; i++) sum += values[i];
+	let nanCount = 0;
+	for (let i = 0; i < period; i++) {
+		if (Number.isNaN(values[i])) nanCount++;
+		else sum += values[i];
+	}
 
 	for (let i = period - 1; i < n; i++) {
 		if (i > period - 1) {
-			sum = sum - values[i - period] + values[i];
+			const oldVal = values[i - period];
+			if (Number.isNaN(oldVal)) nanCount--;
+			else sum -= oldVal;
+
+			const newVal = values[i];
+			if (Number.isNaN(newVal)) nanCount++;
+			else sum += newVal;
 		}
+
+		if (nanCount > 0) continue;
+
 		const mean = sum / period;
 
 		let sumSq = 0;
@@ -516,6 +542,9 @@ export function trueRange(highs: number[], lows: number[], closes: number[]): nu
 /**
  * ATR (Average True Range) — TR の SMA
  *
+ * 窓内に NaN を含む場合は NaN を返し、窓が完全に有限値で埋まった時点で計算を再開する。
+ * TR[0] は常に NaN（前足 close が存在しない）。シード窓は tr[1..period]。
+ *
  * @param highs 高値配列（古い順）
  * @param lows 安値配列（古い順）
  * @param closes 終値配列（古い順）
@@ -529,20 +558,24 @@ export function atr(highs: number[], lows: number[], closes: number[], period: n
 
 	if (n < period + 1) return result;
 
-	// TR[0] は NaN なので有効な TR は index 1 から
-	// 最初の ATR = SMA of TR[1..period]
 	let sum = 0;
+	let nanCount = 0;
 	for (let i = 1; i <= period; i++) {
-		if (Number.isNaN(tr[i])) return result;
-		sum += tr[i];
+		if (Number.isNaN(tr[i])) nanCount++;
+		else sum += tr[i];
 	}
-	result[period] = sum / period;
+	result[period] = nanCount === 0 ? sum / period : NaN;
 
-	// 以降は SMA スライディングウィンドウ
 	for (let i = period + 1; i < n; i++) {
-		if (Number.isNaN(tr[i])) continue;
-		sum = sum - tr[i - period] + tr[i];
-		result[i] = sum / period;
+		const oldVal = tr[i - period];
+		if (Number.isNaN(oldVal)) nanCount--;
+		else sum -= oldVal;
+
+		const newVal = tr[i];
+		if (Number.isNaN(newVal)) nanCount++;
+		else sum += newVal;
+
+		result[i] = nanCount === 0 ? sum / period : NaN;
 	}
 
 	return result;
