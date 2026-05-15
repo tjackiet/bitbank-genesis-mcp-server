@@ -394,6 +394,11 @@ describe('calculateSummary - evaluation metadata', () => {
 			generate: (_c: Candle[], _p: Record<string, number>): Signal[] =>
 				Array.from({ length: 30 }, () => ({ action: 'hold' as const, reason: '', time: '' })),
 			getOverlays: () => [],
+			validate: (params: Record<string, number>) => ({
+				valid: true,
+				errors: [],
+				normalizedParams: { short: 3, long: 7, ...params },
+			}),
 		};
 		const params = { ...mockStrategy.defaultParams };
 		const input = {
@@ -446,6 +451,11 @@ describe('runBacktestEngine', () => {
 				});
 			},
 			getOverlays: () => [],
+			validate: (params: Record<string, number>) => ({
+				valid: true,
+				errors: [],
+				normalizedParams: { short: 3, long: 5, ...params },
+			}),
 		};
 		const input = {
 			pair: 'btc_jpy',
@@ -549,6 +559,11 @@ describe('runBacktestEngine - warmup boundary', () => {
 				});
 			},
 			getOverlays: () => [],
+			validate: (params: Record<string, number>) => ({
+				valid: true,
+				errors: [],
+				normalizedParams: { short: 3, long: 5, ...params },
+			}),
 		};
 		const input = {
 			pair: 'btc_jpy',
@@ -583,6 +598,11 @@ describe('runBacktestEngine - warmup boundary', () => {
 				});
 			},
 			getOverlays: () => [],
+			validate: (params: Record<string, number>) => ({
+				valid: true,
+				errors: [],
+				normalizedParams: { short: 3, long: 5, ...params },
+			}),
 		};
 		const input = {
 			pair: 'btc_jpy',
@@ -627,6 +647,11 @@ describe('runBacktestEngine - open position carry forward', () => {
 				});
 			},
 			getOverlays: () => [],
+			validate: (params: Record<string, number>) => ({
+				valid: true,
+				errors: [],
+				normalizedParams: { ...params },
+			}),
 		};
 		const input = {
 			pair: 'btc_jpy',
@@ -668,6 +693,11 @@ describe('runBacktestEngine - open position carry forward', () => {
 				});
 			},
 			getOverlays: () => [],
+			validate: (params: Record<string, number>) => ({
+				valid: true,
+				errors: [],
+				normalizedParams: { ...params },
+			}),
 		};
 		const input = {
 			pair: 'btc_jpy',

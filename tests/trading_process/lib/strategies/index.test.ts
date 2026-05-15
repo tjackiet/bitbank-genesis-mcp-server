@@ -63,3 +63,38 @@ describe('getStrategyDefaults', () => {
 		expect(defaults?.stddev).toBe(2);
 	});
 });
+
+describe('Strategy.validate', () => {
+	it('全戦略が validate を関数として持つ', () => {
+		for (const type of getAvailableStrategies()) {
+			const strategy = getStrategy(type);
+			expect(strategy).toBeDefined();
+			expect(typeof strategy?.validate).toBe('function');
+		}
+	});
+
+	it('全戦略の validate(defaultParams) が valid:true / errors:[] / normalizedParams ⊇ defaultParams を返す', () => {
+		for (const type of getAvailableStrategies()) {
+			const strategy = getStrategy(type);
+			if (!strategy) throw new Error(`strategy ${type} not registered`);
+			const result = strategy.validate(strategy.defaultParams);
+			expect(result.valid).toBe(true);
+			expect(result.errors).toEqual([]);
+			for (const [key, value] of Object.entries(strategy.defaultParams)) {
+				expect(result.normalizedParams[key]).toBe(value);
+			}
+		}
+	});
+
+	it('全戦略の validate({}) は欠損キーをデフォルトで埋めた normalizedParams を返す', () => {
+		for (const type of getAvailableStrategies()) {
+			const strategy = getStrategy(type);
+			if (!strategy) throw new Error(`strategy ${type} not registered`);
+			const result = strategy.validate({});
+			expect(result.valid).toBe(true);
+			for (const [key, value] of Object.entries(strategy.defaultParams)) {
+				expect(result.normalizedParams[key]).toBe(value);
+			}
+		}
+	});
+});

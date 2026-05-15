@@ -107,6 +107,11 @@ export interface Strategy {
 	 * @returns オーバーレイ配列
 	 */
 	getOverlays(candles: Candle[], params: Record<string, number>): Overlay[];
+	/**
+	 * 戦略パラメータをバリデーションし、デフォルトとマージした正規化済みパラメータを返す。
+	 * runBacktest はこの結果の normalizedParams を以降の処理に使う。
+	 */
+	validate(params: Record<string, number>): ParamValidationResult;
 }
 
 /**

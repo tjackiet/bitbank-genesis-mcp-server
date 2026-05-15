@@ -58,6 +58,14 @@ function buildCandles(count: number) {
 	}));
 }
 
+function makeValidateOk(defaultParams: Record<string, number>) {
+	return (params: Record<string, number>) => ({
+		valid: true,
+		errors: [],
+		normalizedParams: { ...defaultParams, ...params },
+	});
+}
+
 function buildEngineResult() {
 	return {
 		input: {
@@ -176,6 +184,7 @@ describe('run_backtest', () => {
 			requiredBars: 20,
 			defaultParams: { period: 14, overbought: 70, oversold: 30 },
 			computeRequiredBars: () => 20,
+			validate: makeValidateOk({ period: 14, overbought: 70, oversold: 30 }),
 		});
 		mocks.getPeriodBars.mockReturnValue(90);
 		mocks.fetchCandlesForBacktest.mockResolvedValue(buildCandles(40));
@@ -197,6 +206,7 @@ describe('run_backtest', () => {
 			requiredBars: 14,
 			defaultParams: { period: 14, overbought: 70, oversold: 30 },
 			computeRequiredBars: () => 14,
+			validate: makeValidateOk({ period: 14, overbought: 70, oversold: 30 }),
 		});
 		mocks.fetchCandlesForBacktest.mockResolvedValue(buildCandles(90));
 		const engineResult = buildEngineResult();
@@ -229,6 +239,7 @@ describe('run_backtest', () => {
 			requiredBars: 14,
 			defaultParams: { period: 14, overbought: 70, oversold: 30 },
 			computeRequiredBars: () => 14,
+			validate: makeValidateOk({ period: 14, overbought: 70, oversold: 30 }),
 		});
 		mocks.fetchCandlesForBacktest.mockResolvedValue(buildCandles(90));
 		const engineResult = buildEngineResult();
@@ -277,6 +288,7 @@ describe('run_backtest', () => {
 			requiredBars: 14,
 			defaultParams: { period: 14, overbought: 70, oversold: 30 },
 			computeRequiredBars: () => 14,
+			validate: makeValidateOk({ period: 14, overbought: 70, oversold: 30 }),
 		});
 		mocks.fetchCandlesForBacktest.mockResolvedValue(buildCandles(1000));
 		const engineResult = buildEngineResult();
@@ -326,6 +338,7 @@ describe('run_backtest', () => {
 			requiredBars: 14,
 			defaultParams: { period: 14, overbought: 70, oversold: 30 },
 			computeRequiredBars: () => 14,
+			validate: makeValidateOk({ period: 14, overbought: 70, oversold: 30 }),
 		});
 		mocks.fetchCandlesForBacktest.mockResolvedValue(buildCandles(500));
 		const engineResult = buildEngineResult();
@@ -362,6 +375,7 @@ describe('run_backtest', () => {
 			requiredBars: 14,
 			defaultParams: { period: 14, overbought: 70, oversold: 30 },
 			computeRequiredBars: () => 14,
+			validate: makeValidateOk({ period: 14, overbought: 70, oversold: 30 }),
 		});
 		mocks.fetchCandlesForBacktest.mockResolvedValue(buildCandles(90));
 		mocks.runBacktestEngine.mockReturnValue(buildEngineResult());
@@ -385,6 +399,7 @@ describe('run_backtest', () => {
 			requiredBars: 20,
 			defaultParams: { period: 14, overbought: 70, oversold: 30 },
 			computeRequiredBars: () => 20,
+			validate: makeValidateOk({ period: 14, overbought: 70, oversold: 30 }),
 		});
 		mocks.getPeriodBars.mockReturnValue(90);
 		mocks.fetchCandlesForBacktest.mockResolvedValue(buildCandles(90));
@@ -404,5 +419,95 @@ describe('run_backtest', () => {
 		assertOk(res);
 		expect(res.pngError).toContain('sharp failed');
 		expect(res.svg).toBeUndefined();
+	});
+
+	it('無効な params は fetch 前に弾かれ、fetchCandlesForBacktest が呼ばれない', async () => {
+		mocks.getStrategy.mockReturnValue({
+			name: 'SMA Crossover',
+			type: 'sma_cross',
+			requiredBars: 20,
+			defaultParams: { short: 5, long: 20 },
+			computeRequiredBars: () => 20,
+			validate: () => ({
+				valid: false,
+				errors: ['short must be less than long'],
+				normalizedParams: { short: 20, long: 20 },
+			}),
+		});
+
+		const res = await runBacktest({
+			pair: 'btc_jpy',
+			strategy: { type: 'sma_cross', params: { short: 20, long: 20 } },
+			savePng: false,
+			includeSvg: false,
+		});
+
+		expect(res.ok).toBe(false);
+		if (res.ok === false) {
+			expect(res.error).toMatch(/Invalid strategy params/);
+		}
+		expect(mocks.fetchCandlesForBacktest).not.toHaveBeenCalled();
+		expect(mocks.runBacktestEngine).not.toHaveBeenCalled();
+	});
+
+	it('複数の validation エラーが ; 区切りで連結され、戦略タイプも error に含まれる', async () => {
+		mocks.getStrategy.mockReturnValue({
+			name: 'SMA Crossover',
+			type: 'sma_cross',
+			requiredBars: 20,
+			defaultParams: { short: 5, long: 20 },
+			computeRequiredBars: () => 20,
+			validate: () => ({
+				valid: false,
+				errors: ['short must be less than long', 'rsi_filter_max must be 0-100'],
+				normalizedParams: { short: 20, long: 20, rsi_filter_max: 150 },
+			}),
+		});
+
+		const res = await runBacktest({
+			pair: 'btc_jpy',
+			strategy: { type: 'sma_cross', params: { short: 20, long: 20, rsi_filter_max: 150 } },
+			savePng: false,
+			includeSvg: false,
+		});
+
+		expect(res.ok).toBe(false);
+		if (res.ok === false) {
+			expect(res.error).toContain('sma_cross');
+			expect(res.error).toContain('short must be less than long');
+			expect(res.error).toContain('rsi_filter_max must be 0-100');
+			expect(res.error).toContain(';');
+		}
+	});
+
+	it('validate.normalizedParams が以降の処理（computeRequiredBars / engine input）に渡る', async () => {
+		const computeRequiredBars = vi.fn().mockReturnValue(20);
+		mocks.getStrategy.mockReturnValue({
+			name: 'SMA Crossover',
+			type: 'sma_cross',
+			requiredBars: 20,
+			defaultParams: { short: 5, long: 20 },
+			computeRequiredBars,
+			validate: () => ({
+				valid: true,
+				errors: [],
+				normalizedParams: { short: 5, long: 25 },
+			}),
+		});
+		mocks.fetchCandlesForBacktest.mockResolvedValue(buildCandles(90));
+		mocks.runBacktestEngine.mockReturnValue(buildEngineResult());
+
+		const res = await runBacktest({
+			pair: 'btc_jpy',
+			strategy: { type: 'sma_cross', params: { long: 25 } },
+			savePng: false,
+			includeSvg: false,
+		});
+
+		assertOk(res);
+		expect(computeRequiredBars).toHaveBeenCalledWith({ short: 5, long: 25 });
+		expect(mocks.runBacktestEngine).toHaveBeenCalledTimes(1);
+		const engineInput = mocks.runBacktestEngine.mock.calls[0][2];
+		expect(engineInput.strategy.params).toEqual({ short: 5, long: 25 });
 	});
 });

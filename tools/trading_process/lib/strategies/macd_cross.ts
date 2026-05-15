@@ -123,6 +123,7 @@ export const macdCrossStrategy: Strategy = {
 	requiredBars: computeRequiredBarsImpl(DEFAULT_PARAMS),
 	defaultParams: DEFAULT_PARAMS,
 	computeRequiredBars: computeRequiredBarsImpl,
+	validate: validateParams,
 
 	generate(candles: Candle[], params: Record<string, number>): Signal[] {
 		const p = { ...DEFAULT_PARAMS, ...params };

@@ -105,8 +105,15 @@ export default async function runBacktest(input: RunBacktestInput): Promise<RunB
 			};
 		}
 
-		// パラメータをマージ
-		const params = { ...strategy.defaultParams, ...strategyConfig.params };
+		// パラメータをバリデーション（fetch 前に弾く）
+		const validation = strategy.validate(strategyConfig.params);
+		if (!validation.valid) {
+			return {
+				ok: false,
+				error: `Invalid strategy params for ${strategyConfig.type}: ${validation.errors.join('; ')}`,
+			};
+		}
+		const params = validation.normalizedParams;
 
 		// 必要なバー数を params から動的に計算（ユーザーが long / slow / signal 等を
 		// デフォルトより大きく指定した場合でもウォームアップを十分確保するため）
@@ -128,12 +135,12 @@ export default async function runBacktest(input: RunBacktestInput): Promise<RunB
 			};
 		}
 
-		// バックテストエンジン入力
+		// バックテストエンジン入力（normalizedParams を渡して二重 merge の余地を無くす）
 		const engineInput: BacktestEngineInput = {
 			pair,
 			timeframe,
 			period,
-			strategy: strategyConfig,
+			strategy: { type: strategyConfig.type, params },
 			fee_bp,
 			execution,
 			effective_start: candles[0].time,

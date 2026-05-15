@@ -75,6 +75,7 @@ export const rsiStrategy: Strategy = {
 	requiredBars: computeRequiredBarsImpl(DEFAULT_PARAMS),
 	defaultParams: DEFAULT_PARAMS,
 	computeRequiredBars: computeRequiredBarsImpl,
+	validate: validateParams,
 
 	generate(candles: Candle[], params: Record<string, number>): Signal[] {
 		const { period, overbought, oversold } = { ...DEFAULT_PARAMS, ...params };

@@ -57,6 +57,7 @@ export const bbBreakoutStrategy: Strategy = {
 	requiredBars: computeRequiredBarsImpl(DEFAULT_PARAMS),
 	defaultParams: DEFAULT_PARAMS,
 	computeRequiredBars: computeRequiredBarsImpl,
+	validate: validateParams,
 
 	generate(candles: Candle[], params: Record<string, number>): Signal[] {
 		const { period, stddev } = { ...DEFAULT_PARAMS, ...params };
