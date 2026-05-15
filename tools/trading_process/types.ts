@@ -8,7 +8,14 @@
  */
 
 export type Timeframe = '1D' | '1H' | '4H';
-export type Period = '1M' | '3M' | '6M';
+export type Period = '1M' | '3M' | '6M' | '1Y' | '2Y' | '3Y';
+
+/**
+ * バックテスト対象期間の指定方法
+ * - period: 直近 N 本（'1M' / '3M' / ... / '3Y'）
+ * - absolute: ISO 8601 (YYYY-MM-DD) の start / end で明示指定
+ */
+export type BacktestRange = { type: 'period'; value: Period } | { type: 'absolute'; start: string; end: string };
 
 export interface BacktestInput {
 	pair: string;

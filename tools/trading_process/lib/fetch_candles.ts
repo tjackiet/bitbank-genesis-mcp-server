@@ -9,16 +9,16 @@
 
 import { dayjs } from '../../../lib/datetime.js';
 import getCandles from '../../get_candles.js';
-import type { Candle, Period, Timeframe } from '../types.js';
+import type { BacktestRange, Candle, Period, Timeframe } from '../types.js';
 
 // 期間 → 必要本数のマッピング（バックテスト対象期間）
-// 1D: 日足 → 1M=30日, 3M=90日, 6M=180日
-// 4H: 4時間足 → 1M=180本(30日×6), 3M=540本, 6M=1080本
-// 1H: 1時間足 → 1M=720本(30日×24), 3M=2160本, 6M=4320本
+// 1D: 日足 → 1M=30, 3M=90, 6M=180, 1Y=365, 2Y=730, 3Y=1095
+// 4H: 4時間足 → 1M=180, 3M=540, 6M=1080, 1Y=2190, 2Y=4380, 3Y=6570
+// 1H: 1時間足 → 1M=720, 3M=2160, 6M=4320, 1Y=8760, 2Y=17520, 3Y=26280
 const PERIOD_TO_BARS: Record<Timeframe, Record<Period, number>> = {
-	'1D': { '1M': 30, '3M': 90, '6M': 180 },
-	'4H': { '1M': 180, '3M': 540, '6M': 1080 },
-	'1H': { '1M': 720, '3M': 2160, '6M': 4320 },
+	'1D': { '1M': 30, '3M': 90, '6M': 180, '1Y': 365, '2Y': 730, '3Y': 1095 },
+	'4H': { '1M': 180, '3M': 540, '6M': 1080, '1Y': 2190, '2Y': 4380, '3Y': 6570 },
+	'1H': { '1M': 720, '3M': 2160, '6M': 4320, '1Y': 8760, '2Y': 17520, '3Y': 26280 },
 };
 
 // timeframe → get_candles の type マッピング
@@ -26,6 +26,21 @@ const TIMEFRAME_TO_CANDLE_TYPE: Record<Timeframe, string> = {
 	'1D': '1day',
 	'4H': '4hour',
 	'1H': '1hour',
+};
+
+// timeframe → 1日あたりのバー数（絶対範囲指定時の本数推定に使う）
+const BARS_PER_DAY: Record<Timeframe, number> = {
+	'1D': 1,
+	'4H': 6,
+	'1H': 24,
+};
+
+// timeframe → getCandles から取得可能な上限本数
+// （複数年/複数日取得時の maxLimit と整合させる）
+const MAX_FETCHABLE_BARS: Record<Timeframe, number> = {
+	'1D': 5000,
+	'4H': 5000,
+	'1H': 10000,
 };
 
 /**
@@ -37,23 +52,13 @@ export function getPeriodBars(timeframe: Timeframe, period: Period): number {
 
 /**
  * ローソク足データのバリデーション
- *
- * @param candle 検証対象
- * @returns 有効なデータの場合 true
  */
 function isValidCandle(candle: Candle): boolean {
-	// time が空でないこと
-	if (!candle.time || candle.time.trim() === '') {
-		return false;
-	}
+	if (!candle.time || candle.time.trim() === '') return false;
 
-	// time が有効な日付であること
 	const timestamp = dayjs(candle.time).valueOf();
-	if (Number.isNaN(timestamp)) {
-		return false;
-	}
+	if (Number.isNaN(timestamp)) return false;
 
-	// 数値が NaN でないこと
 	if (
 		Number.isNaN(candle.open) ||
 		Number.isNaN(candle.high) ||
@@ -63,7 +68,6 @@ function isValidCandle(candle: Candle): boolean {
 		return false;
 	}
 
-	// 価格が 0 以上であること
 	if (candle.open <= 0 || candle.high <= 0 || candle.low <= 0 || candle.close <= 0) {
 		return false;
 	}
@@ -71,50 +75,47 @@ function isValidCandle(candle: Candle): boolean {
 	return true;
 }
 
-/**
- * バックテスト用にローソク足を取得
- *
- * 返すデータ構成:
- * - 直近 `periodBars` 本 = バックテスト対象期間
- * - その前に `smaLong` 本 = SMA計算用ウォームアップ期間
- * - 合計: `periodBars + smaLong + buffer` 本
- *
- * 【データ品質保証】
- * - time でソート（古い順）
- * - time をキーに重複排除
- * - 数値 NaN / time欠損は除外
- *
- * @param pair 通貨ペア
- * @param timeframe 時間軸
- * @param period 期間
- * @param smaLong 長期SMAの期間（ウォームアップ用）
- * @returns ローソク足配列（古い順、ウォームアップ込み）
- */
-export async function fetchCandlesForBacktest(
-	pair: string,
-	timeframe: Timeframe,
-	period: Period,
-	smaLong: number,
-): Promise<Candle[]> {
-	const periodBars = PERIOD_TO_BARS[timeframe]?.[period];
-	if (!periodBars) {
-		throw new Error(`Unsupported timeframe/period: ${timeframe}/${period}`);
+interface NormalizedCandle {
+	isoTime?: string | null;
+	open: number;
+	high: number;
+	low: number;
+	close: number;
+	volume?: number | null;
+}
+
+function normalizeAndClean(normalized: NormalizedCandle[]): Candle[] {
+	const rawCandles: Candle[] = normalized.map((c) => ({
+		time: c.isoTime || '',
+		open: Number(c.open),
+		high: Number(c.high),
+		low: Number(c.low),
+		close: Number(c.close),
+		volume: c.volume != null ? Number(c.volume) : undefined,
+	}));
+
+	const valid = rawCandles.filter(isValidCandle);
+	if (valid.length === 0) {
+		throw new Error('No valid candle data after filtering');
 	}
 
-	// 必要な本数: バックテスト期間 + SMAウォームアップ + バッファ
-	const neededBars = periodBars + smaLong + 10;
+	valid.sort((a, b) => dayjs(a.time).valueOf() - dayjs(b.time).valueOf());
 
-	// 日足の場合は複数年取得を発動させるため最低400を指定
-	// 時間足の場合はそのまま必要本数を指定
-	const fetchLimit = timeframe === '1D' ? Math.max(neededBars, 400) : neededBars;
+	// Map は挿入順を保持するので、ソート済みを set すれば結果も時系列順
+	const uniqueMap = new Map<string, Candle>();
+	for (const candle of valid) {
+		uniqueMap.set(candle.time, candle);
+	}
+	return Array.from(uniqueMap.values());
+}
 
+async function fetchRawCandles(pair: string, timeframe: Timeframe, fetchLimit: number): Promise<Candle[]> {
 	const candleType = TIMEFRAME_TO_CANDLE_TYPE[timeframe];
 	if (!candleType) {
 		throw new Error(`Unsupported timeframe: ${timeframe}`);
 	}
 
 	const result = await getCandles(pair, candleType, undefined, fetchLimit);
-
 	if (!result.ok) {
 		throw new Error(`Failed to fetch candles: ${result.summary}`);
 	}
@@ -124,58 +125,109 @@ export async function fetchCandlesForBacktest(
 		throw new Error('No candle data returned');
 	}
 
-	// 全データをCandle形式に変換
-	const rawCandles: Candle[] = normalized.map(
-		(c: {
-			isoTime?: string | null;
-			open: number;
-			high: number;
-			low: number;
-			close: number;
-			volume?: number | null;
-		}) => ({
-			time: c.isoTime || '',
-			open: Number(c.open),
-			high: Number(c.high),
-			low: Number(c.low),
-			close: Number(c.close),
-			volume: c.volume != null ? Number(c.volume) : undefined,
-		}),
+	return normalizeAndClean(normalized as NormalizedCandle[]);
+}
+
+/**
+ * 直近 N 本（period 指定）でローソク足を取得
+ */
+async function fetchByPeriod(
+	pair: string,
+	timeframe: Timeframe,
+	period: Period,
+	warmupBars: number,
+): Promise<Candle[]> {
+	const periodBars = PERIOD_TO_BARS[timeframe]?.[period];
+	if (!periodBars) {
+		throw new Error(`Unsupported timeframe/period: ${timeframe}/${period}`);
+	}
+
+	// 必要な本数: バックテスト期間 + ウォームアップ + バッファ
+	const neededBars = periodBars + warmupBars + 10;
+	const maxBars = MAX_FETCHABLE_BARS[timeframe];
+	const fetchLimit = Math.min(
+		// 日足は複数年取得を発動させるため最低 400 を指定
+		timeframe === '1D' ? Math.max(neededBars, 400) : neededBars,
+		maxBars,
 	);
 
-	// 1. バリデーション（無効データを除外）
-	const validCandles = rawCandles.filter(isValidCandle);
+	const uniqueCandles = await fetchRawCandles(pair, timeframe, fetchLimit);
 
-	if (validCandles.length === 0) {
-		throw new Error('No valid candle data after filtering');
-	}
-
-	// 2. time でソート（古い順）
-	validCandles.sort((a, b) => {
-		const timeA = dayjs(a.time).valueOf();
-		const timeB = dayjs(b.time).valueOf();
-		return timeA - timeB;
-	});
-
-	// 3. 重複排除（time をキーに、後の方を優先）
-	const uniqueMap = new Map<string, Candle>();
-	for (const candle of validCandles) {
-		uniqueMap.set(candle.time, candle);
-	}
-	const uniqueCandles = Array.from(uniqueMap.values());
-
-	// 4. 再ソート（Map は順序を保証するが念のため）
-	uniqueCandles.sort((a, b) => {
-		const timeA = dayjs(a.time).valueOf();
-		const timeB = dayjs(b.time).valueOf();
-		return timeA - timeB;
-	});
-
-	// 5. 直近の必要な本数だけ切り出す（古い順を維持）
 	if (uniqueCandles.length <= neededBars) {
 		return uniqueCandles;
 	}
 
 	const startIdx = uniqueCandles.length - neededBars;
 	return uniqueCandles.slice(startIdx);
+}
+
+/**
+ * 絶対日付範囲でローソク足を取得
+ * start_date - warmupBars 本前 〜 end_date までを返す
+ */
+async function fetchByAbsoluteRange(
+	pair: string,
+	timeframe: Timeframe,
+	start: string,
+	end: string,
+	warmupBars: number,
+): Promise<Candle[]> {
+	const startMs = dayjs(start).valueOf();
+	const endMs = dayjs(end).endOf('day').valueOf();
+	if (Number.isNaN(startMs) || Number.isNaN(endMs)) {
+		throw new Error(`Invalid date format: start=${start}, end=${end}`);
+	}
+	if (startMs > endMs) {
+		throw new Error(`start_date (${start}) must be on or before end_date (${end})`);
+	}
+
+	const barsPerDay = BARS_PER_DAY[timeframe];
+	const maxBars = MAX_FETCHABLE_BARS[timeframe];
+	const todayMs = dayjs().endOf('day').valueOf();
+
+	// 今日から start_date まで遡る日数（最低 0）
+	const daysFromTodayToStart = Math.max(0, Math.ceil((todayMs - startMs) / (24 * 60 * 60 * 1000)));
+	const neededBars = daysFromTodayToStart * barsPerDay + warmupBars + 20;
+	const fetchLimit = Math.min(neededBars, maxBars);
+
+	const uniqueCandles = await fetchRawCandles(pair, timeframe, fetchLimit);
+
+	// end_date より後を除外
+	const inRange = uniqueCandles.filter((c) => dayjs(c.time).valueOf() <= endMs);
+	if (inRange.length === 0) {
+		throw new Error(
+			`No candle data in range [${start}, ${end}] (fetched ${uniqueCandles.length} candles, all outside range)`,
+		);
+	}
+
+	// start_date 以降の最初のインデックス
+	const firstAtOrAfterStart = inRange.findIndex((c) => dayjs(c.time).valueOf() >= startMs);
+	if (firstAtOrAfterStart === -1) {
+		throw new Error(`No candle data on or after start_date (${start})`);
+	}
+
+	// ウォームアップ分だけ start_date より前を含める
+	const warmupStartIdx = Math.max(0, firstAtOrAfterStart - warmupBars);
+	return inRange.slice(warmupStartIdx);
+}
+
+/**
+ * バックテスト用にローソク足を取得
+ *
+ * @param pair 通貨ペア
+ * @param timeframe 時間軸
+ * @param range 期間指定（period 直近 N 本 / absolute 日付範囲）
+ * @param warmupBars ウォームアップ用に追加で必要な本数（長期 SMA 等）
+ * @returns ローソク足配列（古い順、ウォームアップ込み）
+ */
+export async function fetchCandlesForBacktest(
+	pair: string,
+	timeframe: Timeframe,
+	range: BacktestRange,
+	warmupBars: number,
+): Promise<Candle[]> {
+	if (range.type === 'period') {
+		return fetchByPeriod(pair, timeframe, range.value, warmupBars);
+	}
+	return fetchByAbsoluteRange(pair, timeframe, range.start, range.end, warmupBars);
 }

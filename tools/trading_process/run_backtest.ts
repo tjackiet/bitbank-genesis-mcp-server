@@ -15,7 +15,7 @@ import {
 	type GenericBacktestChartData,
 	renderBacktestChartGeneric,
 } from './render_backtest_chart_generic.js';
-import type { Period, Timeframe } from './types.js';
+import type { BacktestRange, Period, Timeframe } from './types.js';
 
 // Claude.ai のデフォルト出力ディレクトリ
 const DEFAULT_OUTPUT_DIR = '/mnt/user-data/outputs';
@@ -38,6 +38,10 @@ export interface RunBacktestInput {
 	pair: string;
 	timeframe?: Timeframe;
 	period?: Period;
+	/** 任意の開始日（ISO 8601: YYYY-MM-DD）。指定時は period より優先 */
+	start_date?: string;
+	/** 任意の終了日（ISO 8601: YYYY-MM-DD）。指定時は period より優先 */
+	end_date?: string;
 	strategy: StrategyConfig;
 	fee_bp?: number;
 	execution?: 't+1_open';
@@ -80,6 +84,8 @@ export default async function runBacktest(input: RunBacktestInput): Promise<RunB
 			pair,
 			timeframe = '1D',
 			period = '3M',
+			start_date,
+			end_date,
 			strategy: strategyConfig,
 			fee_bp = 12,
 			execution = 't+1_open',
@@ -106,8 +112,14 @@ export default async function runBacktest(input: RunBacktestInput): Promise<RunB
 		// デフォルトより大きく指定した場合でもウォームアップを十分確保するため）
 		const requiredBars = strategy.computeRequiredBars(params);
 
+		// 期間指定: start_date / end_date が揃っていれば absolute、そうでなければ period
+		const range: BacktestRange =
+			start_date && end_date
+				? { type: 'absolute', start: start_date, end: end_date }
+				: { type: 'period', value: period };
+
 		// ローソク足を取得
-		const candles = await fetchCandlesForBacktest(pair, timeframe, period, requiredBars);
+		const candles = await fetchCandlesForBacktest(pair, timeframe, range, requiredBars);
 
 		if (candles.length < requiredBars + 10) {
 			return {
@@ -124,6 +136,9 @@ export default async function runBacktest(input: RunBacktestInput): Promise<RunB
 			strategy: strategyConfig,
 			fee_bp,
 			execution,
+			effective_start: candles[0].time,
+			effective_end: candles[candles.length - 1].time,
+			effective_bars: candles.length,
 		};
 
 		// バックテスト実行

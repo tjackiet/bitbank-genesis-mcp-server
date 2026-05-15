@@ -41,6 +41,26 @@ describe('getPeriodBars', () => {
 	it('1H / 1M は 720 を返す', () => {
 		expect(getPeriodBars('1H', '1M')).toBe(720);
 	});
+
+	it('1D / 1Y は 365 を返す', () => {
+		expect(getPeriodBars('1D', '1Y')).toBe(365);
+	});
+
+	it('1D / 2Y は 730 を返す', () => {
+		expect(getPeriodBars('1D', '2Y')).toBe(730);
+	});
+
+	it('1D / 3Y は 1095 を返す', () => {
+		expect(getPeriodBars('1D', '3Y')).toBe(1095);
+	});
+
+	it('4H / 1Y は 2190 を返す', () => {
+		expect(getPeriodBars('4H', '1Y')).toBe(2190);
+	});
+
+	it('1H / 3Y は 26280 を返す', () => {
+		expect(getPeriodBars('1H', '3Y')).toBe(26280);
+	});
 });
 
 function makeNormalized(n: number, startDate = '2024-01-01') {
@@ -62,16 +82,16 @@ describe('fetchCandlesForBacktest', () => {
 			summary: 'ok',
 			data: { normalized: makeNormalized(100) },
 		} as never);
-		const result = await fetchCandlesForBacktest('btc_jpy', '1D', '1M', 10);
+		const result = await fetchCandlesForBacktest('btc_jpy', '1D', { type: 'period', value: '1M' }, 10);
 		// neededBars = 30 + 10 + 10 = 50; 100 > 50 → slice last 50
 		expect(result).toHaveLength(50);
 		expect(result[0].close).toBe(100);
 	});
 
 	it('未対応 timeframe/period → エラー', async () => {
-		await expect(fetchCandlesForBacktest('btc_jpy', '5M' as Timeframe, '1M', 50)).rejects.toThrow(
-			'Unsupported timeframe/period',
-		);
+		await expect(
+			fetchCandlesForBacktest('btc_jpy', '5M' as Timeframe, { type: 'period', value: '1M' }, 50),
+		).rejects.toThrow('Unsupported timeframe/period');
 	});
 
 	it('API 失敗 → エラー', async () => {
@@ -79,7 +99,9 @@ describe('fetchCandlesForBacktest', () => {
 			ok: false,
 			summary: 'API error',
 		} as never);
-		await expect(fetchCandlesForBacktest('btc_jpy', '1D', '1M', 10)).rejects.toThrow('Failed to fetch candles');
+		await expect(fetchCandlesForBacktest('btc_jpy', '1D', { type: 'period', value: '1M' }, 10)).rejects.toThrow(
+			'Failed to fetch candles',
+		);
 	});
 
 	it('空データ → エラー', async () => {
@@ -88,7 +110,9 @@ describe('fetchCandlesForBacktest', () => {
 			summary: 'ok',
 			data: { normalized: [] },
 		} as never);
-		await expect(fetchCandlesForBacktest('btc_jpy', '1D', '1M', 10)).rejects.toThrow('No candle data returned');
+		await expect(fetchCandlesForBacktest('btc_jpy', '1D', { type: 'period', value: '1M' }, 10)).rejects.toThrow(
+			'No candle data returned',
+		);
 	});
 
 	it('有効ローソク 0 件 → エラー', async () => {
@@ -103,7 +127,7 @@ describe('fetchCandlesForBacktest', () => {
 				],
 			},
 		} as never);
-		await expect(fetchCandlesForBacktest('btc_jpy', '1D', '1M', 10)).rejects.toThrow(
+		await expect(fetchCandlesForBacktest('btc_jpy', '1D', { type: 'period', value: '1M' }, 10)).rejects.toThrow(
 			'No valid candle data after filtering',
 		);
 	});
@@ -115,7 +139,7 @@ describe('fetchCandlesForBacktest', () => {
 			summary: 'ok',
 			data: { normalized: makeNormalized(20) },
 		} as never);
-		const result = await fetchCandlesForBacktest('btc_jpy', '1D', '1M', 5);
+		const result = await fetchCandlesForBacktest('btc_jpy', '1D', { type: 'period', value: '1M' }, 5);
 		expect(result).toHaveLength(20);
 	});
 
@@ -131,7 +155,7 @@ describe('fetchCandlesForBacktest', () => {
 				],
 			},
 		} as never);
-		const result = await fetchCandlesForBacktest('btc_jpy', '4H', '1M', 5);
+		const result = await fetchCandlesForBacktest('btc_jpy', '4H', { type: 'period', value: '1M' }, 5);
 		const jan1 = result.filter((c) => c.time === '2024-01-01');
 		expect(jan1).toHaveLength(1);
 	});
@@ -147,7 +171,7 @@ describe('fetchCandlesForBacktest', () => {
 				],
 			},
 		} as never);
-		const result = await fetchCandlesForBacktest('btc_jpy', '4H', '1M', 5);
+		const result = await fetchCandlesForBacktest('btc_jpy', '4H', { type: 'period', value: '1M' }, 5);
 		// Only the valid candle passes
 		expect(result.every((c) => !Number.isNaN(c.open))).toBe(true);
 	});
@@ -163,7 +187,7 @@ describe('fetchCandlesForBacktest', () => {
 				],
 			},
 		} as never);
-		const result = await fetchCandlesForBacktest('btc_jpy', '4H', '1M', 5);
+		const result = await fetchCandlesForBacktest('btc_jpy', '4H', { type: 'period', value: '1M' }, 5);
 		expect(result.every((c) => c.open > 0)).toBe(true);
 	});
 
@@ -180,9 +204,97 @@ describe('fetchCandlesForBacktest', () => {
 				],
 			},
 		} as never);
-		const result = await fetchCandlesForBacktest('btc_jpy', '4H', '1M', 5);
+		const result = await fetchCandlesForBacktest('btc_jpy', '4H', { type: 'period', value: '1M' }, 5);
 		expect(result[0].time).toBe('2024-01-01');
 		expect(result[1].time).toBe('2024-01-02');
 		expect(result[2].time).toBe('2024-01-03');
+	});
+
+	it('period: 1D × 1Y は 365 本前後（+ウォームアップ）を返す', async () => {
+		// 十分なデータを返し、365 + warmup + buffer に切詰められることを確認
+		vi.mocked(getCandles).mockResolvedValue({
+			ok: true,
+			summary: 'ok',
+			data: { normalized: makeNormalized(500) },
+		} as never);
+		const warmup = 200;
+		const result = await fetchCandlesForBacktest('btc_jpy', '1D', { type: 'period', value: '1Y' }, warmup);
+		// neededBars = 365 + 200 + 10 = 575 → データ不足 (500 < 575) なので全件返却
+		expect(result).toHaveLength(500);
+	});
+
+	it('period: 1D × 1Y は十分なデータがあれば 365 + warmup + buffer に切詰める', async () => {
+		vi.mocked(getCandles).mockResolvedValue({
+			ok: true,
+			summary: 'ok',
+			data: { normalized: makeNormalized(1000) },
+		} as never);
+		const warmup = 50;
+		const result = await fetchCandlesForBacktest('btc_jpy', '1D', { type: 'period', value: '1Y' }, warmup);
+		// neededBars = 365 + 50 + 10 = 425
+		expect(result).toHaveLength(425);
+	});
+
+	it('absolute: end_date より後のデータを除外する', async () => {
+		// 2024-01-01 から 50 日分のデータ
+		vi.mocked(getCandles).mockResolvedValue({
+			ok: true,
+			summary: 'ok',
+			data: { normalized: makeNormalized(50, '2024-01-01') },
+		} as never);
+		const result = await fetchCandlesForBacktest(
+			'btc_jpy',
+			'1D',
+			{ type: 'absolute', start: '2024-01-10', end: '2024-01-20' },
+			0,
+		);
+		// end より後 (2024-01-21+) は除外
+		for (const c of result) {
+			expect(dayjs(c.time).valueOf()).toBeLessThanOrEqual(dayjs('2024-01-20').endOf('day').valueOf());
+		}
+	});
+
+	it('absolute: start_date 以降のシグナル評価用に warmup 分を含めて返す', async () => {
+		// 2024-01-01 から 50 日分のデータ
+		vi.mocked(getCandles).mockResolvedValue({
+			ok: true,
+			summary: 'ok',
+			data: { normalized: makeNormalized(50, '2024-01-01') },
+		} as never);
+		const warmup = 5;
+		const result = await fetchCandlesForBacktest(
+			'btc_jpy',
+			'1D',
+			{ type: 'absolute', start: '2024-01-10', end: '2024-01-20' },
+			warmup,
+		);
+		// 最初の候補は start_date より warmup 本前 = 2024-01-05 のはず
+		expect(result[0].time).toBe('2024-01-05');
+		// 最後は end_date 以下
+		expect(dayjs(result[result.length - 1].time).valueOf()).toBeLessThanOrEqual(
+			dayjs('2024-01-20').endOf('day').valueOf(),
+		);
+	});
+
+	it('absolute: 範囲内データなし → エラー', async () => {
+		vi.mocked(getCandles).mockResolvedValue({
+			ok: true,
+			summary: 'ok',
+			data: { normalized: makeNormalized(10, '2024-01-01') },
+		} as never);
+		await expect(
+			fetchCandlesForBacktest('btc_jpy', '1D', { type: 'absolute', start: '2025-01-01', end: '2025-02-01' }, 0),
+		).rejects.toThrow('No candle data');
+	});
+
+	it('absolute: start > end → エラー', async () => {
+		vi.mocked(getCandles).mockResolvedValue({
+			ok: true,
+			summary: 'ok',
+			data: { normalized: makeNormalized(10) },
+		} as never);
+		await expect(
+			fetchCandlesForBacktest('btc_jpy', '1D', { type: 'absolute', start: '2024-02-01', end: '2024-01-01' }, 0),
+		).rejects.toThrow('must be on or before');
 	});
 });

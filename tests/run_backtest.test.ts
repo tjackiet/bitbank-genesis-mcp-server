@@ -107,6 +107,38 @@ describe('run_backtest', () => {
 		expect(parse).toThrow();
 	});
 
+	it('inputSchema: start_date のみ指定 → エラー（end_date も必要）', () => {
+		const parse = () =>
+			toolDef.inputSchema.parse({
+				pair: 'btc_jpy',
+				start_date: '2024-01-01',
+				strategy: { type: 'rsi', params: {} },
+			});
+		expect(parse).toThrow(/start_date and end_date must be provided together/);
+	});
+
+	it('inputSchema: start_date > end_date → エラー', () => {
+		const parse = () =>
+			toolDef.inputSchema.parse({
+				pair: 'btc_jpy',
+				start_date: '2024-02-01',
+				end_date: '2024-01-01',
+				strategy: { type: 'rsi', params: {} },
+			});
+		expect(parse).toThrow(/start_date must be on or before end_date/);
+	});
+
+	it('inputSchema: start_date == end_date は許容', () => {
+		const parsed = toolDef.inputSchema.parse({
+			pair: 'btc_jpy',
+			start_date: '2024-01-01',
+			end_date: '2024-01-01',
+			strategy: { type: 'rsi', params: {} },
+		});
+		expect(parsed.start_date).toBe('2024-01-01');
+		expect(parsed.end_date).toBe('2024-01-01');
+	});
+
 	it('toolDef.handler は inputSchema の既定値 savePng=true / includeSvg=false を尊重するべき', async () => {
 		mocks.handlerRunBacktest.mockResolvedValue({
 			ok: false,

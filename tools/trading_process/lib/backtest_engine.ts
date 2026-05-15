@@ -18,6 +18,12 @@ export interface BacktestEngineInput {
 	strategy: StrategyConfig;
 	fee_bp: number;
 	execution: 't+1_open';
+	/** 実際に取得できた最初のローソク足の ISO 時刻（ウォームアップ含む） */
+	effective_start: string;
+	/** 実際に取得できた最後のローソク足の ISO 時刻 */
+	effective_end: string;
+	/** 実際に取得できたローソク足の本数（ウォームアップ含む） */
+	effective_bars: number;
 }
 
 /**
