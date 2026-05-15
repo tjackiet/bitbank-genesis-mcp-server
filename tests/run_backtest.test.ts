@@ -1,4 +1,8 @@
+import dayjs from 'dayjs';
+import utc from 'dayjs/plugin/utc.js';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+
+dayjs.extend(utc);
 
 const mocks = vi.hoisted(() => ({
 	handlerRunBacktest: vi.fn(),
@@ -45,7 +49,7 @@ import { assertOk } from './_assertResult.js';
 
 function buildCandles(count: number) {
 	return Array.from({ length: count }, (_, i) => ({
-		time: new Date(Date.UTC(2024, 0, i + 1)).toISOString(),
+		time: dayjs.utc('2024-01-01').add(i, 'day').toISOString(),
 		open: 100 + i,
 		high: 101 + i,
 		low: 99 + i,
@@ -74,6 +78,10 @@ function buildEngineResult() {
 			profit_factor: null,
 			sharpe_ratio: null,
 			avg_pnl_pct: 1.23,
+			evaluation_start: '2024-01-01T00:00:00.000Z',
+			evaluation_end: '2024-01-31T00:00:00.000Z',
+			evaluation_bars: 30,
+			warmup_bars: 0,
 		},
 		trades: [
 			{
@@ -139,7 +147,7 @@ describe('run_backtest', () => {
 		expect(parsed.end_date).toBe('2024-01-01');
 	});
 
-	it('toolDef.handler は inputSchema の既定値 savePng=true / includeSvg=false を尊重するべき', async () => {
+	it('toolDef.handler は inputSchema の既定値 savePng=false / includeSvg=false を尊重するべき', async () => {
 		mocks.handlerRunBacktest.mockResolvedValue({
 			ok: false,
 			error: 'boom',
@@ -154,7 +162,7 @@ describe('run_backtest', () => {
 			expect.objectContaining({
 				pair: 'btc_jpy',
 				strategy: { type: 'rsi', params: {} },
-				savePng: true,
+				savePng: false,
 				includeSvg: false,
 				chartDetail: 'default',
 			}),

@@ -57,7 +57,7 @@ describe('RunBacktestInputSchema', () => {
 		expect(result.period).toBe('3M');
 		expect(result.fee_bp).toBe(12);
 		expect(result.execution).toBe('t+1_open');
-		expect(result.savePng).toBe(true);
+		expect(result.savePng).toBe(false);
 		expect(result.includeSvg).toBe(false);
 		expect(result.chartDetail).toBe('default');
 	});

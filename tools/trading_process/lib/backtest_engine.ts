@@ -18,11 +18,20 @@ export interface BacktestEngineInput {
 	strategy: StrategyConfig;
 	fee_bp: number;
 	execution: 't+1_open';
-	/** 実際に取得できた最初のローソク足の ISO 時刻（ウォームアップ含む） */
+	/**
+	 * 取得範囲の開始 ISO 時刻（ウォームアップ含む。実際に fetch できた最初のバー）。
+	 * 評価範囲は `BacktestEngineSummary.evaluation_start` を参照。
+	 */
 	effective_start: string;
-	/** 実際に取得できた最後のローソク足の ISO 時刻 */
+	/**
+	 * 取得範囲の終了 ISO 時刻（実際に fetch できた最後のバー）。
+	 * 評価範囲の終端と一致するのが通常。
+	 */
 	effective_end: string;
-	/** 実際に取得できたローソク足の本数（ウォームアップ含む） */
+	/**
+	 * 取得範囲のバー本数（ウォームアップ含む。`effective_start` ~ `effective_end` の本数）。
+	 * 評価範囲のバー本数は `BacktestEngineSummary.evaluation_bars` を参照。
+	 */
 	effective_bars: number;
 }
 
@@ -50,6 +59,26 @@ export interface BacktestEngineSummary {
 	sharpe_ratio: number | null;
 	/** 1トレードあたり平均損益[%] */
 	avg_pnl_pct: number;
+	/**
+	 * 評価範囲の開始 ISO 時刻（ウォームアップ終了直後＝戦略が最初にトレード可能になるバーの時刻）。
+	 * `BacktestEngineInput.effective_start` は「取得範囲」の起点（ウォームアップ含む）であり、
+	 * 本フィールドの「評価範囲」とは役割が異なる。
+	 */
+	evaluation_start: string;
+	/**
+	 * 評価範囲の終了 ISO 時刻（最終バーの時刻。通常 `effective_end` と一致）。
+	 */
+	evaluation_end: string;
+	/**
+	 * 評価範囲のバー本数（`evaluation_start` ~ `evaluation_end` の本数）。
+	 * `evaluation_bars + warmup_bars === effective_bars` の関係が成立する。
+	 */
+	evaluation_bars: number;
+	/**
+	 * ウォームアップとして評価範囲から除外されたバー本数（= `strategy.computeRequiredBars(params)`）。
+	 * 取得範囲の先頭から数えたインデックスに等しい。
+	 */
+	warmup_bars: number;
 }
 
 /**
@@ -209,6 +238,14 @@ export function calculateSummary(
 		}
 	}
 
+	// 評価範囲メタ情報
+	const lastIdx = candles.length > 0 ? candles.length - 1 : 0;
+	const clampedStartIdx = candles.length === 0 ? 0 : Math.min(Math.max(tradableStartIdx, 0), lastIdx);
+	const evaluationStart = candles.length > 0 ? candles[clampedStartIdx].time : '';
+	const evaluationEnd = candles.length > 0 ? candles[lastIdx].time : '';
+	const evaluationBars = candles.length > 0 ? candles.length - clampedStartIdx : 0;
+	const warmupBars = clampedStartIdx;
+
 	if (trades.length === 0) {
 		return {
 			total_pnl_pct: 0,
@@ -220,6 +257,10 @@ export function calculateSummary(
 			profit_factor: null,
 			sharpe_ratio: calcSharpeRatio(equityCurve, timeframe),
 			avg_pnl_pct: 0,
+			evaluation_start: evaluationStart,
+			evaluation_end: evaluationEnd,
+			evaluation_bars: evaluationBars,
+			warmup_bars: warmupBars,
 		};
 	}
 
@@ -241,6 +282,10 @@ export function calculateSummary(
 		profit_factor: calcProfitFactor(trades),
 		sharpe_ratio: calcSharpeRatio(equityCurve, timeframe),
 		avg_pnl_pct: Number(avgPnl.toFixed(2)),
+		evaluation_start: evaluationStart,
+		evaluation_end: evaluationEnd,
+		evaluation_bars: evaluationBars,
+		warmup_bars: warmupBars,
 	};
 }
 

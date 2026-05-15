@@ -54,7 +54,14 @@ export const RunBacktestInputSchema = z
 		fee_bp: z.number().min(0).max(100).optional().default(12).describe('One-way fee in basis points'),
 		execution: z.literal('t+1_open').optional().default('t+1_open').describe('Execution timing (fixed: t+1_open)'),
 		outputDir: z.string().optional().default('/mnt/user-data/outputs').describe('Output directory for chart files'),
-		savePng: z.boolean().optional().default(true).describe('Save chart as PNG file (default: true)'),
+		savePng: z
+			.boolean()
+			.optional()
+			.default(false)
+			.describe(
+				'Save chart as PNG file to outputDir (default: false). ' +
+					'For inline display in chat UI, leave false and use includeSvg or prepare_chart_data instead.',
+			),
 		includeSvg: z
 			.boolean()
 			.optional()
@@ -87,6 +94,10 @@ const GenericBacktestSummarySchema = z.object({
 	profit_factor: z.number().nullable().describe('Profit Factor (gross profit / gross loss). null if no losing trades'),
 	sharpe_ratio: z.number().nullable().describe('Annualized Sharpe Ratio (daily returns, sqrt(365))'),
 	avg_pnl_pct: z.number().describe('Average P&L per trade [%]'),
+	evaluation_start: z.string().describe('Evaluation range start ISO time (first tradable bar, warmup excluded)'),
+	evaluation_end: z.string().describe('Evaluation range end ISO time (last bar)'),
+	evaluation_bars: z.number().describe('Bars in evaluation range (warmup excluded)'),
+	warmup_bars: z.number().describe('Bars excluded as warmup (= strategy.computeRequiredBars)'),
 });
 
 export const RunBacktestOutputSchema = z.union([

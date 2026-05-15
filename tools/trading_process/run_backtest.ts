@@ -218,11 +218,16 @@ export default async function runBacktest(input: RunBacktestInput): Promise<RunB
 	}
 }
 
+function isoDate(time: string | undefined): string {
+	if (!time) return '';
+	return time.split('T')[0];
+}
+
 /**
  * サマリーテキストを生成
  */
 function generateSummaryText(data: GenericBacktestChartData): string {
-	const { input, summary, trades } = data;
+	const { candles, input, summary, trades } = data;
 	const lines: string[] = [];
 
 	lines.push(`=== ${input.strategyName} Backtest Result ===`);
@@ -232,10 +237,22 @@ function generateSummaryText(data: GenericBacktestChartData): string {
 	lines.push(`Parameters: ${JSON.stringify(input.strategyParams)}`);
 	lines.push(`Fee: ${input.fee_bp} bp (round-trip: ${input.fee_bp * 2} bp)`);
 	lines.push('');
+	lines.push(`--- Period ---`);
+	const fetchedStart = isoDate(candles[0]?.time);
+	const fetchedEnd = isoDate(candles[candles.length - 1]?.time);
+	lines.push(`Fetched: ${fetchedStart} ~ ${fetchedEnd} (${candles.length} bars, incl. warmup)`);
+	lines.push(
+		`Evaluation: ${isoDate(summary.evaluation_start)} ~ ${isoDate(summary.evaluation_end)} (${summary.evaluation_bars} bars, warmup: ${summary.warmup_bars} bars)`,
+	);
+	lines.push('');
 	lines.push(`--- Summary (Compound) ---`);
 	lines.push(`Total P&L: ${summary.total_pnl_pct >= 0 ? '+' : ''}${summary.total_pnl_pct.toFixed(2)}%`);
+	// B&H 起点は tradable 区間の t+1 open（= warmup 終了直後の翌バー）
+	const bhStartIdx = summary.warmup_bars + 1;
+	const bhStartDate = isoDate(candles[bhStartIdx]?.time);
+	const bhEndDate = isoDate(summary.evaluation_end);
 	lines.push(
-		`Buy & Hold: ${summary.buy_hold_pnl_pct >= 0 ? '+' : ''}${summary.buy_hold_pnl_pct.toFixed(2)}% (tradable 区間のみ)`,
+		`Buy & Hold: ${summary.buy_hold_pnl_pct >= 0 ? '+' : ''}${summary.buy_hold_pnl_pct.toFixed(2)}% (${bhStartDate} open → ${bhEndDate} close)`,
 	);
 	lines.push(`Excess Return: ${summary.excess_return_pct >= 0 ? '+' : ''}${summary.excess_return_pct.toFixed(2)}%`);
 	lines.push(`Trades: ${summary.trade_count}`);

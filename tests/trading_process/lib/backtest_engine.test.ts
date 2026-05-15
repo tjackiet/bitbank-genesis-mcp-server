@@ -327,6 +327,79 @@ describe('calculateSummary - sharpe_ratio timeframe annualization', () => {
 });
 
 // ---------------------------------------------------------------------------
+// calculateSummary - evaluation_* / warmup_bars メタ情報
+// ---------------------------------------------------------------------------
+describe('calculateSummary - evaluation metadata', () => {
+	it('evaluation_start / end / bars / warmup_bars が tradableStartIdx に応じて返される', () => {
+		const candles = makeCandles(10); // t0 .. t9
+		const equityCurve = candles.map((c) => ({
+			time: c.time,
+			equity_pct: 0,
+			confirmed_pct: 0,
+		}));
+		const summary = calculateSummary([], 0, candles, equityCurve, '1D', 3);
+		expect(summary.evaluation_start).toBe(candles[3].time);
+		expect(summary.evaluation_end).toBe(candles[9].time);
+		expect(summary.evaluation_bars).toBe(7); // 10 - 3
+		expect(summary.warmup_bars).toBe(3);
+	});
+
+	it('evaluation_bars + warmup_bars === effective_bars (= candles.length)', () => {
+		const candles = makeCandles(25);
+		const equityCurve = candles.map((c) => ({
+			time: c.time,
+			equity_pct: 0,
+			confirmed_pct: 0,
+		}));
+		for (const warmup of [0, 1, 5, 14, 24]) {
+			const summary = calculateSummary([], 0, candles, equityCurve, '1D', warmup);
+			expect(summary.evaluation_bars + summary.warmup_bars).toBe(candles.length);
+		}
+	});
+
+	it('warmup_bars === strategy.computeRequiredBars(params)', () => {
+		const candles = makeCandles(30);
+		const mockStrategy = {
+			name: 'test',
+			type: 'sma_cross' as const,
+			requiredBars: 7,
+			defaultParams: { short: 3, long: 7 },
+			computeRequiredBars: (_p: Record<string, number>) => 7,
+			generate: (_c: Candle[], _p: Record<string, number>): Signal[] =>
+				Array.from({ length: 30 }, () => ({ action: 'hold' as const, reason: '', time: '' })),
+			getOverlays: () => [],
+		};
+		const params = { ...mockStrategy.defaultParams };
+		const input = {
+			pair: 'btc_jpy',
+			timeframe: '1D',
+			period: '1M',
+			strategy: { type: 'sma_cross' as const, params: {} },
+			fee_bp: 0,
+			execution: 't+1_open' as const,
+			effective_start: candles[0].time,
+			effective_end: candles[candles.length - 1].time,
+			effective_bars: candles.length,
+		};
+		const result = runBacktestEngine(candles, mockStrategy, input);
+		expect(result.summary.warmup_bars).toBe(mockStrategy.computeRequiredBars(params));
+	});
+
+	it('tradableStartIdx = 0 のとき evaluation_start === effective_start かつ warmup_bars === 0', () => {
+		const candles = makeCandles(12);
+		const equityCurve = candles.map((c) => ({
+			time: c.time,
+			equity_pct: 0,
+			confirmed_pct: 0,
+		}));
+		const summary = calculateSummary([], 0, candles, equityCurve, '1D', 0);
+		expect(summary.warmup_bars).toBe(0);
+		expect(summary.evaluation_start).toBe(candles[0].time); // = effective_start
+		expect(summary.evaluation_bars).toBe(candles.length);
+	});
+});
+
+// ---------------------------------------------------------------------------
 // runBacktestEngine
 // ---------------------------------------------------------------------------
 describe('runBacktestEngine', () => {
