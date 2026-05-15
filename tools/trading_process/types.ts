@@ -41,11 +41,11 @@ export interface Trade {
 	entry_price: number;
 	exit_time: string;
 	exit_price: number;
-	/** 表示用 損益率[%]。例: -10.59 */
+	/** 損益率[%]。例: -10.59。丸めなしの生値。表示時は呼び出し側で丸める */
 	pnl_pct: number;
-	/** 表示用 手数料率[%] */
+	/** 手数料率[%]。丸めなしの生値。表示時は呼び出し側で丸める */
 	fee_pct: number;
-	/** 計算用 純リターン乗数。例: 0.9388 = -6.12%。equity *= net_return で複利計算 */
+	/** 計算用 純リターン乗数。例: 0.9388 = -6.12%。equity *= net_return で複利計算。丸めなしの生値 */
 	net_return: number;
 }
 

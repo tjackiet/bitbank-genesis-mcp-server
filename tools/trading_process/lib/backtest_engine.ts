@@ -143,7 +143,10 @@ export function executeTradesFromSignals(
 		}
 		// エグジット
 		else if (position === 'long' && signal.action === 'sell') {
-			// 往復手数料率（乗数）
+			// 往復手数料率（乗数）。
+			// 片道手数料率を f としたとき、厳密には往復後の乗数は (1 - f)^2 だが、
+			// ここでは 1 - 2f の線形近似を採用している。誤差は f^2 オーダー
+			// （fee_bp=12 で約 0.000144%）で実用上無視でき、単純さを優先する。
 			const feeMultiplier = 1 - (fee_bp / 10000) * 2;
 
 			// グロスリターン乗数
@@ -156,14 +159,17 @@ export function executeTradesFromSignals(
 			const pnlPct = (netReturn - 1) * 100;
 			const feePct = (1 - feeMultiplier) * 100;
 
+			// 丸めなしの生値を保持する。表示用の丸めは呼び出し側で行う
+			// （複利計算で `confirmedEquity *= net_return` する際に微小利益が
+			// 潰れるのを防ぐ）。
 			trades.push({
 				entry_time: entryTime,
 				entry_price: entryPrice,
 				exit_time: execTime,
 				exit_price: execPrice,
-				pnl_pct: Number(pnlPct.toFixed(4)),
-				fee_pct: Number(feePct.toFixed(4)),
-				net_return: Number(netReturn.toFixed(6)),
+				pnl_pct: pnlPct,
+				fee_pct: feePct,
+				net_return: netReturn,
 			});
 
 			position = 'none';

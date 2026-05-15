@@ -682,3 +682,93 @@ describe('runBacktestEngine - open position carry forward', () => {
 		expect(result.summary.max_drawdown_pct).toBeCloseTo(25, 1);
 	});
 });
+
+// ---------------------------------------------------------------------------
+// executeTradesFromSignals - 数値精度・手数料モデルの契約（回帰防止）
+// ---------------------------------------------------------------------------
+describe('executeTradesFromSignals - precision and fee model contract', () => {
+	it('toFixed(6) で潰れる微小利益が net_return / pnl_pct に保持される', () => {
+		// entry=10_000_000, exit=10_000_004, fee_bp=0
+		// 厳密な netReturn = 1.0000004。旧実装の toFixed(6) では 1.000000 に潰れていた。
+		// buy at signals[0] → entry at candles[1].open、sell at signals[2] → exit at candles[3].open
+		const candles: Candle[] = [
+			{ time: 't0', open: 0, high: 0, low: 0, close: 0 },
+			{ time: 't1', open: 10_000_000, high: 0, low: 0, close: 0 },
+			{ time: 't2', open: 0, high: 0, low: 0, close: 0 },
+			{ time: 't3', open: 10_000_004, high: 0, low: 0, close: 0 },
+		];
+		const signals: Signal[] = [
+			{ action: 'buy', reason: '', time: '' },
+			{ action: 'hold', reason: '', time: '' },
+			{ action: 'sell', reason: '', time: '' },
+			{ action: 'hold', reason: '', time: '' },
+		];
+		const { trades } = executeTradesFromSignals(candles, signals, 0);
+		expect(trades).toHaveLength(1);
+		expect(trades[0].net_return).toBeCloseTo(1.0000004, 9);
+		expect(trades[0].pnl_pct).toBeCloseTo(0.00004, 9);
+	});
+
+	it('微小利益の連続トレードで total_pnl_pct が複利の実値を反映する', () => {
+		// 10 回の微小利益トレード。各 net_return = 1.0000004。
+		// 期待: total_pnl_pct ≈ (1.0000004^10 - 1) * 100 ≈ 0.0004%
+		// 旧実装では各 net_return が 1.000000 に丸められ total_pnl_pct === 0 になっていた。
+		const TRADE_COUNT = 10;
+		const candles: Candle[] = [];
+		const signals: Signal[] = [];
+		// 各トレードは 2 バー消費（buy → t+1 で entry, sell → t+1 で exit）。
+		// signals[i] が buy のとき candles[i+1].open が entry price になる。
+		// 1 トレード = buy at i, sell at i+2 のように 2 バー単位で繰り返す。
+		// 価格は entry→exit で 10_000_000 → 10_000_004 を全トレード共通とする。
+		for (let i = 0; i < TRADE_COUNT; i++) {
+			// 4 バー使ってループ: buy → entry → sell → exit
+			candles.push({ time: `b${i}-0`, open: 0, high: 0, low: 0, close: 0 });
+			candles.push({ time: `b${i}-1`, open: 10_000_000, high: 0, low: 0, close: 10_000_000 });
+			candles.push({ time: `b${i}-2`, open: 0, high: 0, low: 0, close: 0 });
+			candles.push({ time: `b${i}-3`, open: 10_000_004, high: 0, low: 0, close: 10_000_004 });
+			signals.push({ action: 'buy', reason: '', time: '' });
+			signals.push({ action: 'hold', reason: '', time: '' });
+			signals.push({ action: 'sell', reason: '', time: '' });
+			signals.push({ action: 'hold', reason: '', time: '' });
+		}
+		// 終端バーを追加（最後の sell の t+1 が必要）
+		candles.push({ time: 'tail', open: 0, high: 0, low: 0, close: 10_000_004 });
+		signals.push({ action: 'hold', reason: '', time: '' });
+
+		const { trades } = executeTradesFromSignals(candles, signals, 0);
+		expect(trades).toHaveLength(TRADE_COUNT);
+
+		// 各トレードの net_return を複利計算
+		const compound = trades.reduce((acc, t) => acc * t.net_return, 1);
+		const expectedCompound = 1.0000004 ** TRADE_COUNT;
+		expect(compound).toBeCloseTo(expectedCompound, 9);
+		// (1.0000004^10 - 1) * 100 ≈ 0.0004%（単体 0.00004% を 10 回複利）
+		expect((compound - 1) * 100).toBeCloseTo((expectedCompound - 1) * 100, 9);
+	});
+
+	it('手数料モデルは 1 - 2f の線形近似である（(1-f)^2 ではない）', () => {
+		// fee_bp=100 (f=0.01), 価格変化なし。
+		// 線形近似: net_return = 1 - 2*0.01 = 0.98、pnl_pct = -2.00%
+		// 厳密複利: (1 - 0.01)^2 = 0.9801（採用していない）。
+		// このテストは「線形近似の挙動を保証する契約」として固定する。
+		const candles: Candle[] = [
+			{ time: 't0', open: 100, high: 0, low: 0, close: 0 },
+			{ time: 't1', open: 100, high: 0, low: 0, close: 0 },
+			{ time: 't2', open: 100, high: 0, low: 0, close: 0 },
+			{ time: 't3', open: 100, high: 0, low: 0, close: 0 },
+		];
+		const signals: Signal[] = [
+			{ action: 'buy', reason: '', time: '' },
+			{ action: 'hold', reason: '', time: '' },
+			{ action: 'sell', reason: '', time: '' },
+			{ action: 'hold', reason: '', time: '' },
+		];
+		const { trades } = executeTradesFromSignals(candles, signals, 100); // 100bp = 1%
+		expect(trades).toHaveLength(1);
+		expect(trades[0].net_return).toBeCloseTo(0.98, 10);
+		expect(trades[0].pnl_pct).toBeCloseTo(-2.0, 10);
+		expect(trades[0].fee_pct).toBeCloseTo(2.0, 10);
+		// 厳密複利モデル (1-f)^2 = 0.9801 ではないことを明示
+		expect(trades[0].net_return).not.toBeCloseTo(0.9801, 10);
+	});
+});
