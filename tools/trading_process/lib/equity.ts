@@ -11,6 +11,8 @@
  * - トレード決済時: confirmed_equity を更新
  * - 末尾未決済ポジション (openPosition): entry_time 以降を最終バーまでマーク・トゥ・マーケット延長。
  *   confirmedEquity は更新されないため confirmed_pct には反映されないが、equity_pct には反映される。
+ *   `entry_fee_multiplier` を entry 時に entryEquity に乗算することで片道手数料を即時反映する
+ *   （exit-side fee は未発生のため適用しない）。
  *
  * ■ ドローダウン
  * - 定義: (peak_equity - current_equity) / peak_equity * 100
@@ -38,6 +40,15 @@ export interface EquityResult {
 export interface OpenPosition {
 	entry_time: string;
 	entry_price: number;
+	/**
+	 * Entry 側の手数料乗数（= 1 - fee_bp/10000）。
+	 * entry_time バーで entryEquity に即時乗算され、保有中の equity_pct に
+	 * 片道手数料分のマイナスが反映される。
+	 *
+	 * 確定トレードは net_return で往復手数料を exit 時にまとめて控除するため
+	 * 同型のフィールドは不要。未決済ポジションのみエントリー時に明示する。
+	 */
+	entry_fee_multiplier: number;
 }
 
 interface PositionInfo {
@@ -91,11 +102,12 @@ export function calculateEquityAndDrawdown(
 		// エントリーチェック（末尾未決済ポジション）
 		// exit は持たないので tradeByExitTime には登録されず、以降のバーで
 		// マーク・トゥ・マーケットが続き confirmedEquity は更新されない。
+		// entry_fee_multiplier で entry 時に片道手数料を即時反映する。
 		if (openPosition && !position && candle.time === openPosition.entry_time) {
 			position = {
 				isLong: true,
 				entryPrice: openPosition.entry_price,
-				entryEquity: confirmedEquity,
+				entryEquity: confirmedEquity * openPosition.entry_fee_multiplier,
 			};
 		}
 
