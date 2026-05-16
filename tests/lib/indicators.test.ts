@@ -140,6 +140,109 @@ describe('ema', () => {
 			expect(emaResult[i]).toBeGreaterThanOrEqual(smaResult[i] - 0.001);
 		}
 	});
+
+	it('入力途中に NaN: 後続が再シードして復帰する', () => {
+		// period=3, k=0.5
+		// 先頭 [1,2,3] でシード → result[2]=2
+		// index 3 が NaN → 内部状態リセット
+		// [5,6,7] で再シード → result[6]=6
+		// 以降: result[7]=8*0.5+6*0.5=7, result[8]=9*0.5+7*0.5=8
+		const result = ema([1, 2, 3, NaN, 5, 6, 7, 8, 9], 3);
+		expect(result).toHaveLength(9);
+		expect(result[0]).toBeNaN();
+		expect(result[1]).toBeNaN();
+		expect(result[2]).toBeCloseTo(2, 10);
+		expect(result[3]).toBeNaN();
+		expect(result[4]).toBeNaN();
+		expect(result[5]).toBeNaN();
+		expect(result[6]).toBeCloseTo(6, 10);
+		expect(result[7]).toBeCloseTo(7, 10);
+		expect(result[8]).toBeCloseTo(8, 10);
+	});
+
+	it('入力途中に Infinity: 後続が再シードして復帰する', () => {
+		// NaN ケースと同じ動作: Infinity も非有限として等価に扱う
+		const result = ema([1, 2, 3, Infinity, 5, 6, 7, 8, 9], 3);
+		expect(result).toHaveLength(9);
+		expect(result[2]).toBeCloseTo(2, 10);
+		expect(result[3]).toBeNaN();
+		// 再シード後は finite
+		expect(result[6]).toBeCloseTo(6, 10);
+		expect(result[7]).toBeCloseTo(7, 10);
+		expect(result[8]).toBeCloseTo(8, 10);
+		// 出力に Infinity が混入しない
+		for (const v of result) {
+			expect(Number.isFinite(v) || Number.isNaN(v)).toBe(true);
+		}
+	});
+
+	it('入力途中に -Infinity: 後続が再シードして復帰する', () => {
+		const result = ema([1, 2, 3, -Infinity, 5, 6, 7, 8, 9], 3);
+		expect(result[2]).toBeCloseTo(2, 10);
+		expect(result[3]).toBeNaN();
+		expect(result[6]).toBeCloseTo(6, 10);
+		for (const v of result) {
+			expect(Number.isFinite(v) || Number.isNaN(v)).toBe(true);
+		}
+	});
+
+	it('初期窓に NaN: 先頭をスキップして次の有限窓で再シード', () => {
+		// [NaN, 1, 2, 3, 4, 5], period=3
+		// index 0 (NaN) リセット → [1,2,3] でシード → result[3]=2
+		// result[4]=4*0.5+2*0.5=3, result[5]=5*0.5+3*0.5=4
+		const result = ema([NaN, 1, 2, 3, 4, 5], 3);
+		expect(result).toHaveLength(6);
+		expect(result[0]).toBeNaN();
+		expect(result[1]).toBeNaN();
+		expect(result[2]).toBeNaN();
+		expect(result[3]).toBeCloseTo(2, 10);
+		expect(result[4]).toBeCloseTo(3, 10);
+		expect(result[5]).toBeCloseTo(4, 10);
+	});
+
+	it('初期窓に Infinity: 先頭をスキップして次の有限窓で再シード', () => {
+		const result = ema([Infinity, 1, 2, 3, 4, 5], 3);
+		expect(result[3]).toBeCloseTo(2, 10);
+		expect(result[4]).toBeCloseTo(3, 10);
+		expect(result[5]).toBeCloseTo(4, 10);
+	});
+
+	it('全要素 NaN なら全て NaN', () => {
+		const result = ema([NaN, NaN, NaN, NaN, NaN], 3);
+		expect(result).toHaveLength(5);
+		for (const v of result) {
+			expect(v).toBeNaN();
+		}
+	});
+
+	it('末尾のみ NaN: 末尾は NaN、その前までは通常計算', () => {
+		// [1,2,3,4,5,NaN], period=3
+		// シード result[2]=2
+		// result[3]=4*0.5+2*0.5=3
+		// result[4]=5*0.5+3*0.5=4
+		// result[5]=NaN (リセット)
+		const result = ema([1, 2, 3, 4, 5, NaN], 3);
+		expect(result[2]).toBeCloseTo(2, 10);
+		expect(result[3]).toBeCloseTo(3, 10);
+		expect(result[4]).toBeCloseTo(4, 10);
+		expect(result[5]).toBeNaN();
+	});
+
+	it('連続 NaN を含むケース', () => {
+		// [1,2,3,NaN,NaN,4,5,6,7], period=3
+		// [1,2,3] シード → result[2]=2
+		// NaN,NaN で連続リセット
+		// [4,5,6] 再シード → result[7]=5
+		// result[8]=7*0.5+5*0.5=6
+		const result = ema([1, 2, 3, NaN, NaN, 4, 5, 6, 7], 3);
+		expect(result[2]).toBeCloseTo(2, 10);
+		expect(result[3]).toBeNaN();
+		expect(result[4]).toBeNaN();
+		expect(result[5]).toBeNaN();
+		expect(result[6]).toBeNaN();
+		expect(result[7]).toBeCloseTo(5, 10);
+		expect(result[8]).toBeCloseTo(6, 10);
+	});
 });
 
 // --- RSI ---
@@ -375,6 +478,43 @@ describe('macd', () => {
 		expect(lastLine).not.toBeNaN();
 		expect(lastLine).toBeGreaterThan(0);
 	});
+
+	it('入力に Infinity を含めても line/signal/hist に Infinity が混入しない', () => {
+		const values: number[] = [];
+		for (let i = 0; i < 80; i++) values.push(100 + i * 0.5);
+		// 途中に Infinity を 1 件注入
+		values[40] = Infinity;
+		const result = macd(values, 12, 26, 9);
+		for (const arr of [result.line, result.signal, result.hist]) {
+			for (const v of arr) {
+				expect(Number.isFinite(v) || Number.isNaN(v)).toBe(true);
+			}
+		}
+		// 終盤は再シードが効いて有限値が得られる
+		expect(Number.isFinite(result.line.at(-1))).toBe(true);
+		expect(Number.isFinite(result.signal.at(-1))).toBe(true);
+		expect(Number.isFinite(result.hist.at(-1))).toBe(true);
+	});
+
+	it('入力に NaN を含めても出力に Infinity が混入しない', () => {
+		const values: number[] = [];
+		for (let i = 0; i < 80; i++) values.push(100 + i * 0.5);
+		values[20] = NaN;
+		const result = macd(values, 12, 26, 9);
+		for (const arr of [result.line, result.signal, result.hist]) {
+			for (const v of arr) {
+				expect(Number.isFinite(v) || Number.isNaN(v)).toBe(true);
+			}
+		}
+	});
+
+	it('全要素 NaN なら全て NaN', () => {
+		const values = Array.from({ length: 60 }, () => NaN);
+		const result = macd(values, 12, 26, 9);
+		for (const v of result.line) expect(v).toBeNaN();
+		for (const v of result.signal) expect(v).toBeNaN();
+		for (const v of result.hist) expect(v).toBeNaN();
+	});
 });
 
 // --- Ichimoku ---
@@ -465,6 +605,65 @@ describe('stochastic', () => {
 			expect(v).toBeNaN();
 		});
 	});
+
+	it('highs に Infinity が含まれても kSeries/dSeries に Infinity が混入しない', () => {
+		const n = 30;
+		const highs = Array.from({ length: n }, (_, i) => 110 + Math.sin(i) * 5);
+		const lows = Array.from({ length: n }, (_, i) => 90 + Math.sin(i) * 5);
+		const closes = Array.from({ length: n }, (_, i) => 100 + Math.sin(i) * 5);
+		highs[10] = Infinity;
+		const result = stochastic(highs, lows, closes, 14, 3, 3);
+		for (const v of result.kSeries) {
+			expect(Number.isFinite(v) || Number.isNaN(v)).toBe(true);
+		}
+		for (const v of result.dSeries) {
+			expect(Number.isFinite(v) || Number.isNaN(v)).toBe(true);
+		}
+	});
+
+	it('lows に -Infinity が含まれても kSeries/dSeries に Infinity が混入しない', () => {
+		const n = 30;
+		const highs = Array.from({ length: n }, (_, i) => 110 + Math.sin(i) * 5);
+		const lows = Array.from({ length: n }, (_, i) => 90 + Math.sin(i) * 5);
+		const closes = Array.from({ length: n }, (_, i) => 100 + Math.sin(i) * 5);
+		lows[15] = -Infinity;
+		const result = stochastic(highs, lows, closes, 14, 3, 3);
+		for (const v of result.kSeries) {
+			expect(Number.isFinite(v) || Number.isNaN(v)).toBe(true);
+		}
+		for (const v of result.dSeries) {
+			expect(Number.isFinite(v) || Number.isNaN(v)).toBe(true);
+		}
+	});
+
+	it('closes に Infinity が含まれてもその位置の rawK は NaN になり、出力に Infinity が混入しない', () => {
+		const n = 30;
+		const highs = Array.from({ length: n }, (_, i) => 110 + Math.sin(i) * 5);
+		const lows = Array.from({ length: n }, (_, i) => 90 + Math.sin(i) * 5);
+		const closes = Array.from({ length: n }, (_, i) => 100 + Math.sin(i) * 5);
+		closes[20] = Infinity;
+		const result = stochastic(highs, lows, closes, 14, 3, 3);
+		for (const v of result.kSeries) {
+			expect(Number.isFinite(v) || Number.isNaN(v)).toBe(true);
+		}
+		for (const v of result.dSeries) {
+			expect(Number.isFinite(v) || Number.isNaN(v)).toBe(true);
+		}
+	});
+
+	it('全要素 NaN なら kSeries/dSeries 全て NaN', () => {
+		const n = 30;
+		const arr = Array.from({ length: n }, () => NaN);
+		const result = stochastic(arr, arr, arr, 14, 3, 3);
+		for (const v of result.kSeries) expect(v).toBeNaN();
+		for (const v of result.dSeries) expect(v).toBeNaN();
+	});
+
+	it('空配列は空配列を返す', () => {
+		const result = stochastic([], [], [], 14, 3, 3);
+		expect(result.kSeries).toEqual([]);
+		expect(result.dSeries).toEqual([]);
+	});
 });
 
 // --- Stochastic RSI ---
@@ -488,6 +687,45 @@ describe('stochRSI', () => {
 		result.kSeries.forEach((v) => {
 			expect(v).toBeNaN();
 		});
+	});
+
+	it('closes に Infinity が含まれても kSeries/dSeries に Infinity が混入しない', () => {
+		// rsi() に Infinity が流入すると非有限値が出る可能性があるが、
+		// stochRSI 側で validCount / window が Number.isFinite で除外する
+		const closes = Array.from({ length: 80 }, (_, i) => 100 + Math.sin(i * 0.3) * 10);
+		closes[30] = Infinity;
+		const result = stochRSI(closes, 14, 14, 3, 3);
+		for (const v of result.kSeries) {
+			expect(Number.isFinite(v) || Number.isNaN(v)).toBe(true);
+		}
+		for (const v of result.dSeries) {
+			expect(Number.isFinite(v) || Number.isNaN(v)).toBe(true);
+		}
+	});
+
+	it('closes に NaN が含まれても kSeries/dSeries に Infinity が混入しない', () => {
+		const closes = Array.from({ length: 80 }, (_, i) => 100 + Math.sin(i * 0.3) * 10);
+		closes[30] = NaN;
+		const result = stochRSI(closes, 14, 14, 3, 3);
+		for (const v of result.kSeries) {
+			expect(Number.isFinite(v) || Number.isNaN(v)).toBe(true);
+		}
+		for (const v of result.dSeries) {
+			expect(Number.isFinite(v) || Number.isNaN(v)).toBe(true);
+		}
+	});
+
+	it('全要素 NaN なら kSeries/dSeries 全て NaN', () => {
+		const closes = Array.from({ length: 60 }, () => NaN);
+		const result = stochRSI(closes, 14, 14, 3, 3);
+		for (const v of result.kSeries) expect(v).toBeNaN();
+		for (const v of result.dSeries) expect(v).toBeNaN();
+	});
+
+	it('空配列は空配列を返す', () => {
+		const result = stochRSI([], 14, 14, 3, 3);
+		expect(result.kSeries).toEqual([]);
+		expect(result.dSeries).toEqual([]);
 	});
 });
 

@@ -60,6 +60,8 @@ export function sma(prices: number[], period: number): number[] {
  * 指数移動平均 (EMA)
  *
  * 最初の EMA 値は period 区間の SMA をシードとして使用。
+ * 非有限値 (NaN/Infinity) を含む入力にも対応し、検出時は内部状態をリセットして
+ * 次に period 個の連続する有限値が揃った時点で再シードする。
  *
  * @param prices 価格配列（古い順）
  * @param period EMA 期間（2 以上）
@@ -67,21 +69,41 @@ export function sma(prices: number[], period: number): number[] {
  */
 export function ema(prices: number[], period: number): number[] {
 	const result: number[] = nanArray(prices.length);
-
-	if (prices.length < period || period < 1) {
-		return result;
-	}
-
-	// SMA をシードとする
-	let sum = 0;
-	for (let i = 0; i < period; i++) {
-		sum += prices[i];
-	}
-	result[period - 1] = sum / period;
+	if (period < 1) return result;
 
 	const k = 2 / (period + 1);
-	for (let i = period; i < prices.length; i++) {
-		result[i] = prices[i] * k + result[i - 1] * (1 - k);
+	let prevEma: number | undefined;
+	let seedSum = 0;
+	let seedCount = 0;
+
+	for (let i = 0; i < prices.length; i++) {
+		const price = prices[i];
+		if (!Number.isFinite(price)) {
+			// 非有限入力: 内部状態を全リセットして次の有限窓で再シード
+			prevEma = undefined;
+			seedSum = 0;
+			seedCount = 0;
+			continue;
+		}
+		if (prevEma === undefined) {
+			seedSum += price;
+			seedCount++;
+			if (seedCount === period) {
+				prevEma = seedSum / period;
+				result[i] = prevEma;
+			}
+		} else {
+			const next = price * k + prevEma * (1 - k);
+			if (!Number.isFinite(next)) {
+				// 防御的: 通常は到達しないが、到達したらリセット
+				prevEma = undefined;
+				seedSum = 0;
+				seedCount = 0;
+			} else {
+				prevEma = next;
+				result[i] = next;
+			}
+		}
 	}
 
 	return result;
@@ -243,21 +265,21 @@ export function macd(
 	// MACD line = fast EMA - slow EMA
 	const line: number[] = nanArray(n);
 	for (let i = 0; i < n; i++) {
-		if (!Number.isNaN(emaFast[i]) && !Number.isNaN(emaSlow[i])) {
+		if (Number.isFinite(emaFast[i]) && Number.isFinite(emaSlow[i])) {
 			line[i] = emaFast[i] - emaSlow[i];
 		}
 	}
 
 	// Signal EMA — 有効な MACD 値のみでシードする
-	const validStart = line.findIndex((v) => !Number.isNaN(v));
+	const validStart = line.findIndex((v) => Number.isFinite(v));
 	const signalLine: number[] = nanArray(n);
 
 	if (validStart >= 0) {
-		const validLine = line.slice(validStart).filter((v) => !Number.isNaN(v));
+		const validLine = line.slice(validStart).filter((v) => Number.isFinite(v));
 		const sigEma = ema(validLine, signal);
 		let idx = 0;
 		for (let i = validStart; i < n; i++) {
-			if (!Number.isNaN(line[i])) {
+			if (Number.isFinite(line[i])) {
 				signalLine[i] = sigEma[idx++];
 			}
 		}
@@ -266,7 +288,7 @@ export function macd(
 	// Histogram = line - signal
 	const hist: number[] = nanArray(n);
 	for (let i = 0; i < n; i++) {
-		if (!Number.isNaN(line[i]) && !Number.isNaN(signalLine[i])) {
+		if (Number.isFinite(line[i]) && Number.isFinite(signalLine[i])) {
 			hist[i] = line[i] - signalLine[i];
 		}
 	}
@@ -397,21 +419,25 @@ export function stochastic(
 		let hi = -Infinity;
 		let lo = Infinity;
 		for (let j = i - kPeriod + 1; j <= i; j++) {
-			if (highs[j] > hi) hi = highs[j];
-			if (lows[j] < lo) lo = lows[j];
+			const high = highs[j];
+			const low = lows[j];
+			if (Number.isFinite(high) && high > hi) hi = high;
+			if (Number.isFinite(low) && low < lo) lo = low;
 		}
+		const close = closes[i];
+		if (!Number.isFinite(close) || !Number.isFinite(hi) || !Number.isFinite(lo)) continue;
 		const range = hi - lo;
-		rawK[i] = range === 0 ? 50 : ((closes[i] - lo) / range) * 100;
+		rawK[i] = range === 0 ? 50 : ((close - lo) / range) * 100;
 	}
 
 	// %K = SMA(rawK, smoothK) — 手動ウィンドウ平均（NaN スキップ）
 	const kSeries: number[] = nanArray(n);
 	for (let i = 0; i < n; i++) {
-		if (Number.isNaN(rawK[i])) continue;
+		if (!Number.isFinite(rawK[i])) continue;
 		let sum = 0;
 		let cnt = 0;
 		for (let j = i - smoothK + 1; j <= i; j++) {
-			if (j >= 0 && !Number.isNaN(rawK[j])) {
+			if (j >= 0 && Number.isFinite(rawK[j])) {
 				sum += rawK[j];
 				cnt++;
 			}
@@ -422,11 +448,11 @@ export function stochastic(
 	// %D = SMA(%K, smoothD)
 	const dSeries: number[] = nanArray(n);
 	for (let i = 0; i < n; i++) {
-		if (Number.isNaN(kSeries[i])) continue;
+		if (!Number.isFinite(kSeries[i])) continue;
 		let sum = 0;
 		let cnt = 0;
 		for (let j = i - smoothD + 1; j <= i; j++) {
-			if (j >= 0 && !Number.isNaN(kSeries[j])) {
+			if (j >= 0 && Number.isFinite(kSeries[j])) {
 				sum += kSeries[j];
 				cnt++;
 			}
@@ -458,7 +484,7 @@ export function stochRSI(
 	const rsiValues = rsi(closes, rsiPeriod);
 	const n = rsiValues.length;
 
-	const validCount = rsiValues.filter((v) => !Number.isNaN(v)).length;
+	const validCount = rsiValues.filter((v) => Number.isFinite(v)).length;
 	if (validCount < stochPeriod + smoothK + smoothD) {
 		return { kSeries: nanArray(n), dSeries: nanArray(n) };
 	}
@@ -466,10 +492,10 @@ export function stochRSI(
 	// Raw %K over RSI window
 	const rawK: number[] = nanArray(n);
 	for (let i = 0; i < n; i++) {
-		if (Number.isNaN(rsiValues[i]) || i < stochPeriod - 1) continue;
+		if (!Number.isFinite(rsiValues[i]) || i < stochPeriod - 1) continue;
 		const window: number[] = [];
 		for (let j = i - stochPeriod + 1; j <= i; j++) {
-			if (!Number.isNaN(rsiValues[j])) window.push(rsiValues[j]);
+			if (Number.isFinite(rsiValues[j])) window.push(rsiValues[j]);
 		}
 		if (window.length < stochPeriod) continue;
 		const lo = Math.min(...window);
@@ -481,11 +507,11 @@ export function stochRSI(
 	// Smooth rawK → %K
 	const kSeries: number[] = nanArray(n);
 	for (let i = 0; i < n; i++) {
-		if (Number.isNaN(rawK[i])) continue;
+		if (!Number.isFinite(rawK[i])) continue;
 		let sum = 0;
 		let cnt = 0;
 		for (let j = i - smoothK + 1; j <= i; j++) {
-			if (j >= 0 && !Number.isNaN(rawK[j])) {
+			if (j >= 0 && Number.isFinite(rawK[j])) {
 				sum += rawK[j];
 				cnt++;
 			}
@@ -496,11 +522,11 @@ export function stochRSI(
 	// %D = SMA(%K, smoothD)
 	const dSeries: number[] = nanArray(n);
 	for (let i = 0; i < n; i++) {
-		if (Number.isNaN(kSeries[i])) continue;
+		if (!Number.isFinite(kSeries[i])) continue;
 		let sum = 0;
 		let cnt = 0;
 		for (let j = i - smoothD + 1; j <= i; j++) {
-			if (j >= 0 && !Number.isNaN(kSeries[j])) {
+			if (j >= 0 && Number.isFinite(kSeries[j])) {
 				sum += kSeries[j];
 				cnt++;
 			}
