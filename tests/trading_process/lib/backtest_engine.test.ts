@@ -102,9 +102,11 @@ describe('executeTradesFromSignals', () => {
 		];
 		const result = executeTradesFromSignals(candles, signals, 0);
 		expect(result.trades).toHaveLength(0);
-		expect(result.open_position).not.toBeNull();
-		expect(result.open_position?.entry_time).toBe(candles[1].time); // t+1
-		expect(result.open_position?.entry_price).toBe(candles[1].open);
+		expect(result.open_position).toEqual({
+			entry_time: candles[1].time, // t+1
+			entry_price: candles[1].open,
+			entry_fee_multiplier: 1, // fee_bp=0
+		});
 	});
 
 	it('buy → sell → buy の最後の buy が未決済の場合 open_position に入る', () => {
@@ -119,10 +121,12 @@ describe('executeTradesFromSignals', () => {
 		];
 		const result = executeTradesFromSignals(candles, signals, 0);
 		expect(result.trades).toHaveLength(1);
-		expect(result.open_position).not.toBeNull();
 		// 2回目の buy は i=2、執行は t+1 = candles[3]
-		expect(result.open_position?.entry_time).toBe(candles[3].time);
-		expect(result.open_position?.entry_price).toBe(candles[3].open);
+		expect(result.open_position).toEqual({
+			entry_time: candles[3].time,
+			entry_price: candles[3].open,
+			entry_fee_multiplier: 1, // fee_bp=0
+		});
 	});
 
 	it('複数トレードを生成する', () => {
@@ -800,5 +804,134 @@ describe('executeTradesFromSignals - precision and fee model contract', () => {
 		expect(trades[0].fee_pct).toBeCloseTo(2.0, 10);
 		// 厳密複利モデル (1-f)^2 = 0.9801 ではないことを明示
 		expect(trades[0].net_return).not.toBeCloseTo(0.9801, 10);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// executeTradesFromSignals - open_position の entry_fee_multiplier（回帰防止）
+// ---------------------------------------------------------------------------
+describe('executeTradesFromSignals - open_position entry_fee_multiplier', () => {
+	function buyOnlySignals(length: number): Signal[] {
+		return Array.from({ length }, (_, i) =>
+			i === 0 ? { action: 'buy' as const, reason: '', time: '' } : { action: 'hold' as const, reason: '', time: '' },
+		);
+	}
+
+	it('fee_bp=100 で entry_fee_multiplier = 0.99', () => {
+		const candles = makeCandles(5);
+		const result = executeTradesFromSignals(candles, buyOnlySignals(5), 100);
+		expect(result.open_position?.entry_fee_multiplier).toBeCloseTo(0.99, 10);
+	});
+
+	it('fee_bp=0 で entry_fee_multiplier = 1.0', () => {
+		const candles = makeCandles(5);
+		const result = executeTradesFromSignals(candles, buyOnlySignals(5), 0);
+		expect(result.open_position?.entry_fee_multiplier).toBe(1);
+	});
+
+	it('fee_bp=12（デフォルト想定）で entry_fee_multiplier = 0.9988', () => {
+		const candles = makeCandles(5);
+		const result = executeTradesFromSignals(candles, buyOnlySignals(5), 12);
+		expect(result.open_position?.entry_fee_multiplier).toBeCloseTo(0.9988, 10);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// runBacktestEngine - 未決済ポジションへの片道手数料反映（回帰防止）
+// ---------------------------------------------------------------------------
+describe('runBacktestEngine - open position entry fee', () => {
+	function makeFlatCandles(length: number, price: number): Candle[] {
+		return Array.from({ length }, (_, i) => ({
+			time: `2024-01-${String(i + 1).padStart(2, '0')}`,
+			open: price,
+			high: price,
+			low: price,
+			close: price,
+		}));
+	}
+
+	function makeBuyOnceStrategy(buyIdx: number, length: number, warmup: number) {
+		return {
+			name: 'test',
+			type: 'sma_cross' as const,
+			requiredBars: warmup,
+			defaultParams: {},
+			computeRequiredBars: () => warmup,
+			generate: (_c: Candle[], _p: Record<string, number>): Signal[] =>
+				Array.from({ length }, (_, i) =>
+					i === buyIdx
+						? { action: 'buy' as const, reason: 'test', time: '' }
+						: { action: 'hold' as const, reason: '', time: '' },
+				),
+			getOverlays: () => [],
+			validate: (params: Record<string, number>) => ({
+				valid: true,
+				errors: [],
+				normalizedParams: { ...params },
+			}),
+		};
+	}
+
+	it('fee_bp=100、entry=close=同値の未決済で total_pnl_pct ≈ -1.00', () => {
+		// warmup=2 → i=2 で buy → entry at candles[3].open。全バー価格 100 で不変。
+		const candles = makeFlatCandles(8, 100);
+		const strategy = makeBuyOnceStrategy(2, candles.length, 2);
+		const input = {
+			pair: 'btc_jpy',
+			timeframe: '1D',
+			period: '1M',
+			strategy: { type: 'sma_cross' as const, params: {} },
+			fee_bp: 100, // 片道 1%
+			execution: 't+1_open' as const,
+		};
+		const result = runBacktestEngine(candles, strategy, input);
+		expect(result.summary.trade_count).toBe(0);
+		expect(result.equity_curve[result.equity_curve.length - 1].equity_pct).toBeCloseTo(-1, 4);
+		expect(result.summary.total_pnl_pct).toBeCloseTo(-1, 2);
+	});
+
+	it('fee_bp=0、entry=close=同値の未決済は従来通り fee 影響なし', () => {
+		const candles = makeFlatCandles(8, 100);
+		const strategy = makeBuyOnceStrategy(2, candles.length, 2);
+		const input = {
+			pair: 'btc_jpy',
+			timeframe: '1D',
+			period: '1M',
+			strategy: { type: 'sma_cross' as const, params: {} },
+			fee_bp: 0,
+			execution: 't+1_open' as const,
+		};
+		const result = runBacktestEngine(candles, strategy, input);
+		expect(result.summary.trade_count).toBe(0);
+		expect(result.equity_curve[result.equity_curve.length - 1].equity_pct).toBeCloseTo(0, 4);
+		expect(result.summary.total_pnl_pct).toBe(0);
+	});
+
+	it('fee_bp=100、価格 +100% 上昇の未決済は片道手数料分だけ目減りする', () => {
+		// entry at candles[3].open=100、last close=200。
+		// entryEquity = 1.0 * 0.99 = 0.99、equity = 0.99 * (200/100) = 1.98 → +98%
+		const candles: Candle[] = [
+			{ time: 't0', open: 90, high: 95, low: 85, close: 90 },
+			{ time: 't1', open: 95, high: 100, low: 90, close: 95 },
+			{ time: 't2', open: 100, high: 105, low: 95, close: 100 },
+			{ time: 't3', open: 100, high: 105, low: 95, close: 100 }, // entry at t+1 open=100
+			{ time: 't4', open: 120, high: 130, low: 110, close: 120 },
+			{ time: 't5', open: 150, high: 160, low: 140, close: 150 },
+			{ time: 't6', open: 180, high: 200, low: 170, close: 180 },
+			{ time: 't7', open: 190, high: 210, low: 180, close: 200 },
+		];
+		const strategy = makeBuyOnceStrategy(2, candles.length, 2);
+		const input = {
+			pair: 'btc_jpy',
+			timeframe: '1D',
+			period: '1M',
+			strategy: { type: 'sma_cross' as const, params: {} },
+			fee_bp: 100,
+			execution: 't+1_open' as const,
+		};
+		const result = runBacktestEngine(candles, strategy, input);
+		expect(result.summary.trade_count).toBe(0);
+		expect(result.equity_curve[result.equity_curve.length - 1].equity_pct).toBeCloseTo(98, 1);
+		expect(result.summary.total_pnl_pct).toBeCloseTo(98, 1);
 	});
 });

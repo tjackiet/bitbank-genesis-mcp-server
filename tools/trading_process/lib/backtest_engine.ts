@@ -176,8 +176,16 @@ export function executeTradesFromSignals(
 		}
 	}
 
+	// 片道手数料乗数。確定トレードの feeMultiplier = 1 - 2f を対称分解した entry 側に相当する。
+	const entryFeeMultiplier = 1 - fee_bp / 10000;
 	const open_position: OpenPosition | null =
-		position === 'long' ? { entry_time: entryTime, entry_price: entryPrice } : null;
+		position === 'long'
+			? {
+					entry_time: entryTime,
+					entry_price: entryPrice,
+					entry_fee_multiplier: entryFeeMultiplier,
+				}
+			: null;
 
 	return { trades, open_position };
 }
