@@ -21,7 +21,9 @@ import {
 
 // ── Configuration ──
 const MAX_PAGES = 10;
-const PAGE_SIZE = 1000;
+// 約定履歴は公式上限 1000。入出金履歴は公式上限 100（POST /v1/user/{deposit,withdrawal}_history）。
+const TRADE_PAGE_SIZE = 1000;
+const DW_PAGE_SIZE = 100;
 
 async function paginateDeposits(
 	client: BitbankPrivateClient,
@@ -32,7 +34,7 @@ async function paginateDeposits(
 	const seenIds = new Set<string>();
 	let since: string | undefined = sinceMs != null ? String(sinceMs) : undefined;
 	for (let page = 0; page < MAX_PAGES; page++) {
-		const params = { ...baseParams, count: String(PAGE_SIZE), ...(since ? { since } : {}) };
+		const params = { ...baseParams, count: String(DW_PAGE_SIZE), ...(since ? { since } : {}) };
 		const result = await tryGet<{ deposits: RawDeposit[] }>(client, '/v1/user/deposit_history', params);
 		if (!result.ok) {
 			return { deposits: all, complete: false, error: result.error };
@@ -41,10 +43,10 @@ async function paginateDeposits(
 		const newRecords = batch.filter((d) => !seenIds.has(d.uuid));
 		for (const d of newRecords) seenIds.add(d.uuid);
 		all.push(...newRecords);
-		if (batch.length < PAGE_SIZE) {
+		if (batch.length < DW_PAGE_SIZE) {
 			return { deposits: all, complete: true };
 		}
-		// 同一タイムスタンプが PAGE_SIZE 件以上連続して進捗しない場合の保険
+		// 同一タイムスタンプが DW_PAGE_SIZE 件以上連続して進捗しない場合の保険
 		if (newRecords.length === 0) return { deposits: all, complete: false };
 		// 次ページ: 最後のレコードの confirmed_at を since に（同一 ts のレコードを次ページに含めて再取得し、dedup する）
 		const lastTs = batch[batch.length - 1]?.confirmed_at;
@@ -63,7 +65,7 @@ async function paginateWithdrawals(
 	const seenIds = new Set<string>();
 	let since: string | undefined = sinceMs != null ? String(sinceMs) : undefined;
 	for (let page = 0; page < MAX_PAGES; page++) {
-		const params = { ...baseParams, count: String(PAGE_SIZE), ...(since ? { since } : {}) };
+		const params = { ...baseParams, count: String(DW_PAGE_SIZE), ...(since ? { since } : {}) };
 		const result = await tryGet<{ withdrawals: RawWithdrawal[] }>(client, '/v1/user/withdrawal_history', params);
 		if (!result.ok) {
 			return { withdrawals: all, complete: false, error: result.error };
@@ -72,10 +74,10 @@ async function paginateWithdrawals(
 		const newRecords = batch.filter((w) => !seenIds.has(w.uuid));
 		for (const w of newRecords) seenIds.add(w.uuid);
 		all.push(...newRecords);
-		if (batch.length < PAGE_SIZE) {
+		if (batch.length < DW_PAGE_SIZE) {
 			return { withdrawals: all, complete: true };
 		}
-		// 同一タイムスタンプが PAGE_SIZE 件以上連続して進捗しない場合の保険
+		// 同一タイムスタンプが DW_PAGE_SIZE 件以上連続して進捗しない場合の保険
 		if (newRecords.length === 0) return { withdrawals: all, complete: false };
 		const lastTs = batch[batch.length - 1]?.requested_at;
 		if (!lastTs) break;
@@ -93,7 +95,7 @@ export async function paginateTrades(
 	const seenIds = new Set<number>();
 	let since: string | undefined = sinceMs != null ? String(sinceMs) : undefined;
 	for (let page = 0; page < MAX_PAGES; page++) {
-		const params: Record<string, string> = { count: String(PAGE_SIZE), order: 'asc' };
+		const params: Record<string, string> = { count: String(TRADE_PAGE_SIZE), order: 'asc' };
 		if (since) params.since = since;
 		const result = await tryGet<{ trades: RawTrade[] }>(client, '/v1/user/spot/trade_history', params);
 		if (!result.ok) break;
@@ -101,8 +103,8 @@ export async function paginateTrades(
 		const newRecords = batch.filter((t) => !seenIds.has(t.trade_id));
 		for (const t of newRecords) seenIds.add(t.trade_id);
 		all.push(...newRecords);
-		if (batch.length < PAGE_SIZE) return { trades: all, truncated: false };
-		// 同一タイムスタンプが PAGE_SIZE 件以上連続して進捗しない場合の保険
+		if (batch.length < TRADE_PAGE_SIZE) return { trades: all, truncated: false };
+		// 同一タイムスタンプが TRADE_PAGE_SIZE 件以上連続して進捗しない場合の保険
 		if (newRecords.length === 0) return { trades: all, truncated: true };
 		// 次ページ: 最後の約定の executed_at を since に（同一 ts のレコードを次ページに含めて再取得し、dedup する）
 		const lastTs = batch[batch.length - 1]?.executed_at;
@@ -110,7 +112,7 @@ export async function paginateTrades(
 		since = String(lastTs);
 	}
 	// MAX_PAGES 到達 or エラーで抜けた場合、最終バッチが満杯なら打ち切り
-	const truncated = all.length > 0 && all.length % PAGE_SIZE === 0;
+	const truncated = all.length > 0 && all.length % TRADE_PAGE_SIZE === 0;
 	return { trades: all, truncated };
 }
 
@@ -126,7 +128,7 @@ export async function paginateMarginTrades(
 	const seenIds = new Set<number>();
 	let since: string | undefined = sinceMs != null ? String(sinceMs) : undefined;
 	for (let page = 0; page < MAX_PAGES; page++) {
-		const params: Record<string, string> = { type: 'margin', count: String(PAGE_SIZE), order: 'asc' };
+		const params: Record<string, string> = { type: 'margin', count: String(TRADE_PAGE_SIZE), order: 'asc' };
 		if (since) params.since = since;
 		const result = await tryGet<{ trades: RawMarginTrade[] }>(client, '/v1/user/spot/trade_history', params);
 		if (!result.ok) break;
@@ -134,14 +136,14 @@ export async function paginateMarginTrades(
 		const newRecords = batch.filter((t) => !seenIds.has(t.trade_id));
 		for (const t of newRecords) seenIds.add(t.trade_id);
 		all.push(...newRecords);
-		if (batch.length < PAGE_SIZE) return { trades: all, truncated: false };
-		// 同一タイムスタンプが PAGE_SIZE 件以上連続して進捗しない場合の保険
+		if (batch.length < TRADE_PAGE_SIZE) return { trades: all, truncated: false };
+		// 同一タイムスタンプが TRADE_PAGE_SIZE 件以上連続して進捗しない場合の保険
 		if (newRecords.length === 0) return { trades: all, truncated: true };
 		const lastTs = batch[batch.length - 1]?.executed_at;
 		if (!lastTs) break;
 		since = String(lastTs);
 	}
-	const truncated = all.length > 0 && all.length % PAGE_SIZE === 0;
+	const truncated = all.length > 0 && all.length % TRADE_PAGE_SIZE === 0;
 	return { trades: all, truncated };
 }
 

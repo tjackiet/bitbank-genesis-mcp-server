@@ -269,29 +269,138 @@ describe('paginateMarginTrades — ページネーション境界', () => {
 describe('paginateDeposits / paginateWithdrawals — ページネーション境界', () => {
 	// paginateDeposits / paginateWithdrawals は非エクスポート関数だが、fetchDepositWithdrawal
 	// 経由で間接的に検証する。
-	it('入金: ページ境界に同一 confirmed_at の入金が跨っていても uuid で dedup されて全件取得', async () => {
+	// 入出金履歴 API の count 上限は公式 docs で 100 件と定義されているため、ページサイズは 100。
+	it('入金: count パラメータが 100（公式上限）で送信される', async () => {
+		const { fetchDepositWithdrawal } = await import('../../../src/handlers/portfolio/fetch.js');
+		const fetcher = vi.fn(async (url: string) => {
+			if (url.includes('deposit_history')) {
+				return new Response(JSON.stringify(mockBitbankSuccess({ deposits: [] })), { status: 200 });
+			}
+			return new Response(JSON.stringify(mockBitbankSuccess({ withdrawals: [] })), { status: 200 });
+		}) as unknown as typeof fetch;
+		const client = new BitbankPrivateClient({ fetcher });
+
+		await fetchDepositWithdrawal(client);
+
+		const fetchMock = fetcher as unknown as ReturnType<typeof vi.fn>;
+		const depositCalls = fetchMock.mock.calls.map((c) => c[0] as string).filter((u) => u.includes('deposit_history'));
+		expect(depositCalls.length).toBeGreaterThan(0);
+		for (const url of depositCalls) {
+			expect(url).toContain('count=100');
+			expect(url).not.toContain('count=1000');
+		}
+	});
+
+	it('出金: count パラメータが 100（公式上限）で送信される', async () => {
+		const { fetchDepositWithdrawal } = await import('../../../src/handlers/portfolio/fetch.js');
+		const fetcher = vi.fn(async (url: string) => {
+			if (url.includes('withdrawal_history')) {
+				return new Response(JSON.stringify(mockBitbankSuccess({ withdrawals: [] })), { status: 200 });
+			}
+			return new Response(JSON.stringify(mockBitbankSuccess({ deposits: [] })), { status: 200 });
+		}) as unknown as typeof fetch;
+		const client = new BitbankPrivateClient({ fetcher });
+
+		await fetchDepositWithdrawal(client);
+
+		const fetchMock = fetcher as unknown as ReturnType<typeof vi.fn>;
+		const withdrawalCalls = fetchMock.mock.calls
+			.map((c) => c[0] as string)
+			.filter((u) => u.includes('withdrawal_history'));
+		expect(withdrawalCalls.length).toBeGreaterThan(0);
+		for (const url of withdrawalCalls) {
+			expect(url).toContain('count=100');
+			expect(url).not.toContain('count=1000');
+		}
+	});
+
+	it('入金: 100 件未満のレスポンス 1 ページで complete:true を返す', async () => {
+		const { fetchDepositWithdrawal } = await import('../../../src/handlers/portfolio/fetch.js');
+		// 5 件のみ（< 100）→ 1 ページで完了し、次ページを取得しない
+		const oneShotPage = Array.from({ length: 5 }, (_, i) =>
+			makeDeposit({ uuid: `dep-${i + 1}`, confirmed_at: 1710000000000 + i * 1000, asset: 'btc' }),
+		);
+		const fetcher = vi.fn(async (url: string) => {
+			if (url.includes('asset=jpy')) {
+				if (url.includes('deposit_history')) {
+					return new Response(JSON.stringify(mockBitbankSuccess({ deposits: [] })), { status: 200 });
+				}
+				return new Response(JSON.stringify(mockBitbankSuccess({ withdrawals: [] })), { status: 200 });
+			}
+			if (url.includes('deposit_history')) {
+				return new Response(JSON.stringify(mockBitbankSuccess({ deposits: oneShotPage })), { status: 200 });
+			}
+			return new Response(JSON.stringify(mockBitbankSuccess({ withdrawals: [] })), { status: 200 });
+		}) as unknown as typeof fetch;
+		const client = new BitbankPrivateClient({ fetcher });
+
+		const result = await fetchDepositWithdrawal(client);
+		if (!result) throw new Error('fetchDepositWithdrawal returned null');
+		expect(result.deposits).toHaveLength(5);
+		expect(result.isComplete).toBe(true);
+
+		// crypto deposit は 1 回のみ呼ばれる（since 未指定）
+		const fetchMock = fetcher as unknown as ReturnType<typeof vi.fn>;
+		const cryptoDepositCalls = fetchMock.mock.calls
+			.map((c) => c[0] as string)
+			.filter((u) => u.includes('deposit_history') && !u.includes('asset=jpy'));
+		expect(cryptoDepositCalls).toHaveLength(1);
+		expect(cryptoDepositCalls[0]).not.toContain('since=');
+	});
+
+	it('出金: 100 件未満のレスポンス 1 ページで complete:true を返す', async () => {
+		const { fetchDepositWithdrawal } = await import('../../../src/handlers/portfolio/fetch.js');
+		const oneShotPage = Array.from({ length: 3 }, (_, i) =>
+			makeWithdrawal({ uuid: `wd-${i + 1}`, requested_at: 1710000000000 + i * 1000, asset: 'btc' }),
+		);
+		const fetcher = vi.fn(async (url: string) => {
+			if (url.includes('asset=jpy')) {
+				if (url.includes('withdrawal_history')) {
+					return new Response(JSON.stringify(mockBitbankSuccess({ withdrawals: [] })), { status: 200 });
+				}
+				return new Response(JSON.stringify(mockBitbankSuccess({ deposits: [] })), { status: 200 });
+			}
+			if (url.includes('withdrawal_history')) {
+				return new Response(JSON.stringify(mockBitbankSuccess({ withdrawals: oneShotPage })), { status: 200 });
+			}
+			return new Response(JSON.stringify(mockBitbankSuccess({ deposits: [] })), { status: 200 });
+		}) as unknown as typeof fetch;
+		const client = new BitbankPrivateClient({ fetcher });
+
+		const result = await fetchDepositWithdrawal(client);
+		if (!result) throw new Error('fetchDepositWithdrawal returned null');
+		expect(result.withdrawals).toHaveLength(3);
+		expect(result.isComplete).toBe(true);
+
+		const fetchMock = fetcher as unknown as ReturnType<typeof vi.fn>;
+		const cryptoWdCalls = fetchMock.mock.calls
+			.map((c) => c[0] as string)
+			.filter((u) => u.includes('withdrawal_history') && !u.includes('asset=jpy'));
+		expect(cryptoWdCalls).toHaveLength(1);
+		expect(cryptoWdCalls[0]).not.toContain('since=');
+	});
+
+	it('入金: 100 件（満杯）+ 残り 2 ページで境界 dedup 込みで complete:true を返す', async () => {
 		const { fetchDepositWithdrawal } = await import('../../../src/handlers/portfolio/fetch.js');
 		const tBoundary = 1710000999000;
-		// crypto 入金: page1 1000 件（うち末尾 3 件が同一 ts）+ page2 5 件（先頭 2 件重複 + 新規 3 件）
-		const cryptoPage1 = Array.from({ length: 1000 }, (_, i) =>
+		// crypto 入金: page1 100 件（うち末尾 3 件が同一 ts）+ page2 5 件（先頭 2 件重複 + 新規 3 件）
+		const cryptoPage1 = Array.from({ length: 100 }, (_, i) =>
 			makeDeposit({
 				uuid: `dep-${i + 1}`,
-				confirmed_at: i < 997 ? 1710000000000 + i * 1000 : tBoundary,
+				confirmed_at: i < 97 ? 1710000000000 + i * 1000 : tBoundary,
 				asset: 'btc',
 			}),
 		);
 		const cryptoPage2 = [
-			makeDeposit({ uuid: 'dep-998', confirmed_at: tBoundary, asset: 'btc' }),
-			makeDeposit({ uuid: 'dep-1000', confirmed_at: tBoundary, asset: 'btc' }),
-			makeDeposit({ uuid: 'dep-1001', confirmed_at: tBoundary, asset: 'btc' }),
-			makeDeposit({ uuid: 'dep-1002', confirmed_at: tBoundary, asset: 'btc' }),
-			makeDeposit({ uuid: 'dep-1003', confirmed_at: tBoundary + 1000, asset: 'btc' }),
+			makeDeposit({ uuid: 'dep-98', confirmed_at: tBoundary, asset: 'btc' }),
+			makeDeposit({ uuid: 'dep-100', confirmed_at: tBoundary, asset: 'btc' }),
+			makeDeposit({ uuid: 'dep-101', confirmed_at: tBoundary, asset: 'btc' }),
+			makeDeposit({ uuid: 'dep-102', confirmed_at: tBoundary, asset: 'btc' }),
+			makeDeposit({ uuid: 'dep-103', confirmed_at: tBoundary + 1000, asset: 'btc' }),
 		];
 
-		// URL ベースで crypto / jpy を振り分ける fetcher
 		let cryptoPage = 0;
 		const fetcher = vi.fn(async (url: string) => {
-			// jpy のレスポンスは空（テストでは crypto のみ検証）
 			if (url.includes('asset=jpy')) {
 				if (url.includes('deposit_history')) {
 					return new Response(JSON.stringify(mockBitbankSuccess({ deposits: [] })), { status: 200 });
@@ -303,19 +412,18 @@ describe('paginateDeposits / paginateWithdrawals — ページネーション境
 				cryptoPage++;
 				return new Response(JSON.stringify(mockBitbankSuccess({ deposits: body })), { status: 200 });
 			}
-			// withdrawal: crypto 側も空
 			return new Response(JSON.stringify(mockBitbankSuccess({ withdrawals: [] })), { status: 200 });
 		}) as unknown as typeof fetch;
 		const client = new BitbankPrivateClient({ fetcher });
 
 		const result = await fetchDepositWithdrawal(client);
 		if (!result) throw new Error('fetchDepositWithdrawal returned null');
-		// crypto 入金 1003 件（重複 2 件除く）が dedup されている
-		expect(result.deposits).toHaveLength(1003);
+		// 100 (page1) + 3 新規 (page2) = 103 件、重複 2 件は dedup される
+		expect(result.deposits).toHaveLength(103);
 		const uuids = result.deposits.map((d) => d.uuid);
-		expect(uuids).toContain('dep-1001');
-		expect(uuids).toContain('dep-1002');
-		expect(uuids).toContain('dep-1003');
+		expect(uuids).toContain('dep-101');
+		expect(uuids).toContain('dep-102');
+		expect(uuids).toContain('dep-103');
 		expect(new Set(uuids).size).toBe(uuids.length);
 		expect(result.isComplete).toBe(true);
 
@@ -324,26 +432,26 @@ describe('paginateDeposits / paginateWithdrawals — ページネーション境
 		const cryptoDepositCalls = fetchMock.mock.calls
 			.map((c) => c[0] as string)
 			.filter((u) => u.includes('deposit_history') && !u.includes('asset=jpy'));
-		expect(cryptoDepositCalls.length).toBeGreaterThanOrEqual(2);
+		expect(cryptoDepositCalls).toHaveLength(2);
 		expect(cryptoDepositCalls[1]).toContain(`since=${tBoundary}`);
 		expect(cryptoDepositCalls[1]).not.toContain(`since=${tBoundary + 1}`);
 	});
 
-	it('出金: ページ境界に同一 requested_at の出金が跨っていても uuid で dedup されて全件取得', async () => {
+	it('出金: 100 件（満杯）+ 残り 2 ページで境界 dedup 込みで complete:true を返す', async () => {
 		const { fetchDepositWithdrawal } = await import('../../../src/handlers/portfolio/fetch.js');
 		const tBoundary = 1710000999000;
-		const cryptoWdPage1 = Array.from({ length: 1000 }, (_, i) =>
+		const cryptoWdPage1 = Array.from({ length: 100 }, (_, i) =>
 			makeWithdrawal({
 				uuid: `wd-${i + 1}`,
-				requested_at: i < 998 ? 1710000000000 + i * 1000 : tBoundary,
+				requested_at: i < 98 ? 1710000000000 + i * 1000 : tBoundary,
 				asset: 'btc',
 			}),
 		);
 		const cryptoWdPage2 = [
-			makeWithdrawal({ uuid: 'wd-999', requested_at: tBoundary, asset: 'btc' }),
-			makeWithdrawal({ uuid: 'wd-1000', requested_at: tBoundary, asset: 'btc' }),
-			makeWithdrawal({ uuid: 'wd-1001', requested_at: tBoundary, asset: 'btc' }),
-			makeWithdrawal({ uuid: 'wd-1002', requested_at: tBoundary + 1000, asset: 'btc' }),
+			makeWithdrawal({ uuid: 'wd-99', requested_at: tBoundary, asset: 'btc' }),
+			makeWithdrawal({ uuid: 'wd-100', requested_at: tBoundary, asset: 'btc' }),
+			makeWithdrawal({ uuid: 'wd-101', requested_at: tBoundary, asset: 'btc' }),
+			makeWithdrawal({ uuid: 'wd-102', requested_at: tBoundary + 1000, asset: 'btc' }),
 		];
 
 		let cryptoPage = 0;
@@ -365,11 +473,11 @@ describe('paginateDeposits / paginateWithdrawals — ページネーション境
 
 		const result = await fetchDepositWithdrawal(client);
 		if (!result) throw new Error('fetchDepositWithdrawal returned null');
-		// 1000 + 2 新規 (wd-1001, wd-1002) = 1002 件
-		expect(result.withdrawals).toHaveLength(1002);
+		// 100 (page1) + 2 新規 (wd-101, wd-102) = 102 件
+		expect(result.withdrawals).toHaveLength(102);
 		const uuids = result.withdrawals.map((w) => w.uuid);
-		expect(uuids).toContain('wd-1001');
-		expect(uuids).toContain('wd-1002');
+		expect(uuids).toContain('wd-101');
+		expect(uuids).toContain('wd-102');
 		expect(new Set(uuids).size).toBe(uuids.length);
 		expect(result.isComplete).toBe(true);
 
@@ -377,6 +485,7 @@ describe('paginateDeposits / paginateWithdrawals — ページネーション境
 		const cryptoWdCalls = fetchMock.mock.calls
 			.map((c) => c[0] as string)
 			.filter((u) => u.includes('withdrawal_history') && !u.includes('asset=jpy'));
+		expect(cryptoWdCalls).toHaveLength(2);
 		expect(cryptoWdCalls[1]).toContain(`since=${tBoundary}`);
 		expect(cryptoWdCalls[1]).not.toContain(`since=${tBoundary + 1}`);
 	});
