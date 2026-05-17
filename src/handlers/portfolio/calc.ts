@@ -251,19 +251,36 @@ export function calcPeriodRealizedPnl(
 // ── 信用 PnL 集計 ──
 
 /**
- * 信用約定履歴から実現損益と利息を集計する。
+ * 信用約定履歴から実現損益・利息・手数料を集計する。
  *
- * - profit_loss: 決済約定のみに付与される。建玉約定はスキップ。
- * - interest: 決済約定のみに付与される（コスト = 正値）。
+ * bitbank API 仕様の整理（bitbank-api-docs / rest-api_JP.md + 信用取引ルール）:
+ *   - profit_loss: 決済約定のみに付与。平均取得価格法によるグロス実現損益。
+ *     手数料・利息は控除されていない（信用取引ルール: 売買手数料・利息は
+ *     別ロジックで算出され、CSV 報告書でも実現損益・実現手数料・実現利息は
+ *     別カラムとして記録される）。
+ *   - interest: 決済時に発生する利息（コスト = 正値）。profit_loss とは独立。
+ *   - fee_occurred_amount_quote: その約定で発生した quote 通貨建て手数料。
+ *     信用取引では決済時にまとめて徴収されるが、API レスポンスでは発生時点で
+ *     記録される。profit_loss とは独立に控除する必要がある。
+ *     ※ fee_amount_quote ではなく fee_occurred_amount_quote を採用する理由:
+ *        後者は新規建て・決済の各約定で発生額を per-trade で正確に表すため、
+ *        期間集計（年初来 / 月初来）でも timing 上のズレを最小化できる。
+ *
+ * total = spot + margin_realized - margin_interest - margin_fee
+ *
+ * - 建玉約定（profit_loss なし）でも fee_occurred_amount_quote / interest が
+ *   付くケースは合算する（profit_loss の有無を close_trade_count の判定にのみ使う）。
  * - 期間絞り込みは呼び出し側で事前に行うか、calcPeriodMarginPnl を使う。
  */
 export function calcMarginPnl(trades: RawMarginTrade[]): {
 	margin_realized_pnl: number;
 	margin_interest: number;
+	margin_fee: number;
 	close_trade_count: number;
 } {
 	let realized = 0;
 	let interest = 0;
+	let fee = 0;
 	let count = 0;
 	for (const t of trades) {
 		if (t.profit_loss != null) {
@@ -279,16 +296,23 @@ export function calcMarginPnl(trades: RawMarginTrade[]): {
 				interest += it;
 			}
 		}
+		if (t.fee_occurred_amount_quote != null) {
+			const fq = Number(t.fee_occurred_amount_quote);
+			if (Number.isFinite(fq)) {
+				fee += fq;
+			}
+		}
 	}
 	return {
 		margin_realized_pnl: Math.round(realized),
 		margin_interest: Math.round(interest),
+		margin_fee: Math.round(fee),
 		close_trade_count: count,
 	};
 }
 
 /**
- * 期間内の信用約定のみで PnL と利息を集計する。
+ * 期間内の信用約定のみで PnL・利息・手数料を集計する。
  */
 export function calcPeriodMarginPnl(
 	trades: RawMarginTrade[],
@@ -298,6 +322,7 @@ export function calcPeriodMarginPnl(
 ): {
 	margin_realized_pnl: number;
 	margin_interest: number;
+	margin_fee: number;
 	close_trade_count: number;
 	period_start: string;
 	period_end: string;
@@ -309,17 +334,19 @@ export function calcPeriodMarginPnl(
 
 /**
  * 現物の実現損益と信用 PnL から口座全体 PnL を構築する。
- * total = spot_realized + margin_realized - margin_interest（interest はコスト = 正値）
+ * total = spot_realized + margin_realized - margin_interest - margin_fee
+ * （interest / fee はいずれもコスト = 正値で保持し、total では控除する）
  */
 export function buildAccountPnl(
 	spotRealizedPnl: number,
-	marginPnl: { margin_realized_pnl: number; margin_interest: number },
+	marginPnl: { margin_realized_pnl: number; margin_interest: number; margin_fee: number },
 ): AccountPnl {
 	return {
 		spot_realized_pnl: spotRealizedPnl,
 		margin_realized_pnl: marginPnl.margin_realized_pnl,
 		margin_interest: marginPnl.margin_interest,
-		total: spotRealizedPnl + marginPnl.margin_realized_pnl - marginPnl.margin_interest,
+		margin_fee: marginPnl.margin_fee,
+		total: spotRealizedPnl + marginPnl.margin_realized_pnl - marginPnl.margin_interest - marginPnl.margin_fee,
 	};
 }
 
@@ -328,7 +355,7 @@ export function buildAccountPnl(
  */
 export function buildPeriodAccountPnl(
 	spotRealizedPnl: number,
-	marginPnl: { margin_realized_pnl: number; margin_interest: number },
+	marginPnl: { margin_realized_pnl: number; margin_interest: number; margin_fee: number },
 	periodStart: string,
 	periodEnd: string,
 ): PeriodAccountPnl {

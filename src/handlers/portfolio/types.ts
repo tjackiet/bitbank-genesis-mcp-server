@@ -111,11 +111,13 @@ export interface PeriodRealizedPnl {
 export interface AccountPnl {
 	/** 現物の実現損益（JPY） */
 	spot_realized_pnl: number;
-	/** 信用の決済済み損益合計（JPY） */
+	/** 信用の決済済み損益合計（JPY、グロス: 利息・手数料控除前） */
 	margin_realized_pnl: number;
 	/** 信用の支払利息合計（JPY、コスト = 正値） */
 	margin_interest: number;
-	/** 口座全体 PnL = spot_realized + margin_realized - margin_interest */
+	/** 信用の発生手数料合計（JPY、fee_occurred_amount_quote の合算。コスト = 正値） */
+	margin_fee: number;
+	/** 口座全体 PnL = spot_realized + margin_realized - margin_interest - margin_fee */
 	total: number;
 }
 

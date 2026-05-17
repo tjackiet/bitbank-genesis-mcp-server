@@ -187,11 +187,13 @@ describe('analyze_my_portfolio', () => {
 		expect(result.data.account_pnl).toBeDefined();
 		expect(result.data.account_pnl.margin_realized_pnl).toBe(0);
 		expect(result.data.account_pnl.margin_interest).toBe(0);
+		expect(result.data.account_pnl.margin_fee).toBe(0);
 		expect(result.data.account_pnl.total).toBe(result.data.account_pnl.spot_realized_pnl);
 	});
 
-	it('信用約定あり: account_pnl.total が spot + margin - interest と一致', async () => {
-		// rawMarginTradeHistoryResponse は決済 1 件（profit_loss=5000, interest=30）+ 建玉 2 件
+	it('信用約定あり: account_pnl.total が spot + margin - interest - fee と一致', async () => {
+		// rawMarginTradeHistoryResponse は決済 1 件（profit_loss=5000, interest=30,
+		// fee_occurred_amount_quote=155）+ 建玉 2 件（fee_occurred_amount_quote=0）
 		setupFetchMock({ marginTrades: rawMarginTradeHistoryResponse });
 
 		const { default: handler } = await import('../../src/handlers/analyzeMyPortfolioHandler.js');
@@ -206,10 +208,11 @@ describe('analyze_my_portfolio', () => {
 		expect(pnl).toBeDefined();
 		expect(pnl.margin_realized_pnl).toBe(5000);
 		expect(pnl.margin_interest).toBe(30);
-		expect(pnl.total).toBe(pnl.spot_realized_pnl + 5000 - 30);
+		expect(pnl.margin_fee).toBe(155);
+		expect(pnl.total).toBe(pnl.spot_realized_pnl + 5000 - 30 - 155);
 	});
 
-	it('paginateMarginTrades 失敗時のフォールバック: margin_realized_pnl=0 / margin_interest=0 で ok を返す', async () => {
+	it('paginateMarginTrades 失敗時のフォールバック: margin_realized_pnl=0 / interest=0 / fee=0 で ok を返す', async () => {
 		setupFetchMock({ marginTradesFail: true });
 
 		const { default: handler } = await import('../../src/handlers/analyzeMyPortfolioHandler.js');
@@ -223,6 +226,7 @@ describe('analyze_my_portfolio', () => {
 		expect(result.data.account_pnl).toBeDefined();
 		expect(result.data.account_pnl.margin_realized_pnl).toBe(0);
 		expect(result.data.account_pnl.margin_interest).toBe(0);
+		expect(result.data.account_pnl.margin_fee).toBe(0);
 	});
 
 	it('yearly_account_pnl / monthly_account_pnl の期間フィルターが正しく効く', async () => {
@@ -254,7 +258,8 @@ describe('analyze_my_portfolio', () => {
 						price: '15500000',
 						maker_taker: 'maker',
 						fee_amount_base: '0',
-						fee_amount_quote: '0',
+						fee_amount_quote: '50',
+						fee_occurred_amount_quote: '50',
 						profit_loss: '1000',
 						interest: '10',
 						executed_at: beforeMonthStartMs, // 当年内・当月外
@@ -270,7 +275,8 @@ describe('analyze_my_portfolio', () => {
 						price: '15500000',
 						maker_taker: 'maker',
 						fee_amount_base: '0',
-						fee_amount_quote: '0',
+						fee_amount_quote: '25',
+						fee_occurred_amount_quote: '25',
 						profit_loss: '500',
 						interest: '5',
 						executed_at: afterMonthStartMs, // 当年内・当月内
@@ -287,14 +293,16 @@ describe('analyze_my_portfolio', () => {
 			});
 
 			assertOk(result);
-			// yearly: 両方含む（1000 + 500, 10 + 5）
+			// yearly: 両方含む（1000 + 500, 10 + 5, 50 + 25）
 			expect(result.data.yearly_account_pnl).toBeDefined();
 			expect(result.data.yearly_account_pnl.margin_realized_pnl).toBe(1500);
 			expect(result.data.yearly_account_pnl.margin_interest).toBe(15);
-			// monthly: 月初後のみ（500, 5）
+			expect(result.data.yearly_account_pnl.margin_fee).toBe(75);
+			// monthly: 月初後のみ（500, 5, 25）
 			expect(result.data.monthly_account_pnl).toBeDefined();
 			expect(result.data.monthly_account_pnl.margin_realized_pnl).toBe(500);
 			expect(result.data.monthly_account_pnl.margin_interest).toBe(5);
+			expect(result.data.monthly_account_pnl.margin_fee).toBe(25);
 		} finally {
 			vi.useRealTimers();
 		}

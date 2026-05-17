@@ -719,16 +719,17 @@ export default async function analyzeMyPortfolioHandler(args: {
 			}
 		}
 
-		// 実現損益（現物単独）と口座全体 PnL（現物 + 信用決済損益 - 利息）
+		// 実現損益（現物単独）と口座全体 PnL（現物 + 信用決済損益 - 利息 - 手数料）
 		if (accountPnl != null) {
 			const spotSign = accountPnl.spot_realized_pnl >= 0 ? '+' : '';
 			lines.push(`Realized PnL (Spot): ${spotSign}${formatPriceJPY(accountPnl.spot_realized_pnl)}`);
 			const totalSign = accountPnl.total >= 0 ? '+' : '';
-			const hasMargin = accountPnl.margin_realized_pnl !== 0 || accountPnl.margin_interest !== 0;
+			const hasMargin =
+				accountPnl.margin_realized_pnl !== 0 || accountPnl.margin_interest !== 0 || accountPnl.margin_fee !== 0;
 			if (hasMargin) {
 				const mSign = accountPnl.margin_realized_pnl >= 0 ? '+' : '';
 				lines.push(
-					`Account PnL: ${totalSign}${formatPriceJPY(accountPnl.total)} (Spot: ${spotSign}${formatPriceJPY(accountPnl.spot_realized_pnl)} / Margin: ${mSign}${formatPriceJPY(accountPnl.margin_realized_pnl)} / Interest: -${formatPriceJPY(accountPnl.margin_interest)})`,
+					`Account PnL: ${totalSign}${formatPriceJPY(accountPnl.total)} (Spot: ${spotSign}${formatPriceJPY(accountPnl.spot_realized_pnl)} / Margin: ${mSign}${formatPriceJPY(accountPnl.margin_realized_pnl)} / Interest: -${formatPriceJPY(accountPnl.margin_interest)} / Fee: -${formatPriceJPY(accountPnl.margin_fee)})`,
 				);
 			} else {
 				lines.push(`Account PnL: ${totalSign}${formatPriceJPY(accountPnl.total)}`);
