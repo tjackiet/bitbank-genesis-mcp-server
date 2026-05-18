@@ -161,7 +161,9 @@ export default async function prepareDepthData(
 		}
 		const bandRatio = bandAskVol > 0 ? Number((bandBidVol / bandAskVol).toFixed(4)) : null;
 
-		const timestamp = Number(depth.data.timestamp ?? Date.now());
+		// getDepth が timestamp を必須として保証するため、ここでは Date.now() fallback は不要。
+		// 上流欠損は getDepth 側で upstream fail として倒れている。
+		const timestamp = Number(depth.data.timestamp);
 
 		const data: PrepareDepthDataResult = {
 			bids: bidSteps,

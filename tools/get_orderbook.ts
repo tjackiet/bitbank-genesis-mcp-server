@@ -501,7 +501,14 @@ export default async function getOrderbook(params: GetOrderbookParams | string =
 		}
 		const rawAsks: RawLevel[] = (d.asks as RawLevel[]).slice(0, maxLevels);
 		const rawBids: RawLevel[] = (d.bids as RawLevel[]).slice(0, maxLevels);
-		const timestamp = toNum(d.timestamp ?? d.timestamp_ms) ?? Date.now();
+		// 上流 timestamp は欠損したら Date.now() で偽装せず upstream fail に倒す。
+		// 板スナップショットの timestamp は「上流が観測した時刻」が意味であり、受信時刻で
+		// 代用すると古いデータをあたかも最新かのように見せてしまう。fetchedAt（受信時刻）は
+		// meta に別途含まれる。
+		const timestamp = toNum(d.timestamp ?? d.timestamp_ms);
+		if (timestamp == null || timestamp <= 0) {
+			return fail('上流レスポンスに timestamp が含まれていません', 'upstream');
+		}
 
 		// NumLevel 変換（summary / statistics で使用）
 		const bidsNum: NumLevel[] = rawBids.map(([p, s]) => [Number(p), Number(s)]);

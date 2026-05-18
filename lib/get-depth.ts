@@ -73,6 +73,15 @@ export default async function getDepth(pair: string, { timeoutMs = 3000, maxLeve
 		const asks = (d.asks as Array<[unknown, unknown]>).slice(0, maxLevels);
 		const bids = (d.bids as Array<[unknown, unknown]>).slice(0, maxLevels);
 
+		// 上流 timestamp は欠損したら Date.now() で偽装せず upstream fail に倒す。
+		// 板スナップショットの timestamp は「上流が観測した時刻」が意味であり、
+		// 受信時刻 (Date.now / fetchedAt) で代用すると古いデータをあたかも最新かのように
+		// 見せてしまう。fetchedAt（受信時刻）は meta に別途含まれる。
+		const tsNum = Number(d.timestamp ?? d.timestamp_ms);
+		if (!Number.isFinite(tsNum) || tsNum <= 0) {
+			return GetDepthOutputSchema.parse(fail('上流レスポンスに timestamp が含まれていません', 'upstream'));
+		}
+
 		// 簡易サマリ（最良気配と件数）
 		const bestAsk = asks[0]?.[0] ?? null;
 		const bestBid = bids[0]?.[0] ?? null;
@@ -92,7 +101,7 @@ export default async function getDepth(pair: string, { timeoutMs = 3000, maxLeve
 			bids_under: d.bids_under,
 			ask_market: d.ask_market,
 			bid_market: d.bid_market,
-			timestamp: Number(d.timestamp ?? d.timestamp_ms ?? Date.now()),
+			timestamp: tsNum,
 			sequenceId:
 				d.sequenceId != null ? Number(d.sequenceId) : d.sequence_id != null ? Number(d.sequence_id) : undefined,
 			overlays: {
