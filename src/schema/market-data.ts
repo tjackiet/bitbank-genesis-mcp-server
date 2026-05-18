@@ -91,9 +91,11 @@ export const OrderbookStatisticsDataSchema = z.object({
 			askVolume: z.number(),
 			bidValue: z.number(),
 			askValue: z.number(),
-			// ask 板が枯れて bid だけ存在するとき実装は Infinity を返す（tools/get_orderbook.ts buildStatistics）。
-			// Zod v4 の z.number() は Infinity を拒否するので、実態に合わせて literal(Infinity) を許容する。
-			ratio: z.union([z.number(), z.literal(Number.POSITIVE_INFINITY)]),
+			// ask 板が枯れて bid だけ存在するとき ratio は算出不能（数学的には Infinity）。
+			// MCP wire format (JSON) では Infinity を表現できないため、buildStatistics 側で
+			// null に正規化している（tools/get_orderbook.ts）。
+			// 「買い優勢」の意味は interpretation / summary.overall / summary.strength で保持。
+			ratio: z.number().nullable(),
 			interpretation: z.string(),
 		}),
 	),

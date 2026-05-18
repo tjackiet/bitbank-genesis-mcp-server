@@ -251,18 +251,30 @@ function buildStatistics(
 		return { vol, val };
 	}
 
-	const rangesOut = ranges.map((pct) => {
+	// rawRatio は overall/strength 判定用に保持（ask=0 のときは Infinity）。
+	// 出力 ratio は wire format (JSON) と整合させるため finite な数値 or null に正規化する。
+	const rangeComputed = ranges.map((pct) => {
 		const b = sumWithinPct(bidsNum, pct, 'bid');
 		const a = sumWithinPct(asksNum, pct, 'ask');
-		const ratio = a.vol > 0 ? b.vol / a.vol : b.vol > 0 ? Infinity : 0;
-		const interpretation = ratio > 1.2 ? '買い板が厚い（下値堅い）' : ratio < 0.8 ? '売り板が厚い（上値重い）' : '均衡';
+		const askDried = a.vol === 0 && b.vol > 0;
+		const rawRatio = a.vol > 0 ? b.vol / a.vol : b.vol > 0 ? Infinity : 0;
+		return { pct, b, a, askDried, rawRatio };
+	});
+	const rangesOut = rangeComputed.map(({ pct, b, a, askDried, rawRatio }) => {
+		const interpretation = askDried
+			? '買い板が厚い（売り板=0、ratio 算出不能）'
+			: rawRatio > 1.2
+				? '買い板が厚い（下値堅い）'
+				: rawRatio < 0.8
+					? '売り板が厚い（上値重い）'
+					: '均衡';
 		return {
 			pct,
 			bidVolume: Number(b.vol.toFixed(4)),
 			askVolume: Number(a.vol.toFixed(4)),
 			bidValue: Math.round(b.val),
 			askValue: Math.round(a.val),
-			ratio: Number(ratio.toFixed(2)),
+			ratio: Number.isFinite(rawRatio) ? Number(rawRatio.toFixed(2)) : null,
 			interpretation,
 		};
 	});
@@ -316,10 +328,12 @@ function buildStatistics(
 			distance: mid ? Number((((p - mid) / mid) * 100).toFixed(2)) : null,
 		}));
 
-	// Overall assessment
-	const lastRatio = rangesOut[0]?.ratio ?? 1;
-	const overall = lastRatio > 1.1 ? '買い優勢' : lastRatio < 0.9 ? '売り優勢' : '均衡';
-	const strength = Math.abs(lastRatio - 1) > 0.3 ? 'strong' : Math.abs(lastRatio - 1) > 0.1 ? 'moderate' : 'weak';
+	// Overall assessment は finite/Infinity 区別なく rangeComputed の rawRatio を使う。
+	// rangesOut[0].ratio は ask=0 のとき null になるので overall/strength 判定には使えない。
+	const lastRawRatio = rangeComputed[0]?.rawRatio ?? 1;
+	const overall = lastRawRatio > 1.1 ? '買い優勢' : lastRawRatio < 0.9 ? '売り優勢' : '均衡';
+	// |Infinity - 1| === Infinity > 0.3 で strong に分類される（ask=0 で買い圧倒のケース）。
+	const strength = Math.abs(lastRawRatio - 1) > 0.3 ? 'strong' : Math.abs(lastRawRatio - 1) > 0.1 ? 'moderate' : 'weak';
 	const liquidity =
 		(rangesOut[0]?.bidVolume ?? 0) + (rangesOut[0]?.askVolume ?? 0) > 20
 			? 'high'
@@ -343,7 +357,7 @@ function buildStatistics(
 		'📊 板の厚み分析:',
 		...rangesOut.map(
 			(r) =>
-				`±${r.pct}%レンジ: 買い ${r.bidVolume} BTC / 売り ${r.askVolume} BTC (比率 ${r.ratio}) → ${r.interpretation}`,
+				`±${r.pct}%レンジ: 買い ${r.bidVolume} BTC / 売り ${r.askVolume} BTC (比率 ${r.ratio === null ? '算出不能（売り板=0）' : r.ratio}) → ${r.interpretation}`,
 		),
 		'',
 		'📈 価格帯別の流動性分布:',

@@ -496,10 +496,12 @@ describe('get_orderbook', () => {
 			expect(() => GetOrderbookOutputSchema.parse(res)).not.toThrow();
 		});
 
-		it('statistics: ratio=Infinity（ask 板 size=0、bid 側だけ vol>0）でも OutputSchema を通る', async () => {
+		it('statistics: ask 側枯渇 (askVolume=0 && bidVolume>0) で ratio=null、買い優勢 strong を維持し JSON 往復後も schema 一致', async () => {
 			// best bid と best ask が同価で並ぶ + ask の size が 0 のとき、
-			// buildStatistics の sumWithinPct で ask.vol=0 / bid.vol>0 となり ratio が Infinity になる。
-			// この Zod 拒否経路を回帰防止する。
+			// buildStatistics の sumWithinPct で ask.vol=0 / bid.vol>0 となる。
+			// 数学的には ratio = Infinity だが MCP wire format で表現できないため、
+			// 実装は ratio: null に正規化し、意味（買い優勢 / strong / 売り板=0）は
+			// interpretation / summary / content text 側で保持する。
 			mockFetch({
 				success: 1,
 				data: {
@@ -516,8 +518,28 @@ describe('get_orderbook', () => {
 			});
 			const res = await getOrderbook({ pair: 'btc_jpy', mode: 'statistics', ranges: [0.5] });
 			assertOk(res);
-			expect(d(res).ranges[0].ratio).toBe(Infinity);
+
+			// 1. ratio は null（Infinity を出さない）
+			expect(d(res).ranges[0].ratio).toBeNull();
+
+			// 2. 意味は失わない: interpretation / overall / strength
+			expect(d(res).ranges[0].interpretation).toContain('買い板が厚い');
+			expect(d(res).ranges[0].interpretation).toContain('算出不能');
+			expect(d(res).summary.overall).toBe('買い優勢');
+			expect(d(res).summary.strength).toBe('strong');
+			expect(d(res).summary.recommendation).toContain('買いエントリー');
+
+			// 3. content text にも算出不能の旨が出る
+			expect(res.summary).toContain('算出不能');
+
+			// 4. structuredContent が schema を通る
 			expect(() => GetOrderbookOutputSchema.parse(res)).not.toThrow();
+
+			// 5. JSON serialize 往復後も structuredContent と schema が一致する
+			//    （JSON.stringify(null) === 'null' / JSON.stringify(Infinity) === 'null' の差を踏む経路）
+			const roundTripped = JSON.parse(JSON.stringify(res));
+			expect(roundTripped.data.ranges[0].ratio).toBeNull();
+			expect(() => GetOrderbookOutputSchema.parse(roundTripped)).not.toThrow();
 		});
 	});
 });
