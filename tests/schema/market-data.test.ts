@@ -71,7 +71,13 @@ describe('GetCandlesInputSchema', () => {
 
 	it('limit 範囲外を拒否する', () => {
 		expect(() => GetCandlesInputSchema.parse({ pair: 'btc_jpy', type: '1day', limit: 0 })).toThrow();
-		expect(() => GetCandlesInputSchema.parse({ pair: 'btc_jpy', type: '1day', limit: 1001 })).toThrow();
+		// max=10000 まで許容（multi-day/multi-year 経路の実上限と整合）
+		expect(() => GetCandlesInputSchema.parse({ pair: 'btc_jpy', type: '1day', limit: 10001 })).toThrow();
+	});
+
+	it('limit=10000 を受け入れる（multi-day 経路の実上限と整合）', () => {
+		const result = GetCandlesInputSchema.parse({ pair: 'btc_jpy', type: '1min', limit: 10000 });
+		expect(result.limit).toBe(10000);
 	});
 });
 

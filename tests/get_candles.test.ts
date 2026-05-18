@@ -1,8 +1,36 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { dayjs } from '../lib/datetime.js';
+import { GetCandlesInputSchema } from '../src/schemas.js';
 import getCandles, { toolDef } from '../tools/get_candles.js';
 import { assertFail, assertOk } from './_assertResult.js';
 import { candlesError } from './fixtures/bitbank-api.js';
+
+describe('GetCandlesInputSchema (limit 上限契約)', () => {
+	it('limit=10000 は schema レベルで通る（multi-day 経路の実上限と整合）', () => {
+		const parsed = GetCandlesInputSchema.parse({ pair: 'btc_jpy', type: '1min', limit: 10000 });
+		expect((parsed as { limit: number }).limit).toBe(10000);
+	});
+
+	it('limit=10001 は schema レベルで弾かれる', () => {
+		const result = GetCandlesInputSchema.safeParse({ pair: 'btc_jpy', type: '1min', limit: 10001 });
+		expect(result.success).toBe(false);
+	});
+
+	it('limit=200 / limit=1000 / limit=1 / limit 省略 など既存ケースは引き続き通る', () => {
+		expect(GetCandlesInputSchema.safeParse({ pair: 'btc_jpy', type: '1day', limit: 200 }).success).toBe(true);
+		expect(GetCandlesInputSchema.safeParse({ pair: 'btc_jpy', type: '1day', limit: 1000 }).success).toBe(true);
+		expect(GetCandlesInputSchema.safeParse({ pair: 'btc_jpy', type: '1day', limit: 1 }).success).toBe(true);
+		// 省略時は default(200) が適用される
+		const parsed = GetCandlesInputSchema.parse({ pair: 'btc_jpy', type: '1day' });
+		expect((parsed as { limit: number }).limit).toBe(200);
+	});
+
+	it('limit=0 / limit=-1 / 小数は引き続き弾かれる', () => {
+		expect(GetCandlesInputSchema.safeParse({ pair: 'btc_jpy', type: '1day', limit: 0 }).success).toBe(false);
+		expect(GetCandlesInputSchema.safeParse({ pair: 'btc_jpy', type: '1day', limit: -1 }).success).toBe(false);
+		expect(GetCandlesInputSchema.safeParse({ pair: 'btc_jpy', type: '1day', limit: 1.5 }).success).toBe(false);
+	});
+});
 
 describe('getCandles', () => {
 	const originalFetch = globalThis.fetch;
@@ -468,6 +496,64 @@ describe('getCandles', () => {
 
 		// Should have made multiple fetch calls (one per day batch)
 		expect(fetchMock.mock.calls.length).toBeGreaterThan(1);
+	});
+
+	// ── limit 上限（schema 緩和後の impl 側 validateLimit との整合） ──
+
+	describe('limit 上限: impl 側 validateLimit', () => {
+		const buildFetchMock = (rows: unknown[][]) =>
+			vi.fn().mockResolvedValue({
+				ok: true,
+				status: 200,
+				statusText: 'OK',
+				json: async () => ({
+					success: 1,
+					data: { candlestick: [{ ohlcv: rows }] },
+				}),
+			});
+
+		it('multi-year 経路: YEARLY_TYPES + limit=2000 は impl 側でも通る', async () => {
+			const baseTs = 1577836800000;
+			const ohlcv = Array.from({ length: 365 }, (_, i) => [
+				'100',
+				'110',
+				'90',
+				'105',
+				'1.0',
+				String(baseTs + i * 86400000),
+			]);
+			globalThis.fetch = buildFetchMock(ohlcv) as unknown as typeof fetch;
+
+			const res = await getCandles('btc_jpy', '1day', '2020', 2000);
+			assertOk(res);
+		});
+
+		it('multi-day 経路: DAILY_TYPES + limit=2000 は impl 側でも通る', async () => {
+			const baseTs = 1705276800000;
+			const ohlcv = Array.from({ length: 60 }, (_, i) => [
+				'100',
+				'110',
+				'90',
+				'105',
+				'1.0',
+				String(baseTs + i * 60_000),
+			]);
+			globalThis.fetch = buildFetchMock(ohlcv) as unknown as typeof fetch;
+
+			const res = await getCandles('btc_jpy', '1min', '20240115', 2000);
+			assertOk(res);
+		});
+
+		it('YEARLY_TYPES + limit=6000 は impl 側 validateLimit で user エラー（実上限 5000 超）', async () => {
+			// schema は通るが impl の maxLimit=5000 を超えるため user エラー
+			const baseTs = 1577836800000;
+			const ohlcv = [['100', '110', '90', '105', '1.0', String(baseTs)]];
+			globalThis.fetch = buildFetchMock(ohlcv) as unknown as typeof fetch;
+
+			const res = await getCandles('btc_jpy', '1day', '2020', 6000);
+			assertFail(res);
+			expect(res.meta?.errorType).toBe('user');
+		});
 	});
 
 	it('priceRange を正しく計算するべき', async () => {

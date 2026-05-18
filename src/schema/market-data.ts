@@ -217,9 +217,22 @@ export const GetCandlesInputSchema = z.object({
 		.string()
 		.optional()
 		.describe(
-			"YYYYMMDD format (e.g., 20251022). Fetches the {limit} most recent candles up to and including this date. For '1month' type use YYYY format. If omitted, returns latest candles.",
+			'type により形式が異なる:\n' +
+				'- 1min/5min/15min/30min/1hour → YYYYMMDD（例: 20251022）\n' +
+				'- 4hour/8hour/12hour/1day/1week/1month → YYYY（例: 2025）\n' +
+				'指定した日付/年を起点に limit 件の直近ローソク足を返す。省略時は最新。\n' +
+				'（互換: 年足系で YYYYMMDD を渡した場合は先頭4桁を年として使用）',
 		),
-	limit: z.number().int().min(1).max(1000).optional().default(200),
+	limit: z
+		.number()
+		.int()
+		.min(1)
+		.max(10000)
+		.optional()
+		.default(200)
+		.describe(
+			'デフォルト 200。1〜10000 の整数。type により実上限が変わる: 1min〜1hour は最大 10000（複数日取得）、4hour〜1month は最大 5000（複数年取得）、それ以外は 1000。実上限を超えると user エラー。',
+		),
 	view: z.enum(['full', 'items']).optional().default('full'),
 	tz: z
 		.string()
