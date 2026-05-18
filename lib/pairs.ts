@@ -15,8 +15,19 @@ import { getErrorMessage, isAbortError } from './error.js';
 /** /spot/pairs の URL（private API ホストだが認証不要） */
 export const SPOT_PAIRS_URL = 'https://api.bitbank.cc/v1/spot/pairs';
 
-/** ペア仕様のキャッシュ TTL。デフォルト 1 時間（ペア仕様は頻繁には変わらない） */
-const PAIRS_TTL_MS = Number(process.env.BITBANK_SPOT_PAIRS_TTL_MS ?? 60 * 60 * 1000);
+/**
+ * ペア仕様のキャッシュ TTL。デフォルト 1 時間（ペア仕様は頻繁には変わらない）。
+ * BITBANK_SPOT_PAIRS_TTL_MS が空文字 / NaN / 0 以下の場合はデフォルトにフォールバックする
+ * （誤って TTL=0 にしてキャッシュが恒久的に無効化されるのを防ぐため）。
+ */
+const DEFAULT_PAIRS_TTL_MS = 60 * 60 * 1000;
+function resolvePairsTtlMs(): number {
+	const raw = process.env.BITBANK_SPOT_PAIRS_TTL_MS;
+	if (raw == null || raw.trim() === '') return DEFAULT_PAIRS_TTL_MS;
+	const parsed = Number(raw);
+	return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_PAIRS_TTL_MS;
+}
+const PAIRS_TTL_MS = resolvePairsTtlMs();
 const FETCH_TIMEOUT_MS_DEFAULT = 5000;
 const CACHE_KEY = 'spot_pairs';
 

@@ -433,3 +433,61 @@ describe('fetchPairsSpec', () => {
 		expect(map.size).toBe(1);
 	});
 });
+
+// TTL 入力値の検証。Number('') === 0 など、誤った env で「キャッシュ実質無効」を
+// 招かないこと（resolvePairsTtlMs 経由でデフォルトにフォールバック）を保証する。
+describe('BITBANK_SPOT_PAIRS_TTL_MS の入力値検証', () => {
+	const originalTtl = process.env.BITBANK_SPOT_PAIRS_TTL_MS;
+
+	beforeEach(() => {
+		// 各テストで lib/pairs.ts を fresh import するため module cache をリセット
+		vi.resetModules();
+	});
+
+	afterEach(() => {
+		if (originalTtl == null) delete process.env.BITBANK_SPOT_PAIRS_TTL_MS;
+		else process.env.BITBANK_SPOT_PAIRS_TTL_MS = originalTtl;
+		globalThis.fetch = originalFetch;
+		vi.restoreAllMocks();
+	});
+
+	async function fetchTwice(spy: ReturnType<typeof vi.fn>): Promise<number> {
+		globalThis.fetch = spy as unknown as typeof fetch;
+		const mod = await import('../../lib/pairs.js');
+		mod.clearPairsSpecCache();
+		await mod.fetchPairsSpec();
+		await mod.fetchPairsSpec();
+		return spy.mock.calls.length;
+	}
+
+	it('空文字はデフォルト TTL にフォールバック（キャッシュが効く）', async () => {
+		process.env.BITBANK_SPOT_PAIRS_TTL_MS = '';
+		const spy = vi.fn(async () => new Response(JSON.stringify(mockSpotPairsResponse()), { status: 200 }));
+		expect(await fetchTwice(spy)).toBe(1);
+	});
+
+	it('"0" はデフォルト TTL にフォールバック（キャッシュが効く）', async () => {
+		process.env.BITBANK_SPOT_PAIRS_TTL_MS = '0';
+		const spy = vi.fn(async () => new Response(JSON.stringify(mockSpotPairsResponse()), { status: 200 }));
+		expect(await fetchTwice(spy)).toBe(1);
+	});
+
+	it('負値はデフォルト TTL にフォールバック', async () => {
+		process.env.BITBANK_SPOT_PAIRS_TTL_MS = '-1000';
+		const spy = vi.fn(async () => new Response(JSON.stringify(mockSpotPairsResponse()), { status: 200 }));
+		expect(await fetchTwice(spy)).toBe(1);
+	});
+
+	it('NaN 文字列はデフォルト TTL にフォールバック', async () => {
+		process.env.BITBANK_SPOT_PAIRS_TTL_MS = 'abc';
+		const spy = vi.fn(async () => new Response(JSON.stringify(mockSpotPairsResponse()), { status: 200 }));
+		expect(await fetchTwice(spy)).toBe(1);
+	});
+
+	it('正の有限値は採用される', async () => {
+		process.env.BITBANK_SPOT_PAIRS_TTL_MS = '60000';
+		const spy = vi.fn(async () => new Response(JSON.stringify(mockSpotPairsResponse()), { status: 200 }));
+		// fetch 1 回でキャッシュが効き、2 回目は呼ばれない
+		expect(await fetchTwice(spy)).toBe(1);
+	});
+});
