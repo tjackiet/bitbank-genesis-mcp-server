@@ -65,10 +65,16 @@ function findNonFiniteNumbers(value: unknown, path = '$'): string[] {
 	return found;
 }
 
-/** content[0].text を抜き出す（handler ハンドラの戻り値が McpResponse 型のとき） */
+/**
+ * content[].text を全て改行結合して返す（handler の戻り値が McpResponse 型のとき）。
+ * 「LLM 可視 content」を監査する観点では content[1] 以降にぶら下がる warning 等も拾う必要があるため、
+ * content[0] のみではなく全テキストブロックを連結する。
+ */
 function getContentText(res: { content?: Array<{ type: string; text: string }> }): string {
-	const first = res.content?.[0];
-	return first?.text ?? '';
+	return (res.content ?? [])
+		.map((c) => c.text)
+		.filter(Boolean)
+		.join('\n');
 }
 
 /** 共通の fetch モック（ok レスポンス） */
@@ -174,6 +180,7 @@ describe('PR5 audit / 2. JSON safety (NaN / Infinity / -Infinity 再帰検査)',
 	afterEach(() => {
 		vi.restoreAllMocks();
 		delete process.env.BITBANK_PAIRS_MODE;
+		delete process.env.TICKERS_JPY_URL;
 	});
 
 	it('get_ticker: 正常系 → NaN/Infinity を含まない', async () => {
@@ -334,6 +341,7 @@ describe('PR5 audit / 3. JSON round-trip preservation', () => {
 	afterEach(() => {
 		vi.restoreAllMocks();
 		delete process.env.BITBANK_PAIRS_MODE;
+		delete process.env.TICKERS_JPY_URL;
 	});
 
 	function assertRoundTrip<T>(res: T, schema: { parse: (v: unknown) => unknown }, invariants: (parsed: T) => void) {
@@ -580,6 +588,7 @@ describe('PR5 audit / 5. content visibility (warning / drop / count / timestamp 
 	afterEach(() => {
 		vi.restoreAllMocks();
 		delete process.env.BITBANK_PAIRS_MODE;
+		delete process.env.TICKERS_JPY_URL;
 	});
 
 	it('get_ticker: 📸 timestamp 行が content (summary) に出る', async () => {
@@ -609,7 +618,9 @@ describe('PR5 audit / 5. content visibility (warning / drop / count / timestamp 
 		);
 		// toolDef.handler 経由（content/meta の整合を検証）
 		const def = allToolDefs.find((t) => t.name === 'get_transactions');
-		const out = await def?.handler({ pair: 'btc_jpy', limit: 10, view: 'summary' });
+		expect(def).toBeDefined();
+		// biome-ignore lint/style/noNonNullAssertion: assertion above guarantees def is defined
+		const out = await def!.handler({ pair: 'btc_jpy', limit: 10, view: 'summary' });
 		// view=summary は OkResult 形式そのまま返す
 		// biome-ignore lint/suspicious/noExplicitAny: handler returns Result | McpResponse union
 		const r = out as any;
@@ -629,7 +640,9 @@ describe('PR5 audit / 5. content visibility (warning / drop / count / timestamp 
 			]),
 		);
 		const def = allToolDefs.find((t) => t.name === 'get_transactions');
-		const out = await def?.handler({ pair: 'btc_jpy', limit: 10, view: 'items' });
+		expect(def).toBeDefined();
+		// biome-ignore lint/style/noNonNullAssertion: assertion above guarantees def is defined
+		const out = await def!.handler({ pair: 'btc_jpy', limit: 10, view: 'items' });
 		// biome-ignore lint/suspicious/noExplicitAny: handler returns McpResponse
 		const r = out as any;
 		// content[0] は items の JSON、content[1] が warning text
@@ -673,7 +686,9 @@ describe('PR5 audit / 5. content visibility (warning / drop / count / timestamp 
 			},
 		});
 		const def = allToolDefs.find((t) => t.name === 'prepare_depth_data');
-		const out = await def?.handler({ pair: 'btc_jpy' });
+		expect(def).toBeDefined();
+		// biome-ignore lint/style/noNonNullAssertion: assertion above guarantees def is defined
+		const out = await def!.handler({ pair: 'btc_jpy' });
 		// biome-ignore lint/suspicious/noExplicitAny: handler returns McpResponse
 		const r = out as any;
 		const text = getContentText(r);
@@ -715,7 +730,9 @@ describe('PR5 audit / 5. content visibility (warning / drop / count / timestamp 
 			],
 		});
 		const def = allToolDefs.find((t) => t.name === 'get_tickers_jpy');
-		const out = await def?.handler({ view: 'ranked', sortBy: 'change24h', order: 'desc', limit: 5 });
+		expect(def).toBeDefined();
+		// biome-ignore lint/style/noNonNullAssertion: assertion above guarantees def is defined
+		const out = await def!.handler({ view: 'ranked', sortBy: 'change24h', order: 'desc', limit: 5 });
 		// biome-ignore lint/suspicious/noExplicitAny: handler returns McpResponse
 		const r = out as any;
 		const text = getContentText(r);
