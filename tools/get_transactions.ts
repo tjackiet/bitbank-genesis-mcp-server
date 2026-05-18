@@ -3,7 +3,7 @@ import { toNum } from '../lib/conversions.js';
 import { dayjs, toIsoMs } from '../lib/datetime.js';
 import { formatPair, formatPrice } from '../lib/formatter.js';
 import { BITBANK_API_BASE, DEFAULT_RETRIES, fetchJsonWithRateLimit } from '../lib/http.js';
-import { failFromError, failFromValidation, ok } from '../lib/result.js';
+import { fail, failFromError, failFromValidation, ok } from '../lib/result.js';
 import { createMeta, ensurePair, validateLimit } from '../lib/validate.js';
 import {
 	type GetTransactionsDataSchemaOut,
@@ -30,7 +30,14 @@ function normalizeSide(v: unknown): 'buy' | 'sell' | null {
 	return null;
 }
 
-type NormalizedTxn = { price: number; amount: number; side: 'buy' | 'sell'; timestampMs: number; isoTime: string };
+type NormalizedTxn = {
+	transaction_id?: number;
+	price: number;
+	amount: number;
+	side: 'buy' | 'sell';
+	timestampMs: number;
+	isoTime: string;
+};
 
 /**
  * 取引サマリを生成
@@ -83,24 +90,42 @@ export default async function getTransactions(pair: string = 'btc_jpy', limit: n
 	if (!lim.ok) return failFromValidation(lim, GetTransactionsOutputSchema);
 
 	const url =
-		date && /\d{8}/.test(String(date))
+		date && /^\d{8}$/.test(String(date))
 			? `${BITBANK_API_BASE}/${chk.pair}/transactions/${date}`
 			: `${BITBANK_API_BASE}/${chk.pair}/transactions`;
 
 	try {
 		const { data: json, rateLimit } = await fetchJsonWithRateLimit(url, { timeoutMs: 4000, retries: DEFAULT_RETRIES });
-		const jsonObj = json as { data?: { transactions?: TxnRaw[] } };
+		const jsonObj = json as { success?: number; data?: { transactions?: TxnRaw[]; code?: number } };
+
+		// 上流レスポンスの success フラグを明示的に検証する。
+		// 公式 API は { success: 0|1, data: ... } 形式で、エラー時は success:0 を返す。
+		// optional chaining のフォールバックに任せると空配列として握りつぶされ ok を返してしまう。
+		if (jsonObj?.success !== 1) {
+			const code = jsonObj?.data?.code;
+			const codeStr = code != null ? `（code: ${code}）` : '';
+			return GetTransactionsOutputSchema.parse(fail(`bitbank API がエラーを返却しました${codeStr}`, 'upstream'));
+		}
+
 		const arr: TxnRaw[] = (jsonObj?.data?.transactions ?? []) as TxnRaw[];
 
 		const items = arr
 			.map((t) => {
+				const txId = toNum(t.transaction_id ?? t.id);
 				const price = toNum(t.price);
 				const amount = toNum(t.amount ?? t.size);
 				const side = normalizeSide(t.side);
 				const ms = toMs(t.executed_at ?? t.timestamp ?? t.date);
 				const isoTime = toIsoMs(ms);
 				if (price == null || amount == null || side == null || isoTime == null) return null;
-				return { price, amount, side, timestampMs: ms as number, isoTime };
+				return {
+					...(txId != null ? { transaction_id: txId } : {}),
+					price,
+					amount,
+					side,
+					timestampMs: ms as number,
+					isoTime,
+				};
 			})
 			.filter(Boolean) as NormalizedTxn[];
 
@@ -113,7 +138,8 @@ export default async function getTransactions(pair: string = 'btc_jpy', limit: n
 		// テキスト summary に全取引データを含める（LLM が structuredContent.data を読めない対策）
 		const txLines = latest.map((t, i) => {
 			const time = dayjs(t.timestampMs).tz('Asia/Tokyo').format('HH:mm:ss');
-			return `[${i}] ${time} ${t.side} ${t.price} x${t.amount}`;
+			const idPart = t.transaction_id != null ? ` id:${t.transaction_id}` : '';
+			return `[${i}]${idPart} ${time} ${t.side} ${t.price} x${t.amount}`;
 		});
 		const summary =
 			baseSummary +
@@ -186,7 +212,14 @@ export const toolDef: ToolDefinition = {
 		const res = await getTransactions(pair, limit, date);
 		if (!res?.ok) return res;
 		const hasFilter = minAmount != null || maxAmount != null || minPrice != null || maxPrice != null;
-		type TxItem = { price: number; amount: number; side: 'buy' | 'sell'; timestampMs: number; isoTime: string };
+		type TxItem = {
+			transaction_id?: number;
+			price: number;
+			amount: number;
+			side: 'buy' | 'sell';
+			timestampMs: number;
+			isoTime: string;
+		};
 		const items = (res?.data?.normalized ?? ([] as TxItem[])).filter(
 			(t: TxItem) =>
 				(minAmount == null || t.amount >= minAmount) &&

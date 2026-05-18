@@ -112,6 +112,8 @@ export const GetCandlesInputSchema = z.object({
 
 // === Transactions ===
 export const TransactionItemSchema = z.object({
+	// 公式 API のレスポンスでは必須。normalized では上流欠損や互換ソース対応のため optional。
+	transaction_id: z.number().int().optional(),
 	price: z.number(),
 	amount: z.number(),
 	side: z.enum(['buy', 'sell']),
