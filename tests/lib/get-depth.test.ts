@@ -128,6 +128,33 @@ describe('getDepth', () => {
 		assertFail(res);
 	});
 
+	it('API異常系: success:0 を upstream エラーとして明示分類する', async () => {
+		globalThis.fetch = vi.fn().mockResolvedValue(
+			new Response(JSON.stringify({ success: 0, data: { code: 10000 } }), {
+				status: 200,
+				headers: { 'Content-Type': 'application/json' },
+			}),
+		);
+
+		const res = await getDepth('btc_jpy');
+		assertFail(res);
+		expect(res.meta?.errorType).toBe('upstream');
+		expect(res.summary).toContain('code: 10000');
+	});
+
+	it('API異常系: success:0 で data.code が無くても upstream として返す', async () => {
+		globalThis.fetch = vi.fn().mockResolvedValue(
+			new Response(JSON.stringify({ success: 0, data: {} }), {
+				status: 200,
+				headers: { 'Content-Type': 'application/json' },
+			}),
+		);
+
+		const res = await getDepth('btc_jpy');
+		assertFail(res);
+		expect(res.meta?.errorType).toBe('upstream');
+	});
+
 	it('API エラー（HTTP 500）で fail を返す', async () => {
 		globalThis.fetch = vi
 			.fn()

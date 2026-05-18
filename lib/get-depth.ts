@@ -2,7 +2,7 @@ import { GetDepthOutputSchema } from '../src/schemas.js';
 import { estimateZones } from './depth-analysis.js';
 import { formatSummary, formatTimestampJST } from './formatter.js';
 import { BITBANK_API_BASE, DEFAULT_RETRIES, fetchJsonWithRateLimit } from './http.js';
-import { failFromError, failFromValidation, ok } from './result.js';
+import { fail, failFromError, failFromValidation, ok } from './result.js';
 import { createMeta, ensurePair } from './validate.js';
 
 export interface GetDepthOptions {
@@ -52,7 +52,17 @@ export default async function getDepth(pair: string, { timeoutMs = 3000, maxLeve
 	const url = `${BITBANK_API_BASE}/${chk.pair}/depth`;
 	try {
 		const { data: json, rateLimit } = await fetchJsonWithRateLimit(url, { timeoutMs, retries: DEFAULT_RETRIES });
-		const jsonObj = json as { data?: Record<string, unknown> };
+		const jsonObj = json as { success?: number; data?: Record<string, unknown> & { code?: number } };
+
+		// 上流レスポンスの success フラグを明示的に検証する。
+		// 公式 API は { success: 0|1, data: ... } 形式で、エラー時は success:0 を返す。
+		// optional chaining のフォールバックに任せると空配列として握りつぶされ ok を返してしまう。
+		if (jsonObj?.success !== 1) {
+			const code = jsonObj?.data?.code;
+			const codeStr = code != null ? `（code: ${code}）` : '';
+			return GetDepthOutputSchema.parse(fail(`bitbank API がエラーを返却しました${codeStr}`, 'upstream'));
+		}
+
 		const d = jsonObj?.data ?? {};
 		const asks = Array.isArray(d.asks) ? d.asks.slice(0, maxLevels) : [];
 		const bids = Array.isArray(d.bids) ? d.bids.slice(0, maxLevels) : [];
