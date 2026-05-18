@@ -211,7 +211,7 @@ export function formatSummary(
 			recent7DaysAvg: number;
 			previous7DaysAvg: number;
 			last30DaysAvg?: number | null;
-			changePct: number;
+			changePct: number | null;
 			judgment: string;
 		} | null;
 		extra?: string;
@@ -281,7 +281,11 @@ export function formatSummary(
 			if (typeof volumeStats.last30DaysAvg === 'number') {
 				summary += `\n- 過去30日間の平均: ${volumeStats.last30DaysAvg.toFixed(0)} BTC/日`;
 			}
-			summary += `\n- 出来高変化率: ${volumeStats.changePct >= 0 ? '+' : ''}${volumeStats.changePct}%`;
+			if (volumeStats.changePct === null) {
+				summary += '\n- 出来高変化率: N/A（前7日間の出来高ゼロ）';
+			} else {
+				summary += `\n- 出来高変化率: ${volumeStats.changePct >= 0 ? '+' : ''}${volumeStats.changePct}%`;
+			}
 			summary += `\n- 判定: ${volumeStats.judgment}`;
 		}
 

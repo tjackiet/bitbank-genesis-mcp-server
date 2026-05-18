@@ -163,6 +163,106 @@ describe('getCandles', () => {
 		expect(res.data.volumeStats?.judgment).toBe('落ち着いています');
 	});
 
+	describe('volumeStats: 前7日間ゼロ出来高ベースライン耐性', () => {
+		it('前7日間が全てゼロ出来高 + 直近7日間に出来高ありなら changePct=null かつ専用ラベル', async () => {
+			const baseTs = 1704067200000;
+			// previous 7 days (index 0-6) = 0 volume, recent 7 days (index 7-13) = nonzero
+			// → previous7DaysAvg === 0, recent7DaysAvg !== 0 → 通常計算なら Infinity
+			const ohlcv = Array.from({ length: 14 }, (_, i) => [
+				'100',
+				'110',
+				'90',
+				'105',
+				i >= 7 ? '1.0' : '0',
+				String(baseTs + i * 86400000),
+			]);
+			const fetchMock = vi.fn().mockResolvedValue({
+				ok: true,
+				status: 200,
+				statusText: 'OK',
+				json: async () => ({
+					success: 1,
+					data: { candlestick: [{ ohlcv }] },
+				}),
+			});
+			globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+			const res = await getCandles('btc_jpy', '1day', '2024', 14);
+			assertOk(res);
+			expect(res.data.volumeStats).not.toBeNull();
+			expect(res.data.volumeStats?.changePct).toBeNull();
+			expect(res.data.volumeStats?.judgment).toBe('前週比較不可（前7日間の出来高ゼロ）');
+			expect(res.data.volumeStats?.previous7DaysAvg).toBe(0);
+		});
+
+		it('前7日も直近7日も全てゼロ出来高なら changePct=null かつ専用ラベル (0/0=NaN 経路)', async () => {
+			const baseTs = 1704067200000;
+			// all volumes are 0 → previous7DaysAvg === 0, recent7DaysAvg === 0 → 通常計算なら NaN
+			const ohlcv = Array.from({ length: 14 }, (_, i) => [
+				'100',
+				'110',
+				'90',
+				'105',
+				'0',
+				String(baseTs + i * 86400000),
+			]);
+			const fetchMock = vi.fn().mockResolvedValue({
+				ok: true,
+				status: 200,
+				statusText: 'OK',
+				json: async () => ({
+					success: 1,
+					data: { candlestick: [{ ohlcv }] },
+				}),
+			});
+			globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+			const res = await getCandles('btc_jpy', '1day', '2024', 14);
+			assertOk(res);
+			expect(res.data.volumeStats).not.toBeNull();
+			expect(res.data.volumeStats?.changePct).toBeNull();
+			expect(res.data.volumeStats?.judgment).toBe('前週比較不可（前7日間の出来高ゼロ）');
+			expect(res.data.volumeStats?.recent7DaysAvg).toBe(0);
+			expect(res.data.volumeStats?.previous7DaysAvg).toBe(0);
+		});
+
+		it('前7日ゼロ出来高でも content text 出力で null.toFixed() 等で落ちない', async () => {
+			const baseTs = 1704067200000;
+			const ohlcv = Array.from({ length: 14 }, (_, i) => [
+				'100',
+				'110',
+				'90',
+				'105',
+				i >= 7 ? '1.0' : '0',
+				String(baseTs + i * 86400000),
+			]);
+			const fetchMock = vi.fn().mockResolvedValue({
+				ok: true,
+				status: 200,
+				statusText: 'OK',
+				json: async () => ({
+					success: 1,
+					data: { candlestick: [{ ohlcv }] },
+				}),
+			});
+			globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+			const res = (await toolDef.handler({
+				pair: 'btc_jpy',
+				type: '1day',
+				date: '2024',
+				limit: 14,
+				view: 'full',
+			})) as { content: Array<{ type: string; text: string }> };
+			const text = res.content[0].text;
+			// Infinity / NaN が含まれないこと
+			expect(text).not.toMatch(/Infinity/);
+			expect(text).not.toMatch(/NaN/);
+			// 専用ラベルが summary に含まれる
+			expect(text).toContain('前週比較不可');
+		});
+	});
+
 	it('404 エラーで 4hour/8hour/12hour の場合はヒント付きメッセージを返す', async () => {
 		const fetchMock = vi.fn().mockRejectedValue(new Error('HTTP 404 Not Found'));
 		globalThis.fetch = fetchMock as unknown as typeof fetch;

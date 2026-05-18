@@ -192,7 +192,9 @@ export const VolumeStatsSchema = z.object({
 	recent7DaysAvg: z.number(),
 	previous7DaysAvg: z.number(),
 	last30DaysAvg: z.number().nullable(),
-	changePct: z.number(),
+	// previous7DaysAvg === 0 のときは null（前週比較不可）。
+	// nonzero / 0 → Infinity（JSON wire で null 化）、0 / 0 → NaN（z.number() で reject）の両方を回避するため。
+	changePct: z.number().nullable(),
 	judgment: z.string(),
 });
 

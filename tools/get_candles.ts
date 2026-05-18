@@ -428,18 +428,24 @@ export default async function getCandles(
 			}
 
 			// 変化率（直近7日 vs その前7日）
-			const volumeChangePct = ((recent7DaysAvg - previous7DaysAvg) / previous7DaysAvg) * 100;
+			// previous7DaysAvg === 0 のとき計算式が破綻するため null として返す:
+			//   - nonzero / 0 → Infinity（JSON wire で null 化、意味的にも不正）
+			//   - 0 / 0 → NaN（z.number() で reject されて schema parse が落ちる）
+			const volumeChangePct =
+				previous7DaysAvg === 0 ? null : ((recent7DaysAvg - previous7DaysAvg) / previous7DaysAvg) * 100;
 
 			// 判定
-			let judgment = 'ほぼ変わりません';
-			if (volumeChangePct > 20) judgment = '活発になっています';
+			let judgment: string;
+			if (volumeChangePct === null) judgment = '前週比較不可（前7日間の出来高ゼロ）';
+			else if (volumeChangePct > 20) judgment = '活発になっています';
 			else if (volumeChangePct < -20) judgment = '落ち着いています';
+			else judgment = 'ほぼ変わりません';
 
 			return {
 				recent7DaysAvg: Number(recent7DaysAvg.toFixed(2)),
 				previous7DaysAvg: Number(previous7DaysAvg.toFixed(2)),
 				last30DaysAvg: last30DaysAvg != null ? Number(last30DaysAvg.toFixed(2)) : null,
-				changePct: Number(volumeChangePct.toFixed(1)),
+				changePct: volumeChangePct === null ? null : Number(volumeChangePct.toFixed(1)),
 				judgment,
 			};
 		};
