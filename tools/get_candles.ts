@@ -58,12 +58,33 @@ interface FetchChunkResult {
 	error?: unknown;
 }
 
+// チャンク fetcher が success:0 を検出したときに記録するエラー。
+// 全チャンク失敗時に outer catch の `failFromError`（=network 分類）に流すのではなく、
+// upstream として明示分類するため instanceof で判定する。
+class UpstreamApiError extends Error {
+	constructor(message: string) {
+		super(message);
+		this.name = 'UpstreamApiError';
+	}
+}
+
 // 単一年のデータを取得する内部関数
 async function fetchSingleYear(pair: string, type: string, year: number): Promise<FetchChunkResult> {
 	const url = `${BITBANK_API_BASE}/${pair}/candlestick/${type}/${year}`;
 	try {
 		const { data: json, rateLimit } = await fetchJsonWithRateLimit(url, { timeoutMs: 8000, retries: DEFAULT_RETRIES });
-		const jsonObj = json as { data?: { candlestick?: Array<{ ohlcv?: unknown[] }> } };
+		const jsonObj = json as {
+			success?: number;
+			data?: { candlestick?: Array<{ ohlcv?: unknown[] }>; code?: number };
+		};
+		// success:0 を空配列として握りつぶさず、チャンク失敗として扱う。
+		// UpstreamApiError でラップすることで、全チャンク失敗時に outer catch ではなく
+		// 明示的な upstream 分類で fail を返せる。
+		if (jsonObj?.success !== 1) {
+			const code = jsonObj?.data?.code;
+			const msg = code != null ? `bitbank API error (code: ${code})` : 'bitbank API error';
+			return { rows: [], rateLimit, error: new UpstreamApiError(msg) };
+		}
 		const cs = jsonObj?.data?.candlestick?.[0];
 		const ohlcvs = cs?.ohlcv ?? [];
 		return { rows: ohlcvs as OhlcvRow[], rateLimit };
@@ -82,7 +103,18 @@ async function fetchSingleDay(
 	const url = `${BITBANK_API_BASE}/${pair}/candlestick/${type}/${dateStr}`;
 	try {
 		const { data: json, rateLimit } = await fetchJsonWithRateLimit(url, { timeoutMs: 8000, retries: DEFAULT_RETRIES });
-		const jsonObj = json as { data?: { candlestick?: Array<{ ohlcv?: unknown[] }> } };
+		const jsonObj = json as {
+			success?: number;
+			data?: { candlestick?: Array<{ ohlcv?: unknown[] }>; code?: number };
+		};
+		// success:0 を空配列として握りつぶさず、チャンク失敗として扱う。
+		// UpstreamApiError でラップすることで、全チャンク失敗時に outer catch ではなく
+		// 明示的な upstream 分類で fail を返せる。
+		if (jsonObj?.success !== 1) {
+			const code = jsonObj?.data?.code;
+			const msg = code != null ? `bitbank API error (code: ${code})` : 'bitbank API error';
+			return { rows: [], rateLimit, error: new UpstreamApiError(msg) };
+		}
 		const cs = jsonObj?.data?.candlestick?.[0];
 		const ohlcvs = cs?.ohlcv ?? [];
 		return { rows: ohlcvs as OhlcvRow[], rateLimit };
@@ -170,9 +202,14 @@ export default async function getCandles(
 				allOhlcvs.push(...results[i].rows);
 			}
 
-			// 全チャンクがエラーの場合はネットワークエラーとして伝播
+			// 全チャンクがエラーの場合は分類して伝播
+			// - UpstreamApiError（success:0 由来）→ upstream として明示分類
+			// - それ以外（ネットワーク等）→ throw → outer catch で network 分類
 			if (allOhlcvs.length === 0) {
 				const firstError = results.find((r) => r.error);
+				if (firstError?.error instanceof UpstreamApiError) {
+					return fail(firstError.error.message, 'upstream');
+				}
 				if (firstError?.error) throw firstError.error;
 			}
 
@@ -229,9 +266,14 @@ export default async function getCandles(
 			const failedDays = allDayResults.filter((r) => r.error);
 			const totalDays = allDayResults.length;
 
-			// 全チャンクがエラーの場合はネットワークエラーとして伝播
+			// 全チャンクがエラーの場合は分類して伝播
+			// - UpstreamApiError（success:0 由来）→ upstream として明示分類
+			// - それ以外（ネットワーク等）→ throw → outer catch で network 分類
 			if (allOhlcvs.length === 0) {
 				const firstError = allDayResults.find((r) => r.error);
+				if (firstError?.error instanceof UpstreamApiError) {
+					return fail(firstError.error.message, 'upstream');
+				}
 				if (firstError?.error) throw firstError.error;
 			}
 
@@ -261,7 +303,21 @@ export default async function getCandles(
 			const fetchResult = await fetchJsonWithRateLimit(url, { timeoutMs: 5000, retries: DEFAULT_RETRIES });
 			json = fetchResult.data;
 			lastRateLimit = fetchResult.rateLimit;
-			const jsonObj = json as { data?: { candlestick?: Array<{ ohlcv?: unknown[] }> } };
+			const jsonObj = json as {
+				success?: number;
+				data?: { candlestick?: Array<{ ohlcv?: unknown[] }>; code?: number };
+			};
+			// 上流レスポンスの success フラグを明示的に検証する。
+			// 公式 API は { success: 0|1, data: ... } 形式で、エラー時は success:0 を返す。
+			// optional chaining のフォールバックに任せると空配列として握りつぶされ「データなし」(user) として返してしまう。
+			if (jsonObj?.success !== 1) {
+				const code = jsonObj?.data?.code;
+				const codeStr = code != null ? `（code: ${code}）` : '';
+				return parseAsResult<GetCandlesData, GetCandlesMeta>(
+					GetCandlesOutputSchema,
+					fail(`bitbank API がエラーを返却しました${codeStr}`, 'upstream'),
+				);
+			}
 			const cs = jsonObj?.data?.candlestick?.[0];
 			ohlcvs = cs?.ohlcv ?? [];
 		}
