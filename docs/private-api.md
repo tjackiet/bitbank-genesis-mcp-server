@@ -140,6 +140,26 @@ npx -y bitbank-lab-mcp
 | `preview_cancel_order` | `cancel_order` | 注文キャンセル（単一） |
 | `preview_cancel_orders` | `cancel_orders` | 注文キャンセル（一括、最大30件） |
 
+### 対応注文タイプ
+
+`preview_order` / `create_order` で発注できる `type` は以下の 4 種類のみです。
+
+| `type` | 説明 | 必須パラメータ |
+|---|---|---|
+| `limit` | 指値注文 | `price` |
+| `market` | 成行注文 | （なし） |
+| `stop` | 逆指値注文（トリガー到達で成行発注） | `trigger_price` |
+| `stop_limit` | 逆指値指値注文（トリガー到達で指値発注） | `trigger_price`, `price` |
+
+bitbank 公式 REST API spec の `POST /v1/user/spot/order` は上記に加え `take_profit` / `stop_loss` / `losscut` も `type` として列挙していますが、本 MCP サーバーでは **意図的に未対応** としています。
+
+| 未対応 type | 理由 |
+|---|---|
+| `take_profit` / `stop_loss` | 公式 docs に動作仕様が記載されていない（発動方向、`amount` 省略時の決済範囲、現物 vs 信用の適用可否がすべて未定義）。`amount` を省略可能な注文タイプであるため建玉の全量決済を引き起こす可能性があり、誤実装による意図しない決済リスクを避けるため除外。bitbank が公式ドキュメントで仕様を明示した時点で対応を再検討します。 |
+| `losscut` | システム発動の強制決済タイプ。ユーザーが入力する注文タイプではありません。 |
+
+これらの `type` を指定すると Zod バリデーションエラー（`validation_error`）で拒否されます。発注された既存の `take_profit` / `stop_loss` / `losscut` 注文を **照会**することは `get_order` / `get_my_orders` / `get_orders_info` で可能です（レスポンスの `type` は文字列として受け入れる）。
+
 ### 信用取引について
 
 `preview_order` / `create_order` に `position_side`（`long` / `short`）を指定すると信用注文として扱われます。
