@@ -185,6 +185,55 @@ describe('get_transactions', () => {
 		expect(res.summary).toContain('https://public.bitbank.cc/btc_jpy/transactions');
 	});
 
+	// ── 上流データ品質 ──
+
+	describe('上流データ品質', () => {
+		it('price 欠損行はドロップし、件数を meta.warning と summary に出す', async () => {
+			const baseTs = 1_700_000_000_000;
+			const rows: Array<Record<string, unknown>> = [
+				{ transaction_id: 1, price: '5000000', amount: '0.01', side: 'buy', executed_at: String(baseTs) },
+				{ transaction_id: 2, amount: '0.02', side: 'sell', executed_at: String(baseTs + 1000) },
+				{ transaction_id: 3, price: '5000003', amount: '0.03', side: 'buy', executed_at: String(baseTs + 2000) },
+				{ transaction_id: 4, amount: '0.04', side: 'sell', executed_at: String(baseTs + 3000) },
+			];
+			globalThis.fetch = mockFetchOk({ success: 1, data: { transactions: rows } });
+
+			const res = await getTransactions('btc_jpy', 10);
+			assertOk(res);
+			expect(res.data.normalized).toHaveLength(2);
+			expect(typeof res.meta.warning).toBe('string');
+			expect(res.meta.warning).toContain('2件');
+			expect(res.summary).toContain(res.meta.warning);
+		});
+
+		it('不正な side の行はドロップし、件数を warning に出す', async () => {
+			const baseTs = 1_700_000_000_000;
+			const rows: Array<Record<string, unknown>> = [
+				{ transaction_id: 1, price: '5000000', amount: '0.01', side: 'buy', executed_at: String(baseTs) },
+				{ transaction_id: 2, price: '5000001', amount: '0.02', side: 'invalid', executed_at: String(baseTs + 1000) },
+				{ transaction_id: 3, price: '5000002', amount: '0.03', side: 'sell', executed_at: String(baseTs + 2000) },
+				{ transaction_id: 4, price: '5000003', amount: '0.04', side: 'buy', executed_at: String(baseTs + 3000) },
+			];
+			globalThis.fetch = mockFetchOk({ success: 1, data: { transactions: rows } });
+
+			const res = await getTransactions('btc_jpy', 10);
+			assertOk(res);
+			expect(res.data.normalized).toHaveLength(3);
+			expect(typeof res.meta.warning).toBe('string');
+			expect(res.meta.warning).toContain('1件');
+			expect(res.summary).toContain(res.meta.warning);
+		});
+
+		it('全件正常時は meta.warning を出さない', async () => {
+			globalThis.fetch = mockFetchOk({ success: 1, data: { transactions: buildTransactions(4) } });
+
+			const res = await getTransactions('btc_jpy', 10);
+			assertOk(res);
+			expect(res.data.normalized).toHaveLength(4);
+			expect(res.meta.warning).toBeUndefined();
+		});
+	});
+
 	// ── ペア / limit バリデーション ──
 
 	it('バリデーション: 未対応 pair は fail を返す', async () => {

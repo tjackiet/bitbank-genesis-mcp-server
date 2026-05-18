@@ -241,6 +241,7 @@ export const GetTransactionsDataSchemaOut = z.object({ raw: z.unknown(), normali
 export const GetTransactionsMetaSchemaOut = BaseMetaSchema.extend({
 	count: z.number().int(),
 	source: z.enum(['latest', 'by_date']),
+	warning: z.string().optional(),
 });
 export const GetTransactionsOutputSchema = toolResultSchema(GetTransactionsDataSchemaOut, GetTransactionsMetaSchemaOut);
 
