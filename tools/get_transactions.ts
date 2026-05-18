@@ -109,6 +109,7 @@ export default async function getTransactions(pair: string = 'btc_jpy', limit: n
 
 		const arr: TxnRaw[] = (jsonObj?.data?.transactions ?? []) as TxnRaw[];
 
+		let droppedCount = 0;
 		const items = arr
 			.map((t) => {
 				const txId = toNum(t.transaction_id ?? t.id);
@@ -117,7 +118,10 @@ export default async function getTransactions(pair: string = 'btc_jpy', limit: n
 				const side = normalizeSide(t.side);
 				const ms = toMs(t.executed_at ?? t.timestamp ?? t.date);
 				const isoTime = toIsoMs(ms);
-				if (price == null || amount == null || side == null || isoTime == null) return null;
+				if (price == null || amount == null || side == null || isoTime == null) {
+					droppedCount++;
+					return null;
+				}
 				return {
 					...(txId != null ? { transaction_id: txId } : {}),
 					price,
@@ -128,6 +132,11 @@ export default async function getTransactions(pair: string = 'btc_jpy', limit: n
 				};
 			})
 			.filter(Boolean) as NormalizedTxn[];
+
+		const warningText =
+			droppedCount > 0
+				? `⚠️ 上流レスポンスから ${droppedCount}件 の不正な約定行を除外しました（price/amount/side/timestamp のいずれかが欠損または不正）`
+				: undefined;
 
 		const sorted = items.sort((a, b) => a.timestampMs - b.timestampMs);
 		const latest = sorted.slice(-lim.value);
@@ -143,6 +152,7 @@ export default async function getTransactions(pair: string = 'btc_jpy', limit: n
 		});
 		const summary =
 			baseSummary +
+			(warningText ? `\n\n${warningText}` : '') +
 			`\n\n📋 全${latest.length}件の取引:\n` +
 			txLines.join('\n') +
 			`\n\n---\n📌 含まれるもの: 個別約定（時刻・売買方向・価格・数量）、買い/売り件数比率` +
@@ -154,6 +164,7 @@ export default async function getTransactions(pair: string = 'btc_jpy', limit: n
 			count: latest.length,
 			source: date ? 'by_date' : 'latest',
 			...(rateLimit ? { rateLimit } : {}),
+			...(warningText ? { warning: warningText } : {}),
 		});
 		return GetTransactionsOutputSchema.parse(
 			ok<z.infer<typeof GetTransactionsDataSchemaOut>, z.infer<typeof GetTransactionsMetaSchemaOut>>(
@@ -227,8 +238,9 @@ export const toolDef: ToolDefinition = {
 				(minPrice == null || t.price >= minPrice) &&
 				(maxPrice == null || t.price <= maxPrice),
 		);
+		const warningSuffix = res.meta?.warning ? `\n\n${res.meta.warning}` : '';
 		const summary = hasFilter
-			? `${String(pair).toUpperCase().replace('_', '/')} フィルタ後 ${items.length}件 (buy=${items.filter((t: TxItem) => t.side === 'buy').length} sell=${items.filter((t: TxItem) => t.side === 'sell').length})`
+			? `${String(pair).toUpperCase().replace('_', '/')} フィルタ後 ${items.length}件 (buy=${items.filter((t: TxItem) => t.side === 'buy').length} sell=${items.filter((t: TxItem) => t.side === 'sell').length})${warningSuffix}`
 			: res.summary;
 		if (view === 'items') {
 			const text = JSON.stringify(items, null, 2);
