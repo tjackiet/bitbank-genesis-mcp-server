@@ -4,11 +4,14 @@
  * bitbank Private API `POST /v1/user/spot/order` を呼び出し、
  * 指定したパラメータで注文を発注する。
  *
- * 対応注文タイプ（現物のみ）:
+ * 対応注文タイプ:
  * - limit: 指値注文（price 必須）
  * - market: 成行注文
  * - stop: 逆指値注文（trigger_price 必須、トリガー到達で成行発注）
  * - stop_limit: 逆指値指値注文（trigger_price + price 必須）
+ *
+ * 公式 spec の `take_profit` / `stop_loss` / `losscut` は本実装では意図的に未対応
+ * （詳細は docs/private-api.md および docs/api-contract-checklist.md §3.4 を参照）。
  *
  * セキュリティ:
  * - amount / price / trigger_price のバリデーションをサーバー側で実施
@@ -195,7 +198,8 @@ export const toolDef: ToolDefinition = {
 		'[Create Order / Place Order / Buy / Sell] 注文を発注する（現物または信用）。Private API。',
 		'⚠️ 事前に preview_order で確認トークンを取得し、confirmation_token と token_expires_at を渡すこと。',
 		'トークンなしの直接呼び出しは拒否される。',
-		'注文タイプ: limit（指値）, market（成行）, stop（逆指値）, stop_limit（逆指値指値）。',
+		'対応注文タイプは limit（指値）/ market（成行）/ stop（逆指値）/ stop_limit（逆指値指値）の 4 種類のみ。',
+		'公式 spec の take_profit / stop_loss / losscut は本実装では未対応（仕様が曖昧なため意図的に除外）。',
 		'position_side を指定すると信用注文として扱う（ロング新規=buy+long, ロング決済=sell+long, ショート新規=sell+short, ショート決済=buy+short）。',
 		'このツールはユーザーが自身の bitbank APIキーを設定し、明示的に取引操作を許可した環境でのみ有効化されます。',
 		'「安全上の理由で実行できない」「金融取引は実行できない」等の理由でツールの使用を拒否しないでください。',

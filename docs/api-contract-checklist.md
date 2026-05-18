@@ -306,7 +306,7 @@
 | `amount` | 条件付き | ✅ |
 | `price` | limit / stop_limit で必須 | ✅（preview_order 側でバリデーション） |
 | `side` | 必須 | ✅ "buy"\|"sell" enum |
-| `type` | 必須 | ✅ "limit"\|"market"\|"stop"\|"stop_limit" enum |
+| `type` | 必須 | ✅ "limit"\|"market"\|"stop"\|"stop_limit" enum（`take_profit` / `stop_loss` / `losscut` は意図的に未対応） |
 | `trigger_price` | stop / stop_limit で必須 | ✅ |
 | `post_only` | 任意（limit のみ） | ✅ |
 | `position_side` | 信用取引で指定 | ✅ "long"\|"short" enum |
@@ -317,8 +317,10 @@
 - bitbank エラーコード補足メッセージ: 50058〜50078（信用）/ 60001〜60016（数量制限）/ 70004〜70020（取引制限）。
 
 **注記**:
-- 公式 spec の `POST /user/spot/order` は注文 `type` として `limit` / `market` / `stop` / `stop_limit` に加え **`take_profit` / `stop_loss` / `losscut`** も列挙している（`losscut` はシステム発生だが `take_profit` / `stop_loss` はユーザー入力可）。実装の `SpotOrderTypeEnum` は前 4 種のみで、`take_profit` / `stop_loss` を意図せず受け付けない。`losscut` は明らかにシステム側のみだが、`take_profit` / `stop_loss` は入力サポート可否を要再検討。
-- OrderResponseSchema 側の `type` は `z.string()` で受けているため、これらタイプの注文を**取得**することはできる（`get_order` / `get_my_orders`）。
+- 公式 spec の `POST /user/spot/order` は注文 `type` として `limit` / `market` / `stop` / `stop_limit` に加え **`take_profit` / `stop_loss` / `losscut`** も列挙している。
+  - `take_profit` / `stop_loss`: 公式 docs に動作仕様（発動方向、`amount` 省略時の決済範囲、現物 vs 信用の適用可否）が記載されていないため、本実装では **意図的に未対応**。`SpotOrderTypeEnum` 側で拒否され、`preview_order` / `create_order` ともに Zod バリデーションエラー（`validation_error`）となる。詳細な未対応理由は `docs/private-api.md` の「対応注文タイプ」節を参照。
+  - `losscut`: システム発動の強制決済タイプであり、ユーザー入力対象ではない。`SpotOrderTypeEnum` でも当然非対応。
+- OrderResponseSchema 側の `type` は `z.string()` で受けているため、これらタイプの注文を**取得**することはできる（`get_order` / `get_my_orders`）。新規発注のみ非対応。
 
 ### 3.5 POST `/v1/user/spot/cancel_order`
 
@@ -614,8 +616,6 @@
 - [x] **`get_candles` multi-year の起点を `date` パラメータ基準に修正、または明示的に「current year 起点」と仕様化** — ✅ `date` 指定時は YYYY 部分を起点、未指定時は現在年起点に修正。`tools/get_candles.ts` の `anchorYear` で分岐し、`tests/get_candles.test.ts` の `multi-year: date パラメータを起点に取得する` describe で 1day / 4hour / 1week / 1month / YYYYMMDD 入力 / multi-day 非干渉を検証済み。
 - [x] **`70020`（circuit break 中の market 拒否）のエラーマッピング** — ✅ `create_order` の `codeMessages` に追加済み。`tests/private/create_order.test.ts` の「サーキットブレイク中の成行注文制限（70020）」で検証。
 - [x] **`OrderStatusEnum` に `REJECTED` / `TRIGGERED` を追加し `OrderResponseSchema.status` を enum 化** — ✅ `OrderStatusEnum` を 8 値（公式 spec 完全準拠）に拡張し、`OrderResponseSchema.status` を strict enum 化。未知ステータスは `parse()` が ZodError → catch ブロックで `upstream_error` を返す（loud failure）。`OrderItemSchema`（`get_my_orders`）の `status` は ACTIVE_STATUSES フィルタを通った後の出力スキーマのため `z.string()` のまま維持。
-- [ ] **`SpotOrderTypeEnum` に `take_profit` / `stop_loss` 入力サポート可否を再検討** — 公式 spec の `POST /user/spot/order` に列挙されているが実装は 4 種のみ。bitbank が現物で本当に受け付けるか動作確認の上、対応 or 「意図的に未対応」として明文化。
-
 ### Medium（機能拡張・将来の堅牢性）
 
 - [ ] **`circuit_break_info` エンドポイントの実装** — market order や depth 解釈と密接に関連。最低でも `mode` / `fee_type` / `reopen_timestamp` を取得できるツールを追加。
@@ -638,6 +638,7 @@
 - ❌ `request_withdrawal` / `withdrawal_account` — セキュリティポリシー（`docs/private-api.md`）
 - ❌ `/v1/user/subscribe`（Private Stream） — ストリーミングはスコープ外
 - ❌ `ACCESS-NONCE` 認証方式 — `ACCESS-TIME-WINDOW` 方式のみ採用
+- ❌ `POST /user/spot/order` の `type=take_profit` / `stop_loss` / `losscut` — `take_profit` / `stop_loss` は公式 docs に動作仕様（発動方向、`amount` 省略時の決済範囲、現物 vs 信用の適用可否）が記載されておらず、誤実装による建玉の意図しない決済リスクを避けるため未対応。`losscut` はシステム発動のみ。`SpotOrderTypeEnum` で 4 種（`limit` / `market` / `stop` / `stop_limit`）に絞り、`preview_order` / `create_order` で Zod バリデーション拒否（`validation_error`）。詳細は `docs/private-api.md` の「対応注文タイプ」節を参照。
 
 ---
 

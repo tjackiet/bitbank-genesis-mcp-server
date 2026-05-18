@@ -364,6 +364,52 @@ describe('create_order — 非 PrivateApiError の generic catch', () => {
 	});
 });
 
+// take_profit / stop_loss / losscut は公式 spec に列挙されているが本実装では意図的に未対応。
+// CreateOrderInputSchema が Zod 段階で拒否し、注文 API には到達しないことを保証する。
+// 詳細は docs/private-api.md「対応注文タイプ」節 / docs/api-contract-checklist.md §3.4 を参照。
+describe('create_order — 未対応の注文タイプ（take_profit / stop_loss / losscut）', () => {
+	it('take_profit は CreateOrderInputSchema で拒否される', async () => {
+		const { CreateOrderInputSchema } = await import('../../src/private/schemas.js');
+		const result = CreateOrderInputSchema.safeParse({
+			pair: 'btc_jpy',
+			amount: '0.01',
+			side: 'sell',
+			type: 'take_profit',
+			trigger_price: '16000000',
+			confirmation_token: 'dummy',
+			token_expires_at: Date.now() + 60_000,
+		});
+		expect(result.success).toBe(false);
+	});
+
+	it('stop_loss は CreateOrderInputSchema で拒否される', async () => {
+		const { CreateOrderInputSchema } = await import('../../src/private/schemas.js');
+		const result = CreateOrderInputSchema.safeParse({
+			pair: 'btc_jpy',
+			amount: '0.01',
+			side: 'sell',
+			type: 'stop_loss',
+			trigger_price: '13000000',
+			confirmation_token: 'dummy',
+			token_expires_at: Date.now() + 60_000,
+		});
+		expect(result.success).toBe(false);
+	});
+
+	it('losscut は CreateOrderInputSchema で拒否される（システム発動のみのタイプ）', async () => {
+		const { CreateOrderInputSchema } = await import('../../src/private/schemas.js');
+		const result = CreateOrderInputSchema.safeParse({
+			pair: 'btc_jpy',
+			amount: '0.01',
+			side: 'sell',
+			type: 'losscut',
+			confirmation_token: 'dummy',
+			token_expires_at: Date.now() + 60_000,
+		});
+		expect(result.success).toBe(false);
+	});
+});
+
 describe('create_order — handler (toolDef)', () => {
 	it('handler が失敗時に result をそのまま返す', async () => {
 		const { toolDef } = await import('../../tools/private/create_order.js');

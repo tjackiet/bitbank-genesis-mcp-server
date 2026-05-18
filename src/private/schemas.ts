@@ -620,7 +620,18 @@ export const OrderStatusEnum = z.enum([
 	'TRIGGERED',
 ]);
 
-/** 注文タイプ（現物・信用共通） */
+/**
+ * 注文タイプ（現物・信用共通）。
+ *
+ * bitbank 公式 spec の `POST /v1/user/spot/order` では `take_profit` / `stop_loss` / `losscut`
+ * も列挙されているが、本実装では意図的に未対応（理由は docs/private-api.md と
+ * docs/api-contract-checklist.md §3.4 を参照）。
+ *
+ * - `take_profit` / `stop_loss`: 公式 docs が動作仕様を明記していない
+ *   （発動方向、amount 省略時の決済範囲、現物 vs 信用の適用可否がすべて未定義）。
+ *   誤実装による建玉の意図しない決済リスクを避けるため未対応。
+ * - `losscut`: システム発動の強制決済タイプ。ユーザー入力対象ではない。
+ */
 export const SpotOrderTypeEnum = z.enum(['limit', 'market', 'stop', 'stop_limit']);
 
 /** 信用取引の建玉方向 */
@@ -657,7 +668,10 @@ export const PreviewOrderInputSchema = z
 		amount: z.string().describe('注文数量'),
 		price: z.string().optional().describe('指値価格。limit / stop_limit で必須'),
 		side: z.enum(['buy', 'sell']).describe('売買方向'),
-		type: SpotOrderTypeEnum.describe('注文タイプ（limit / market / stop / stop_limit）'),
+		type: SpotOrderTypeEnum.describe(
+			'注文タイプ（limit / market / stop / stop_limit）。' +
+				'※ take_profit / stop_loss / losscut は本実装では未対応（公式 docs の動作仕様が曖昧なため意図的に除外）。',
+		),
 		post_only: z.boolean().optional().describe('Post Only（limit のみ有効。Maker 手数料を確保）'),
 		trigger_price: z.string().optional().describe('トリガー価格。stop / stop_limit で必須'),
 		position_side: PositionSideEnum.optional().describe(
@@ -705,7 +719,10 @@ export const CreateOrderInputSchema = z
 		amount: z.string().describe('注文数量'),
 		price: z.string().optional().describe('指値価格。limit / stop_limit で必須'),
 		side: z.enum(['buy', 'sell']).describe('売買方向'),
-		type: SpotOrderTypeEnum.describe('注文タイプ（limit / market / stop / stop_limit）'),
+		type: SpotOrderTypeEnum.describe(
+			'注文タイプ（limit / market / stop / stop_limit）。' +
+				'※ take_profit / stop_loss / losscut は本実装では未対応（公式 docs の動作仕様が曖昧なため意図的に除外）。',
+		),
 		post_only: z.boolean().optional().describe('Post Only（limit のみ有効。Maker 手数料を確保）'),
 		trigger_price: z.string().optional().describe('トリガー価格。stop / stop_limit で必須'),
 		position_side: PositionSideEnum.optional().describe('信用取引の建玉方向。preview_order で指定した値をそのまま渡す'),

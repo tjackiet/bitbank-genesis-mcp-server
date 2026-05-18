@@ -208,6 +208,7 @@ export const toolDef: ToolDefinition = {
 		'[Preview Order] 注文内容をプレビューし確認トークンを発行する。実際の発注は行わない。Private API。',
 		'create_order を実行するには、まずこのツールで確認トークンを取得する必要がある。',
 		'バリデーション（パラメータチェック、トリガー価格チェック）もここで実施する。',
+		'対応注文タイプは limit / market / stop / stop_limit の 4 種類のみ（take_profit / stop_loss / losscut は未対応）。',
 		'position_side を指定すると信用注文として扱う（ロング新規=buy+long, ロング決済=sell+long, ショート新規=sell+short, ショート決済=buy+short）。',
 		'⚠️ confirmation_token は LLM 可視テキストには含めない。ホスト UI または elicitation のユーザー確認を経て create_order が呼ばれる前提。LLM が独断でトークンを引用して create_order を呼ぶと二重発注になり得る。',
 	].join(' '),
