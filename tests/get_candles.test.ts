@@ -536,6 +536,31 @@ describe('getCandles', () => {
 			expect(res.summary).toContain('不正な OHLCV');
 		});
 
+		it('D-4: OHLCV 行の ts が 0 以下の場合 upstream として fail する', async () => {
+			// ts=0 は Number.isFinite(0)===true なので D-3 とは別枝（tsNum <= 0）を踏む
+			const fetchMock = vi.fn().mockResolvedValue({
+				ok: true,
+				status: 200,
+				statusText: 'OK',
+				json: async () => ({
+					success: 1,
+					data: {
+						candlestick: [
+							{
+								ohlcv: [['1000', '1100', '900', '1050', '0.5', 0]],
+							},
+						],
+					},
+				}),
+			});
+			globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+			const res = await getCandles('btc_jpy', '1day', '2024', 10);
+			assertFail(res);
+			expect(res.meta?.errorType).toBe('upstream');
+			expect(res.summary).toContain('不正な OHLCV');
+		});
+
 		it('E: 正常系では公式 candle の ms timestamp が normalized に保持される', async () => {
 			const ts = 1700000000000;
 			const fetchMock = vi.fn().mockResolvedValue({
