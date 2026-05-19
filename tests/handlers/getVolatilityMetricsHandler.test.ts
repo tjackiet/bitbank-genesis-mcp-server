@@ -242,9 +242,24 @@ describe('toolDef handler - タグ導出', () => {
 
 describe('toolDef handler - view routing', () => {
 	function mockOkRes() {
+		// 実際の get_volatility_metrics が buildVolatilityMetricsText で生成する
+		// summary を模した文字列。view=summary 経路が res.summary をそのまま
+		// content に流すようになったため、aggregates と rolling 行を含めておく。
+		const summary = [
+			'BTC/JPY [1day] 5,000,000円 rv=0.380(ann)',
+			'',
+			'aggregates: rv_std:0.022 rv_std_ann:0.38 parkinson:0.018 garmanKlass:0.016 rogersSatchell:0.012 atr:200000',
+			'',
+			'📊 ローリング分析:',
+			'w=7 rv:0.022000 ann:0.420000 atr:200000.00',
+			'w=30 rv:0.019000 ann:0.360000 atr:200000.00',
+			'',
+			'---',
+			'📌 含まれるもの: ボラティリティ指標（RV・Parkinson・GK・RS・ATR）、ローリング分析',
+		].join('\n');
 		return {
 			ok: true,
-			summary: 'ok',
+			summary,
 			data: {
 				aggregates: { rv_std: 0.02, rv_std_ann: 0.38, atr: 200_000 },
 				rolling: [
@@ -274,11 +289,26 @@ describe('toolDef handler - view routing', () => {
 		expect(text).toContain('1日の平均的な動き');
 	});
 
-	it('view=summary のテキストには RV= が含まれる', async () => {
+	it('view=summary のテキストには aggregates と rolling 情報が含まれる', async () => {
+		const mock = mockOkRes();
+		mockedGetVolatilityMetrics.mockResolvedValueOnce(mock as never);
+		const res = await toolDef.handler({ pair: 'btc_jpy', type: '1day', limit: 50, view: 'summary' });
+		const text = (res as { content: Array<{ text: string }> }).content[0].text;
+		// passthrough: handler は上流 summary をそのまま流す（一行要約に加工しない）
+		expect(text).toBe(mock.summary);
+		expect(text).toContain('aggregates:');
+		expect(text).toContain('📊 ローリング分析:');
+	});
+
+	it('view=summary (default) で rolling window 別 RV と ATR が content に含まれる', async () => {
 		mockedGetVolatilityMetrics.mockResolvedValueOnce(mockOkRes() as never);
 		const res = await toolDef.handler({ pair: 'btc_jpy', type: '1day', limit: 50, view: 'summary' });
 		const text = (res as { content: Array<{ text: string }> }).content[0].text;
-		expect(text).toContain('RV=');
+		// rolling window 行（複数 window）
+		expect(text).toContain('w=7 rv:');
+		expect(text).toContain('w=30 rv:');
+		// rolling 行に ATR も含む
+		expect(text).toMatch(/w=\d+.*atr:[\d.]+/);
 	});
 
 	it('view=detailed のテキストには Rolling Trends が含まれる', async () => {

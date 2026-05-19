@@ -206,11 +206,12 @@ export const toolDef: ToolDefinition = {
 			};
 		}
 
-		// summary view
+		// summary view — res.summary に aggregates + rolling 行が含まれるので、
+		// ここでは buildVolatilitySummaryText の一行要約ではなく上流 summary をそのまま流す
+		// （LLM が default view で rolling window 別 RV/ATR を読めるようにするため）
 		if (view === 'summary') {
-			const text = buildVolatilitySummaryText(viewInput);
 			return {
-				content: [{ type: 'text', text }],
+				content: [{ type: 'text', text: res.summary }],
 				structuredContent: { ...res, data: { ...res.data, tags: tagsAll } } as Record<string, unknown>,
 			};
 		}
