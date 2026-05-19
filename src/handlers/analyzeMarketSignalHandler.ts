@@ -1,4 +1,5 @@
 import type { z } from 'zod';
+import { ICHIMOKU_SHIFT } from '../../lib/indicator-config.js';
 import analyzeMarketSignal from '../../tools/analyze_market_signal.js';
 import { AnalyzeMarketSignalInputSchema, AnalyzeMarketSignalOutputSchema } from '../schemas.js';
 import type { ToolDefinition } from '../tool-definition.js';
@@ -229,9 +230,24 @@ export const toolDef: ToolDefinition = {
 				contributions?: Record<string, number>;
 				weights?: Record<string, number>;
 				nextActions?: Array<{ priority: string; tool: string; reason: string }>;
-				refs?: { indicators?: { latest?: Record<string, number> } };
+				refs?: {
+					indicators?: {
+						latest?: Record<string, number> & {
+							ichi_series?: { spanA?: number[]; spanB?: number[] };
+						};
+					};
+				};
 			};
 			const refs = d?.refs?.indicators?.latest || {};
+			// 🚨 「今日の雲」は ichi_series.spanA/B の末尾 ICHIMOKU_SHIFT(26) 本前を参照する。
+			// refs.ICHIMOKU_spanA/B は「今日計算された先行スパン」＝ 26 本後の雲なので、
+			// 価格と比較する「今日の雲」判定には使えない（26 本ズレる）。
+			const ichiSeries = refs?.ichi_series;
+			const ichiSpanASeries = Array.isArray(ichiSeries?.spanA) ? ichiSeries.spanA : null;
+			const ichiSpanBSeries = Array.isArray(ichiSeries?.spanB) ? ichiSeries.spanB : null;
+			const ichiLen = ichiSpanASeries && ichiSpanBSeries ? Math.min(ichiSpanASeries.length, ichiSpanBSeries.length) : 0;
+			const currentSpanA = ichiLen >= ICHIMOKU_SHIFT ? (ichiSpanASeries?.[ichiLen - ICHIMOKU_SHIFT] ?? null) : null;
+			const currentSpanB = ichiLen >= ICHIMOKU_SHIFT ? (ichiSpanBSeries?.[ichiLen - ICHIMOKU_SHIFT] ?? null) : null;
 			const text = buildMarketSignalHandlerText({
 				pair: String(pair || ''),
 				type: String(type || '1day'),
@@ -252,8 +268,8 @@ export const toolDef: ToolDefinition = {
 					: null,
 				supplementary: {
 					rsi: refs?.RSI_14 ?? null,
-					ichimokuSpanA: refs?.ICHIMOKU_spanA ?? null,
-					ichimokuSpanB: refs?.ICHIMOKU_spanB ?? null,
+					ichimokuSpanA: currentSpanA,
+					ichimokuSpanB: currentSpanB,
 					macdHist: refs?.MACD_hist ?? null,
 				},
 				breakdownArray: Array.isArray(d?.breakdownArray) ? d.breakdownArray : [],

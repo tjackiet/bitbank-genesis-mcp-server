@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { ICHIMOKU_SHIFT } from '../lib/indicator-config.js';
 import { asMockResult, assertOk } from './_assertResult.js';
 
 vi.mock('../tools/get_flow_metrics.js', () => ({
@@ -240,6 +241,60 @@ describe('analyze_market_signal', () => {
 		const res = (await toolDef.handler({ pair: 'btc_jpy' })) as { content: Array<{ text: string }> };
 		expect(res.content).toBeDefined();
 		expect(res.content[0].text).toContain('BTC_JPY');
+	});
+
+	// ── 「今日の雲」判定のバグ修正（spanA[len-ICHIMOKU_SHIFT] を使うこと）──
+
+	it('toolDef.handler: 雲判定は ichi_series.spanA/B の末尾 ICHIMOKU_SHIFT 本前を使う（ICHIMOKU_spanA/B とズレているケース）', async () => {
+		mockedGetFlowMetrics.mockResolvedValueOnce(asMockResult(flowOk(0.5, [0, 0, 0, 0, 0, 0, 0, 0, 0, 0])));
+		mockedGetVolatilityMetrics.mockResolvedValueOnce(asMockResult(volOk(0.5)));
+		const length = ICHIMOKU_SHIFT + 4;
+		// - ICHIMOKU_spanA/B（末尾＝ICHIMOKU_SHIFT 本後）: 80/70 → これを使うと close=100 が above_cloud（バグ）
+		// - 今日の雲（spanA/B[len-ICHIMOKU_SHIFT]）: 130/120 → 正しくは below_cloud
+		const ichiSeries = {
+			tenkan: Array.from({ length }, () => 130),
+			kijun: Array.from({ length }, () => 120),
+			spanA: Array.from({ length }, (_, i) => (i === length - 1 ? 80 : 130)),
+			spanB: Array.from({ length }, (_, i) => (i === length - 1 ? 70 : 120)),
+			chikou: Array.from({ length }, () => 130),
+		};
+		const indRes = indicatorsOk({ close: 100, rsi: 55, sma25: 100, sma75: 100, sma200: 100 });
+		(indRes.data.indicators as Record<string, unknown>).ICHIMOKU_spanA = 80;
+		(indRes.data.indicators as Record<string, unknown>).ICHIMOKU_spanB = 70;
+		(indRes.data.indicators as Record<string, unknown>).ichi_series = ichiSeries;
+		mockedAnalyzeIndicators.mockResolvedValueOnce(asMockResult(indRes));
+
+		const res = (await toolDef.handler({ pair: 'btc_jpy' })) as { content: Array<{ text: string }> };
+		const text = res.content[0].text;
+		// 「今日の雲」は 130/120、close=100 → 雲の下
+		expect(text).toContain('一目均衡表: 雲の下');
+		expect(text).not.toContain('一目均衡表: 雲の上');
+	});
+
+	it('toolDef.handler: ichi_series が ICHIMOKU_SHIFT 本未満なら雲判定は null にフォールバック', async () => {
+		mockedGetFlowMetrics.mockResolvedValueOnce(asMockResult(flowOk(0.5, [0, 0, 0, 0, 0, 0, 0, 0, 0, 0])));
+		mockedGetVolatilityMetrics.mockResolvedValueOnce(asMockResult(volOk(0.5)));
+		const length = ICHIMOKU_SHIFT - 1;
+		const ichiSeries = {
+			tenkan: Array.from({ length }, () => 130),
+			kijun: Array.from({ length }, () => 120),
+			spanA: Array.from({ length }, () => 130),
+			spanB: Array.from({ length }, () => 120),
+			chikou: Array.from({ length }, () => 130),
+		};
+		const indRes = indicatorsOk({ close: 100, rsi: 55, sma25: 100, sma75: 100, sma200: 100 });
+		// 末尾の scalar 値は存在するが、判定には使わない
+		(indRes.data.indicators as Record<string, unknown>).ICHIMOKU_spanA = 80;
+		(indRes.data.indicators as Record<string, unknown>).ICHIMOKU_spanB = 70;
+		(indRes.data.indicators as Record<string, unknown>).ichi_series = ichiSeries;
+		mockedAnalyzeIndicators.mockResolvedValueOnce(asMockResult(indRes));
+
+		const res = (await toolDef.handler({ pair: 'btc_jpy' })) as { content: Array<{ text: string }> };
+		const text = res.content[0].text;
+		// 「今日の雲」が取れないので一目均衡表セクションは出ない
+		expect(text).not.toContain('一目均衡表: 雲の上');
+		expect(text).not.toContain('一目均衡表: 雲の下');
+		expect(text).not.toContain('一目均衡表: 雲の中');
 	});
 
 	it('aggressorRatio が最大で板圧力が極端なときは get_orderbook を深掘り候補に含めるべき', async () => {
