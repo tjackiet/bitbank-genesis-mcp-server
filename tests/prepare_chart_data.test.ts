@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { dayjs } from '../lib/datetime.js';
 import { clearIndicatorCache } from '../tools/analyze_indicators.js';
-import prepareChartData from '../tools/prepare_chart_data.js';
+import prepareChartData, { toolDef } from '../tools/prepare_chart_data.js';
 import { assertFail, assertOk } from './_assertResult.js';
 
 type OhlcvRow = [string, string, string, string, string, string];
@@ -290,5 +291,96 @@ describe('prepare_chart_data', () => {
 		for (const name of ['BB_upper', 'BB_middle', 'BB_lower', 'ICHI_tenkan', 'RSI_14', 'STOCH_K', 'STOCH_D']) {
 			expect(res.meta.indicators).toContain(name);
 		}
+	});
+
+	// ── 上流 fetchWarning / 指標不足 warnings の伝播 ──
+
+	describe('上流 warning の伝播', () => {
+		function mockPartialMultiYearFetch() {
+			// analyze_indicators → getCandles は anchorYear=currentYear で multi-year 取得する。
+			// limit=1100 で fetchCount=1299、yearsNeeded=4。最古年だけ success:0 で失敗させる。
+			const currentYear = dayjs.utc().year();
+			const failYear = currentYear - 3;
+			const baseTs = dayjs.utc(`${currentYear - 1}-01-01`).valueOf();
+			const validRows = Array.from({ length: 365 }, (_, i) => [
+				'100',
+				'110',
+				'90',
+				'105',
+				'1.0',
+				String(baseTs + i * 86_400_000),
+			]);
+			vi.spyOn(globalThis, 'fetch').mockImplementation(async (url: unknown) => {
+				const urlStr = String(url);
+				const match = urlStr.match(/\/(\d{4})$/);
+				const year = match ? Number(match[1]) : Number.NaN;
+				if (year === failYear) {
+					return {
+						ok: true,
+						status: 200,
+						statusText: 'OK',
+						json: async () => ({ success: 0, data: { code: 10000 } }),
+					} as Response;
+				}
+				return {
+					ok: true,
+					status: 200,
+					statusText: 'OK',
+					json: async () => ({ success: 1, data: { candlestick: [{ ohlcv: validRows }] } }),
+				} as Response;
+			});
+		}
+
+		it('部分失敗時、meta.warning と summary 先頭に上流警告が出る', async () => {
+			mockPartialMultiYearFetch();
+			// limit=1100 で analyze_indicators → multi-year（4年取得）が走る。
+			// pair を変えてキャッシュ衝突を避ける。
+			const res = await prepareChartData('bcc_jpy', '1day', 1100, undefined);
+			assertOk(res);
+			// summary 先頭に警告が出る
+			expect(res.summary.startsWith('⚠️')).toBe(true);
+			expect(res.meta.warning).toBeDefined();
+			expect(res.meta.warning).toContain('失敗');
+		});
+
+		it('handler content[0].text の先頭に上流警告が出る', async () => {
+			mockPartialMultiYearFetch();
+			// pair を変えてキャッシュ衝突を避ける
+			const res = await toolDef.handler({ pair: 'eth_jpy', type: '1day', limit: 1100 });
+			// biome-ignore lint/suspicious/noExplicitAny: handler returns McpResponse
+			const r = res as any;
+			expect(r.content?.[0]?.text).toBeDefined();
+			const text: string = r.content[0].text;
+			// 先頭が warning 行
+			expect(text.startsWith('⚠️')).toBe(true);
+			// 上流 warning が出る
+			expect(text).toContain('失敗');
+			// JSON 本体より前に warning が出る
+			const idxWarning = text.indexOf('⚠️');
+			const idxJson = text.indexOf('"times"');
+			expect(idxWarning).toBeLessThan(idxJson);
+		});
+
+		it('upstream warning が無い正常系では summary は通常通り', async () => {
+			mockFetch(makeOhlcvRows(600));
+			const res = await prepareChartData('xrp_jpy', '1day', 50);
+			assertOk(res);
+			expect(res.meta.warning).toBeUndefined();
+			expect(res.summary.startsWith('⚠️')).toBe(false);
+		});
+
+		it('指標不足 warnings のみがある場合 summary に連結される', async () => {
+			// 少ないデータで SMA_200 等の警告を発生させる（取得は成功するので fetchWarning なし）
+			mockFetch(makeOhlcvRows(40));
+			const res = await prepareChartData('mona_jpy', '1day', 30);
+			assertOk(res);
+			// fetchWarning（取得層）はない
+			expect(res.meta.warning).toBeUndefined();
+			// 指標不足の warnings は存在する
+			expect(res.meta.warnings).toBeDefined();
+			expect((res.meta.warnings ?? []).length).toBeGreaterThan(0);
+			// summary 先頭は ⚠️ で始まる（warnings 由来）
+			expect(res.summary.startsWith('⚠️')).toBe(true);
+		});
 	});
 });

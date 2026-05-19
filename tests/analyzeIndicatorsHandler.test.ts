@@ -7,6 +7,7 @@ vi.mock('../tools/analyze_indicators.js', () => ({
 import {
 	type BuildIndicatorsTextInput,
 	buildIndicatorsText,
+	prependWarnings,
 	toolDef,
 } from '../src/handlers/analyzeIndicatorsHandler.js';
 import analyzeIndicators from '../tools/analyze_indicators.js';
@@ -790,5 +791,92 @@ describe('toolDef.handler', () => {
 			content: Array<{ text: string }>;
 		};
 		expect(res.content[0].text).toContain('ベアリッシュ');
+	});
+
+	// ── 上流 warning / 指標不足 warnings の prepend ─────────
+
+	it('meta.warning が content[0].text の先頭に出る', async () => {
+		const m = mockResult();
+		(m as { meta?: Record<string, unknown> }).meta = {
+			warning: '⚠️ 3日中1日の取得に失敗しました。',
+		};
+		mockedAnalyze.mockResolvedValueOnce(m as never);
+		const res = (await toolDef.handler({ pair: 'btc_jpy', type: '1day', limit: 200 })) as {
+			content: Array<{ text: string }>;
+		};
+		// content の最先頭が警告行で始まる
+		expect(res.content[0].text.startsWith('⚠️')).toBe(true);
+		expect(res.content[0].text).toContain('3日中1日の取得に失敗');
+		// 警告行のあとに本文セクションが続く
+		const idxWarning = res.content[0].text.indexOf('⚠️');
+		const idxBody = res.content[0].text.indexOf('【総合判定】');
+		expect(idxWarning).toBeLessThan(idxBody);
+	});
+
+	it('meta.warnings（指標不足）が meta.warning と独立した別行として content に出る', async () => {
+		const m = mockResult();
+		(m as { meta?: Record<string, unknown> }).meta = {
+			warning: '⚠️ 4年中1年の取得に失敗しました（2020年）。',
+			warnings: ['SMA_200: データ不足', 'EMA_200: データ不足'],
+		};
+		mockedAnalyze.mockResolvedValueOnce(m as never);
+		const res = (await toolDef.handler({ pair: 'btc_jpy', type: '1day', limit: 200 })) as {
+			content: Array<{ text: string }>;
+		};
+		const text = res.content[0].text;
+		// 上流 warning と 指標不足 warnings の両方が含まれる
+		expect(text).toContain('4年中1年');
+		expect(text).toContain('SMA_200: データ不足');
+		expect(text).toContain('EMA_200: データ不足');
+		// 別行で並ぶ
+		const lines = text.split('\n');
+		const warningLineIdx = lines.findIndex((l) => l.includes('4年中1年'));
+		const sma200LineIdx = lines.findIndex((l) => l.includes('SMA_200'));
+		expect(warningLineIdx).toBeGreaterThanOrEqual(0);
+		expect(sma200LineIdx).toBeGreaterThan(warningLineIdx);
+	});
+
+	it('meta.warning / meta.warnings が無ければ本文が prefix なしで出る', async () => {
+		mockedAnalyze.mockResolvedValueOnce(mockResult() as never);
+		const res = (await toolDef.handler({ pair: 'btc_jpy', type: '1day', limit: 200 })) as {
+			content: Array<{ text: string }>;
+		};
+		expect(res.content[0].text.startsWith('⚠️')).toBe(false);
+		expect(res.content[0].text.startsWith('===')).toBe(true);
+	});
+});
+
+// ── prependWarnings ユニットテスト ─────────────────────
+
+describe('prependWarnings', () => {
+	it('meta.warning と meta.warnings を別行で先頭に連結する', () => {
+		const text = prependWarnings('BODY', {
+			warning: '⚠️ 3日中1日の取得に失敗',
+			warnings: ['SMA_200: データ不足'],
+		});
+		expect(text.startsWith('⚠️ 3日中1日の取得に失敗')).toBe(true);
+		expect(text).toContain('⚠️ SMA_200: データ不足');
+		expect(text).toContain('\n\nBODY');
+	});
+
+	it('⚠️ プレフィックスがなければ自動で付ける', () => {
+		const text = prependWarnings('BODY', { warning: 'partial fetch', warnings: ['SMA_200: データ不足'] });
+		expect(text).toContain('⚠️ partial fetch');
+		expect(text).toContain('⚠️ SMA_200: データ不足');
+	});
+
+	it('両方とも空なら body をそのまま返す', () => {
+		expect(prependWarnings('BODY', {})).toBe('BODY');
+		expect(prependWarnings('BODY', { warnings: [] })).toBe('BODY');
+	});
+
+	it('warnings のみでも先頭に連結される', () => {
+		const text = prependWarnings('BODY', { warnings: ['SMA_5: データ不足'] });
+		expect(text.startsWith('⚠️ SMA_5: データ不足')).toBe(true);
+	});
+
+	it('warning のみでも先頭に連結される', () => {
+		const text = prependWarnings('BODY', { warning: '⚠️ partial fetch' });
+		expect(text.startsWith('⚠️ partial fetch')).toBe(true);
 	});
 });

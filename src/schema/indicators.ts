@@ -114,7 +114,10 @@ export const GetIndicatorsMetaSchema = BaseMetaSchema.extend({
 	type: CandleTypeEnum,
 	count: z.number(),
 	requiredCount: z.number(),
+	/** 指標計算に必要なバー数が不足している指標名のリスト（例: "SMA_200: データ不足"） */
 	warnings: z.array(z.string()).optional(),
+	/** 上流（get_candles）の fetchWarning。multi-year/multi-day 部分失敗等で発生する取得層の不完全性。warnings[] とは別系統。 */
+	warning: z.string().optional(),
 });
 
 export const GetIndicatorsInputSchema = BasePairInputSchema.extend({

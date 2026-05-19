@@ -874,4 +874,107 @@ describe('getCandles', () => {
 			expect(parsed).toHaveLength(3);
 		});
 	});
+
+	// ── fetchWarning（部分失敗）の meta.warning 経由での伝播 ──
+
+	describe('multi-year/multi-day 部分失敗時の fetchWarning', () => {
+		it('multi-year: 4年中1年失敗 → meta.warning に伝播し、summary 先頭に出る', async () => {
+			// 1day + date=2020 + limit=1100 → yearsNeeded=4（過去年起点）
+			// years=[2020, 2019, 2018, 2017] のうち 2017 を success:0 で失敗させる
+			const baseTs = 1577836800000; // 2020-01-01 UTC
+			const validRows = Array.from({ length: 365 }, (_, i) => [
+				'100',
+				'110',
+				'90',
+				'105',
+				'1.0',
+				String(baseTs + i * 86400000),
+			]);
+			vi.spyOn(globalThis, 'fetch').mockImplementation(async (url: unknown) => {
+				const urlStr = String(url);
+				if (urlStr.includes('/1day/2017')) {
+					return {
+						ok: true,
+						status: 200,
+						statusText: 'OK',
+						json: async () => ({ success: 0, data: { code: 10000 } }),
+					} as Response;
+				}
+				return {
+					ok: true,
+					status: 200,
+					statusText: 'OK',
+					json: async () => ({ success: 1, data: { candlestick: [{ ohlcv: validRows }] } }),
+				} as Response;
+			});
+
+			const res = await getCandles('btc_jpy', '1day', '2020', 1100);
+			assertOk(res);
+			// meta.warning に上流の部分失敗が伝播している
+			expect(res.meta.warning).toBeDefined();
+			expect(res.meta.warning).toContain('4年中1年');
+			expect(res.meta.warning).toContain('2017');
+			// summary 先頭にも警告が出る
+			expect(res.summary.startsWith('⚠️')).toBe(true);
+		});
+
+		it('multi-day: 過半数未満の失敗 → meta.warning に伝播', async () => {
+			// 1hour + date=20240115 + limit=200 → daysNeeded=ceil(200/24)+1=10
+			// 10日のうち 20240106（最古日）の 1 日を失敗させる（1/10 < 0.5）
+			const baseTs = 1705276800000; // 2024-01-15
+			const validRows = Array.from({ length: 24 }, (_, i) => [
+				'100',
+				'110',
+				'90',
+				'105',
+				'1.0',
+				String(baseTs + i * 3600000),
+			]);
+			vi.spyOn(globalThis, 'fetch').mockImplementation(async (url: unknown) => {
+				const urlStr = String(url);
+				if (urlStr.includes('/1hour/20240106')) {
+					return {
+						ok: true,
+						status: 200,
+						statusText: 'OK',
+						json: async () => ({ success: 0, data: { code: 10000 } }),
+					} as Response;
+				}
+				return {
+					ok: true,
+					status: 200,
+					statusText: 'OK',
+					json: async () => ({ success: 1, data: { candlestick: [{ ohlcv: validRows }] } }),
+				} as Response;
+			});
+
+			const res = await getCandles('btc_jpy', '1hour', '20240115', 200);
+			assertOk(res);
+			expect(res.meta.warning).toBeDefined();
+			expect(res.meta.warning).toContain('日中');
+			expect(res.summary.startsWith('⚠️')).toBe(true);
+		});
+
+		it('正常系（fetchWarning なし）: meta.warning は undefined のまま', async () => {
+			const baseTs = 1577836800000;
+			const ohlcv = Array.from({ length: 365 }, (_, i) => [
+				'100',
+				'110',
+				'90',
+				'105',
+				'1.0',
+				String(baseTs + i * 86400000),
+			]);
+			vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+				ok: true,
+				status: 200,
+				statusText: 'OK',
+				json: async () => ({ success: 1, data: { candlestick: [{ ohlcv }] } }),
+			} as Response);
+
+			const res = await getCandles('btc_jpy', '1day', '2020', 365);
+			assertOk(res);
+			expect(res.meta.warning).toBeUndefined();
+		});
+	});
 });
