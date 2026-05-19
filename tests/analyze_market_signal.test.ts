@@ -20,7 +20,7 @@ import analyzeMarketSignal from '../tools/analyze_market_signal.js';
 import getFlowMetrics from '../tools/get_flow_metrics.js';
 import getVolatilityMetrics from '../tools/get_volatility_metrics.js';
 
-function flowOk(aggressorRatio: number, cvdValues: number[]) {
+function flowOk(aggressorRatio: number, cvdValues: number[], meta: Record<string, unknown> = {}) {
 	return {
 		ok: true,
 		summary: 'ok',
@@ -30,18 +30,18 @@ function flowOk(aggressorRatio: number, cvdValues: number[]) {
 				buckets: cvdValues.map((cvd) => ({ cvd })),
 			},
 		},
-		meta: {},
+		meta,
 	};
 }
 
-function volOk(rvStdAnn: number) {
+function volOk(rvStdAnn: number, meta: Record<string, unknown> = {}) {
 	return {
 		ok: true,
 		summary: 'ok',
 		data: {
 			aggregates: { rv_std_ann: rvStdAnn },
 		},
-		meta: {},
+		meta,
 	};
 }
 
@@ -54,10 +54,10 @@ function makeCloses(count: number, close: number) {
 
 function indicatorsOk(params: {
 	close: number;
-	rsi: number;
-	sma25: number;
-	sma75: number;
-	sma200: number;
+	rsi: number | null;
+	sma25: number | null;
+	sma75: number | null;
+	sma200: number | null;
 	normalizedCount?: number;
 	trend?:
 		| 'strong_uptrend'
@@ -68,8 +68,9 @@ function indicatorsOk(params: {
 		| 'oversold'
 		| 'sideways'
 		| 'insufficient_data';
+	meta?: Record<string, unknown>;
 }) {
-	const { close, rsi, sma25, sma75, sma200, normalizedCount = 220, trend = 'sideways' } = params;
+	const { close, rsi, sma25, sma75, sma200, normalizedCount = 220, trend = 'sideways', meta = {} } = params;
 	return {
 		ok: true,
 		summary: 'ok',
@@ -83,7 +84,7 @@ function indicatorsOk(params: {
 			normalized: makeCloses(normalizedCount, close),
 			trend,
 		},
-		meta: {},
+		meta,
 	};
 }
 
@@ -195,7 +196,10 @@ describe('analyze_market_signal', () => {
 		expect(res.data.metrics.rsi).toBe(25);
 	});
 
-	it('高ボラティリティ: rv_std_ann > 1.0 で信頼度に影響', async () => {
+	it('rv_std_ann > 1.0 のボラティリティ値が metrics に伝播する', async () => {
+		// 注: 高ボラそのものは confidence を直接降格させない。confidence の降格は
+		// (1) 上流 meta.warning ありで high → medium、(2) 主要要素 null で low 固定、の 2 系統のみ。
+		// このテストは rv_std_ann が data.metrics にそのまま流れることを検証する。
 		mockedGetFlowMetrics.mockResolvedValueOnce(asMockResult(flowOk(0.5, [0, 0, 0, 0, 0, 0, 0, 0, 0, 0])));
 		mockedGetVolatilityMetrics.mockResolvedValueOnce(asMockResult(volOk(1.5)));
 		mockedAnalyzeIndicators.mockResolvedValueOnce(
@@ -308,5 +312,161 @@ describe('analyze_market_signal', () => {
 		assertOk(res);
 		expect(res.data.metrics.buyPressure).toBe(1);
 		expect(res.data.nextActions.map((action) => action.tool)).toContain('get_orderbook');
+	});
+
+	// ── 上流 warning の集約と伝播（§9.2 / §9.3） ────────────────────────────────
+
+	it('get_flow_metrics の meta.warning が tool の meta.warning と content 先頭に伝播する', async () => {
+		mockedGetFlowMetrics.mockResolvedValueOnce(
+			asMockResult(flowOk(0.5, [0, 0, 0, 0, 0, 0, 0, 0, 0, 0], { warning: '⚠️ flow データ部分欠損' })),
+		);
+		mockedGetVolatilityMetrics.mockResolvedValueOnce(asMockResult(volOk(0.5)));
+		mockedAnalyzeIndicators.mockResolvedValueOnce(
+			asMockResult(indicatorsOk({ close: 100, rsi: 50, sma25: 100, sma75: 100, sma200: 100 })),
+		);
+
+		const res = await analyzeMarketSignal('btc_jpy');
+		assertOk(res);
+		expect(res.meta.warning).toContain('[flow]');
+		expect(res.meta.warning).toContain('flow データ部分欠損');
+		expect(res.summary.split('\n')[0]).toMatch(/^⚠️/);
+		expect(res.summary).toContain('[flow]');
+	});
+
+	it('get_volatility_metrics の meta.warning が tool の meta.warning と content 先頭に伝播する', async () => {
+		mockedGetFlowMetrics.mockResolvedValueOnce(asMockResult(flowOk(0.5, [0, 0, 0, 0, 0, 0, 0, 0, 0, 0])));
+		mockedGetVolatilityMetrics.mockResolvedValueOnce(
+			asMockResult(volOk(0.5, { warning: '⚠️ volatility 不正OHLCをスキップ' })),
+		);
+		mockedAnalyzeIndicators.mockResolvedValueOnce(
+			asMockResult(indicatorsOk({ close: 100, rsi: 50, sma25: 100, sma75: 100, sma200: 100 })),
+		);
+
+		const res = await analyzeMarketSignal('btc_jpy');
+		assertOk(res);
+		expect(res.meta.warning).toContain('[volatility]');
+		expect(res.meta.warning).toContain('volatility 不正OHLCをスキップ');
+		expect(res.summary).toContain('[volatility]');
+		expect(res.summary.split('\n')[0]).toMatch(/^⚠️/);
+	});
+
+	it('analyze_indicators の meta.warning（取得層）と meta.warnings（計算層）は別系統で伝播する（混在 NG）', async () => {
+		mockedGetFlowMetrics.mockResolvedValueOnce(asMockResult(flowOk(0.5, [0, 0, 0, 0, 0, 0, 0, 0, 0, 0])));
+		mockedGetVolatilityMetrics.mockResolvedValueOnce(asMockResult(volOk(0.5)));
+		mockedAnalyzeIndicators.mockResolvedValueOnce(
+			asMockResult(
+				indicatorsOk({
+					close: 100,
+					rsi: 50,
+					sma25: 100,
+					sma75: 100,
+					sma200: 100,
+					meta: {
+						warning: '⚠️ indicators 取得層警告',
+						warnings: ['SMA_200: データ不足', 'Ichimoku: データ不足'],
+					},
+				}),
+			),
+		);
+
+		const res = await analyzeMarketSignal('btc_jpy');
+		assertOk(res);
+		// 取得層 warning は meta.warning に
+		expect(res.meta.warning).toContain('[indicators]');
+		expect(res.meta.warning).toContain('indicators 取得層警告');
+		// 計算層 warnings は meta.warnings に（取得層メッセージが混入していない）
+		expect(res.meta.warnings).toEqual(['SMA_200: データ不足', 'Ichimoku: データ不足']);
+		expect(res.meta.warnings).not.toContain('indicators 取得層警告');
+		// content 先頭に取得層 warning と計算層 warnings が両方並ぶ
+		expect(res.summary).toContain('[indicators] indicators 取得層警告');
+		expect(res.summary).toContain('⚠️ SMA_200: データ不足');
+		expect(res.summary).toContain('⚠️ Ichimoku: データ不足');
+	});
+
+	// ── confidence のデータ品質連動降格（§9.4） ─────────────────────────────────
+
+	it('取得層 warning がある状態では 寄与符号一致でも confidence が high にならず medium に降格する', async () => {
+		// 主要3要素（smaTrend / momentum / cvdTrend）が全て正方向で一致する強気シグナルを用意。
+		// 上流 warning なしなら high になる構成だが、warning ありで medium に降格する。
+		mockedGetFlowMetrics.mockResolvedValueOnce(
+			asMockResult(flowOk(0.8, [0, 10, 20, 40, 60, 80, 100, 120, 140, 160], { warning: '⚠️ flow データ部分欠損' })),
+		);
+		mockedGetVolatilityMetrics.mockResolvedValueOnce(asMockResult(volOk(0.3)));
+		mockedAnalyzeIndicators.mockResolvedValueOnce(
+			asMockResult(
+				indicatorsOk({
+					close: 120,
+					rsi: 65,
+					sma25: 115,
+					sma75: 110,
+					sma200: 100,
+					trend: 'strong_uptrend',
+				}),
+			),
+		);
+
+		const res = await analyzeMarketSignal('btc_jpy');
+		assertOk(res);
+		expect(res.data.confidence).toBe('medium');
+		expect(res.data.confidenceReason).toContain('取得層 warning');
+	});
+
+	it('SMA_200 が null のとき confidence は low 固定（寄与符号が一致していても）', async () => {
+		mockedGetFlowMetrics.mockResolvedValueOnce(asMockResult(flowOk(0.8, [0, 10, 20, 40, 60, 80, 100, 120, 140, 160])));
+		mockedGetVolatilityMetrics.mockResolvedValueOnce(asMockResult(volOk(0.3)));
+		mockedAnalyzeIndicators.mockResolvedValueOnce(
+			asMockResult(
+				indicatorsOk({
+					close: 120,
+					rsi: 65,
+					sma25: 115,
+					sma75: 110,
+					sma200: null,
+					trend: 'uptrend',
+				}),
+			),
+		);
+
+		const res = await analyzeMarketSignal('btc_jpy');
+		assertOk(res);
+		expect(res.data.confidence).toBe('low');
+		expect(res.data.confidenceReason).toContain('SMA_200');
+	});
+
+	it('RSI が null のとき confidence は low 固定', async () => {
+		mockedGetFlowMetrics.mockResolvedValueOnce(asMockResult(flowOk(0.8, [0, 10, 20, 40, 60, 80, 100, 120, 140, 160])));
+		mockedGetVolatilityMetrics.mockResolvedValueOnce(asMockResult(volOk(0.3)));
+		mockedAnalyzeIndicators.mockResolvedValueOnce(
+			asMockResult(
+				indicatorsOk({
+					close: 120,
+					rsi: null,
+					sma25: 115,
+					sma75: 110,
+					sma200: 100,
+					trend: 'uptrend',
+				}),
+			),
+		);
+
+		const res = await analyzeMarketSignal('btc_jpy');
+		assertOk(res);
+		expect(res.data.confidence).toBe('low');
+		expect(res.data.confidenceReason).toContain('RSI_14');
+	});
+
+	it('上流 warning が全く無い場合は meta.warning / meta.warnings が出ない', async () => {
+		mockedGetFlowMetrics.mockResolvedValueOnce(asMockResult(flowOk(0.5, [0, 0, 0, 0, 0, 0, 0, 0, 0, 0])));
+		mockedGetVolatilityMetrics.mockResolvedValueOnce(asMockResult(volOk(0.5)));
+		mockedAnalyzeIndicators.mockResolvedValueOnce(
+			asMockResult(indicatorsOk({ close: 100, rsi: 50, sma25: 100, sma75: 100, sma200: 100 })),
+		);
+
+		const res = await analyzeMarketSignal('btc_jpy');
+		assertOk(res);
+		expect(res.meta.warning).toBeUndefined();
+		expect(res.meta.warnings).toBeUndefined();
+		// content 先頭に ⚠️ が出ない（既存テストの緑維持）
+		expect(res.summary.split('\n')[0]).not.toMatch(/^⚠️/);
 	});
 });

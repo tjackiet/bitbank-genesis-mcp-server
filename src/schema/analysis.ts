@@ -190,6 +190,10 @@ export const AnalyzeMarketSignalMetaSchemaOut = BaseMetaSchema.extend({
 	windows: z.array(z.number()),
 	bucketMs: z.number().int(),
 	flowLimit: z.number().int(),
+	/** 取得層の不完全性（上流 get_flow_metrics / get_volatility_metrics / analyze_indicators の meta.warning を集約）。 */
+	warning: z.string().optional(),
+	/** 計算層の不完全性（analyze_indicators の meta.warnings を継承。SMA_200 データ不足 等）。 */
+	warnings: z.array(z.string()).optional(),
 });
 export const AnalyzeMarketSignalOutputSchema = toolResultSchema(
 	AnalyzeMarketSignalDataSchemaOut,

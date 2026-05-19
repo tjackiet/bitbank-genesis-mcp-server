@@ -375,4 +375,50 @@ describe('toolDef handler', () => {
 		expect(text).toContain('RSI(14)');
 		expect(text).toContain('MACD');
 	});
+
+	// ── 上流 warning の content 先頭への連結（§9.3） ────────────────────────────
+
+	it('meta.warning がある場合 content の先頭行が ⚠️ で始まる', async () => {
+		const r = makeOkResult();
+		(r.meta as Record<string, unknown>).warning = '[flow] flow データ部分欠損';
+		mockedAnalyzeMarketSignal.mockResolvedValueOnce(r as never);
+		const res = await toolDef.handler({ pair: 'btc_jpy', type: '1day' });
+		const text = (res as { content: Array<{ text: string }> }).content[0].text;
+		const firstLine = text.split('\n')[0];
+		expect(firstLine).toMatch(/^⚠️/);
+		expect(firstLine).toContain('[flow]');
+		expect(firstLine).toContain('flow データ部分欠損');
+	});
+
+	it('meta.warnings（複数）が全て content 先頭ブロックに ⚠️ 付きで出る', async () => {
+		const r = makeOkResult();
+		(r.meta as Record<string, unknown>).warnings = ['SMA_200: データ不足', 'Ichimoku: データ不足'];
+		mockedAnalyzeMarketSignal.mockResolvedValueOnce(r as never);
+		const res = await toolDef.handler({ pair: 'btc_jpy', type: '1day' });
+		const text = (res as { content: Array<{ text: string }> }).content[0].text;
+		const lines = text.split('\n');
+		expect(lines[0]).toBe('⚠️ SMA_200: データ不足');
+		expect(lines[1]).toBe('⚠️ Ichimoku: データ不足');
+	});
+
+	it('meta.warning と meta.warnings が両方ある場合、warning が先・warnings が後の順で並ぶ', async () => {
+		const r = makeOkResult();
+		(r.meta as Record<string, unknown>).warning = '[indicators] 取得層警告';
+		(r.meta as Record<string, unknown>).warnings = ['SMA_200: データ不足'];
+		mockedAnalyzeMarketSignal.mockResolvedValueOnce(r as never);
+		const res = await toolDef.handler({ pair: 'btc_jpy', type: '1day' });
+		const text = (res as { content: Array<{ text: string }> }).content[0].text;
+		const lines = text.split('\n');
+		expect(lines[0]).toBe('⚠️ [indicators] 取得層警告');
+		expect(lines[1]).toBe('⚠️ SMA_200: データ不足');
+	});
+
+	it('warning が無い場合は content 先頭に ⚠️ 行が出ない（既存挙動の維持）', async () => {
+		mockedAnalyzeMarketSignal.mockResolvedValueOnce(makeOkResult() as never);
+		const res = await toolDef.handler({ pair: 'btc_jpy', type: '1day' });
+		const text = (res as { content: Array<{ text: string }> }).content[0].text;
+		const firstLine = text.split('\n')[0];
+		expect(firstLine).not.toMatch(/^⚠️/);
+		expect(firstLine).toContain('BTC_JPY');
+	});
 });

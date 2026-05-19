@@ -248,7 +248,7 @@ export const toolDef: ToolDefinition = {
 			const ichiLen = ichiSpanASeries && ichiSpanBSeries ? Math.min(ichiSpanASeries.length, ichiSpanBSeries.length) : 0;
 			const currentSpanA = ichiLen >= ICHIMOKU_SHIFT ? (ichiSpanASeries?.[ichiLen - ICHIMOKU_SHIFT] ?? null) : null;
 			const currentSpanB = ichiLen >= ICHIMOKU_SHIFT ? (ichiSpanBSeries?.[ichiLen - ICHIMOKU_SHIFT] ?? null) : null;
-			const text = buildMarketSignalHandlerText({
+			const baseText = buildMarketSignalHandlerText({
 				pair: String(pair || ''),
 				type: String(type || '1day'),
 				score: d?.score ?? 0,
@@ -277,6 +277,22 @@ export const toolDef: ToolDefinition = {
 				weights: d?.weights || null,
 				nextActions: Array.isArray(d?.nextActions) ? d.nextActions : [],
 			});
+			// 上流 warning（取得層）/ warnings（計算層）を content 先頭に再連結する。
+			// LLM は structuredContent.meta を参照できないため、tool 層の summary 先頭と
+			// 同じフォーマットで handler 側でも text 先頭に警告を出す（§9.3）。
+			const warningLines: string[] = [];
+			const m = (res as { meta?: { warning?: string; warnings?: string[] } }).meta;
+			if (m?.warning) {
+				for (const line of m.warning.split('\n')) {
+					if (!line) continue;
+					warningLines.push(line.startsWith('⚠️') ? line : `⚠️ ${line}`);
+				}
+			}
+			for (const w of m?.warnings ?? []) {
+				if (!w) continue;
+				warningLines.push(w.startsWith('⚠️') ? w : `⚠️ ${w}`);
+			}
+			const text = warningLines.length > 0 ? `${warningLines.join('\n')}\n${baseText}` : baseText;
 			return {
 				content: [{ type: 'text', text }],
 				structuredContent: AnalyzeMarketSignalOutputSchema.parse(res) as Record<string, unknown>,

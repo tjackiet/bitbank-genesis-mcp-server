@@ -1,5 +1,5 @@
 import type { z } from 'zod';
-import { formatPercent, formatPriceJPY, formatSummary } from '../lib/formatter.js';
+import { formatPercent, formatPriceJPY } from '../lib/formatter.js';
 import { slidingMean } from '../lib/math.js';
 import { fail, failFromError, failFromValidation, ok } from '../lib/result.js';
 import { createMeta, ensurePair } from '../lib/validate.js';
@@ -236,6 +236,27 @@ export default async function analyzeMarketSignal(pair: string = 'btc_jpy', opts
 				),
 			);
 
+		// 上流 meta から warning / warnings を集約する。
+		// - meta.warning (string): 取得層の不完全性。3 ツールそれぞれの meta.warning を改行連結し、
+		//   どのツール由来か追跡できるよう `[flow] / [volatility] / [indicators]` の prefix を付ける。
+		// - meta.warnings (string[]): 計算層の不完全性。analyze_indicators のみが出すので、
+		//   そのまま継承する。warning と warnings は同じ field に混ぜない（別系統）。
+		const upstreamWarningLines: string[] = [];
+		const collectSourceWarning = (source: string, raw: string | undefined) => {
+			if (!raw) return;
+			for (const line of raw.split('\n')) {
+				const trimmed = line.replace(/^⚠️\s*/, '').trim();
+				if (trimmed) upstreamWarningLines.push(`[${source}] ${trimmed}`);
+			}
+		};
+		collectSourceWarning('flow', (flowRes.meta as { warning?: string }).warning);
+		collectSourceWarning('volatility', (volRes.meta as { warning?: string }).warning);
+		collectSourceWarning('indicators', (indRes.meta as { warning?: string }).warning);
+		const upstreamWarning = upstreamWarningLines.length > 0 ? upstreamWarningLines.join('\n') : undefined;
+		const rawIndWarnings = (indRes.meta as { warnings?: string[] }).warnings;
+		const upstreamWarnings =
+			Array.isArray(rawIndWarnings) && rawIndWarnings.length > 0 ? [...rawIndWarnings] : undefined;
+
 		// Flow metrics
 		const agg = flowRes.data.aggregates || {};
 		const buckets = (flowRes.data.series?.buckets || []) as Array<{ cvd: number }>;
@@ -339,27 +360,18 @@ export default async function analyzeMarketSignal(pair: string = 'btc_jpy', opts
 		if (rsi != null && rsi < 35) tags.push('oversold_bias');
 		if (rsi != null && rsi > 65) tags.push('overbought_risk');
 
-		// compact contributions summary (top 2 by absolute value)
-		const contribPairs: Array<[string, number]> = [
-			['buy', contribution_buy],
-			['cvd', contribution_cvd],
-			['sma', contribution_sma],
-			['mom', contribution_mom],
-			['vol', contribution_vol],
-		];
-		const top2 = contribPairs
-			.sort((a, b) => Math.abs(b[1]) - Math.abs(a[1]))
-			.slice(0, 2)
-			.map(([k, v]) => `${k}${v >= 0 ? '+' : ''}${Number(v.toFixed(2))}`)
-			.join(', ');
-
-		// summary will be finalized after confidence/nextActions are computed
-		let _summary = '';
-
 		function calculateConfidence(
 			contributions: { buyPressure: number; cvdTrend: number; momentum: number; volatility: number; smaTrend: number },
 			score: number,
+			quality: { hasUpstreamWarning: boolean; missingCoreFactors: string[] },
 		) {
+			// 主要要素が欠損していたら寄与計算が破綻するので low 固定（§9.4）。
+			if (quality.missingCoreFactors.length > 0) {
+				return {
+					level: 'low' as const,
+					reason: `主要要素のデータ不足: ${quality.missingCoreFactors.join(', ')}`,
+				};
+			}
 			const contribValues = Object.values(contributions);
 			const sorted = contribValues
 				.map((val, idx) => ({ value: val, index: idx }))
@@ -370,6 +382,13 @@ export default async function analyzeMarketSignal(pair: string = 'btc_jpy', opts
 			const top2Match = top3Signs[0] === top3Signs[1];
 			const maxContribution = Math.abs(sorted[0].value);
 			if ((allPositive || allNegative) && maxContribution >= 0.15) {
+				// 取得層 warning がある場合は high にしない（最大 medium、§9.4）。
+				if (quality.hasUpstreamWarning) {
+					return {
+						level: 'medium' as const,
+						reason: '主要3要素が同方向で一致するが、上流データに取得層 warning あり。high → medium に降格',
+					};
+				}
 				return { level: 'high' as const, reason: '主要3要素が同方向で一致。シグナルの信頼性高' };
 			} else if (top2Match || Math.abs(score) < 0.3) {
 				const reasons: string[] = [];
@@ -455,7 +474,16 @@ export default async function analyzeMarketSignal(pair: string = 'btc_jpy', opts
 			},
 		};
 
-		const confidence = calculateConfidence(contributionsData, score);
+		// 主要要素（重み 35% smaTrend、30% momentum）に必要なデータが揃っているかを判定。
+		// 欠損があると寄与計算が無効化されるので、confidence を low 固定にする（§9.4）。
+		const missingCoreFactors: string[] = [];
+		if (sma200 == null) missingCoreFactors.push('SMA_200');
+		if (sma75 == null) missingCoreFactors.push('SMA_75');
+		if (rsi == null) missingCoreFactors.push('RSI_14');
+		const confidence = calculateConfidence(contributionsData, score, {
+			hasUpstreamWarning: !!upstreamWarning,
+			missingCoreFactors,
+		});
 
 		function generateNextActions(
 			breakdown: Breakdown,
@@ -525,22 +553,6 @@ export default async function analyzeMarketSignal(pair: string = 'btc_jpy', opts
 		}
 
 		const nextActions = generateNextActions(breakdownData, score, confidence);
-
-		const _confidenceEmoji = confidence.level === 'high' ? '✅' : confidence.level === 'medium' ? '⚠️' : '🔴';
-		const nextActionsText = nextActions
-			.slice(0, 2)
-			.map((action) => {
-				const priorityEmoji = action.priority === 'high' ? '🔴' : action.priority === 'medium' ? '🟡' : '🟢';
-				const params = action.suggestedParams ? ` ${JSON.stringify(action.suggestedParams)}` : '';
-				return `${priorityEmoji} ${action.tool}${params}`;
-			})
-			.join(', ');
-		const summaryText = formatSummary({
-			pair: chk.pair,
-			latest: indRes?.data?.normalized?.at(-1)?.close,
-			extra: `score=${score} rec=${recommendation} confidence=${confidence.level} (top: ${top2})${nextActions.length > 0 ? ` next=[${nextActionsText}]` : ''}`,
-		});
-		_summary = summaryText;
 
 		const alerts = (() => {
 			const a: Array<{ level: 'info' | 'warning' | 'critical'; message: string }> = [];
@@ -624,7 +636,7 @@ export default async function analyzeMarketSignal(pair: string = 'btc_jpy', opts
 			},
 		};
 
-		const fullText = buildMarketSignalText({
+		const baseText = buildMarketSignalText({
 			pair: chk.pair,
 			type,
 			score,
@@ -651,7 +663,27 @@ export default async function analyzeMarketSignal(pair: string = 'btc_jpy', opts
 			alerts,
 		});
 
-		const meta = createMeta(chk.pair, { type, windows, bucketMs, flowLimit });
+		// summary 先頭に warning / warnings を別行で連結する（取得層 / 計算層を別系統で出す）。
+		// LLM は structuredContent.meta を参照できないため、テキストに警告を出さないと
+		// データ不完全性を見落とす。prepare_chart_data.ts:267-279 と同じパターン。
+		const textWarningLines: string[] = [];
+		if (upstreamWarning) {
+			for (const line of upstreamWarning.split('\n')) {
+				if (!line) continue;
+				textWarningLines.push(line.startsWith('⚠️') ? line : `⚠️ ${line}`);
+			}
+		}
+		if (upstreamWarnings) {
+			for (const w of upstreamWarnings) {
+				if (!w) continue;
+				textWarningLines.push(w.startsWith('⚠️') ? w : `⚠️ ${w}`);
+			}
+		}
+		const fullText = textWarningLines.length > 0 ? `${textWarningLines.join('\n')}\n${baseText}` : baseText;
+
+		const meta: Record<string, unknown> = createMeta(chk.pair, { type, windows, bucketMs, flowLimit });
+		if (upstreamWarning) meta.warning = upstreamWarning;
+		if (upstreamWarnings && upstreamWarnings.length > 0) meta.warnings = upstreamWarnings;
 		return AnalyzeMarketSignalOutputSchema.parse(
 			ok(
 				fullText,
