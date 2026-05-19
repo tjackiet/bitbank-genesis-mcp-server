@@ -207,6 +207,8 @@ export const GetCandlesDataSchemaOut = z.object({
 export const GetCandlesMetaSchemaOut = BaseMetaSchema.extend({
 	type: CandleTypeEnum,
 	count: z.number(),
+	/** 取得層の不完全性を示す警告（multi-year/multi-day 部分失敗時など）。指標不足の warnings[] とは別系統。 */
+	warning: z.string().optional(),
 });
 export const GetCandlesOutputSchema = toolResultSchema(GetCandlesDataSchemaOut, GetCandlesMetaSchemaOut);
 

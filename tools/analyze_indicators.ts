@@ -66,6 +66,10 @@ interface IndicatorCacheComputed {
 	warnings: string[];
 	trend: TrendLabel;
 	fetchCount: number;
+	// 上流 get_candles の fetchWarning（multi-year/multi-day 部分失敗等）。
+	// cache miss 時に candlesResult.meta.warning を保存し、cache hit 時もここから返す。
+	// 落とすと 2 回目以降 warning が消えるので必ず cache に乗せる。
+	upstreamWarning?: string;
 }
 
 const indicatorCache = new TtlCache<IndicatorCacheComputed>({
@@ -641,6 +645,7 @@ export default async function analyzeIndicators(
 			warnings,
 			trend,
 			fetchCount,
+			upstreamWarning: candlesResult.meta.warning,
 		};
 
 		indicatorCache.set(cacheKey, computed);
@@ -680,6 +685,9 @@ export default async function analyzeIndicators(
 		count: allCloses.length,
 		requiredCount: fetchCount,
 		warnings: warnings.length > 0 ? warnings : undefined,
+		// 上流 fetchWarning は warnings[] と別系統。
+		// warnings[] に混ぜると指標不足と取得層不完全性の区別がつかなくなる。
+		warning: computed.upstreamWarning,
 	});
 
 	const parsedData = GetIndicatorsDataSchema.parse(data);

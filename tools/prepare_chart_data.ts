@@ -88,6 +88,10 @@ interface PrepareChartDataMeta {
 	count: number;
 	indicators: string[];
 	volumeUnit: string;
+	/** 上流 get_candles → analyze_indicators から伝播した取得層の警告。partial fetch 等。 */
+	warning?: string;
+	/** 上流 analyze_indicators の指標不足警告（"SMA_200: データ不足" 等）。warning とは別系統。 */
+	warnings?: string[];
 }
 
 /**
@@ -238,18 +242,42 @@ export default async function prepareChartData(
 		// 出来高の単位はペアのベース通貨（例: btc_jpy → BTC）
 		const volumeUnit = chk.pair.split('_')[0].toUpperCase();
 
+		// 上流 analyze_indicators の meta を取り込む。
+		// - res.meta.warning  → 取得層（get_candles の multi-year/multi-day 部分失敗等）
+		// - res.meta.warnings → 計算層（SMA_200 がデータ不足等）
+		// 両者は別系統として保持し、summary / handler content では別行で出す。
+		const upstreamMeta = res.meta as { warning?: string; warnings?: string[] };
+		const upstreamWarning = upstreamMeta?.warning;
+		const upstreamWarnings = Array.isArray(upstreamMeta?.warnings) ? upstreamMeta.warnings : undefined;
+
 		const meta: PrepareChartDataMeta = {
 			...createMeta(chk.pair),
 			type,
 			count: candles.length,
 			indicators: indicatorNames,
 			volumeUnit,
+			...(upstreamWarning ? { warning: upstreamWarning } : {}),
+			...(upstreamWarnings && upstreamWarnings.length > 0 ? { warnings: upstreamWarnings } : {}),
 		};
 
 		const seriesNote = indicatorNames.length > 0 ? `, indicators: ${indicatorNames.join(', ')}` : '';
 		const truncNote =
 			effectiveLimit < limit ? ` ⚠️ limit was capped from ${limit} to ${effectiveLimit} to reduce context size` : '';
-		return ok(`${chk.pair} ${type} chart data (${candles.length} candles${seriesNote})${truncNote}`, data, meta);
+		const baseSummary = `${chk.pair} ${type} chart data (${candles.length} candles${seriesNote})${truncNote}`;
+		// summary 先頭に warning / warnings を別行で連結する。
+		// LLM が summary だけ見ても取得層/計算層の不完全性に気づけるようにするため。
+		const warningLines: string[] = [];
+		if (upstreamWarning) {
+			warningLines.push(upstreamWarning.startsWith('⚠️') ? upstreamWarning : `⚠️ ${upstreamWarning}`);
+		}
+		if (upstreamWarnings) {
+			for (const w of upstreamWarnings) {
+				if (!w) continue;
+				warningLines.push(w.startsWith('⚠️') ? w : `⚠️ ${w}`);
+			}
+		}
+		const summary = warningLines.length > 0 ? `${warningLines.join('\n')}\n${baseSummary}` : baseSummary;
+		return ok(summary, data, meta);
 	} catch (err: unknown) {
 		return failFromError(err);
 	}

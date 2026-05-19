@@ -32,6 +32,37 @@ handler: async (args) => {
 
 新規ツール作成・既存ツール修正時は、LLM が受け取る `content` テキストに十分な情報が含まれているか必ず確認する。
 
+## 上流 warning の伝播（加工ツール）
+
+`get_candles` → `analyze_indicators` → `prepare_chart_data` のように上流ツールの結果を加工する
+ツールでは、上流 `meta.warning` / `meta.warnings` を必ず content / summary 先頭に連結する。
+これを落とすと LLM がデータ不完全性に気づけずハルシネーションを起こす。
+
+- **`meta.warning`（string）**: 取得層の不完全性（partial fetch / multi-day 失敗 等）。
+- **`meta.warnings`（string[]）**: 計算層の不完全性（指標バー数不足 等）。
+- 2 系統は混ぜず、別フィールドかつ別行で出す。
+
+```ts
+// summary 先頭に両系統を連結する例（prepare_chart_data 参照）
+const lines: string[] = [];
+if (upstream.warning) lines.push(`⚠️ ${upstream.warning}`);
+for (const w of upstream.warnings ?? []) lines.push(`⚠️ ${w}`);
+const summary = lines.length > 0 ? `${lines.join('\n')}\n${baseSummary}` : baseSummary;
+```
+
+### キャッシュ層を持つツールの注意
+
+`analyze_indicators` のように結果をキャッシュするツールは、**上流 warning も cache entry に保存する。**
+落とすと 2 回目以降のキャッシュヒットで warning が消える（partial fetch 状態を引きずる）。
+
+### handler 側のチェックリスト
+
+- [ ] `handler` で `res.summary` を差し替える場合、default view でも LLM 必須フィールド
+      （window / 期間 / warning / warnings）を落とさない。
+- [ ] `content[0].text` の先頭に warning 行が含まれているか目視確認。
+- [ ] `JSON.stringify(data)` を含める場合は **JSON より前** に warning 行を出す。
+- [ ] 加工ツールの場合、`view=items` 等の代替ビューでも warning 行が消えないようにする。
+
 ## Public ツール
 
 認証不要。誰でも利用可能。

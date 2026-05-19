@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { dayjs } from '../lib/datetime.js';
 import { toolDef } from '../src/handlers/analyzeIndicatorsHandler.js';
 import analyzeIndicators, { clearIndicatorCache, computeOBV, ema } from '../tools/analyze_indicators.js';
 import { assertFail, assertOk } from './_assertResult.js';
@@ -426,6 +427,97 @@ describe('analyze_indicators', () => {
 		const res = await analyzeIndicators('btc_jpy', '1day', null);
 		assertOk(res);
 		expect(res.summary).not.toContain('ICHI_conv');
+	});
+
+	// --- 上流 fetchWarning（meta.warning）の伝播 ---
+
+	describe('上流 fetchWarning の meta.warning 伝播', () => {
+		afterEach(() => clearIndicatorCache());
+
+		function mockPartialMultiYear() {
+			// analyze_indicators は anchorYear=currentYear で fetchSingleYear を並列呼び出しする。
+			// 過半数失敗だと fail になるので、最古年 1 つだけを success:0 で失敗させる。
+			const currentYear = dayjs.utc().year();
+			const baseTs = dayjs.utc(`${currentYear - 1}-01-01`).valueOf();
+			const validRows = Array.from({ length: 365 }, (_, i) => [
+				'100',
+				'110',
+				'90',
+				'105',
+				'1.0',
+				String(baseTs + i * 86_400_000),
+			]);
+			const callCount = { n: 0 };
+			vi.spyOn(globalThis, 'fetch').mockImplementation(async (url: unknown) => {
+				callCount.n += 1;
+				const urlStr = String(url);
+				// URL の年部分を抽出（末尾の /YYYY）
+				const match = urlStr.match(/\/(\d{4})$/);
+				const year = match ? Number(match[1]) : Number.NaN;
+				// 最古年（呼ばれた中で最小）を 1 つだけ失敗させる仕掛けは複雑なので、
+				// 「特定の年（現在年-3）を失敗扱い」にして 1/4 の partial failure を作る。
+				const failYear = currentYear - 3; // 4年取得時 [cy, cy-1, cy-2, cy-3] の最古
+				if (year === failYear) {
+					return {
+						ok: true,
+						status: 200,
+						statusText: 'OK',
+						json: async () => ({ success: 0, data: { code: 10000 } }),
+					} as Response;
+				}
+				return {
+					ok: true,
+					status: 200,
+					statusText: 'OK',
+					json: async () => ({ success: 1, data: { candlestick: [{ ohlcv: validRows }] } }),
+				} as Response;
+			});
+			return callCount;
+		}
+
+		it('部分失敗時 meta.warning に伝播し、meta.warnings（指標不足）とは別フィールド', async () => {
+			mockPartialMultiYear();
+			// 日足 limit=1100 → fetchCount は 2回（buffer 含む）かつ getCandles 内で multi-year 経路
+			const res = await analyzeIndicators('btc_jpy', '1day', 1100);
+			assertOk(res);
+			expect(res.meta.warning).toBeDefined();
+			expect(typeof res.meta.warning).toBe('string');
+			expect(res.meta.warning).toContain('失敗');
+			// warnings 配列に上流警告が混入していないこと
+			if (res.meta.warnings) {
+				for (const w of res.meta.warnings) {
+					expect(w).not.toContain('失敗');
+				}
+			}
+		});
+
+		it('キャッシュヒット時も meta.warning が保持される（cache miss → cache hit）', async () => {
+			mockPartialMultiYear();
+			const first = await analyzeIndicators('btc_jpy', '1day', 1100);
+			assertOk(first);
+			expect(first.meta.warning).toBeDefined();
+			const firstWarning = first.meta.warning;
+
+			// 2 回目: limit を小さくしてキャッシュヒットさせる
+			const second = await analyzeIndicators('btc_jpy', '1day', 50);
+			assertOk(second);
+			// upstreamWarning が cache に保存されているので、2回目もそのまま見える
+			expect(second.meta.warning).toBe(firstWarning);
+		});
+
+		it('正常系（部分失敗なし）では meta.warning は undefined', async () => {
+			const rows = makeOhlcvRows(600);
+			vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+				ok: true,
+				status: 200,
+				statusText: 'OK',
+				json: async () => ({ success: 1, data: { candlestick: [{ ohlcv: rows }] } }),
+			} as Response);
+
+			const res = await analyzeIndicators('btc_jpy', '1day', 60);
+			assertOk(res);
+			expect(res.meta.warning).toBeUndefined();
+		});
 	});
 });
 

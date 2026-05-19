@@ -8,6 +8,31 @@ import analyzeIndicators from '../../tools/analyze_indicators.js';
 import { GetIndicatorsInputSchema } from '../schemas.js';
 import type { ToolDefinition } from '../tool-definition.js';
 
+// ── 警告行プレフィックス ──
+
+/**
+ * meta.warning（上流 fetchWarning: string） と meta.warnings（指標不足: string[]）を
+ * 本文の前に別行で連結する。両方欠如時はそのまま body を返す。
+ *
+ * 上流 warning は既に "⚠️ ..." で始まっているケースが多いが、欠けていれば付与する。
+ * 指標不足 warnings は "SMA_200: データ不足" のような形式なので "⚠️ " を必ず付与する。
+ */
+export function prependWarnings(body: string, meta: { warning?: string; warnings?: string[] }): string {
+	const lines: string[] = [];
+	if (meta?.warning) {
+		const w = meta.warning;
+		lines.push(w.startsWith('⚠️') ? w : `⚠️ ${w}`);
+	}
+	if (Array.isArray(meta?.warnings)) {
+		for (const w of meta.warnings) {
+			if (!w) continue;
+			lines.push(w.startsWith('⚠️') ? w : `⚠️ ${w}`);
+		}
+	}
+	if (lines.length === 0) return body;
+	return `${lines.join('\n')}\n\n${body}`;
+}
+
 // ── テキスト組み立て: 純粋エクスポート関数 ──
 
 export interface BuildIndicatorsTextInput {
@@ -623,7 +648,7 @@ export const toolDef: ToolDefinition = {
 		const obvTrend = ind.OBV_trend ?? null;
 		const obvPrev = ind.OBV_prevObv ?? null;
 
-		const text = buildIndicatorsText({
+		const body = buildIndicatorsText({
 			pair,
 			type,
 			nowJst,
@@ -677,6 +702,9 @@ export const toolDef: ToolDefinition = {
 			obvPrev,
 			obvUnit: String(pair).toLowerCase().includes('btc') ? 'BTC' : '',
 		});
+		// 上流 fetchWarning（meta.warning: 取得層）と指標不足（meta.warnings[]: 計算層）を
+		// content 先頭に別行で出す。LLM がデータの不完全性を見落とさないようにするため。
+		const text = prependWarnings(body, res.meta as { warning?: string; warnings?: string[] });
 		return { content: [{ type: 'text', text }], structuredContent: toStructured(res) };
 	},
 };
