@@ -324,7 +324,11 @@ describe('analyze_my_portfolio', () => {
 		expect(pnl.total).toBe(pnl.spot_realized_pnl + 5000 - 30 - 155);
 	});
 
-	it('paginateMarginTrades 失敗時のフォールバック: margin_realized_pnl=0 / interest=0 / fee=0 で ok を返す', async () => {
+	it('信用 fetch 失敗時: ⚠️ 警告 + meta.marginFetchFailed=true + margin pnl 0 で「信用未使用」と区別できる', async () => {
+		// Cursor レビュー B: paginateMarginTrades が API エラーで break した場合に
+		// 「信用未使用」と区別できない結果を返してしまう問題のリグレ防止。
+		// 同シナリオで summary 警告 / meta フラグ / フォールバック値 / truncated 警告の非重複を
+		// 一括検証する（assert を別 it に分けると重複テストになる）。
 		setupFetchMock({ marginTradesFail: true });
 
 		const { default: handler } = await import('../../src/handlers/analyzeMyPortfolioHandler.js');
@@ -335,27 +339,14 @@ describe('analyze_my_portfolio', () => {
 		});
 
 		assertOk(result);
+		// ⚠️ 警告 + meta フラグで失敗を明示
+		expect(result.summary).toContain('⚠️ 信用約定の取得に失敗');
+		expect(result.meta.marginFetchFailed).toBe(true);
+		// フォールバック: margin pnl 各種は 0
 		expect(result.data.account_pnl).toBeDefined();
 		expect(result.data.account_pnl.margin_realized_pnl).toBe(0);
 		expect(result.data.account_pnl.margin_interest).toBe(0);
 		expect(result.data.account_pnl.margin_fee).toBe(0);
-	});
-
-	it('信用 fetch 失敗時: summary に ⚠️ 信用約定の取得に失敗 が含まれ、meta.marginFetchFailed === true', async () => {
-		// Cursor レビュー B: paginateMarginTrades が API エラーで break した場合に
-		// 「信用未使用」と区別できない結果を返してしまう問題のリグレ防止。
-		setupFetchMock({ marginTradesFail: true });
-
-		const { default: handler } = await import('../../src/handlers/analyzeMyPortfolioHandler.js');
-		const result = await handler({
-			include_technical: false,
-			include_pnl: true,
-			include_deposit_withdrawal: false,
-		});
-
-		assertOk(result);
-		expect(result.summary).toContain('⚠️ 信用約定の取得に失敗');
-		expect(result.meta.marginFetchFailed).toBe(true);
 		// 信用 fetch 失敗時は信用側 truncated 警告を抑止（メッセージ重複回避）
 		expect(result.summary).not.toContain('※ 約定履歴（信用）');
 		expect(result.summary).not.toContain('※ 約定履歴（現物 / 信用）');
