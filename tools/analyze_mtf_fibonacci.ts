@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { formatPair, formatPercent, formatPrice } from '../lib/formatter.js';
 import { failFromError, failFromValidation } from '../lib/result.js';
 import { createMeta, ensurePair } from '../lib/validate.js';
+import { collectUpstreamWarnings, extractUpstreamWarning, prependWarnings } from '../lib/warning-propagation.js';
 import { AnalyzeMtfFibonacciInputSchema as _BaseInputSchema, AnalyzeMtfFibonacciOutputSchema } from '../src/schemas.js';
 import analyzeFibonacci from './analyze_fibonacci.js';
 
@@ -199,6 +200,11 @@ export default async function analyzeMtfFibonacci(pair: string = 'btc_jpy', look
 		const periodSummaries: Array<{ lookbackDays: number; data: Record<string, unknown>; levels: FibLevel[] }> = [];
 		let currentPrice = 0;
 
+		// 子 analyze_fibonacci の meta.warning（get_candles 由来）/ 失敗期間 を集約。
+		// `[Nd]` prefix 付き 1 文字列に集約 → meta.warning
+		const warningSources: Array<{ source: string; warning?: string }> = [];
+		let hasFailure = false;
+
 		for (const { lookbackDays: days, result } of results) {
 			if (result?.ok && result?.data) {
 				const d = result.data as Record<string, unknown>;
@@ -214,6 +220,9 @@ export default async function analyzeMtfFibonacci(pair: string = 'btc_jpy', look
 				};
 				periodSummaries.push({ lookbackDays: days, data: d, levels });
 				if (d.currentPrice) currentPrice = d.currentPrice as number;
+
+				const { warning: childWarning } = extractUpstreamWarning(result.meta);
+				if (childWarning) warningSources.push({ source: `${days}d`, warning: childWarning });
 			} else {
 				periods[String(days)] = {
 					lookbackDays: days,
@@ -222,8 +231,18 @@ export default async function analyzeMtfFibonacci(pair: string = 'btc_jpy', look
 					swingLow: { price: 0, date: '' },
 					levels: [],
 				};
+				hasFailure = true;
+				const failMsg = (result as { summary?: string } | null | undefined)?.summary || 'analyzeFibonacci failed';
+				warningSources.push({ source: `${days}d`, warning: failMsg });
 			}
 		}
+
+		// `[Nd]` prefix 付き 1 文字列に集約。失敗期間がある場合は信頼度低下警告も末尾に追記する。
+		const aggregatedWarning = collectUpstreamWarnings(warningSources);
+		const warningLines: string[] = [];
+		if (aggregatedWarning) warningLines.push(aggregatedWarning);
+		if (hasFailure) warningLines.push('⚠️ 一部期間のデータ取得失敗のため合流解釈の信頼度低');
+		const warning = warningLines.length > 0 ? warningLines.join('\n') : undefined;
 
 		// Detect confluence
 		const confluenceInput = periodSummaries.map((ps) => ({
@@ -232,15 +251,23 @@ export default async function analyzeMtfFibonacci(pair: string = 'btc_jpy', look
 		}));
 		const confluence = detectConfluence(confluenceInput, currentPrice);
 
-		// Generate content
-		const content = generateMtfContent(chk.pair, currentPrice, periodSummaries, confluence);
+		// Generate content + prepend upstream warning at the top (LLM が JSON より前に気づけるように)。
+		const rawContent = generateMtfContent(chk.pair, currentPrice, periodSummaries, confluence);
+		const content =
+			warning && rawContent.length > 0
+				? [
+						{ type: 'text' as const, text: prependWarnings(rawContent[0].text, { warning }, { separator: '\n' }) },
+						...rawContent.slice(1),
+					]
+				: rawContent;
 
 		const confluenceCount = confluence.length;
 		const strongCount = confluence.filter((z) => z.strength === 'strong').length;
-		const summaryText =
+		const baseSummary =
 			confluenceCount > 0
 				? `${formatPair(chk.pair)} MTFフィボナッチ: ${confluenceCount}個の合流ゾーン検出（強: ${strongCount}個）`
 				: `${formatPair(chk.pair)} MTFフィボナッチ: 合流ゾーンなし（各期間の水準が分散）`;
+		const summaryText = prependWarnings(baseSummary, { warning }, { separator: '\n' });
 
 		const data = {
 			pair: chk.pair,
@@ -249,7 +276,10 @@ export default async function analyzeMtfFibonacci(pair: string = 'btc_jpy', look
 			confluence,
 		};
 
-		const meta = createMeta(chk.pair as Pair, { lookbackDays: uniqueDays });
+		const meta = createMeta(chk.pair as Pair, {
+			lookbackDays: uniqueDays,
+			...(warning ? { warning } : {}),
+		});
 
 		return AnalyzeMtfFibonacciOutputSchema.parse({
 			ok: true,

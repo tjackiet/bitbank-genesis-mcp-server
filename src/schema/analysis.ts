@@ -643,6 +643,10 @@ export const AnalyzeMtfSmaDataSchemaOut = z
 export const AnalyzeMtfSmaMetaSchemaOut = BaseMetaSchema.extend({
 	timeframes: z.array(z.string()),
 	periods: z.array(z.number().int()),
+	/** 取得層の不完全性。子 analyze_sma_snapshot の meta.warning / 失敗 TF の synthetic message を `[tf]` prefix 付きで集約。 */
+	warning: z.string().optional(),
+	/** 計算層の不完全性。子 analyze_sma_snapshot の meta.warnings を `[tf]` prefix 付きで継承。 */
+	warnings: z.array(z.string()).optional(),
 });
 
 export const AnalyzeMtfSmaOutputSchema = toolResultSchema(AnalyzeMtfSmaDataSchemaOut, AnalyzeMtfSmaMetaSchemaOut);
@@ -761,6 +765,8 @@ export const AnalyzeFibonacciMetaSchemaOut = BaseMetaSchema.extend({
 	lookbackDays: z.number().int(),
 	mode: z.string(),
 	historyLookbackDays: z.number().int().optional(),
+	/** 取得層の不完全性（上流 get_candles の meta.warning を継承）。getCandles 直叩きのため warnings 配列は無し。 */
+	warning: z.string().optional(),
 }).passthrough();
 
 export const AnalyzeFibonacciOutputSchema = z.union([
@@ -814,6 +820,8 @@ export const AnalyzeMtfFibonacciDataSchemaOut = z
 
 export const AnalyzeMtfFibonacciMetaSchemaOut = BaseMetaSchema.extend({
 	lookbackDays: z.array(z.number().int()),
+	/** 取得層の不完全性。子 analyze_fibonacci の meta.warning / 失敗期間の synthetic message を `[Nd]` prefix 付きで集約。 */
+	warning: z.string().optional(),
 }).passthrough();
 
 export const AnalyzeMtfFibonacciOutputSchema = z.union([

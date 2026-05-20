@@ -33,6 +33,10 @@ function candlesOk(normalized: Candle[]) {
 	return { ok: true, summary: 'ok', data: { normalized }, meta: { count: normalized.length } };
 }
 
+function candlesOkWithWarning(normalized: Candle[], warning: string) {
+	return { ok: true, summary: 'ok', data: { normalized }, meta: { count: normalized.length, warning } };
+}
+
 /** 上昇トレンド: low=100(idx0) → high=200(idx8), close=192 */
 function buildUptrendCandles(): Candle[] {
 	return [
@@ -416,6 +420,60 @@ describe('analyze_fibonacci', () => {
 		// level at 100: (100-192)/192 * 100 ≈ -47.92%
 		const levelLast = res.data.levels[res.data.levels.length - 1]; // ratio=1.0, price=100
 		expect(levelLast.distancePct).toBeLessThan(0);
+	});
+
+	// ── 上流 warning の伝播 ──────────────────────────────
+
+	it('getCandles meta.warning を summary / content / meta に伝播する', async () => {
+		mockedGetCandles.mockResolvedValueOnce(
+			asMockResult(candlesOkWithWarning(buildUptrendCandles(), '⚠️ 3日中1日の取得に失敗')),
+		);
+		const res = await analyzeFibonacci({ pair: 'btc_jpy', mode: 'retracement', lookbackDays: 14 });
+		assertOk(res);
+
+		expect(res.meta?.warning).toBe('⚠️ 3日中1日の取得に失敗');
+		expect(res.summary.startsWith('⚠️ 3日中1日の取得に失敗')).toBe(true);
+		const text = res.content?.[0]?.text ?? '';
+		expect(text.startsWith('⚠️ 3日中1日の取得に失敗')).toBe(true);
+	});
+
+	it('warning 無しケースでは meta.warning が undefined', async () => {
+		mockedGetCandles.mockResolvedValueOnce(asMockResult(candlesOk(buildUptrendCandles())));
+		const res = await analyzeFibonacci({ pair: 'btc_jpy', mode: 'retracement', lookbackDays: 14 });
+		assertOk(res);
+		expect(res.meta?.warning).toBeUndefined();
+		expect(res.summary.startsWith('⚠️')).toBe(false);
+	});
+
+	it('historyLookbackDays > lookbackDays で 2 回目の warning も伝播する', async () => {
+		// 1回目: warning なし、2回目: warning あり
+		mockedGetCandles.mockResolvedValueOnce(asMockResult(candlesOk(buildUptrendCandles())));
+		mockedGetCandles.mockResolvedValueOnce(
+			asMockResult(candlesOkWithWarning(buildStatsCandles(), '⚠️ 履歴期間の部分失敗')),
+		);
+		const res = await analyzeFibonacci({
+			pair: 'btc_jpy',
+			mode: 'retracement',
+			lookbackDays: 14,
+			historyLookbackDays: 180,
+		});
+		assertOk(res);
+		expect(res.meta?.warning).toContain('履歴期間の部分失敗');
+	});
+
+	it('analysis と history の warning が同一なら重複排除する', async () => {
+		const sameWarning = '⚠️ 同一の失敗メッセージ';
+		mockedGetCandles.mockResolvedValueOnce(asMockResult(candlesOkWithWarning(buildUptrendCandles(), sameWarning)));
+		mockedGetCandles.mockResolvedValueOnce(asMockResult(candlesOkWithWarning(buildStatsCandles(), sameWarning)));
+		const res = await analyzeFibonacci({
+			pair: 'btc_jpy',
+			mode: 'retracement',
+			lookbackDays: 14,
+			historyLookbackDays: 180,
+		});
+		assertOk(res);
+		// 改行で連結されているなら 2 行になるが、同一メッセージは 1 行のみ
+		expect(res.meta?.warning).toBe(sameWarning);
 	});
 
 	// ── toolDef ──────────────────────────────────────────

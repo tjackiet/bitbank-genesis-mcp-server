@@ -1,6 +1,7 @@
 import type { z } from 'zod';
 import { failFromError, failFromValidation, ok } from '../lib/result.js';
 import { createMeta, ensurePair } from '../lib/validate.js';
+import { collectUpstreamWarnings, extractUpstreamWarning, prependWarnings } from '../lib/warning-propagation.js';
 import {
 	type AnalyzeMtfSmaDataSchemaOut,
 	AnalyzeMtfSmaInputSchema,
@@ -56,6 +57,12 @@ export default async function analyzeMtfSma(
 		const byTimeframe: Record<string, unknown> = {};
 		const alignments: string[] = [];
 
+		// 子 analyze_sma_snapshot の meta.warning（取得層）/ meta.warnings（計算層）/ 失敗 TF を集約。
+		// 取得層 warning: `[tf]` prefix 付き 1 文字列に集約 → meta.warning
+		// 計算層 warnings: `[tf]` prefix 付き string[] に統合 → meta.warnings
+		const warningSources: Array<{ source: string; warning?: string }> = [];
+		const aggregatedWarnings: string[] = [];
+
 		for (const { timeframe, result } of results) {
 			if (result?.ok && result?.data) {
 				const d = result.data as Record<string, unknown>;
@@ -77,6 +84,12 @@ export default async function analyzeMtfSma(
 					tags: d.tags,
 				};
 				alignments.push(alignment);
+
+				const { warning: childWarning, warnings: childWarnings } = extractUpstreamWarning(result.meta);
+				if (childWarning) warningSources.push({ source: timeframe, warning: childWarning });
+				if (childWarnings) {
+					for (const w of childWarnings) aggregatedWarnings.push(`[${timeframe}] ${w}`);
+				}
 			} else {
 				byTimeframe[timeframe] = {
 					alignment: 'unknown',
@@ -88,8 +101,14 @@ export default async function analyzeMtfSma(
 					recentCrosses: [],
 				};
 				alignments.push('unknown');
+
+				const failMsg = (result as { summary?: string } | null | undefined)?.summary || 'indicators failed';
+				warningSources.push({ source: timeframe, warning: failMsg });
 			}
 		}
+
+		const warning = collectUpstreamWarnings(warningSources);
+		const warnings = aggregatedWarnings.length > 0 ? aggregatedWarnings : undefined;
 
 		// Confluence judgment — any unknown in requested timeframes → aligned=false, direction=unknown
 		let direction: 'bullish' | 'bearish' | 'mixed' | 'unknown';
@@ -111,18 +130,29 @@ export default async function analyzeMtfSma(
 
 		const dirLabel = direction === 'bullish' ? '上昇' : direction === 'bearish' ? '下降' : '混合';
 		const tfEntry = (tf: string) => byTimeframe[tf] as Record<string, unknown> | undefined;
-		const summary = aligned
+		const baseConfSummary = aligned
 			? `全時間軸が${dirLabel}方向で一致`
 			: `時間軸間で方向が分かれている（${timeframes.map((tf) => `${tf}:${tfEntry(tf)?.alignment}`).join(', ')})`;
 
-		const summaryText = `${timeframes.map((tf) => `${tf}: ${tfEntry(tf)?.alignment}`).join(' / ')} → ${summary}`;
+		// コンフルエンス解釈の信頼度低下警告: TF 取得不完全（unknown 含む）の場合に confluence.summary 先頭へ追記。
+		const hasUnknown = alignments.some((a) => a === 'unknown');
+		const confSummary = hasUnknown ? `⚠️ TF 取得不完全のため信頼度低 — ${baseConfSummary}` : baseConfSummary;
+
+		const baseSummaryText = `${timeframes.map((tf) => `${tf}: ${tfEntry(tf)?.alignment}`).join(' / ')} → ${confSummary}`;
+		// summary 先頭に上流 warning を別行で連結（separator='\n'）。
+		const summaryText = prependWarnings(baseSummaryText, { warning, warnings }, { separator: '\n' });
 
 		const data: z.infer<typeof AnalyzeMtfSmaDataSchemaOut> = {
 			timeframes: byTimeframe as z.infer<typeof AnalyzeMtfSmaDataSchemaOut>['timeframes'],
-			confluence: { aligned, direction, summary },
+			confluence: { aligned, direction, summary: confSummary },
 		};
 
-		const meta = createMeta(chk.pair, { timeframes, periods }) as z.infer<typeof AnalyzeMtfSmaMetaSchemaOut>;
+		const meta = createMeta(chk.pair, {
+			timeframes,
+			periods,
+			...(warning ? { warning } : {}),
+			...(warnings ? { warnings } : {}),
+		}) as z.infer<typeof AnalyzeMtfSmaMetaSchemaOut>;
 		return AnalyzeMtfSmaOutputSchema.parse(ok(summaryText, data, meta));
 	} catch (e: unknown) {
 		return failFromError(e, { schema: AnalyzeMtfSmaOutputSchema });

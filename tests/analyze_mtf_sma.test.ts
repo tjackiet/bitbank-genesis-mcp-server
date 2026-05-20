@@ -105,4 +105,109 @@ describe('analyze_mtf_sma', () => {
 		assertOk(res);
 		expect(mockedAnalyzeSmaSnapshot).toHaveBeenCalledTimes(2);
 	});
+
+	// ── 上流 warning の伝播 ──────────────────────────────
+
+	function smaSnapshotOk(
+		alignment: 'bullish' | 'bearish' | 'mixed' | 'unknown',
+		metaExtra: Record<string, unknown> = {},
+	) {
+		return asMockResult({
+			ok: true,
+			summary: 'ok',
+			data: {
+				alignment,
+				summary: { position: alignment === 'bullish' ? 'above_all' : 'unknown' },
+				latest: { close: 100 },
+				sma: { SMA_25: 90, SMA_75: 80, SMA_200: 70 },
+				smas: {},
+				crosses: [],
+				recentCrosses: [],
+				tags: [],
+			},
+			meta: metaExtra,
+		});
+	}
+
+	it('失敗 TF の synthetic warning が `[tf]` prefix 付きで meta.warning に含まれる', async () => {
+		mockedAnalyzeSmaSnapshot
+			.mockResolvedValueOnce(smaSnapshotOk('bullish'))
+			.mockResolvedValueOnce(asMockResult({ ok: false, summary: 'indicators failed', meta: { errorType: 'internal' } }))
+			.mockResolvedValueOnce(smaSnapshotOk('bullish'));
+
+		const res = await analyzeMtfSma('btc_jpy', ['1hour', '4hour', '1day'], [25, 75, 200]);
+
+		assertOk(res);
+		expect(res.meta?.warning).toContain('[4hour]');
+		expect(res.meta?.warning).toContain('indicators failed');
+	});
+
+	it('子の meta.warning が `[tf]` prefix で集約される', async () => {
+		mockedAnalyzeSmaSnapshot
+			.mockResolvedValueOnce(smaSnapshotOk('bullish', { warning: '⚠️ partial fetch' }))
+			.mockResolvedValueOnce(smaSnapshotOk('bullish'))
+			.mockResolvedValueOnce(smaSnapshotOk('bullish'));
+
+		const res = await analyzeMtfSma('btc_jpy', ['1hour', '4hour', '1day'], [25, 75, 200]);
+
+		assertOk(res);
+		expect(res.meta?.warning).toContain('[1hour]');
+		expect(res.meta?.warning).toContain('partial fetch');
+	});
+
+	it('子の meta.warnings（計算層）が `[tf]` prefix で meta.warnings に統合される', async () => {
+		mockedAnalyzeSmaSnapshot
+			.mockResolvedValueOnce(smaSnapshotOk('bullish'))
+			.mockResolvedValueOnce(smaSnapshotOk('bullish'))
+			.mockResolvedValueOnce(smaSnapshotOk('bullish', { warnings: ['SMA_200: データ不足'] }));
+
+		const res = await analyzeMtfSma('btc_jpy', ['1hour', '4hour', '1day'], [25, 75, 200]);
+
+		assertOk(res);
+		expect(res.meta?.warnings).toEqual(['[1day] SMA_200: データ不足']);
+	});
+
+	it('全 TF 成功 + warning 無しなら meta.warning / warnings は undefined', async () => {
+		mockedAnalyzeSmaSnapshot.mockResolvedValue(smaSnapshotOk('bullish'));
+
+		const res = await analyzeMtfSma('btc_jpy', ['1hour', '4hour', '1day'], [25, 75, 200]);
+
+		assertOk(res);
+		expect(res.meta?.warning).toBeUndefined();
+		expect(res.meta?.warnings).toBeUndefined();
+	});
+
+	it('unknown を含む場合 confluence.summary 先頭に「信頼度低」警告が付く', async () => {
+		mockedAnalyzeSmaSnapshot
+			.mockResolvedValueOnce(smaSnapshotOk('bullish'))
+			.mockResolvedValueOnce(smaSnapshotOk('unknown'))
+			.mockResolvedValueOnce(smaSnapshotOk('bullish'));
+
+		const res = await analyzeMtfSma('btc_jpy', ['1hour', '4hour', '1day'], [25, 75, 200]);
+
+		assertOk(res);
+		expect(res.data.confluence.summary.startsWith('⚠️ TF 取得不完全のため信頼度低')).toBe(true);
+	});
+
+	it('全 TF 整列で unknown 無しなら confluence.summary に「信頼度低」警告が付かない', async () => {
+		mockedAnalyzeSmaSnapshot.mockResolvedValue(smaSnapshotOk('bullish'));
+		const res = await analyzeMtfSma('btc_jpy', ['1hour', '4hour', '1day'], [25, 75, 200]);
+		assertOk(res);
+		expect(res.data.confluence.summary.startsWith('⚠️')).toBe(false);
+	});
+
+	it('content[0].text 先頭にも warning 行が含まれる（inline handler 経由）', async () => {
+		mockedAnalyzeSmaSnapshot
+			.mockResolvedValueOnce(smaSnapshotOk('bullish', { warning: '⚠️ partial fetch' }))
+			.mockResolvedValueOnce(smaSnapshotOk('bullish'))
+			.mockResolvedValueOnce(smaSnapshotOk('bullish'));
+
+		const handlerRes = (await toolDef.handler({
+			pair: 'btc_jpy',
+			timeframes: ['1hour', '4hour', '1day'],
+			periods: [25, 75, 200],
+		})) as { content: Array<{ text: string }> };
+		const text = handlerRes.content?.[0]?.text ?? '';
+		expect(text.startsWith('⚠️ [1hour] partial fetch')).toBe(true);
+	});
 });

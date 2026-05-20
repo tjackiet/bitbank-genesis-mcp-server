@@ -15,7 +15,7 @@ type FibLevel = {
 	isNearest: boolean;
 };
 
-function fibOk(days: number, currentPrice: number, levels: FibLevel[]) {
+function fibOk(days: number, currentPrice: number, levels: FibLevel[], metaExtra: Record<string, unknown> = {}) {
 	return {
 		ok: true,
 		summary: `${days}d ok`,
@@ -27,7 +27,7 @@ function fibOk(days: number, currentPrice: number, levels: FibLevel[]) {
 			swingLow: { price: 80, date: '2026-01-01' },
 			levels,
 		},
-		meta: { lookbackDays: days },
+		meta: { lookbackDays: days, ...metaExtra },
 	};
 }
 
@@ -72,5 +72,105 @@ describe('analyze_mtf_fibonacci', () => {
 
 		assertOk(res);
 		expect(mockedAnalyzeFibonacci).toHaveBeenCalledTimes(2);
+	});
+
+	// ── 上流 warning の伝播 ──────────────────────────────
+
+	it('失敗期間が `[Nd]` prefix 付きで meta.warning に集約される', async () => {
+		mockedAnalyzeFibonacci
+			.mockResolvedValueOnce(
+				asMockResult(fibOk(30, 100, [{ ratio: 0.5, price: 100, distancePct: 0, isNearest: true }])),
+			)
+			.mockResolvedValueOnce(
+				asMockResult({ ok: false, summary: 'analyzeFibonacci failed', meta: { errorType: 'internal' } }),
+			)
+			.mockResolvedValueOnce(
+				asMockResult(fibOk(180, 100, [{ ratio: 0.618, price: 101, distancePct: 1, isNearest: true }])),
+			);
+
+		const res = await analyzeMtfFibonacci('btc_jpy', [30, 90, 180]);
+
+		assertOk(res);
+		expect(res.meta?.warning).toContain('[90d]');
+		expect(res.meta?.warning).toContain('analyzeFibonacci failed');
+	});
+
+	it('子の meta.warning が `[Nd]` prefix 付きで集約される', async () => {
+		mockedAnalyzeFibonacci
+			.mockResolvedValueOnce(
+				asMockResult(
+					fibOk(30, 100, [{ ratio: 0.5, price: 100, distancePct: 0, isNearest: true }], {
+						warning: '⚠️ partial fetch',
+					}),
+				),
+			)
+			.mockResolvedValueOnce(
+				asMockResult(fibOk(90, 100, [{ ratio: 0.5, price: 100, distancePct: 0, isNearest: true }])),
+			);
+
+		const res = await analyzeMtfFibonacci('btc_jpy', [30, 90]);
+
+		assertOk(res);
+		expect(res.meta?.warning).toContain('[30d]');
+		expect(res.meta?.warning).toContain('partial fetch');
+	});
+
+	it('全期間成功 + warning 無しなら meta.warning は undefined', async () => {
+		mockedAnalyzeFibonacci.mockResolvedValue(
+			asMockResult(fibOk(30, 100, [{ ratio: 0.5, price: 100, distancePct: 0, isNearest: true }])),
+		);
+
+		const res = await analyzeMtfFibonacci('btc_jpy', [30, 90, 180]);
+
+		assertOk(res);
+		expect(res.meta?.warning).toBeUndefined();
+	});
+
+	it('失敗期間がある場合「信頼度低」警告が summary に含まれる', async () => {
+		mockedAnalyzeFibonacci
+			.mockResolvedValueOnce(
+				asMockResult(fibOk(30, 100, [{ ratio: 0.5, price: 100, distancePct: 0, isNearest: true }])),
+			)
+			.mockResolvedValueOnce(asMockResult({ ok: false, summary: 'failed', meta: { errorType: 'internal' } }))
+			.mockResolvedValueOnce(
+				asMockResult(fibOk(180, 100, [{ ratio: 0.5, price: 100, distancePct: 0, isNearest: true }])),
+			);
+
+		const res = await analyzeMtfFibonacci('btc_jpy', [30, 90, 180]);
+
+		assertOk(res);
+		expect(res.summary).toContain('一部期間のデータ取得失敗のため合流解釈の信頼度低');
+		expect(res.meta?.warning).toContain('一部期間のデータ取得失敗のため合流解釈の信頼度低');
+	});
+
+	it('全期間成功時は「信頼度低」警告が summary に含まれない', async () => {
+		mockedAnalyzeFibonacci.mockResolvedValue(
+			asMockResult(fibOk(30, 100, [{ ratio: 0.5, price: 100, distancePct: 0, isNearest: true }])),
+		);
+
+		const res = await analyzeMtfFibonacci('btc_jpy', [30, 90]);
+
+		assertOk(res);
+		expect(res.summary).not.toContain('信頼度低');
+	});
+
+	it('content[0].text 先頭にも warning 行が含まれる', async () => {
+		mockedAnalyzeFibonacci
+			.mockResolvedValueOnce(
+				asMockResult(
+					fibOk(30, 100, [{ ratio: 0.5, price: 100, distancePct: 0, isNearest: true }], {
+						warning: '⚠️ partial fetch',
+					}),
+				),
+			)
+			.mockResolvedValueOnce(
+				asMockResult(fibOk(90, 100, [{ ratio: 0.5, price: 100, distancePct: 0, isNearest: true }])),
+			);
+
+		const res = await analyzeMtfFibonacci('btc_jpy', [30, 90]);
+
+		assertOk(res);
+		const text = res.content?.[0]?.text ?? '';
+		expect(text.startsWith('⚠️ [30d] partial fetch')).toBe(true);
 	});
 });

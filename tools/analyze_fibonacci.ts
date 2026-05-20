@@ -1,6 +1,7 @@
 import { formatPair, formatPercent, formatPrice, timeframeLabel } from '../lib/formatter.js';
 import { fail, failFromError, failFromValidation } from '../lib/result.js';
 import { createMeta, ensurePair } from '../lib/validate.js';
+import { extractUpstreamWarning, prependWarnings } from '../lib/warning-propagation.js';
 import type { Pair } from '../src/schemas.js';
 import { AnalyzeFibonacciInputSchema, AnalyzeFibonacciOutputSchema } from '../src/schemas.js';
 import type { ToolDefinition } from '../src/tool-definition.js';
@@ -389,6 +390,9 @@ export default async function analyzeFibonacci(opts: Record<string, unknown> = {
 			);
 		}
 
+		// 上流 get_candles の meta.warning（multi-year/multi-day 部分失敗 等の取得層警告）を伝播する。
+		const { warning: analysisWarning } = extractUpstreamWarning(candlesRes.meta);
+
 		const candles: NormalizedCandle[] = candlesRes.data.normalized || [];
 		if (candles.length < 10) {
 			return AnalyzeFibonacciOutputSchema.parse(fail('ローソク足データが不足しています（最低10本必要）', 'data'));
@@ -423,6 +427,7 @@ export default async function analyzeFibonacci(opts: Record<string, unknown> = {
 		// Calculate historical reaction stats (Feature #3)
 		// Fetch extended history for statistics
 		let levelStats: LevelStat[] = [];
+		let historyWarning: string | undefined;
 		if (levels.length > 0) {
 			let historyCandles: NormalizedCandle[] = candles;
 			if (historyLookbackDays > lookbackDays) {
@@ -430,6 +435,8 @@ export default async function analyzeFibonacci(opts: Record<string, unknown> = {
 					const histRes = await getCandles(chk.pair, timeframe, undefined, historyLookbackDays + 10);
 					if (histRes.ok && histRes.data.normalized?.length > 0) {
 						historyCandles = histRes.data.normalized;
+						const { warning: w } = extractUpstreamWarning(histRes.meta);
+						historyWarning = w;
 					}
 				} catch {
 					// Fall back to current candle data
@@ -438,8 +445,14 @@ export default async function analyzeFibonacci(opts: Record<string, unknown> = {
 			levelStats = calculateLevelStats(historyCandles, levels);
 		}
 
+		// 取得層 warning を集約（analysis 期間と history 期間が同一メッセージの場合は重複排除）。
+		const warningLines: string[] = [];
+		if (analysisWarning) warningLines.push(analysisWarning);
+		if (historyWarning && historyWarning !== analysisWarning) warningLines.push(historyWarning);
+		const warning = warningLines.length > 0 ? warningLines.join('\n') : undefined;
+
 		// Generate content
-		const content = generateContent(
+		const rawContent = generateContent(
 			chk.pair,
 			timeframe,
 			currentPrice,
@@ -455,8 +468,19 @@ export default async function analyzeFibonacci(opts: Record<string, unknown> = {
 			lookbackDays,
 		);
 
+		// content[0].text 先頭に上流 warning を prepend する（JSON.stringify より前に出す）。
+		// .claude/rules/tools.md の「上流 warning の伝播」参照。
+		const content =
+			warning && rawContent.length > 0
+				? [
+						{ type: 'text' as const, text: prependWarnings(rawContent[0].text, { warning }, { separator: '\n' }) },
+						...rawContent.slice(1),
+					]
+				: rawContent;
+
 		const nearestLabel = position.nearestLevel ? `${(position.nearestLevel.ratio * 100).toFixed(1)}%水準付近` : '';
-		const summaryText = `${formatPair(chk.pair)} フィボナッチ分析: ${trend === 'up' ? '上昇' : '下降'}トレンド、${nearestLabel}（${formatPrice(currentPrice, chk.pair)}）`;
+		const baseSummary = `${formatPair(chk.pair)} フィボナッチ分析: ${trend === 'up' ? '上昇' : '下降'}トレンド、${nearestLabel}（${formatPrice(currentPrice, chk.pair)}）`;
+		const summaryText = prependWarnings(baseSummary, { warning }, { separator: '\n' });
 
 		const data = {
 			pair: chk.pair,
@@ -477,6 +501,7 @@ export default async function analyzeFibonacci(opts: Record<string, unknown> = {
 			lookbackDays,
 			mode,
 			historyLookbackDays: levelStats.length > 0 ? historyLookbackDays : undefined,
+			...(warning ? { warning } : {}),
 		});
 
 		return AnalyzeFibonacciOutputSchema.parse({

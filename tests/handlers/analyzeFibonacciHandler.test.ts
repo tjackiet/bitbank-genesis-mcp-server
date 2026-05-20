@@ -129,4 +129,20 @@ describe('analyzeFibonacciHandler', () => {
 		expect(typeof sc.summary).toBe('string');
 		expect(sc.summary.length).toBeGreaterThan(0);
 	});
+
+	it('tool 側 content に prepend された warning が handler の content[0].text に保たれる', async () => {
+		const okResult = makeOkResult();
+		okResult.content[0].text = `⚠️ 3日中1日の取得に失敗\n${okResult.content[0].text}`;
+		okResult.summary = `⚠️ 3日中1日の取得に失敗\n${okResult.summary}`;
+		(okResult.meta as Record<string, unknown>).warning = '⚠️ 3日中1日の取得に失敗';
+
+		mockedAnalyzeFibonacci.mockResolvedValueOnce(okResult as never);
+		const res = await toolDef.handler({ pair: 'btc_jpy', type: '1day' });
+		const text = (res as { content: Array<{ text: string }> }).content[0].text;
+		expect(text.startsWith('⚠️ 3日中1日の取得に失敗')).toBe(true);
+
+		const sc = (res as { structuredContent: { meta: Record<string, unknown>; summary: string } }).structuredContent;
+		expect(sc.meta.warning).toBe('⚠️ 3日中1日の取得に失敗');
+		expect(sc.summary.startsWith('⚠️ 3日中1日の取得に失敗')).toBe(true);
+	});
 });
