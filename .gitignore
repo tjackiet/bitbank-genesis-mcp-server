@@ -11,6 +11,10 @@ output/
 coverage/
 .cursor/
 
+# market-data 運用ログ（環境依存の spot check 数値）
+docs/market-data-accuracy-log.md
+docs/market-data-accuracy-checklist.md.local.bak
+
 # Security/chaos tests — local only, not published to public repo
 tests/chaos/
 tests/private/security.test.ts

@@ -38,16 +38,18 @@ handler: async (args) => {
 ツールでは、上流 `meta.warning` / `meta.warnings` を必ず content / summary 先頭に連結する。
 これを落とすと LLM がデータ不完全性に気づけずハルシネーションを起こす。
 
+実装は **`lib/warning-propagation.ts`**（`prependWarnings`, `extractUpstreamWarning`, `collectUpstreamWarnings`）を使う。
+横展開の確認は `tests/warning-propagation.test.ts` および加工ツールの handler テストを参照。
+
 - **`meta.warning`（string）**: 取得層の不完全性（partial fetch / multi-day 失敗 等）。
 - **`meta.warnings`（string[]）**: 計算層の不完全性（指標バー数不足 等）。
 - 2 系統は混ぜず、別フィールドかつ別行で出す。
 
 ```ts
-// summary 先頭に両系統を連結する例（prepare_chart_data 参照）
-const lines: string[] = [];
-if (upstream.warning) lines.push(`⚠️ ${upstream.warning}`);
-for (const w of upstream.warnings ?? []) lines.push(`⚠️ ${w}`);
-const summary = lines.length > 0 ? `${lines.join('\n')}\n${baseSummary}` : baseSummary;
+import { extractUpstreamWarning, prependWarnings } from '../lib/warning-propagation.js';
+
+const upstream = extractUpstreamWarning(res.meta);
+const summary = prependWarnings(baseSummary, upstream, { separator: '\n' });
 ```
 
 ### キャッシュ層を持つツールの注意
