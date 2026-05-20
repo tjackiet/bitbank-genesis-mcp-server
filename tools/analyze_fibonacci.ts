@@ -433,10 +433,13 @@ export default async function analyzeFibonacci(opts: Record<string, unknown> = {
 			if (historyLookbackDays > lookbackDays) {
 				try {
 					const histRes = await getCandles(chk.pair, timeframe, undefined, historyLookbackDays + 10);
-					if (histRes.ok && histRes.data.normalized?.length > 0) {
-						historyCandles = histRes.data.normalized;
+					if (histRes.ok) {
+						// histRes.ok の時点で warning を抽出する（normalized が空でも warning は失わない）。
 						const { warning: w } = extractUpstreamWarning(histRes.meta);
 						historyWarning = w;
+						if (histRes.data.normalized?.length > 0) {
+							historyCandles = histRes.data.normalized;
+						}
 					}
 				} catch {
 					// Fall back to current candle data
@@ -445,11 +448,13 @@ export default async function analyzeFibonacci(opts: Record<string, unknown> = {
 			levelStats = calculateLevelStats(historyCandles, levels);
 		}
 
-		// 取得層 warning を集約（analysis 期間と history 期間が同一メッセージの場合は重複排除）。
-		const warningLines: string[] = [];
-		if (analysisWarning) warningLines.push(analysisWarning);
-		if (historyWarning && historyWarning !== analysisWarning) warningLines.push(historyWarning);
-		const warning = warningLines.length > 0 ? warningLines.join('\n') : undefined;
+		// 取得層 warning を集約。analysis / history を行単位で split → trim → Set で重複排除する
+		// （部分一致行の重複も拾う）。
+		const warningLines = [analysisWarning, historyWarning]
+			.flatMap((w) => (w ? w.split('\n') : []))
+			.map((w) => w.trim())
+			.filter((w) => w.length > 0);
+		const warning = warningLines.length > 0 ? [...new Set(warningLines)].join('\n') : undefined;
 
 		// Generate content
 		const rawContent = generateContent(

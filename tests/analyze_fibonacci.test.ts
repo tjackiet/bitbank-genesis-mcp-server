@@ -476,6 +476,42 @@ describe('analyze_fibonacci', () => {
 		expect(res.meta?.warning).toBe(sameWarning);
 	});
 
+	it('複数行 warning の部分一致行も dedup される（per-line dedup）', async () => {
+		// analysis: 行 A + 行 B、history: 行 B + 行 C → 集約後は A / B / C の 3 行（B は 1 回だけ）
+		mockedGetCandles.mockResolvedValueOnce(asMockResult(candlesOkWithWarning(buildUptrendCandles(), '⚠️ 行A\n⚠️ 行B')));
+		mockedGetCandles.mockResolvedValueOnce(asMockResult(candlesOkWithWarning(buildStatsCandles(), '⚠️ 行B\n⚠️ 行C')));
+		const res = await analyzeFibonacci({
+			pair: 'btc_jpy',
+			mode: 'retracement',
+			lookbackDays: 14,
+			historyLookbackDays: 180,
+		});
+		assertOk(res);
+		const lines = res.meta?.warning?.split('\n') ?? [];
+		expect(lines).toEqual(['⚠️ 行A', '⚠️ 行B', '⚠️ 行C']);
+	});
+
+	it('history 2 回目が ok かつ normalized 空でも warning は失われない', async () => {
+		// 1回目: 通常、2回目: ok だが normalized=[]（warning だけ持つ）
+		mockedGetCandles.mockResolvedValueOnce(asMockResult(candlesOk(buildUptrendCandles())));
+		mockedGetCandles.mockResolvedValueOnce(
+			asMockResult({
+				ok: true,
+				summary: 'ok',
+				data: { normalized: [] },
+				meta: { count: 0, warning: '⚠️ 履歴 0 件で部分失敗' },
+			}),
+		);
+		const res = await analyzeFibonacci({
+			pair: 'btc_jpy',
+			mode: 'retracement',
+			lookbackDays: 14,
+			historyLookbackDays: 180,
+		});
+		assertOk(res);
+		expect(res.meta?.warning).toContain('履歴 0 件で部分失敗');
+	});
+
 	// ── toolDef ──────────────────────────────────────────
 
 	it('toolDef.handler が analyzeFibonacci に委譲', async () => {
