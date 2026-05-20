@@ -278,10 +278,10 @@ export async function fetchMarginAccountInfo(): Promise<MarginAccountInfo> {
 	]);
 
 	return {
-		status: statusRes && statusRes.ok ? statusRes.data : undefined,
-		statusFetchFailed: !statusRes || !statusRes.ok,
-		positions: positionsRes && positionsRes.ok ? positionsRes.data : undefined,
-		positionsFetchFailed: !positionsRes || !positionsRes.ok,
+		status: statusRes?.ok ? statusRes.data : undefined,
+		statusFetchFailed: !statusRes?.ok,
+		positions: positionsRes?.ok ? positionsRes.data : undefined,
+		positionsFetchFailed: !positionsRes?.ok,
 	};
 }
 

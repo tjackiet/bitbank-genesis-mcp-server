@@ -164,7 +164,7 @@ describe('analyze_my_portfolio', () => {
 		// PnL 関連フィールドが undefined
 		const btcHolding = result.data.holdings.find((h) => h.asset === 'btc');
 		expect(btcHolding).toBeDefined();
-		expect(btcHolding!.cost_basis).toBeUndefined();
+		expect(btcHolding?.cost_basis).toBeUndefined();
 	});
 
 	it('include_deposit_withdrawal=false で入出金を取得しない', async () => {
