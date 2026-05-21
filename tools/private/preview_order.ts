@@ -225,18 +225,6 @@ export const toolDef: ToolDefinition = {
 		const result = await previewOrder(typedArgs);
 		if (!result.ok) return result;
 
-		// クライアントに返す structuredContent から confirmation_token / expires_at を除外する。
-		// これらは内部利用専用で、elicitation accept 経路のサーバープロセス内に閉じる。
-		const sanitizedData: Record<string, unknown> = { ...result.data };
-		delete sanitizedData.confirmation_token;
-		delete sanitizedData.expires_at;
-		const sanitizedStructured = toStructured({
-			ok: result.ok,
-			summary: result.summary,
-			data: sanitizedData,
-			meta: result.meta,
-		});
-
 		// elicitation 非対応ホスト向けのフォールバックレスポンス。
 		// 取引実行はこのホストでは行えない旨を明示し、トークンの存在は仄めかさない。
 		const fallbackText = [
@@ -248,7 +236,9 @@ export const toolDef: ToolDefinition = {
 
 		// elicitation 対応ホストでは preview → ユーザー確認 → create_order までを
 		// このハンドラ内で完結させる（LLM から見ると preview_order 1 回呼び出しで発注完了）。
-		// confirmation_token はサーバープロセス内に閉じ、クライアントには返らない。
+		// confirmation_token / expires_at は withElicitedConfirmation が
+		// structuredContent / declinedStructured / fallback から必ず剥がすため
+		// caller 側で sanitize する必要はない（多層防御の最終ガードは helper 側）。
 		return withElicitedConfirmation({
 			extra,
 			summary: result.summary,
@@ -266,10 +256,10 @@ export const toolDef: ToolDefinition = {
 					'elicitation',
 				),
 			onDeclinedText: 'ユーザーが発注をキャンセルしました（elicitation）',
-			declinedStructured: sanitizedStructured,
+			declinedStructured: toStructured(result),
 			fallback: {
 				content: [{ type: 'text', text: fallbackText }],
-				structuredContent: sanitizedStructured,
+				structuredContent: toStructured(result),
 			},
 		});
 	},
