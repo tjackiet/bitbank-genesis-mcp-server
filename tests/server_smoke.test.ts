@@ -456,15 +456,10 @@ describe('server.ts smoke', () => {
 			schema.parse({ pair: 123 });
 			throw new Error('unreachable');
 		});
+		// importServer() で vi.resetModules() が呼ばれるため、PrivateApiError は
+		// handler 実行時にロード（lib/error.ts と同じモジュールキャッシュを参照させる）
 		const privateApiHandler = vi.fn(async () => {
-			class PrivateApiError extends Error {
-				errorType: string;
-				constructor(message: string, errorType: string) {
-					super(message);
-					this.name = 'PrivateApiError';
-					this.errorType = errorType;
-				}
-			}
+			const { PrivateApiError } = await import('../src/private/client.js');
 			throw new PrivateApiError('数量が最低取引量を下回っています', 'invalid_amount');
 		});
 

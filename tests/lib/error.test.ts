@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import { getErrorMessage, isAbortError, toPublicError } from '../../lib/error.js';
+import { PrivateApiError } from '../../src/private/client.js';
 
 describe('getErrorMessage', () => {
 	it('Error インスタンスから message を取得する', () => {
@@ -52,14 +53,6 @@ describe('toPublicError', () => {
 	});
 
 	it('PrivateApiError は message と errorType を素通しする', () => {
-		class PrivateApiError extends Error {
-			errorType: string;
-			constructor(message: string, errorType: string) {
-				super(message);
-				this.name = 'PrivateApiError';
-				this.errorType = errorType;
-			}
-		}
 		const err = new PrivateApiError('数量が最低取引量を下回っています', 'invalid_amount');
 		const result = toPublicError(err);
 		expect(result.summary).toBe('数量が最低取引量を下回っています');
@@ -86,12 +79,14 @@ describe('toPublicError', () => {
 		});
 	});
 
-	it('PrivateApiError 様だが errorType がない場合は素通ししない', () => {
-		// name だけが PrivateApiError でも errorType が無い偽物は internal 扱い
-		const err = new Error('fake error');
+	it('name を PrivateApiError に偽装した一般 Error は素通ししない', () => {
+		// instanceof 判定なので、name と errorType を後付けしても弾かれる
+		const err = new Error('fake leak: /home/user/secret');
 		err.name = 'PrivateApiError';
+		(err as Error & { errorType?: string }).errorType = 'invalid_amount';
 		const result = toPublicError(err);
 		expect(result.summary).toBe('内部エラーが発生しました。ログを確認してください');
 		expect(result.errorType).toBe('internal');
+		expect(result.summary).not.toContain('/home/user/secret');
 	});
 });
