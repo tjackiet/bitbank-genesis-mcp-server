@@ -10,8 +10,9 @@ import { fetchPairsSpec, validateOrderConstraints } from '../../lib/pairs.js';
 import { fail, ok, toStructured } from '../../lib/result.js';
 import { validateTriggerPrice } from '../../lib/trigger-price.js';
 import { generateToken } from '../../src/private/confirmation.js';
+import { withElicitedConfirmation } from '../../src/private/elicitation.js';
 import { PreviewOrderInputSchema, PreviewOrderOutputSchema } from '../../src/private/schemas.js';
-import type { ToolDefinition, ToolHandlerExtra } from '../../src/tool-definition.js';
+import type { ToolDefinition } from '../../src/tool-definition.js';
 import createOrder from './create_order.js';
 
 /** 注文タイプごとの必須パラメータチェック */
@@ -184,25 +185,6 @@ export default async function previewOrder(args: {
 	);
 }
 
-/**
- * クライアントが elicitation/create に対応しているかを判定する。
- * 非対応ホストでは従来挙動（structuredContent でトークンを返す）にフォールバックする。
- */
-function clientSupportsElicitation(extra: ToolHandlerExtra | undefined): boolean {
-	const server = (extra as { server?: { getClientCapabilities?: () => unknown } } | undefined)?.server;
-	const caps = typeof server?.getClientCapabilities === 'function' ? server.getClientCapabilities() : undefined;
-	const elicitation = (caps as { elicitation?: unknown } | undefined)?.elicitation;
-	return Boolean(elicitation);
-}
-
-/** SDK の elicitInput を呼び出すための最小限の interface */
-interface ElicitCapableServer {
-	elicitInput: (params: {
-		message: string;
-		requestedSchema: Record<string, unknown>;
-	}) => Promise<{ action: 'accept' | 'decline' | 'cancel'; content?: Record<string, unknown> }>;
-}
-
 export const toolDef: ToolDefinition = {
 	name: 'preview_order',
 	description: [
@@ -235,60 +217,39 @@ export const toolDef: ToolDefinition = {
 		const result = await previewOrder(typedArgs);
 		if (!result.ok) return result;
 
-		// elicitation 対応ホストでは preview → ユーザー確認 → create_order までを
-		// このハンドラ内で完結させる（LLM から見ると preview_order 1 回呼び出しで発注完了）。
-		// 非対応ホストでは従来通り structuredContent 経由でトークンを渡しフォールバックする。
-		if (clientSupportsElicitation(extra)) {
-			const server = (extra as { server?: ElicitCapableServer } | undefined)?.server;
-			if (server && typeof server.elicitInput === 'function') {
-				try {
-					const elicit = await server.elicitInput({
-						message: result.summary,
-						requestedSchema: {
-							type: 'object',
-							properties: {
-								confirmed: { type: 'boolean', title: 'この注文を発注する' },
-							},
-							required: ['confirmed'],
-						},
-					});
-					if (elicit.action !== 'accept' || !elicit.content?.confirmed) {
-						return {
-							content: [{ type: 'text', text: 'ユーザーが発注をキャンセルしました（elicitation）' }],
-							structuredContent: toStructured(result),
-						};
-					}
-					// 内部的に create_order を実行。監査ログには route='elicitation' で記録される。
-					const orderResult = await createOrder(
-						{
-							...typedArgs,
-							confirmation_token: result.data.confirmation_token,
-							token_expires_at: result.data.expires_at,
-						},
-						'elicitation',
-					);
-					const orderText = orderResult.ok ? orderResult.summary : `Error: ${orderResult.summary}`;
-					return {
-						content: [{ type: 'text', text: orderText }],
-						structuredContent: toStructured(orderResult),
-					};
-				} catch {
-					// elicitInput が想定外に失敗した場合はフォールバックに進む。
-				}
-			}
-		}
-
 		// フォールバック: confirmation_token は LLM 可視テキストには含めず、
 		// structuredContent 側にだけ残す。SEP-1865 UI ボタンや Inspector はこちらを参照する。
-		const text = [
+		const fallbackText = [
 			result.summary,
 			'',
 			'※ confirmation_token はホスト UI / structuredContent 経由でのみ受け渡されます。',
 			'  LLM はトークンを引用したり、ユーザー確認なしに create_order を呼ばないでください。',
 		].join('\n');
-		return {
-			content: [{ type: 'text', text }],
-			structuredContent: toStructured(result),
-		};
+		const previewStructured = toStructured(result);
+
+		// elicitation 対応ホストでは preview → ユーザー確認 → create_order までを
+		// このハンドラ内で完結させる（LLM から見ると preview_order 1 回呼び出しで発注完了）。
+		// 非対応ホストでは従来通り structuredContent 経由でトークンを渡しフォールバックする。
+		return withElicitedConfirmation({
+			extra,
+			summary: result.summary,
+			confirmTitle: 'この注文を発注する',
+			// 内部的に create_order を実行。監査ログには route='elicitation' で記録される。
+			onConfirmed: () =>
+				createOrder(
+					{
+						...typedArgs,
+						confirmation_token: result.data.confirmation_token,
+						token_expires_at: result.data.expires_at,
+					},
+					'elicitation',
+				),
+			onDeclinedText: 'ユーザーが発注をキャンセルしました（elicitation）',
+			declinedStructured: previewStructured,
+			fallback: {
+				content: [{ type: 'text', text: fallbackText }],
+				structuredContent: previewStructured,
+			},
+		});
 	},
 };

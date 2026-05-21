@@ -12,8 +12,9 @@
 import { formatPair } from '../../lib/formatter.js';
 import { ok, toStructured } from '../../lib/result.js';
 import { generateToken } from '../../src/private/confirmation.js';
+import { withElicitedConfirmation } from '../../src/private/elicitation.js';
 import { PreviewCancelOrdersInputSchema, PreviewCancelOrdersOutputSchema } from '../../src/private/schemas.js';
-import type { ToolDefinition, ToolHandlerExtra } from '../../src/tool-definition.js';
+import type { ToolDefinition } from '../../src/tool-definition.js';
 import cancelOrders from './cancel_orders.js';
 
 export default function previewCancelOrders(args: { pair: string; order_ids: number[] }) {
@@ -41,22 +42,6 @@ export default function previewCancelOrders(args: { pair: string; order_ids: num
 	);
 }
 
-/** クライアントが elicitation/create に対応しているかを判定する。 */
-function clientSupportsElicitation(extra: ToolHandlerExtra | undefined): boolean {
-	const server = (extra as { server?: { getClientCapabilities?: () => unknown } } | undefined)?.server;
-	const caps = typeof server?.getClientCapabilities === 'function' ? server.getClientCapabilities() : undefined;
-	const elicitation = (caps as { elicitation?: unknown } | undefined)?.elicitation;
-	return Boolean(elicitation);
-}
-
-/** SDK の elicitInput を呼び出すための最小限の interface */
-interface ElicitCapableServer {
-	elicitInput: (params: {
-		message: string;
-		requestedSchema: Record<string, unknown>;
-	}) => Promise<{ action: 'accept' | 'decline' | 'cancel'; content?: Record<string, unknown> }>;
-}
-
 export const toolDef: ToolDefinition = {
 	name: 'preview_cancel_orders',
 	description: [
@@ -77,61 +62,37 @@ export const toolDef: ToolDefinition = {
 		const result = previewCancelOrders(typedArgs);
 		if (!result.ok) return result;
 
-		// elicitation 対応ホストでは preview → ユーザー確認 → cancel_orders までを
-		// このハンドラ内で完結させる。
-		if (clientSupportsElicitation(extra)) {
-			const server = (extra as { server?: ElicitCapableServer } | undefined)?.server;
-			if (server && typeof server.elicitInput === 'function') {
-				try {
-					const elicit = await server.elicitInput({
-						message: result.summary,
-						requestedSchema: {
-							type: 'object',
-							properties: {
-								confirmed: {
-									type: 'boolean',
-									title: `これら ${typedArgs.order_ids.length} 件の注文を一括キャンセルする`,
-								},
-							},
-							required: ['confirmed'],
-						},
-					});
-					if (elicit.action !== 'accept' || !elicit.content?.confirmed) {
-						return {
-							content: [{ type: 'text', text: 'ユーザーが一括キャンセル操作を取り消しました（elicitation）' }],
-							structuredContent: toStructured(result),
-						};
-					}
-					// 内部的に cancel_orders を実行。監査ログには route='elicitation' で記録される。
-					const cancelResult = await cancelOrders(
-						{
-							...typedArgs,
-							confirmation_token: result.data.confirmation_token,
-							token_expires_at: result.data.expires_at,
-						},
-						'elicitation',
-					);
-					const cancelText = cancelResult.ok ? cancelResult.summary : `Error: ${cancelResult.summary}`;
-					return {
-						content: [{ type: 'text', text: cancelText }],
-						structuredContent: toStructured(cancelResult),
-					};
-				} catch {
-					// elicitInput が想定外に失敗した場合はフォールバックに進む。
-				}
-			}
-		}
-
 		// フォールバック: confirmation_token は LLM 可視テキストには含めない。
-		const text = [
+		const fallbackText = [
 			result.summary,
 			'',
 			'※ confirmation_token はホスト UI / structuredContent 経由でのみ受け渡されます。',
 			'  LLM はトークンを引用したり、ユーザー確認なしに cancel_orders を呼ばないでください。',
 		].join('\n');
-		return {
-			content: [{ type: 'text', text }],
-			structuredContent: toStructured(result),
-		};
+		const previewStructured = toStructured(result);
+
+		// elicitation 対応ホストでは preview → ユーザー確認 → cancel_orders までを
+		// このハンドラ内で完結させる。
+		return withElicitedConfirmation({
+			extra,
+			summary: result.summary,
+			confirmTitle: `これら ${typedArgs.order_ids.length} 件の注文を一括キャンセルする`,
+			// 内部的に cancel_orders を実行。監査ログには route='elicitation' で記録される。
+			onConfirmed: () =>
+				cancelOrders(
+					{
+						...typedArgs,
+						confirmation_token: result.data.confirmation_token,
+						token_expires_at: result.data.expires_at,
+					},
+					'elicitation',
+				),
+			onDeclinedText: 'ユーザーが一括キャンセル操作を取り消しました（elicitation）',
+			declinedStructured: previewStructured,
+			fallback: {
+				content: [{ type: 'text', text: fallbackText }],
+				structuredContent: previewStructured,
+			},
+		});
 	},
 };

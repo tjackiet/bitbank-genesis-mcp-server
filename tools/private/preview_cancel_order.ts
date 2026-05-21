@@ -13,9 +13,10 @@
 import { formatOrderPositionLabel, formatPair, formatPrice } from '../../lib/formatter.js';
 import { ok, toStructured } from '../../lib/result.js';
 import { generateToken } from '../../src/private/confirmation.js';
+import { withElicitedConfirmation } from '../../src/private/elicitation.js';
 import type { OrderResponse } from '../../src/private/schemas.js';
 import { PreviewCancelOrderInputSchema, PreviewCancelOrderOutputSchema } from '../../src/private/schemas.js';
-import type { ToolDefinition, ToolHandlerExtra } from '../../src/tool-definition.js';
+import type { ToolDefinition } from '../../src/tool-definition.js';
 import cancelOrder from './cancel_order.js';
 import getOrder from './get_order.js';
 
@@ -76,25 +77,6 @@ export default async function previewCancelOrder(args: { pair: string; order_id:
 	return PreviewCancelOrderOutputSchema.parse(ok(summary, data, { action: 'cancel_order' as const }));
 }
 
-/**
- * クライアントが elicitation/create に対応しているかを判定する。
- * 非対応ホストでは従来挙動（structuredContent でトークンを返す）にフォールバックする。
- */
-function clientSupportsElicitation(extra: ToolHandlerExtra | undefined): boolean {
-	const server = (extra as { server?: { getClientCapabilities?: () => unknown } } | undefined)?.server;
-	const caps = typeof server?.getClientCapabilities === 'function' ? server.getClientCapabilities() : undefined;
-	const elicitation = (caps as { elicitation?: unknown } | undefined)?.elicitation;
-	return Boolean(elicitation);
-}
-
-/** SDK の elicitInput を呼び出すための最小限の interface */
-interface ElicitCapableServer {
-	elicitInput: (params: {
-		message: string;
-		requestedSchema: Record<string, unknown>;
-	}) => Promise<{ action: 'accept' | 'decline' | 'cancel'; content?: Record<string, unknown> }>;
-}
-
 export const toolDef: ToolDefinition = {
 	name: 'preview_cancel_order',
 	description: [
@@ -115,59 +97,38 @@ export const toolDef: ToolDefinition = {
 		const result = await previewCancelOrder(typedArgs);
 		if (!result.ok) return result;
 
-		// elicitation 対応ホストでは preview → ユーザー確認 → cancel_order までを
-		// このハンドラ内で完結させる。
-		if (clientSupportsElicitation(extra)) {
-			const server = (extra as { server?: ElicitCapableServer } | undefined)?.server;
-			if (server && typeof server.elicitInput === 'function') {
-				try {
-					const elicit = await server.elicitInput({
-						message: result.summary,
-						requestedSchema: {
-							type: 'object',
-							properties: {
-								confirmed: { type: 'boolean', title: 'この注文をキャンセルする' },
-							},
-							required: ['confirmed'],
-						},
-					});
-					if (elicit.action !== 'accept' || !elicit.content?.confirmed) {
-						return {
-							content: [{ type: 'text', text: 'ユーザーがキャンセル操作を取り消しました（elicitation）' }],
-							structuredContent: toStructured(result),
-						};
-					}
-					// 内部的に cancel_order を実行。監査ログには route='elicitation' で記録される。
-					const cancelResult = await cancelOrder(
-						{
-							...typedArgs,
-							confirmation_token: result.data.confirmation_token,
-							token_expires_at: result.data.expires_at,
-						},
-						'elicitation',
-					);
-					const cancelText = cancelResult.ok ? cancelResult.summary : `Error: ${cancelResult.summary}`;
-					return {
-						content: [{ type: 'text', text: cancelText }],
-						structuredContent: toStructured(cancelResult),
-					};
-				} catch {
-					// elicitInput が想定外に失敗した場合はフォールバックに進む。
-				}
-			}
-		}
-
 		// フォールバック: confirmation_token は LLM 可視テキストには含めず、
 		// structuredContent 側にだけ残す。SEP-1865 UI ボタンや Inspector はこちらを参照する。
-		const text = [
+		const fallbackText = [
 			result.summary,
 			'',
 			'※ confirmation_token はホスト UI / structuredContent 経由でのみ受け渡されます。',
 			'  LLM はトークンを引用したり、ユーザー確認なしに cancel_order を呼ばないでください。',
 		].join('\n');
-		return {
-			content: [{ type: 'text', text }],
-			structuredContent: toStructured(result),
-		};
+		const previewStructured = toStructured(result);
+
+		// elicitation 対応ホストでは preview → ユーザー確認 → cancel_order までを
+		// このハンドラ内で完結させる。
+		return withElicitedConfirmation({
+			extra,
+			summary: result.summary,
+			confirmTitle: 'この注文をキャンセルする',
+			// 内部的に cancel_order を実行。監査ログには route='elicitation' で記録される。
+			onConfirmed: () =>
+				cancelOrder(
+					{
+						...typedArgs,
+						confirmation_token: result.data.confirmation_token,
+						token_expires_at: result.data.expires_at,
+					},
+					'elicitation',
+				),
+			onDeclinedText: 'ユーザーがキャンセル操作を取り消しました（elicitation）',
+			declinedStructured: previewStructured,
+			fallback: {
+				content: [{ type: 'text', text: fallbackText }],
+				structuredContent: previewStructured,
+			},
+		});
 	},
 };
