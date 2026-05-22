@@ -6,7 +6,7 @@ import { generatePatternDiagram, type PatternDiagramData } from '../../lib/patte
 import { MIN_CONFIDENCE } from '../patterns/config.js';
 import { daysPerBar, finalizeConf, periodScoreDays } from './helpers.js';
 import { clamp01, relDev } from './regression.js';
-import type { DeduplicablePattern, DetectContext, DetectResult } from './types.js';
+import type { CandleData, DeduplicablePattern, DetectContext, DetectResult } from './types.js';
 import { pushCand } from './types.js';
 
 // ── 定数 ──
@@ -18,8 +18,30 @@ const FORMING_MIN_DAYS = 21;
 const FORMING_TOLERANCE_MULTIPLIER = 1.2;
 const FORMING_MIN_COMPLETION = 0.4;
 const FORMING_MIN_CONFIDENCE = 0.5;
+// ネックラインブレイク判定（detect_doubles と同じ値）
+const BREAKOUT_BUFFER_PCT = 0.015;
+const MAX_BARS_FROM_EXTREMUM = 20;
 
 type Pcand = (arg: Parameters<typeof pushCand>[1]) => void;
+
+// ── Helper: ネックラインブレイクインデックスを検出 ──
+// detect_doubles.ts と同じロジック（終値ベース、1.5% バッファ、20 バーまで）
+
+function findBreakoutIdx(
+	candles: CandleData[],
+	afterIdx: number,
+	necklinePrice: number,
+	direction: 'below' | 'above',
+): number {
+	const end = Math.min(afterIdx + MAX_BARS_FROM_EXTREMUM + 1, candles.length);
+	for (let k = afterIdx + 1; k < end; k++) {
+		const closeK = Number(candles[k]?.close ?? NaN);
+		if (!Number.isFinite(closeK)) continue;
+		if (direction === 'below' && closeK < necklinePrice * (1 - BREAKOUT_BUFFER_PCT)) return k;
+		if (direction === 'above' && closeK > necklinePrice * (1 + BREAKOUT_BUFFER_PCT)) return k;
+	}
+	return -1;
+}
 
 // ── Helper: Strict Triple Top ──
 
@@ -38,8 +60,8 @@ function findStrictTripleTop(ctx: DetectContext): DeduplicablePattern[] {
 		const nearAll = near(a.price, b.price) && near(b.price, c.price) && near(a.price, c.price);
 		if (!nearAll) continue;
 		const start = candles[a.idx].isoTime;
-		const end = candles[c.idx].isoTime;
-		if (!(start && end)) continue;
+		const structureEnd = candles[c.idx].isoTime;
+		if (!(start && structureEnd)) continue;
 
 		// Additional strict checks: valleys equality and neckline slope
 		const v1cands = allValleys.filter((v: { idx: number }) => v.idx > a.idx && v.idx < b.idx);
@@ -66,13 +88,30 @@ function findStrictTripleTop(ctx: DetectContext): DeduplicablePattern[] {
 		const tolMargin = clamp01(1 - devs.reduce((s, v) => s + v, 0) / devs.length / Math.max(1e-12, tolerancePct));
 		const span = Math.max(a.price, b.price, c.price) - Math.min(a.price, b.price, c.price);
 		const symmetry = clamp01(1 - span / Math.max(1, Math.max(a.price, b.price, c.price)));
-		const per = periodScoreDays(start, end);
+		const per = periodScoreDays(start, structureEnd);
 		const base = (tolMargin + symmetry + per) / 3;
 		const confidence = finalizeConf(base, 'triple_top');
+
+		if (confidence < (MIN_CONFIDENCE.triple_top ?? 0)) {
+			pcand({
+				type: 'triple_top',
+				accepted: false,
+				reason: 'confidence_below_min',
+				idxs: [a.idx, b.idx, c.idx],
+			});
+			continue;
+		}
+
+		// ネックライン下抜けを検出（c.idx 以降、最大 MAX_BARS_FROM_EXTREMUM バー）
 		const nlAvg = (Number(v1.price) + Number(v2.price)) / 2;
+		const breakoutIdx = findBreakoutIdx(candles, c.idx, nlAvg, 'below');
+		const isCompleted = breakoutIdx >= 0;
+		const rangeEnd = isCompleted ? candles[breakoutIdx]?.isoTime : structureEnd;
+		if (!rangeEnd) continue;
+
 		const neckline = [
 			{ x: a.idx, y: nlAvg },
-			{ x: c.idx, y: nlAvg },
+			{ x: isCompleted ? breakoutIdx : c.idx, y: nlAvg },
 		];
 		let diagram: PatternDiagramData | undefined;
 		diagram = generatePatternDiagram(
@@ -85,38 +124,55 @@ function findStrictTripleTop(ctx: DetectContext): DeduplicablePattern[] {
 				{ ...c, date: candles[c.idx]?.isoTime },
 			],
 			{ price: nlAvg },
-			{ start, end },
+			{ start, end: rangeEnd },
 		);
-		if (confidence >= (MIN_CONFIDENCE.triple_top ?? 0)) {
-			const ttAvgPeak = (a.price + b.price + c.price) / 3;
-			const ttTarget = nlAvg != null ? Math.round(nlAvg - (ttAvgPeak - nlAvg)) : undefined;
-			patterns.push({
-				type: 'triple_top',
-				confidence,
-				range: { start, end },
-				pivots: [a, b, c],
-				...(neckline ? { neckline, trendlineLabel: 'ネックライン' } : {}),
-				...(ttTarget !== undefined ? { breakoutTarget: ttTarget, targetMethod: 'neckline_projection' as const } : {}),
-				...(diagram ? { structureDiagram: diagram } : {}),
-			});
-			pcand({
-				type: 'triple_top',
-				accepted: true,
-				idxs: [a.idx, b.idx, c.idx],
-				pts: [
-					{ role: 'peak1', idx: a.idx, price: a.price },
-					{ role: 'peak2', idx: b.idx, price: b.price },
-					{ role: 'peak3', idx: c.idx, price: c.price },
-				],
-			});
-		} else {
-			pcand({
-				type: 'triple_top',
-				accepted: false,
-				reason: 'confidence_below_min',
-				idxs: [a.idx, b.idx, c.idx],
-			});
-		}
+		const ttAvgPeak = (a.price + b.price + c.price) / 3;
+		const ttTarget = Math.round(nlAvg - (ttAvgPeak - nlAvg));
+		const breakoutPrice = isCompleted ? Number(candles[breakoutIdx]?.close ?? NaN) : NaN;
+		const completionFields = isCompleted
+			? {
+					status: 'completed' as const,
+					confirmation: {
+						type: 'neckline_breakout' as const,
+						date: rangeEnd,
+						idx: breakoutIdx,
+						price: breakoutPrice,
+					},
+					breakout: { idx: breakoutIdx, price: breakoutPrice },
+					breakoutBarIndex: breakoutIdx,
+					breakoutDate: rangeEnd,
+					breakoutDirection: 'down' as const,
+					outcome: 'success' as const,
+				}
+			: {
+					status: 'near_completion' as const,
+					confirmation: { type: 'not_confirmed' as const },
+				};
+
+		patterns.push({
+			type: 'triple_top',
+			confidence,
+			range: { start, end: rangeEnd },
+			structureRange: { start, end: structureEnd },
+			...completionFields,
+			pivots: [a, b, c],
+			neckline,
+			trendlineLabel: 'ネックライン',
+			breakoutTarget: ttTarget,
+			targetMethod: 'neckline_projection' as const,
+			...(diagram ? { structureDiagram: diagram } : {}),
+		});
+		pcand({
+			type: 'triple_top',
+			accepted: true,
+			idxs: isCompleted ? [a.idx, b.idx, c.idx, breakoutIdx] : [a.idx, b.idx, c.idx],
+			pts: [
+				{ role: 'peak1', idx: a.idx, price: a.price },
+				{ role: 'peak2', idx: b.idx, price: b.price },
+				{ role: 'peak3', idx: c.idx, price: c.price },
+				...(isCompleted ? [{ role: 'breakout', idx: breakoutIdx, price: breakoutPrice }] : []),
+			],
+		});
 	}
 
 	return patterns;
@@ -139,8 +195,8 @@ function findStrictTripleBottom(ctx: DetectContext): DeduplicablePattern[] {
 		const nearAll = near(a.price, b.price) && near(b.price, c.price) && near(a.price, c.price);
 		if (!nearAll) continue;
 		const start = candles[a.idx].isoTime;
-		const end = candles[c.idx].isoTime;
-		if (!(start && end)) continue;
+		const structureEnd = candles[c.idx].isoTime;
+		if (!(start && structureEnd)) continue;
 
 		// Additional strict checks: 3 valleys near + spread limit, peaks near and neckline slope limit
 		const valleyPrices = [a.price, b.price, c.price];
@@ -178,13 +234,30 @@ function findStrictTripleBottom(ctx: DetectContext): DeduplicablePattern[] {
 		const tolMargin = clamp01(1 - devs.reduce((s, v) => s + v, 0) / devs.length / Math.max(1e-12, tolerancePct));
 		const span = Math.max(a.price, b.price, c.price) - Math.min(a.price, b.price, c.price);
 		const symmetry = clamp01(1 - span / Math.max(1, Math.max(a.price, b.price, c.price)));
-		const per = periodScoreDays(start, end);
+		const per = periodScoreDays(start, structureEnd);
 		const base = (tolMargin + symmetry + per) / 3;
 		const confidence = finalizeConf(base, 'triple_bottom');
+
+		if (confidence < (MIN_CONFIDENCE.triple_bottom ?? 0)) {
+			pcand({
+				type: 'triple_bottom',
+				accepted: false,
+				reason: 'confidence_below_min',
+				idxs: [a.idx, b.idx, c.idx],
+			});
+			continue;
+		}
+
+		// ネックライン上抜けを検出（c.idx 以降、最大 MAX_BARS_FROM_EXTREMUM バー）
 		const nlAvg = (Number(p1.price) + Number(p2.price)) / 2;
+		const breakoutIdx = findBreakoutIdx(candles, c.idx, nlAvg, 'above');
+		const isCompleted = breakoutIdx >= 0;
+		const rangeEnd = isCompleted ? candles[breakoutIdx]?.isoTime : structureEnd;
+		if (!rangeEnd) continue;
+
 		const neckline = [
 			{ x: a.idx, y: nlAvg },
-			{ x: c.idx, y: nlAvg },
+			{ x: isCompleted ? breakoutIdx : c.idx, y: nlAvg },
 		];
 		let diagram: PatternDiagramData | undefined;
 		diagram = generatePatternDiagram(
@@ -197,38 +270,55 @@ function findStrictTripleBottom(ctx: DetectContext): DeduplicablePattern[] {
 				{ ...c, date: candles[c.idx]?.isoTime },
 			],
 			{ price: nlAvg },
-			{ start, end },
+			{ start, end: rangeEnd },
 		);
-		if (confidence >= (MIN_CONFIDENCE.triple_bottom ?? 0)) {
-			const tbAvgValley = (a.price + b.price + c.price) / 3;
-			const tbTarget = nlAvg != null ? Math.round(nlAvg + (nlAvg - tbAvgValley)) : undefined;
-			patterns.push({
-				type: 'triple_bottom',
-				confidence,
-				range: { start, end },
-				pivots: [a, b, c],
-				...(neckline ? { neckline, trendlineLabel: 'ネックライン' } : {}),
-				...(tbTarget !== undefined ? { breakoutTarget: tbTarget, targetMethod: 'neckline_projection' as const } : {}),
-				...(diagram ? { structureDiagram: diagram } : {}),
-			});
-			pcand({
-				type: 'triple_bottom',
-				accepted: true,
-				idxs: [a.idx, b.idx, c.idx],
-				pts: [
-					{ role: 'valley1', idx: a.idx, price: a.price },
-					{ role: 'valley2', idx: b.idx, price: b.price },
-					{ role: 'valley3', idx: c.idx, price: c.price },
-				],
-			});
-		} else {
-			pcand({
-				type: 'triple_bottom',
-				accepted: false,
-				reason: 'confidence_below_min',
-				idxs: [a.idx, b.idx, c.idx],
-			});
-		}
+		const tbAvgValley = (a.price + b.price + c.price) / 3;
+		const tbTarget = Math.round(nlAvg + (nlAvg - tbAvgValley));
+		const breakoutPrice = isCompleted ? Number(candles[breakoutIdx]?.close ?? NaN) : NaN;
+		const completionFields = isCompleted
+			? {
+					status: 'completed' as const,
+					confirmation: {
+						type: 'neckline_breakout' as const,
+						date: rangeEnd,
+						idx: breakoutIdx,
+						price: breakoutPrice,
+					},
+					breakout: { idx: breakoutIdx, price: breakoutPrice },
+					breakoutBarIndex: breakoutIdx,
+					breakoutDate: rangeEnd,
+					breakoutDirection: 'up' as const,
+					outcome: 'success' as const,
+				}
+			: {
+					status: 'near_completion' as const,
+					confirmation: { type: 'not_confirmed' as const },
+				};
+
+		patterns.push({
+			type: 'triple_bottom',
+			confidence,
+			range: { start, end: rangeEnd },
+			structureRange: { start, end: structureEnd },
+			...completionFields,
+			pivots: [a, b, c],
+			neckline,
+			trendlineLabel: 'ネックライン',
+			breakoutTarget: tbTarget,
+			targetMethod: 'neckline_projection' as const,
+			...(diagram ? { structureDiagram: diagram } : {}),
+		});
+		pcand({
+			type: 'triple_bottom',
+			accepted: true,
+			idxs: isCompleted ? [a.idx, b.idx, c.idx, breakoutIdx] : [a.idx, b.idx, c.idx],
+			pts: [
+				{ role: 'valley1', idx: a.idx, price: a.price },
+				{ role: 'valley2', idx: b.idx, price: b.price },
+				{ role: 'valley3', idx: c.idx, price: c.price },
+				...(isCompleted ? [{ role: 'breakout', idx: breakoutIdx, price: breakoutPrice }] : []),
+			],
+		});
 	}
 
 	return patterns;
@@ -263,13 +353,13 @@ function findRelaxedTripleTop(ctx: DetectContext, factor: number): DeduplicableP
 			continue;
 		}
 		const start = candles[a.idx].isoTime,
-			end = candles[c.idx].isoTime;
-		if (!start || !end) continue;
+			structureEnd = candles[c.idx].isoTime;
+		if (!start || !structureEnd) continue;
 		const devs = [relDev(a.price, b.price), relDev(b.price, c.price), relDev(a.price, c.price)];
 		const tolMargin = clamp01(1 - devs.reduce((s, v) => s + v, 0) / devs.length / Math.max(1e-12, tolTriple));
 		const span = Math.max(a.price, b.price, c.price) - Math.min(a.price, b.price, c.price);
 		const symmetry = clamp01(1 - span / Math.max(1, Math.max(a.price, b.price, c.price)));
-		const per = periodScoreDays(start, end);
+		const per = periodScoreDays(start, structureEnd);
 		const base = (tolMargin + symmetry + per) / 3;
 		const confidence = finalizeConf(base * 0.95, 'triple_top');
 		// valleys for neckline & diagram
@@ -277,7 +367,6 @@ function findRelaxedTripleTop(ctx: DetectContext, factor: number): DeduplicableP
 		const v2cands = allValleys.filter((v: { idx: number }) => v.idx > b.idx && v.idx < c.idx);
 		const v1 = v1cands.length ? v1cands.reduce((m, v) => (v.price < m.price ? v : m)) : null;
 		const v2 = v2cands.length ? v2cands.reduce((m, v) => (v.price < m.price ? v : m)) : null;
-		const nlAvg = v1 && v2 ? (Number(v1.price) + Number(v2.price)) / 2 : null;
 		if (!(v1 && v2)) {
 			pcand({
 				type: 'triple_top',
@@ -297,51 +386,76 @@ function findRelaxedTripleTop(ctx: DetectContext, factor: number): DeduplicableP
 			});
 			continue;
 		}
-		let diagram: PatternDiagramData | undefined;
-		const neckline =
-			v1 && v2
-				? [
-						{ x: a.idx, y: nlAvg },
-						{ x: c.idx, y: nlAvg },
-					]
-				: undefined;
-		if (v1 && v2) {
-			diagram = generatePatternDiagram(
-				'triple_top',
-				[
-					{ ...a, date: candles[a.idx]?.isoTime },
-					{ ...v1, date: candles[v1.idx]?.isoTime },
-					{ ...b, date: candles[b.idx]?.isoTime },
-					{ ...v2, date: candles[v2.idx]?.isoTime },
-					{ ...c, date: candles[c.idx]?.isoTime },
-				],
-				{ price: nlAvg ?? Number(b.price) },
-				{ start, end },
-			);
-		}
-		if (confidence >= (MIN_CONFIDENCE.triple_top ?? 0)) {
-			const ttRelAvgPeak = (a.price + b.price + c.price) / 3;
-			const ttRelTarget = nlAvg != null ? Math.round(nlAvg - (ttRelAvgPeak - nlAvg)) : undefined;
-			return {
+		if (confidence < (MIN_CONFIDENCE.triple_top ?? 0)) {
+			pcand({
 				type: 'triple_top',
-				confidence,
-				range: { start, end },
-				pivots: [a, b, c],
-				...(neckline ? { neckline, trendlineLabel: 'ネックライン' } : {}),
-				...(ttRelTarget !== undefined
-					? { breakoutTarget: ttRelTarget, targetMethod: 'neckline_projection' as const }
-					: {}),
-				...(diagram ? { structureDiagram: diagram } : {}),
-				_fallback: `relaxed_triple_x${factor}`,
-			};
+				accepted: false,
+				reason: 'confidence_below_min_relaxed',
+				idxs: [a.idx, b.idx, c.idx],
+			});
+			return null; // 構造的に有効な候補だったが confidence 不足 — この factor では停止
 		}
-		pcand({
+
+		// ネックライン下抜け検出
+		const nlAvg = (Number(v1.price) + Number(v2.price)) / 2;
+		const breakoutIdx = findBreakoutIdx(candles, c.idx, nlAvg, 'below');
+		const isCompleted = breakoutIdx >= 0;
+		const rangeEnd = isCompleted ? candles[breakoutIdx]?.isoTime : structureEnd;
+		if (!rangeEnd) return null;
+
+		const neckline = [
+			{ x: a.idx, y: nlAvg },
+			{ x: isCompleted ? breakoutIdx : c.idx, y: nlAvg },
+		];
+		let diagram: PatternDiagramData | undefined;
+		diagram = generatePatternDiagram(
+			'triple_top',
+			[
+				{ ...a, date: candles[a.idx]?.isoTime },
+				{ ...v1, date: candles[v1.idx]?.isoTime },
+				{ ...b, date: candles[b.idx]?.isoTime },
+				{ ...v2, date: candles[v2.idx]?.isoTime },
+				{ ...c, date: candles[c.idx]?.isoTime },
+			],
+			{ price: nlAvg },
+			{ start, end: rangeEnd },
+		);
+		const ttRelAvgPeak = (a.price + b.price + c.price) / 3;
+		const ttRelTarget = Math.round(nlAvg - (ttRelAvgPeak - nlAvg));
+		const breakoutPrice = isCompleted ? Number(candles[breakoutIdx]?.close ?? NaN) : NaN;
+		const completionFields = isCompleted
+			? {
+					status: 'completed' as const,
+					confirmation: {
+						type: 'neckline_breakout' as const,
+						date: rangeEnd,
+						idx: breakoutIdx,
+						price: breakoutPrice,
+					},
+					breakout: { idx: breakoutIdx, price: breakoutPrice },
+					breakoutBarIndex: breakoutIdx,
+					breakoutDate: rangeEnd,
+					breakoutDirection: 'down' as const,
+					outcome: 'success' as const,
+				}
+			: {
+					status: 'near_completion' as const,
+					confirmation: { type: 'not_confirmed' as const },
+				};
+		return {
 			type: 'triple_top',
-			accepted: false,
-			reason: 'confidence_below_min_relaxed',
-			idxs: [a.idx, b.idx, c.idx],
-		});
-		return null; // 構造的に有効な候補だったが confidence 不足 — この factor では停止
+			confidence,
+			range: { start, end: rangeEnd },
+			structureRange: { start, end: structureEnd },
+			...completionFields,
+			pivots: [a, b, c],
+			neckline,
+			trendlineLabel: 'ネックライン',
+			breakoutTarget: ttRelTarget,
+			targetMethod: 'neckline_projection' as const,
+			...(diagram ? { structureDiagram: diagram } : {}),
+			_fallback: `relaxed_triple_x${factor}`,
+		};
 	}
 	return null;
 }
@@ -375,13 +489,13 @@ function findRelaxedTripleBottom(ctx: DetectContext, factor: number): Deduplicab
 			continue;
 		}
 		const start = candles[a.idx].isoTime,
-			end = candles[c.idx].isoTime;
-		if (!start || !end) continue;
+			structureEnd = candles[c.idx].isoTime;
+		if (!start || !structureEnd) continue;
 		const devs = [relDev(a.price, b.price), relDev(b.price, c.price), relDev(a.price, c.price)];
 		const tolMargin = clamp01(1 - devs.reduce((s, v) => s + v, 0) / devs.length / Math.max(1e-12, tolTriple));
 		const span = Math.max(a.price, b.price, c.price) - Math.min(a.price, b.price, c.price);
 		const symmetry = clamp01(1 - span / Math.max(1, Math.max(a.price, b.price, c.price)));
-		const per = periodScoreDays(start, end);
+		const per = periodScoreDays(start, structureEnd);
 		const base = (tolMargin + symmetry + per) / 3;
 		const confidence = finalizeConf(base * 0.95, 'triple_bottom');
 		// peaks for neckline & diagram
@@ -389,7 +503,6 @@ function findRelaxedTripleBottom(ctx: DetectContext, factor: number): Deduplicab
 		const p2cands = allPeaks.filter((v: { idx: number }) => v.idx > b.idx && v.idx < c.idx);
 		const p1 = p1cands.length ? p1cands.reduce((m, v) => (v.price > m.price ? v : m)) : null;
 		const p2 = p2cands.length ? p2cands.reduce((m, v) => (v.price > m.price ? v : m)) : null;
-		const nlAvg = p1 && p2 ? (Number(p1.price) + Number(p2.price)) / 2 : null;
 		if (!(p1 && p2)) {
 			pcand({
 				type: 'triple_bottom',
@@ -409,51 +522,76 @@ function findRelaxedTripleBottom(ctx: DetectContext, factor: number): Deduplicab
 			});
 			continue;
 		}
-		let diagram: PatternDiagramData | undefined;
-		const neckline =
-			p1 && p2
-				? [
-						{ x: a.idx, y: nlAvg },
-						{ x: c.idx, y: nlAvg },
-					]
-				: undefined;
-		if (p1 && p2) {
-			diagram = generatePatternDiagram(
-				'triple_bottom',
-				[
-					{ ...a, date: candles[a.idx]?.isoTime },
-					{ ...p1, date: candles[p1.idx]?.isoTime },
-					{ ...b, date: candles[b.idx]?.isoTime },
-					{ ...p2, date: candles[p2.idx]?.isoTime },
-					{ ...c, date: candles[c.idx]?.isoTime },
-				],
-				{ price: nlAvg ?? Number(b.price) },
-				{ start, end },
-			);
-		}
-		if (confidence >= (MIN_CONFIDENCE.triple_bottom ?? 0)) {
-			const tbRelAvgValley = (a.price + b.price + c.price) / 3;
-			const tbRelTarget = nlAvg != null ? Math.round(nlAvg + (nlAvg - tbRelAvgValley)) : undefined;
-			return {
+		if (confidence < (MIN_CONFIDENCE.triple_bottom ?? 0)) {
+			pcand({
 				type: 'triple_bottom',
-				confidence,
-				range: { start, end },
-				pivots: [a, b, c],
-				...(neckline ? { neckline, trendlineLabel: 'ネックライン' } : {}),
-				...(tbRelTarget !== undefined
-					? { breakoutTarget: tbRelTarget, targetMethod: 'neckline_projection' as const }
-					: {}),
-				...(diagram ? { structureDiagram: diagram } : {}),
-				_fallback: `relaxed_triple_x${factor}`,
-			};
+				accepted: false,
+				reason: 'confidence_below_min_relaxed',
+				idxs: [a.idx, b.idx, c.idx],
+			});
+			return null; // 構造的に有効な候補だったが confidence 不足 — この factor では停止
 		}
-		pcand({
+
+		// ネックライン上抜け検出
+		const nlAvg = (Number(p1.price) + Number(p2.price)) / 2;
+		const breakoutIdx = findBreakoutIdx(candles, c.idx, nlAvg, 'above');
+		const isCompleted = breakoutIdx >= 0;
+		const rangeEnd = isCompleted ? candles[breakoutIdx]?.isoTime : structureEnd;
+		if (!rangeEnd) return null;
+
+		const neckline = [
+			{ x: a.idx, y: nlAvg },
+			{ x: isCompleted ? breakoutIdx : c.idx, y: nlAvg },
+		];
+		let diagram: PatternDiagramData | undefined;
+		diagram = generatePatternDiagram(
+			'triple_bottom',
+			[
+				{ ...a, date: candles[a.idx]?.isoTime },
+				{ ...p1, date: candles[p1.idx]?.isoTime },
+				{ ...b, date: candles[b.idx]?.isoTime },
+				{ ...p2, date: candles[p2.idx]?.isoTime },
+				{ ...c, date: candles[c.idx]?.isoTime },
+			],
+			{ price: nlAvg },
+			{ start, end: rangeEnd },
+		);
+		const tbRelAvgValley = (a.price + b.price + c.price) / 3;
+		const tbRelTarget = Math.round(nlAvg + (nlAvg - tbRelAvgValley));
+		const breakoutPrice = isCompleted ? Number(candles[breakoutIdx]?.close ?? NaN) : NaN;
+		const completionFields = isCompleted
+			? {
+					status: 'completed' as const,
+					confirmation: {
+						type: 'neckline_breakout' as const,
+						date: rangeEnd,
+						idx: breakoutIdx,
+						price: breakoutPrice,
+					},
+					breakout: { idx: breakoutIdx, price: breakoutPrice },
+					breakoutBarIndex: breakoutIdx,
+					breakoutDate: rangeEnd,
+					breakoutDirection: 'up' as const,
+					outcome: 'success' as const,
+				}
+			: {
+					status: 'near_completion' as const,
+					confirmation: { type: 'not_confirmed' as const },
+				};
+		return {
 			type: 'triple_bottom',
-			accepted: false,
-			reason: 'confidence_below_min_relaxed',
-			idxs: [a.idx, b.idx, c.idx],
-		});
-		return null; // 構造的に有効な候補だったが confidence 不足 — この factor では停止
+			confidence,
+			range: { start, end: rangeEnd },
+			structureRange: { start, end: structureEnd },
+			...completionFields,
+			pivots: [a, b, c],
+			neckline,
+			trendlineLabel: 'ネックライン',
+			breakoutTarget: tbRelTarget,
+			targetMethod: 'neckline_projection' as const,
+			...(diagram ? { structureDiagram: diagram } : {}),
+			_fallback: `relaxed_triple_x${factor}`,
+		};
 	}
 	return null;
 }
@@ -629,5 +767,12 @@ export function detectTriples(ctx: DetectContext): DetectResult {
 		}
 	}
 
-	return { patterns };
+	// includeForming=false のとき、未ブレイクの構造（forming / near_completion）は返さない。
+	// 後段 globalDedup で completed が confidence/end-time の比較に負けて消えるのを防ぐため
+	// detect_wedges.ts と同じく検出器内で先に落とす。
+	const filtered = includeForming
+		? patterns
+		: patterns.filter((p) => p.status !== 'forming' && p.status !== 'near_completion');
+
+	return { patterns: filtered };
 }
