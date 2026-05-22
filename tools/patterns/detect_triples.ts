@@ -113,8 +113,7 @@ function findStrictTripleTop(ctx: DetectContext): DeduplicablePattern[] {
 			{ x: a.idx, y: nlAvg },
 			{ x: isCompleted ? breakoutIdx : c.idx, y: nlAvg },
 		];
-		let diagram: PatternDiagramData | undefined;
-		diagram = generatePatternDiagram(
+		const diagram: PatternDiagramData = generatePatternDiagram(
 			'triple_top',
 			[
 				{ ...a, date: candles[a.idx]?.isoTime },
@@ -259,8 +258,7 @@ function findStrictTripleBottom(ctx: DetectContext): DeduplicablePattern[] {
 			{ x: a.idx, y: nlAvg },
 			{ x: isCompleted ? breakoutIdx : c.idx, y: nlAvg },
 		];
-		let diagram: PatternDiagramData | undefined;
-		diagram = generatePatternDiagram(
+		const diagram: PatternDiagramData = generatePatternDiagram(
 			'triple_bottom',
 			[
 				{ ...a, date: candles[a.idx]?.isoTime },
@@ -407,8 +405,7 @@ function findRelaxedTripleTop(ctx: DetectContext, factor: number): DeduplicableP
 			{ x: a.idx, y: nlAvg },
 			{ x: isCompleted ? breakoutIdx : c.idx, y: nlAvg },
 		];
-		let diagram: PatternDiagramData | undefined;
-		diagram = generatePatternDiagram(
+		const diagram: PatternDiagramData = generatePatternDiagram(
 			'triple_top',
 			[
 				{ ...a, date: candles[a.idx]?.isoTime },
@@ -543,8 +540,7 @@ function findRelaxedTripleBottom(ctx: DetectContext, factor: number): Deduplicab
 			{ x: a.idx, y: nlAvg },
 			{ x: isCompleted ? breakoutIdx : c.idx, y: nlAvg },
 		];
-		let diagram: PatternDiagramData | undefined;
-		diagram = generatePatternDiagram(
+		const diagram: PatternDiagramData = generatePatternDiagram(
 			'triple_bottom',
 			[
 				{ ...a, date: candles[a.idx]?.isoTime },
