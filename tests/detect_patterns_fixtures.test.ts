@@ -733,10 +733,10 @@ describe('detect_patterns fixtures', () => {
 				}),
 			]),
 		);
-		// 残ったパターンは completed / near_completion 系であって、forming は混ざらない
-		// （includeForming=false の段階で forming を弾いているため）
+		// 残ったパターンは completed 系であって、forming / near_completion は混ざらない
+		// （includeForming=false の段階で forming と near_completion を弾いているため）
 		for (const p of res.data.patterns) {
-			expect(['completed', 'invalid', 'near_completion', undefined]).toContain(p.status);
+			expect(['completed', 'invalid', undefined]).toContain(p.status);
 		}
 	});
 
