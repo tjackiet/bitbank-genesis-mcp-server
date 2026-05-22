@@ -8,7 +8,14 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { dayjs } from '../../../lib/datetime.js';
 import { paginateMarginTrades, paginateTrades } from '../../../src/handlers/portfolio/fetch.js';
+import getCandles from '../../../tools/get_candles.js';
+
+vi.mock('../../../tools/get_candles.js', () => ({
+	default: vi.fn(),
+}));
+
 import { BitbankPrivateClient } from '../../../src/private/client.js';
 import { mockBitbankError, mockBitbankSuccess } from '../../fixtures/private-api.js';
 
@@ -941,5 +948,64 @@ describe('paginateDeposits / paginateWithdrawals — ページネーション境
 		// crypto / jpy 両チャネルで同じ uuid が返っても 1 件に集約される
 		expect(result.deposits).toHaveLength(1);
 		expect(result.deposits[0].uuid).toBe('dup-1');
+	});
+});
+
+describe('fetchCandlePriceData', () => {
+	const mockedGetCandles = vi.mocked(getCandles);
+
+	beforeEach(() => {
+		mockedGetCandles.mockReset();
+	});
+
+	it('get_candles 経由で JST 暦日キーと期間境界価格を構築する', async () => {
+		const nowJst = dayjs().tz('Asia/Tokyo');
+		const day1Ms = nowJst.startOf('year').valueOf();
+		const day2Ms = nowJst.startOf('year').add(1, 'day').valueOf();
+		const yearStartMs = day1Ms;
+		const monthStartMs = day1Ms;
+		const dayStartMs = day1Ms;
+
+		mockedGetCandles.mockResolvedValue({
+			ok: true,
+			summary: 'ok',
+			data: {
+				normalized: [
+					{ open: 1_000_000, high: 1_010_000, low: 990_000, close: 1_005_000, volume: 1, timestamp: day1Ms },
+					{ open: 1_100_000, high: 1_110_000, low: 1_090_000, close: 1_105_000, volume: 1, timestamp: day2Ms },
+				],
+			},
+			meta: { pair: 'btc_jpy', type: '1day', count: 2 },
+		});
+
+		const { fetchCandlePriceData } = await import('../../../src/handlers/portfolio/fetch.js');
+		const result = await fetchCandlePriceData(['btc_jpy'], yearStartMs, monthStartMs, dayStartMs);
+
+		expect(mockedGetCandles).toHaveBeenCalledWith('btc_jpy', '1day', nowJst.format('YYYYMMDD'), 400, 'Asia/Tokyo');
+
+		const boundary = result.boundaryPrices.get('btc');
+		expect(boundary?.yearStart).toBe(1_000_000);
+		expect(boundary?.monthStart).toBe(1_000_000);
+		expect(boundary?.dayStart).toBe(1_000_000);
+
+		const daily = result.dailyPrices.get('btc');
+		expect(daily?.get(nowJst.startOf('year').startOf('day').valueOf())).toBe(1_000_000);
+		expect(daily?.get(nowJst.startOf('year').add(1, 'day').startOf('day').valueOf())).toBe(1_100_000);
+	});
+
+	it('get_candles が失敗したペアはスキップする', async () => {
+		const nowJst = dayjs().tz('Asia/Tokyo');
+		mockedGetCandles.mockResolvedValue({ ok: false, error: 'upstream', message: 'fail' });
+
+		const { fetchCandlePriceData } = await import('../../../src/handlers/portfolio/fetch.js');
+		const result = await fetchCandlePriceData(
+			['btc_jpy'],
+			nowJst.startOf('year').valueOf(),
+			nowJst.startOf('month').valueOf(),
+			nowJst.startOf('day').valueOf(),
+		);
+
+		expect(result.boundaryPrices.size).toBe(0);
+		expect(result.dailyPrices.size).toBe(0);
 	});
 });

@@ -7,6 +7,7 @@
 
 import { dayjs } from '../../../lib/datetime.js';
 import analyzeIndicators from '../../../tools/analyze_indicators.js';
+import getCandles from '../../../tools/get_candles.js';
 import getMarginPositions from '../../../tools/private/get_margin_positions.js';
 import getMarginStatus from '../../../tools/private/get_margin_status.js';
 import type { BitbankPrivateClient } from '../../private/client.js';
@@ -346,21 +347,17 @@ export async function fetchCandlePriceData(
 	const boundaryPrices = new Map<string, { yearStart?: number; monthStart?: number; dayStart?: number }>();
 	const dailyPrices = new Map<string, Map<number, number>>();
 	const nowJst = dayjs().tz('Asia/Tokyo');
-	const year = nowJst.year();
+	const anchorDate = nowJst.format('YYYYMMDD');
+	// 年初〜当日までの 1day 足 + tz anchor 仕様に合わせた UTC 年 chunk 取得用の余裕
+	const limit = 400;
 
 	const promises = pairs.map(async (pair) => {
 		try {
-			const url = `https://public.bitbank.cc/${pair}/candlestick/1day/${year}`;
-			const res = await fetch(url, { signal: AbortSignal.timeout(5000) });
-			if (!res.ok) return;
-			const json = (await res.json()) as {
-				success?: number;
-				data?: { candlestick?: Array<{ ohlcv?: Array<Array<string | number>> }> };
-			};
-			if (json.success !== 1) return;
+			const res = await getCandles(pair, '1day', anchorDate, limit, 'Asia/Tokyo');
+			if (!res?.ok) return;
 
-			const ohlcv = json.data?.candlestick?.[0]?.ohlcv;
-			if (!Array.isArray(ohlcv) || ohlcv.length === 0) return;
+			const normalized = res.data?.normalized;
+			if (!Array.isArray(normalized) || normalized.length === 0) return;
 
 			const asset = pair.replace('_jpy', '');
 			let yearStartPrice: number | undefined;
@@ -368,10 +365,10 @@ export async function fetchCandlePriceData(
 			let dayStartPrice: number | undefined;
 			const priceByDate = new Map<number, number>();
 
-			for (const candle of ohlcv) {
-				const ts = Number(candle[5]);
-				const open = Number(candle[0]);
-				if (!Number.isFinite(open) || open <= 0) continue;
+			for (const candle of normalized) {
+				const ts = candle.timestamp;
+				const open = candle.open;
+				if (ts == null || !Number.isFinite(ts) || !Number.isFinite(open) || open <= 0) continue;
 
 				// Normalize to JST midnight so keys match buildEquitySeries date lookups
 				const jstMidnight = dayjs(ts).tz('Asia/Tokyo').startOf('day').valueOf();

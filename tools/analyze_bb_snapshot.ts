@@ -1,5 +1,5 @@
 import type { z } from 'zod';
-import { nowIso } from '../lib/datetime.js';
+import { calendarDateFromIso, nowIso } from '../lib/datetime.js';
 import { formatSummary } from '../lib/formatter.js';
 import { fail, failFromError, failFromValidation, ok } from '../lib/result.js';
 import { createMeta, ensurePair } from '../lib/validate.js';
@@ -81,7 +81,9 @@ export function buildBbDefaultText(input: BuildBbDefaultTextInput): string {
 				? [
 						'',
 						`📋 直近${timeseries.length}本のBB推移:`,
-						...timeseries.map((t) => `${t.time.slice(0, 10)} z:${t.zScore} bw:${t.bandWidthPct}%`),
+						...timeseries.map(
+							(t) => `${calendarDateFromIso(t.time) ?? t.time.slice(0, 10)} z:${t.zScore} bw:${t.bandWidthPct}%`,
+						),
 					]
 				: []),
 		].join('\n') +

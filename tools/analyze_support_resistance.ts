@@ -47,9 +47,32 @@ type SrCandle = {
 	volume?: number;
 };
 
+/** 足の時刻 ms（timestamp 優先）。無効なら null。 */
+function srCandleMs(c: SrCandle): number | null {
+	if (c.timestamp != null && Number.isFinite(c.timestamp)) return c.timestamp;
+	if (c.isoTime) {
+		const ms = dayjs(c.isoTime).valueOf();
+		return Number.isFinite(ms) ? ms : null;
+	}
+	return null;
+}
+
 /** 表示・集計用の暦日（既定 JST）。isoTime の UTC 日付切り出しは使わない。 */
 function srCalendarDate(c: SrCandle): string {
 	return calendarDateFromIso(c.timestamp ?? c.isoTime) ?? '';
+}
+
+function isSrCandleAfter(c: SrCandle, cutoff: dayjs.Dayjs): boolean {
+	const ms = srCandleMs(c);
+	if (ms == null) return false;
+	return dayjs(ms).isAfter(cutoff);
+}
+
+/** 構造化出力用 ISO（timestamp 優先で導出）。 */
+function srCandleIso(c: SrCandle): string {
+	if (c.isoTime) return c.isoTime;
+	const ms = srCandleMs(c);
+	return ms != null ? dayjs(ms).toISOString() : '';
 }
 
 /** スイングポイント（ピボット）を検出: 左右 depth 本より高値/安値が突出した足 */
@@ -213,7 +236,7 @@ function detectRecentBreak(
 	recentDays: number = 7,
 ): { date: string; price: number; breakPct: number } | undefined {
 	const recentCutoff = dayjs().subtract(recentDays, 'day');
-	const recentCandles = candles.filter((c) => dayjs(c.isoTime).isAfter(recentCutoff));
+	const recentCandles = candles.filter((c) => isSrCandleAfter(c, recentCutoff));
 
 	// 偽ブレイクアウト検出用の平均出来高
 	const avgVolume = candles.reduce((sum, c) => sum + (c.volume || 0), 0) / (candles.length || 1);
@@ -247,7 +270,7 @@ function detectNewSupport(
 	recentDays: number = 10,
 ): Array<{ price: number; date: string; volumeBoost: boolean; note: string }> {
 	const recentCutoff = dayjs().subtract(recentDays, 'day');
-	const recentCandles = candles.filter((c) => dayjs(c.isoTime).isAfter(recentCutoff));
+	const recentCandles = candles.filter((c) => isSrCandleAfter(c, recentCutoff));
 
 	const newSupports: Array<{ price: number; date: string; volumeBoost: boolean; note: string }> = [];
 
@@ -467,7 +490,7 @@ export default async function analyzeSupportResistance(
 			if (Math.abs(pctFromCurrent) > 20) continue;
 			if (touches.length < 2) continue;
 
-			const recencyScore = computeRecencyScore(touches, currentCandle.isoTime ?? '');
+			const recencyScore = computeRecencyScore(touches, srCalendarDate(currentCandle));
 			const avgBounce = touches.reduce((sum, t) => sum + t.bounceStrength, 0) / (touches.length || 1);
 
 			const recentBreak = detectRecentBreak(level, 'support', analysisCandles, 7);
@@ -580,7 +603,7 @@ export default async function analyzeSupportResistance(
 			if (Math.abs(pctFromCurrent) > 20) continue;
 			if (touches.length < 2) continue;
 
-			const recencyScore = computeRecencyScore(touches, currentCandle.isoTime ?? '');
+			const recencyScore = computeRecencyScore(touches, srCalendarDate(currentCandle));
 			const avgBounce = touches.reduce((sum, t) => sum + t.bounceStrength, 0) / (touches.length || 1);
 
 			const recentBreak = detectRecentBreak(level, 'resistance', analysisCandles, 7);
@@ -777,7 +800,7 @@ export default async function analyzeSupportResistance(
 
 		const data = {
 			currentPrice,
-			analysisDate: currentCandle.isoTime,
+			analysisDate: srCandleIso(currentCandle),
 			lookbackDays,
 			supports: topSupports,
 			resistances: topResistances,

@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { dayjs } from '../lib/datetime.js';
+import { calendarDateFromIso, dayjs } from '../lib/datetime.js';
 import { formatSummary } from '../lib/formatter.js';
 import { fail, failFromError, failFromValidation, ok, toStructured } from '../lib/result.js';
 import { ALLOWED_PAIRS, ensurePair } from '../lib/validate.js';
@@ -8,6 +8,14 @@ import type { ToolDefinition } from '../src/tool-definition.js';
 import analyzeIndicators from './analyze_indicators.js';
 
 // ── テキスト組み立て: 純粋エクスポート関数 ──
+
+/** 表示用暦日（JST）。既に YYYY-MM-DD の値はそのまま、ISO は calendarDateFromIso で変換。 */
+function displayCalendarDate(isoOrDate: string | null | undefined, fallback: string): string {
+	if (!isoOrDate) return fallback;
+	const s = String(isoOrDate);
+	if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+	return calendarDateFromIso(s) ?? fallback;
+}
 
 export interface MacdScreenCross {
 	pair: string;
@@ -31,7 +39,7 @@ export interface BuildMacdScreenTextInput {
 export function buildMacdScreenText(input: BuildMacdScreenTextInput): string {
 	const { baseSummary, crosses } = input;
 	const crossLines = crosses.map((r, i) => {
-		const date = r.crossDate ? String(r.crossDate).slice(0, 10) : '?';
+		const date = displayCalendarDate(r.crossDate, '?');
 		const ret =
 			r.returnSinceCrossPct != null ? ` ret:${r.returnSinceCrossPct >= 0 ? '+' : ''}${r.returnSinceCrossPct}%` : '';
 		const hd = r.histogramDelta != null ? ` histDelta:${r.histogramDelta}` : '';
@@ -118,7 +126,7 @@ export function buildMacdSingleText(input: BuildMacdSingleTextInput): string {
 			);
 			lines.push(`- MACD: ${fmt(f.currentMACD, 2)} / Signal: ${fmt(f.currentSignal, 2)}`);
 		} else if (f.status === 'crossed_recently') {
-			const dateStr = f.lastCrossDate ? String(f.lastCrossDate).slice(0, 10) : '不明';
+			const dateStr = displayCalendarDate(f.lastCrossDate, '不明');
 			const agoStr = f.lastCrossBarsAgo != null ? `${f.lastCrossBarsAgo}日前` : '直近';
 			const typ = f.lastCrossType === 'dead' ? 'デッド' : 'ゴールデン';
 			lines.push(`${typ}クロス発生: ${dateStr}（${agoStr}）`);
@@ -347,7 +355,7 @@ async function screenMode(
 	}));
 	const brief = resultsScreened
 		.slice(0, 6)
-		.map((r) => `${r.pair}:${r.type}${r.isoTime ? `@${String(r.isoTime).slice(0, 10)}` : ''}`)
+		.map((r) => `${r.pair}:${r.type}${r.isoTime ? `@${displayCalendarDate(r.isoTime, '?')}` : ''}`)
 		.join(', ');
 	const conds: string[] = [];
 	if (crossType !== 'both') conds.push(crossType);
@@ -675,7 +683,7 @@ screen（スクリーニング用）:
 				const fmtRet = (v: number | null | undefined) =>
 					v == null ? 'n/a' : `${v >= 0 ? '+' : ''}${Number(v).toFixed(2)}%`;
 				const lines = detRaw.map((r) => {
-					const date = (r?.crossDate || '').slice(0, 10);
+					const date = displayCalendarDate(r?.crossDate, '');
 					const prevDays = r?.prevCross?.barsAgo != null ? `${r.prevCross.barsAgo}日` : 'n/a';
 					return `${String(r.pair)}: ${String(r.type)}@${date} (ヒストグラム${fmtDelta(r?.histogramDelta)}, 前回クロスから${prevDays}${r?.returnSinceCrossPct != null ? `, ${fmtRet(r.returnSinceCrossPct)}` : ''})`;
 				});
