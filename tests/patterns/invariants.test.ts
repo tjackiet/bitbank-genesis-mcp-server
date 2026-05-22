@@ -487,9 +487,10 @@ describe('patterns invariants — 横断契約', () => {
 	// ──────────────────────────────────────────────
 	describe('completed は breakout 成立 fixture でのみ', () => {
 		it('breakout 成立 fixture（bull pennant）→ status=completed のパターンが含まれる', async () => {
-			// 注: detect_doubles / detect_hs / detect_triples は完成済みでも明示的な
-			// status='completed' を付与しない（status=undefined のまま）ため、
-			// 明示的に completed が出る pennant / triangle / wedge を使う。
+			// 注: detect_doubles / detect_hs は完成済みでも明示的な status='completed' を
+			// 付与しない（status=undefined のまま）。detect_triples はネックラインブレイク
+			// 確認で status='completed' を付与する。
+			// このテストでは明示的に completed が出る pennant / triangle / wedge を使う。
 			const candles = buildBullPennantSuccessCandles();
 			mockedAnalyzeIndicators.mockResolvedValueOnce(asMockResult(indicatorsOk(candles)));
 			const res = await detectPatterns('btc_jpy', '1day', candles.length, {

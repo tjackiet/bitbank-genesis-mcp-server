@@ -7,6 +7,11 @@ import type { CandleData, DetectContext } from '../../tools/patterns/types.js';
 
 // ── ヘルパー ──
 
+// detect_triples.ts の BREAKOUT_BUFFER_PCT と揃える（=1.5%）。
+// 丸めで閾値を割らないよう微小マージンを足し、ネックライン突破ギリギリの終値を作る。
+const TEST_BREAKOUT_BUFFER_PCT = 0.015;
+const TEST_BREAKOUT_MARGIN_PCT = 0.001;
+
 function iso(daysAgo: number): string {
 	return dayjs().subtract(daysAgo, 'day').startOf('day').toISOString();
 }
@@ -49,6 +54,9 @@ function buildCtx(opts: {
  * peak1(idx=0) → valley1(idx=10) → peak2(idx=20) → valley2(idx=30) → peak3(idx=40)
  *
  * 3山が等高、谷が等安、ネックライン勾配 <= 2%
+ *
+ * withBreakout=true のとき、peak3 以降にネックライン（谷の平均）を 1.5% 以上
+ * 下抜けする終値を挿入し、完成済みパターンの検出を期待できる状態にする。
  */
 function buildTripleTop(opts?: {
 	peak?: number;
@@ -57,6 +65,7 @@ function buildTripleTop(opts?: {
 	peak3Price?: number;
 	v1Price?: number;
 	v2Price?: number;
+	withBreakout?: boolean;
 }) {
 	const pk = opts?.peak ?? 100;
 	const pk2 = opts?.peak2Price ?? pk;
@@ -72,6 +81,15 @@ function buildTripleTop(opts?: {
 	candles[30] = mkCandle(20, v2 + 1, v2 + 3, v2, v2 + 1);
 	candles[40] = mkCandle(10, pk3 - 1, pk3, pk3 - 3, pk3 - 1);
 
+	if (opts?.withBreakout) {
+		// 谷の平均（ネックライン）を BREAKOUT_BUFFER_PCT 以上下抜けする終値
+		const nlAvg = (v1 + v2) / 2;
+		const breakClose = Math.floor(nlAvg * (1 - TEST_BREAKOUT_BUFFER_PCT - TEST_BREAKOUT_MARGIN_PCT));
+		for (let i = 41; i < 50; i++) {
+			candles[i] = mkCandle(50 - i, breakClose, breakClose + 1, breakClose - 3, breakClose);
+		}
+	}
+
 	const pivots: Pivot[] = [
 		{ idx: 0, price: pk, kind: 'H' },
 		{ idx: 10, price: v1, kind: 'L' },
@@ -86,6 +104,9 @@ function buildTripleTop(opts?: {
 /**
  * Triple Bottom のローソク足とピボットを生成:
  * valley1(idx=0) → peak1(idx=10) → valley2(idx=20) → peak2(idx=30) → valley3(idx=40)
+ *
+ * withBreakout=true のとき、valley3 以降にネックライン（山の平均）を 1.5% 以上
+ * 上抜けする終値を挿入し、完成済みパターンの検出を期待できる状態にする。
  */
 function buildTripleBottom(opts?: {
 	valley?: number;
@@ -94,6 +115,7 @@ function buildTripleBottom(opts?: {
 	v3Price?: number;
 	p1Price?: number;
 	p2Price?: number;
+	withBreakout?: boolean;
 }) {
 	const vl = opts?.valley ?? 100;
 	const v2 = opts?.v2Price ?? vl;
@@ -108,6 +130,15 @@ function buildTripleBottom(opts?: {
 	candles[20] = mkCandle(30, v2 + 1, v2 + 3, v2, v2 + 1);
 	candles[30] = mkCandle(20, p2 - 1, p2, p2 - 3, p2 - 1);
 	candles[40] = mkCandle(10, v3 + 1, v3 + 3, v3, v3 + 1);
+
+	if (opts?.withBreakout) {
+		// 山の平均（ネックライン）を BREAKOUT_BUFFER_PCT 以上上抜けする終値
+		const nlAvg = (p1 + p2) / 2;
+		const breakClose = Math.ceil(nlAvg * (1 + TEST_BREAKOUT_BUFFER_PCT + TEST_BREAKOUT_MARGIN_PCT));
+		for (let i = 41; i < 50; i++) {
+			candles[i] = mkCandle(50 - i, breakClose, breakClose + 3, breakClose - 1, breakClose);
+		}
+	}
 
 	const pivots: Pivot[] = [
 		{ idx: 0, price: vl, kind: 'L' },
@@ -127,13 +158,18 @@ afterEach(() => {
 describe('detectTriples', () => {
 	// ── Triple Top（完成済み）────────────────────────────────
 
-	it('3山等高 + 等安谷 → triple_top 検出', () => {
-		const { candles, pivots } = buildTripleTop();
+	it('3山等高 + 等安谷 + ネックライン下抜け → triple_top completed 検出', () => {
+		const { candles, pivots } = buildTripleTop({ withBreakout: true });
 		const ctx = buildCtx({ candles, pivots });
 		const result = detectTriples(ctx);
 
 		const tt = result.patterns.filter((p) => p.type === 'triple_top');
 		expect(tt.length).toBeGreaterThanOrEqual(1);
+		expect(tt[0]?.status).toBe('completed');
+		expect(tt[0]?.breakoutDirection).toBe('down');
+		expect(tt[0]?.outcome).toBe('success');
+		expect(tt[0]?.breakoutBarIndex).toBeDefined();
+		expect(tt[0]?.confirmation).toMatchObject({ type: 'neckline_breakout' });
 		expect(tt[0]?.confidence).toBeGreaterThan(0);
 		expect(tt[0]?.neckline).toBeDefined();
 		expect(tt[0]?.breakoutTarget).toBeDefined();
@@ -142,12 +178,34 @@ describe('detectTriples', () => {
 
 	it('Triple Top ターゲット価格 = neckline - (avgPeak - neckline)', () => {
 		// nlAvg=(80+80)/2=80, avgPeak=100, target=80-(100-80)=60
-		const { candles, pivots } = buildTripleTop({ peak: 100, valley: 80 });
+		const { candles, pivots } = buildTripleTop({ peak: 100, valley: 80, withBreakout: true });
 		const ctx = buildCtx({ candles, pivots });
 		const result = detectTriples(ctx);
 
 		const tt = result.patterns.find((p) => p.type === 'triple_top');
 		expect(tt?.breakoutTarget).toBe(60);
+	});
+
+	it('3山構造のみ（ブレイクなし） + includeForming=true → near_completion', () => {
+		const { candles, pivots } = buildTripleTop();
+		const ctx = buildCtx({ candles, pivots, includeForming: true });
+		const result = detectTriples(ctx);
+
+		const tt = result.patterns.filter((p) => p.type === 'triple_top' && p.status === 'near_completion');
+		expect(tt.length).toBeGreaterThanOrEqual(1);
+		expect(tt[0]?.confirmation).toMatchObject({ type: 'not_confirmed' });
+		expect(tt[0]?.breakoutDirection).toBeUndefined();
+		expect(tt[0]?.outcome).toBeUndefined();
+		expect(tt[0]?.breakoutBarIndex).toBeUndefined();
+	});
+
+	it('3山構造のみ（ブレイクなし） + includeForming=false → 未検出', () => {
+		const { candles, pivots } = buildTripleTop();
+		const ctx = buildCtx({ candles, pivots, includeForming: false });
+		const result = detectTriples(ctx);
+
+		const tt = result.patterns.filter((p) => p.type === 'triple_top');
+		expect(tt).toHaveLength(0);
 	});
 
 	it('谷のネックライン傾斜が急すぎ → neckline_slope_excess rejected', () => {
@@ -195,13 +253,18 @@ describe('detectTriples', () => {
 
 	// ── Triple Bottom（完成済み）────────────────────────────
 
-	it('3谷等安 + 等高山 → triple_bottom 検出', () => {
-		const { candles, pivots } = buildTripleBottom();
+	it('3谷等安 + 等高山 + ネックライン上抜け → triple_bottom completed 検出', () => {
+		const { candles, pivots } = buildTripleBottom({ withBreakout: true });
 		const ctx = buildCtx({ candles, pivots });
 		const result = detectTriples(ctx);
 
 		const tb = result.patterns.filter((p) => p.type === 'triple_bottom');
 		expect(tb.length).toBeGreaterThanOrEqual(1);
+		expect(tb[0]?.status).toBe('completed');
+		expect(tb[0]?.breakoutDirection).toBe('up');
+		expect(tb[0]?.outcome).toBe('success');
+		expect(tb[0]?.breakoutBarIndex).toBeDefined();
+		expect(tb[0]?.confirmation).toMatchObject({ type: 'neckline_breakout' });
 		expect(tb[0]?.confidence).toBeGreaterThan(0);
 		expect(tb[0]?.neckline).toBeDefined();
 		expect(tb[0]?.breakoutTarget).toBeDefined();
@@ -210,12 +273,34 @@ describe('detectTriples', () => {
 
 	it('Triple Bottom ターゲット価格 = neckline + (neckline - avgValley)', () => {
 		// nlAvg=(120+120)/2=120, avgValley=100, target=120+(120-100)=140
-		const { candles, pivots } = buildTripleBottom({ valley: 100, peak: 120 });
+		const { candles, pivots } = buildTripleBottom({ valley: 100, peak: 120, withBreakout: true });
 		const ctx = buildCtx({ candles, pivots });
 		const result = detectTriples(ctx);
 
 		const tb = result.patterns.find((p) => p.type === 'triple_bottom');
 		expect(tb?.breakoutTarget).toBe(140);
+	});
+
+	it('3谷構造のみ（ブレイクなし） + includeForming=true → near_completion', () => {
+		const { candles, pivots } = buildTripleBottom();
+		const ctx = buildCtx({ candles, pivots, includeForming: true });
+		const result = detectTriples(ctx);
+
+		const tb = result.patterns.filter((p) => p.type === 'triple_bottom' && p.status === 'near_completion');
+		expect(tb.length).toBeGreaterThanOrEqual(1);
+		expect(tb[0]?.confirmation).toMatchObject({ type: 'not_confirmed' });
+		expect(tb[0]?.breakoutDirection).toBeUndefined();
+		expect(tb[0]?.outcome).toBeUndefined();
+		expect(tb[0]?.breakoutBarIndex).toBeUndefined();
+	});
+
+	it('3谷構造のみ（ブレイクなし） + includeForming=false → 未検出', () => {
+		const { candles, pivots } = buildTripleBottom();
+		const ctx = buildCtx({ candles, pivots, includeForming: false });
+		const result = detectTriples(ctx);
+
+		const tb = result.patterns.filter((p) => p.type === 'triple_bottom');
+		expect(tb).toHaveLength(0);
 	});
 
 	it('山のネックライン傾斜が急すぎ → neckline_slope_excess rejected', () => {
@@ -283,28 +368,66 @@ describe('detectTriples', () => {
 
 	// ── Relaxed fallback ─────────────────────────────────────
 
-	it('strict 不検出 → relaxed (x1.25 or x2.0) で Triple Top フォールバック検出', () => {
-		// peak1=100, peak2=100, peak3=107 → diff/max=7/107=0.065 > strict(0.04) だが <= 2.0x(0.08)
-		const { candles, pivots } = buildTripleTop({ peak: 100, peak2Price: 100, peak3Price: 107 });
+	it('strict 不検出 → relaxed (x1.25) + ブレイクで Triple Top フォールバック検出', () => {
+		// 24 日間（periodScoreDays=0.9 区分）に 3 山 2 谷 + ブレイクを配置。
+		// peak3=105 → diff/max=5/105=0.0476 > strict(0.04) だが ≤ 0.05(x1.25) で relaxed が起動。
+		const total = 32;
+		const candles: CandleData[] = Array.from({ length: total }, (_, i) => mkCandle(total - i, 85, 90, 75, 85));
+		candles[0] = mkCandle(total, 99, 100, 97, 99);
+		candles[6] = mkCandle(total - 6, 81, 83, 80, 81);
+		candles[12] = mkCandle(total - 12, 99, 100, 97, 99);
+		candles[18] = mkCandle(total - 18, 81, 83, 80, 81);
+		candles[24] = mkCandle(total - 24, 104, 105, 102, 104);
+		// ネックライン（=80）を 1.5% 以上下抜け
+		for (let i = 25; i < total; i++) {
+			candles[i] = mkCandle(total - i, 70, 71, 68, 70);
+		}
+		const pivots: Pivot[] = [
+			{ idx: 0, price: 100, kind: 'H' },
+			{ idx: 6, price: 80, kind: 'L' },
+			{ idx: 12, price: 100, kind: 'H' },
+			{ idx: 18, price: 80, kind: 'L' },
+			{ idx: 24, price: 105, kind: 'H' },
+		];
 		const ctx = buildCtx({ candles, pivots, tolerancePct: 0.04 });
 		const result = detectTriples(ctx);
 
 		const tt = result.patterns.filter((p) => p.type === 'triple_top');
-		if (tt.length > 0) {
-			expect(tt[0]?._fallback).toMatch(/relaxed_triple/);
-		}
+		expect(tt.length).toBeGreaterThanOrEqual(1);
+		expect(tt[0]?._fallback).toMatch(/relaxed_triple/);
+		expect(tt[0]?.status).toBe('completed');
+		expect(tt[0]?.breakoutDirection).toBe('down');
 	});
 
-	it('strict 不検出 → relaxed (x2.0) で Triple Bottom フォールバック検出', () => {
-		// valley1=100, valley2=100, valley3=107 → diff/max=7/107=0.065 > strict(0.04) だが <= 2.0x(0.08)
-		const { candles, pivots } = buildTripleBottom({ valley: 100, v2Price: 100, v3Price: 107 });
+	it('strict 不検出 → relaxed (x1.25) + ブレイクで Triple Bottom フォールバック検出', () => {
+		// 24 日間に 3 谷 2 山 + ブレイクを配置。
+		// valley3=95 → diff/max=5/100=0.05 > strict(0.04) だが ≤ 0.05(x1.25) で relaxed が起動。
+		const total = 32;
+		const candles: CandleData[] = Array.from({ length: total }, (_, i) => mkCandle(total - i, 105, 115, 95, 105));
+		candles[0] = mkCandle(total, 101, 102, 99, 101);
+		candles[6] = mkCandle(total - 6, 119, 120, 118, 119);
+		candles[12] = mkCandle(total - 12, 101, 102, 99, 101);
+		candles[18] = mkCandle(total - 18, 119, 120, 118, 119);
+		candles[24] = mkCandle(total - 24, 96, 97, 95, 96);
+		// ネックライン（=120）を 1.5% 以上上抜け
+		for (let i = 25; i < total; i++) {
+			candles[i] = mkCandle(total - i, 132, 133, 131, 132);
+		}
+		const pivots: Pivot[] = [
+			{ idx: 0, price: 100, kind: 'L' },
+			{ idx: 6, price: 120, kind: 'H' },
+			{ idx: 12, price: 100, kind: 'L' },
+			{ idx: 18, price: 120, kind: 'H' },
+			{ idx: 24, price: 95, kind: 'L' },
+		];
 		const ctx = buildCtx({ candles, pivots, tolerancePct: 0.04 });
 		const result = detectTriples(ctx);
 
 		const tb = result.patterns.filter((p) => p.type === 'triple_bottom');
-		if (tb.length > 0) {
-			expect(tb[0]?._fallback).toMatch(/relaxed_triple/);
-		}
+		expect(tb.length).toBeGreaterThanOrEqual(1);
+		expect(tb[0]?._fallback).toMatch(/relaxed_triple/);
+		expect(tb[0]?.status).toBe('completed');
+		expect(tb[0]?.breakoutDirection).toBe('up');
 	});
 
 	// ── 形成中 Triple Top ───────────────────────────────────
@@ -378,7 +501,7 @@ describe('detectTriples', () => {
 		expect(forming[0]?.breakoutTarget).toBeDefined();
 	});
 
-	it('includeForming=false では forming パターンは返さない', () => {
+	it('includeForming=false では forming / near_completion パターンは返さない', () => {
 		const total = 51;
 		const candles: CandleData[] = Array.from({ length: total }, (_, i) => mkCandle(total - i, 85, 90, 80, 85));
 		candles[0] = mkCandle(total, 99, 100, 97, 99);
@@ -401,8 +524,8 @@ describe('detectTriples', () => {
 		});
 		const result = detectTriples(ctx);
 
-		const forming = result.patterns.filter((p) => p.status === 'forming');
-		expect(forming).toHaveLength(0);
+		const unfinished = result.patterns.filter((p) => p.status === 'forming' || p.status === 'near_completion');
+		expect(unfinished).toHaveLength(0);
 	});
 
 	// ── 間隔不足 ─────────────────────────────────────────────
