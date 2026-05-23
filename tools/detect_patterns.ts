@@ -2,7 +2,7 @@ import type { z } from 'zod';
 import { formatDateInTz } from '../lib/datetime.js';
 import { fail, failFromError, ok } from '../lib/result.js';
 import { extractUpstreamWarning, prependWarnings } from '../lib/warning-propagation.js';
-import { DetectPatternsOutputSchema, type PatternTypeEnum } from '../src/schemas.js';
+import { DetectPatternsOutputSchema, type PatternFilterEnum } from '../src/schemas.js';
 import analyzeIndicators from './analyze_indicators.js';
 import { buildStatistics } from './patterns/aftermath.js';
 import { resolveParams } from './patterns/config.js';
@@ -18,6 +18,25 @@ import { rankPatterns } from './patterns/ranking.js';
 import { linearRegressionWithR2, near as nearFn, pct as pctFn } from './patterns/regression.js';
 import { type Candle, detectSwingPoints, filterPeaks, filterValleys } from './patterns/swing.js';
 import type { CandDebugEntry, DeduplicablePattern, DetectContext } from './patterns/types.js';
+
+/**
+ * flag / pennant 系パターン固有の検証メタデータ。
+ * `PatternEntry` には optional として既に定義されているが、
+ * `DeduplicablePattern` 経由で扱う summary 生成セクションでは型情報が落ちるため
+ * ここで再宣言してキャストに使う。
+ */
+interface FlagFamilyMetadata {
+	poleStartDate?: string;
+	poleEndDate?: string;
+	poleChangePct?: number;
+	poleBars?: number;
+	poleATRMult?: number;
+	flagUpperSlope?: number;
+	flagLowerSlope?: number;
+	spreadAvg?: number;
+	spreadStability?: number;
+	expectedBreakoutDirection?: 'up' | 'down';
+}
 
 /** Summary generation section で使う拡張型（DeduplicablePattern + パターン固有フィールド） */
 interface SummaryPattern extends DeduplicablePattern {
@@ -65,7 +84,7 @@ export default async function detectPatterns(
 		tolerancePct: number;
 		minBarsBetweenSwings: number;
 		strictPivots: boolean;
-		patterns: Array<z.infer<typeof PatternTypeEnum>>;
+		patterns: Array<z.infer<typeof PatternFilterEnum>>;
 		requireCurrentInPattern: boolean;
 		currentRelevanceDays: number;
 		// 統合オプション
@@ -317,6 +336,10 @@ export default async function detectPatterns(
 						triangle_ascending: '上方',
 						triangle_descending: '下方',
 						pennant: p.poleDirection === 'up' ? '上方' : p.poleDirection === 'down' ? '下方' : undefined,
+						bull_flag: '上方',
+						bear_flag: '下方',
+						bull_pennant: '上方',
+						bear_pennant: '下方',
 						flag: undefined,
 					};
 					const expectedDir = expectedDirMap[p.type];
@@ -330,6 +353,10 @@ export default async function detectPatterns(
 							success: `トレンド継続（${p.poleDirection === 'up' ? '強気' : '弱気'}）`,
 							failure: `ダマシ（${p.poleDirection === 'up' ? '弱気転換' : '強気転換'}）`,
 						},
+						bull_flag: { success: 'トレンド継続（強気）', failure: 'ダマシ（弱気転換）' },
+						bear_flag: { success: 'トレンド継続（弱気）', failure: 'ダマシ（強気転換）' },
+						bull_pennant: { success: 'トレンド継続（強気）', failure: 'ダマシ（弱気転換）' },
+						bear_pennant: { success: 'トレンド継続（弱気）', failure: 'ダマシ（強気転換）' },
 					};
 					const meaning = meaningMap[p.type]?.[p.outcome] || `${directionJa}ブレイク`;
 
@@ -362,8 +389,14 @@ export default async function detectPatterns(
 					}
 				}
 
-				// ペナント固有フィールド
-				if (p.type === 'pennant') {
+				// flag / pennant 固有フィールド（bull_*/bear_* 含む。legacy 'pennant' も処理）
+				if (
+					p.type === 'pennant' ||
+					p.type === 'bull_flag' ||
+					p.type === 'bear_flag' ||
+					p.type === 'bull_pennant' ||
+					p.type === 'bear_pennant'
+				) {
 					if (p.poleDirection) {
 						detail += `\n   - フラッグポール方向: ${p.poleDirection === 'up' ? '上昇' : '下降'}`;
 					}
@@ -372,6 +405,29 @@ export default async function detectPatterns(
 					}
 					if (p.flagpoleHeight != null) {
 						detail += `\n   - フラッグポール値幅: ${Math.round(p.flagpoleHeight).toLocaleString('ja-JP')}円`;
+					}
+					// pole の検証情報
+					const pAny = p as SummaryPattern & FlagFamilyMetadata;
+					if (pAny.poleStartDate && pAny.poleEndDate && pAny.poleChangePct != null) {
+						const psd = formatDateInTz(Date.parse(pAny.poleStartDate), tz) ?? pAny.poleStartDate;
+						const ped = formatDateInTz(Date.parse(pAny.poleEndDate), tz) ?? pAny.poleEndDate;
+						const sign = pAny.poleChangePct >= 0 ? '+' : '';
+						const pctStr = `${sign}${(pAny.poleChangePct * 100).toFixed(1)}%`;
+						const barsStr = pAny.poleBars ? `, ${pAny.poleBars}本` : '';
+						detail += `\n   - 旗竿期間: ${psd} ~ ${ped}（${pctStr}${barsStr}）`;
+					}
+					if (pAny.poleATRMult != null) {
+						detail += `\n   - 旗竿 ATR 倍率: ${pAny.poleATRMult.toFixed(2)}x`;
+					}
+					if (pAny.flagUpperSlope != null && pAny.flagLowerSlope != null) {
+						detail += `\n   - チャネル傾き: 上限=${pAny.flagUpperSlope.toFixed(2)}, 下限=${pAny.flagLowerSlope.toFixed(2)}（円/本）`;
+					}
+					if (pAny.spreadAvg != null && pAny.spreadStability != null) {
+						const stabPct = (pAny.spreadStability * 100).toFixed(0);
+						detail += `\n   - 平均チャネル幅: ${Math.round(pAny.spreadAvg).toLocaleString('ja-JP')}円（平行度: ${stabPct}%）`;
+					}
+					if (pAny.expectedBreakoutDirection) {
+						detail += `\n   - 期待ブレイク方向: ${pAny.expectedBreakoutDirection === 'up' ? '上方' : '下方'}`;
 					}
 					if (p.retracementRatio != null) {
 						const pctStr = (p.retracementRatio * 100).toFixed(0);

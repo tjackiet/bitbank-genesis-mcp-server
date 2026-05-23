@@ -41,6 +41,24 @@ interface PatternMeta {
 	[key: string]: unknown;
 }
 
+/**
+ * flag / pennant 系パターンに付与される検証メタデータ。
+ * `PatternEntry` には optional フィールドとして既に定義されているが、
+ * view ハンドラからは `unknown` 経由のキャストでアクセスするためここでも形を保持する。
+ */
+interface FlagFamilyViewFields {
+	poleStartDate?: string;
+	poleEndDate?: string;
+	poleChangePct?: number;
+	poleBars?: number;
+	poleATRMult?: number;
+	flagUpperSlope?: number;
+	flagLowerSlope?: number;
+	spreadAvg?: number;
+	spreadStability?: number;
+	expectedBreakoutDirection?: 'up' | 'down';
+}
+
 /** パターン検出結果（res パラメータ用） */
 interface PatternResult {
 	ok?: boolean;
@@ -177,6 +195,89 @@ function formatCandidateDetails(c: CandidateDebug): string {
 			`\n   2nd half avg: ${formatRounded(d?.secondAvg)}` +
 			`\n   ratio: ${formatPctFromRatio(d?.ratio)}`
 		);
+	}
+
+	// flag / pennant: pole 検証・チャネル幾何・spread 統計を構造化表示
+	const flagReasons = new Set([
+		'detected',
+		'classification_failed',
+		'spread_invalid',
+		'broadening_channel',
+		'spread_unstable',
+		'slope_same_as_pole',
+		'symmetric_convergence',
+		'parallel_counter_trend',
+		'insufficient_consolidation_swings',
+		'trendline_span_too_short',
+		'poor_trendline_fit',
+		'consolidation_too_wide',
+		'dedup_summary',
+	]);
+	if (flagReasons.has(reason)) {
+		const lines: string[] = [];
+		// Pole 検証結果
+		if (d?.poleATRMult != null || d?.polePerBarImpulse != null || d?.poleChangePct != null) {
+			const poleAtr = d?.poleATRMult != null ? Number(d.poleATRMult).toFixed(2) : 'n/a';
+			const poleImpulse = d?.polePerBarImpulse != null ? Number(d.polePerBarImpulse).toFixed(2) : 'n/a';
+			const polePct = d?.poleChangePct != null ? `${(Number(d.poleChangePct) * 100).toFixed(1)}%` : 'n/a';
+			const poleBars = d?.poleBars != null ? `${formatInt(d.poleBars)}本` : 'n/a';
+			const poleDir = d?.poleDirection ? `(${d.poleDirection})` : '';
+			lines.push(
+				`   pole: atrMult=${poleAtr}, perBarImpulse=${poleImpulse}, change=${polePct}, bars=${poleBars} ${poleDir}`,
+			);
+		}
+		// チャネル幾何 (spread)
+		if (d?.spreadAvg != null || d?.spreadStability != null || d?.spreadStart != null) {
+			const spAvg = d?.spreadAvg != null ? formatRounded(d.spreadAvg) : 'n/a';
+			const spStab = d?.spreadStability != null ? `${(Number(d.spreadStability) * 100).toFixed(0)}%` : 'n/a';
+			const spStart = d?.spreadStart != null ? formatRounded(d.spreadStart) : null;
+			const spEnd = d?.spreadEnd != null ? formatRounded(d.spreadEnd) : null;
+			const seg = spStart && spEnd ? `, start→end=${spStart}→${spEnd}` : '';
+			lines.push(`   spread: avg=${spAvg}, stability=${spStab}${seg}`);
+		}
+		// 傾き
+		if (d?.upperSlope != null || d?.lowerSlope != null) {
+			const us = d?.upperSlope != null ? Number(d.upperSlope).toFixed(4) : 'n/a';
+			const ls = d?.lowerSlope != null ? Number(d.lowerSlope).toFixed(4) : 'n/a';
+			const conv = d?.convergenceRatio != null ? Number(d.convergenceRatio).toFixed(3) : 'n/a';
+			lines.push(`   slopes: upper=${us}, lower=${ls}, convergenceRatio=${conv}`);
+		}
+		// R²
+		if (d?.r2Upper != null || d?.r2Lower != null) {
+			const r2U = d?.r2Upper != null ? Number(d.r2Upper).toFixed(3) : 'n/a';
+			const r2L = d?.r2Lower != null ? Number(d.r2Lower).toFixed(3) : 'n/a';
+			lines.push(`   r2: upper=${r2U}, lower=${r2L}`);
+		}
+		// 期待ブレイク方向
+		if (d?.expectedBreakoutDirection) {
+			lines.push(`   expectedBreakoutDirection: ${d.expectedBreakoutDirection}`);
+		}
+		// dedup_summary 特殊
+		if (reason === 'dedup_summary') {
+			lines.push(
+				`   dedup: before=${formatInt(d?.beforeDedup)}, after=${formatInt(d?.afterDedup)}, removed=${formatInt(d?.removed)}`,
+			);
+		}
+		// その他 reject 系の補足
+		if (reason === 'insufficient_consolidation_swings' && (d?.highs != null || d?.lows != null)) {
+			lines.push(`   swings: highs=${formatInt(d?.highs)}, lows=${formatInt(d?.lows)}`);
+		}
+		if (reason === 'trendline_span_too_short') {
+			lines.push(
+				`   spans: upper=${formatInt(d?.upperSpan)}/${formatInt(d?.consZoneWidth)} (${(Number(d?.upperRatio) * 100).toFixed(0)}%), lower=${formatInt(d?.lowerSpan)}/${formatInt(d?.consZoneWidth)} (${(Number(d?.lowerRatio) * 100).toFixed(0)}%), minRatio=${(Number(d?.minSpanRatio) * 100).toFixed(0)}%`,
+			);
+		}
+		if (reason === 'consolidation_too_wide') {
+			lines.push(
+				`   geometry: consRange=${formatRounded(d?.consRange)}, poleRange=${formatRounded(d?.poleRange)}, ratio=${(Number(d?.ratio) * 100).toFixed(0)}%`,
+			);
+		}
+		if (reason === 'detected' && d?.touchCount != null) {
+			lines.push(
+				`   touchCount: ${formatInt(d.touchCount)}, status: ${d?.status ?? 'n/a'}, confidence: ${d?.confidence ?? 'n/a'}`,
+			);
+		}
+		return lines.length > 0 ? `\n${lines.join('\n')}` : '\n   details: (no fields)';
 	}
 
 	// default
@@ -444,6 +545,10 @@ export function formatPatternLine(
 				triangle_ascending: '上方',
 				triangle_descending: '下方',
 				pennant: p.poleDirection === 'up' ? '上方' : p.poleDirection === 'down' ? '下方' : undefined,
+				bull_flag: '上方',
+				bear_flag: '下方',
+				bull_pennant: '上方',
+				bear_pennant: '下方',
 			};
 			const expectedDir = p.type ? expectedDirMap[p.type] : undefined;
 			const meaningMap: Record<string, Record<string, string>> = {
@@ -455,6 +560,10 @@ export function formatPatternLine(
 					success: `トレンド継続（${p.poleDirection === 'up' ? '強気' : '弱気'}）`,
 					failure: `ダマシ（${p.poleDirection === 'up' ? '弱気転換' : '強気転換'}）`,
 				},
+				bull_flag: { success: 'トレンド継続（強気）', failure: 'ダマシ（弱気転換）' },
+				bear_flag: { success: 'トレンド継続（弱気）', failure: 'ダマシ（強気転換）' },
+				bull_pennant: { success: 'トレンド継続（強気）', failure: 'ダマシ（弱気転換）' },
+				bear_pennant: { success: 'トレンド継続（弱気）', failure: 'ダマシ（強気転換）' },
 			};
 			const meaning = (p.type && p.outcome ? meaningMap[p.type]?.[p.outcome] : undefined) || `${directionJa}ブレイク`;
 			let dirLine = `   - ブレイク方向: ${directionJa}ブレイク`;
@@ -465,10 +574,17 @@ export function formatPatternLine(
 		/* ignore */
 	}
 
-	// pennant fields
+	// flag / pennant fields (legacy 'pennant' + bull/bear flag/pennant)
 	let pennantLine: string | null = null;
 	try {
-		if (p?.type === 'pennant') {
+		const isFlagFamily =
+			p?.type === 'pennant' ||
+			p?.type === 'flag' ||
+			p?.type === 'bull_flag' ||
+			p?.type === 'bear_flag' ||
+			p?.type === 'bull_pennant' ||
+			p?.type === 'bear_pennant';
+		if (isFlagFamily) {
 			const parts: string[] = [];
 			if (p.poleDirection) parts.push(`フラッグポール方向: ${p.poleDirection === 'up' ? '上昇' : '下降'}`);
 			if (p.priorTrendDirection)
@@ -477,6 +593,31 @@ export function formatPatternLine(
 				);
 			if (p.flagpoleHeight != null)
 				parts.push(`フラッグポール値幅: ${Math.round(Number(p.flagpoleHeight)).toLocaleString('ja-JP')}円`);
+			// pole の検証情報（bull/bear flag/pennant 用の新規フィールド）
+			const pAny = p as PatternEntry & FlagFamilyViewFields;
+			if (pAny.poleStartDate && pAny.poleEndDate && pAny.poleChangePct != null) {
+				const psd = toDateOnly(pAny.poleStartDate, tz);
+				const ped = toDateOnly(pAny.poleEndDate, tz);
+				const sign = pAny.poleChangePct >= 0 ? '+' : '';
+				const pctStr = `${sign}${(pAny.poleChangePct * 100).toFixed(1)}%`;
+				const barsStr = pAny.poleBars ? `, ${pAny.poleBars}本` : '';
+				parts.push(`旗竿期間: ${psd} ~ ${ped}（${pctStr}${barsStr}）`);
+			}
+			if (pAny.poleATRMult != null) {
+				parts.push(`旗竿 ATR 倍率: ${pAny.poleATRMult.toFixed(2)}x`);
+			}
+			if (pAny.flagUpperSlope != null && pAny.flagLowerSlope != null) {
+				parts.push(
+					`チャネル傾き: 上限=${pAny.flagUpperSlope.toFixed(2)}, 下限=${pAny.flagLowerSlope.toFixed(2)}（円/本）`,
+				);
+			}
+			if (pAny.spreadAvg != null && pAny.spreadStability != null) {
+				const stabPct = (pAny.spreadStability * 100).toFixed(0);
+				parts.push(`平均チャネル幅: ${Math.round(pAny.spreadAvg).toLocaleString('ja-JP')}円（平行度: ${stabPct}%）`);
+			}
+			if (pAny.expectedBreakoutDirection) {
+				parts.push(`期待ブレイク方向: ${pAny.expectedBreakoutDirection === 'up' ? '上方' : '下方'}`);
+			}
 			if (p.retracementRatio != null) {
 				const pctStr = (Number(p.retracementRatio) * 100).toFixed(0);
 				parts.push(

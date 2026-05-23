@@ -194,6 +194,17 @@ export interface PatternEntry extends DeduplicablePattern {
 	flagpoleHeight?: number;
 	retracementRatio?: number;
 	isTrendContinuation?: boolean;
+	// bull/bear flag・pennant 用の検証情報
+	poleStartDate?: string;
+	poleEndDate?: string;
+	poleChangePct?: number;
+	poleBars?: number;
+	poleATRMult?: number;
+	flagUpperSlope?: number;
+	flagLowerSlope?: number;
+	spreadAvg?: number;
+	spreadStability?: number;
+	expectedBreakoutDirection?: 'up' | 'down';
 	apexDate?: string;
 	daysToApex?: number;
 	completionPct?: number;

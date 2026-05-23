@@ -528,7 +528,13 @@ export function finalizeConf(base: number, type: string): number {
 			? 1.1
 			: type === 'triple_top' || type === 'triple_bottom'
 				? 1.05
-				: type.startsWith('triangle') || type === 'pennant' || type === 'flag'
+				: type.startsWith('triangle') ||
+						type === 'pennant' ||
+						type === 'flag' ||
+						type === 'bull_flag' ||
+						type === 'bear_flag' ||
+						type === 'bull_pennant' ||
+						type === 'bear_pennant'
 					? 0.95
 					: 1.0;
 	const v = Math.min(1, Math.max(0, base * adj));
@@ -632,7 +638,9 @@ export function globalDedup(patterns: DeduplicablePattern[]): DeduplicablePatter
 		return ov / minD;
 	}
 
-	// 同一カテゴリとして扱うパターン群（期間重複する場合は同カテゴリ内でも dedup 対象）
+	// 同一カテゴリとして扱うパターン群（期間重複する場合は同カテゴリ内でも dedup 対象）。
+	// flag / pennant は detect_pennants.ts 内で方向別 dedup 済みのため categoryMap に含めない
+	// （bull_flag と bear_flag を 'flag' に潰すと globalDedup が方向違いをマージしてしまう）。
 	const categoryMap: Record<string, string> = {
 		rising_wedge: 'wedge',
 		falling_wedge: 'wedge',

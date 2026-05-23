@@ -2,31 +2,51 @@ import { z } from 'zod';
 import { BaseMetaSchema, BasePairInputSchema, CandleTypeEnum, FailResultSchema, toolResultSchema } from './base.js';
 
 // === Pattern Detection ===
-export const PatternTypeEnum = z.enum([
+/**
+ * 出力 type — 検出結果として返される確定方向付きのパターン種別。
+ * 'flag' / 'pennant' / 'triangle' のような umbrella alias は含めない。
+ * 出力スキーマ・visualization_hints・debug.candidates.type に使用。
+ */
+const PATTERN_OUTPUT_TYPES = [
 	'double_top',
 	'double_bottom',
 	'triple_top',
 	'triple_bottom',
 	'head_and_shoulders',
 	'inverse_head_and_shoulders',
-	// legacy umbrella key (kept for filter-compat)
-	'triangle',
-	// new explicit triangle variants
 	'triangle_ascending',
 	'triangle_descending',
 	'triangle_symmetrical',
-	// wedge patterns
 	'falling_wedge',
 	'rising_wedge',
-	'pennant',
-	'flag',
-]);
+	'bull_flag',
+	'bear_flag',
+	'bull_pennant',
+	'bear_pennant',
+] as const;
+
+/**
+ * 入力フィルタ専用のエイリアス。これらは出力 type としては返されず、
+ * リクエスト側で「方向不問でまとめて検出したい」場合のショートカット。
+ * - 'flag'     → bull_flag + bear_flag
+ * - 'pennant'  → bull_pennant + bear_pennant
+ * - 'triangle' → triangle_ascending + triangle_descending + triangle_symmetrical
+ */
+const PATTERN_FILTER_ALIASES = ['flag', 'pennant', 'triangle'] as const;
+
+export const PatternTypeEnum = z.enum(PATTERN_OUTPUT_TYPES);
+
+/**
+ * 入力フィルタ用 enum — 出力 type に加えて legacy umbrella alias も受け付ける。
+ * DetectPatternsInputSchema.patterns と debug.candidates.type で使用。
+ */
+export const PatternFilterEnum = z.enum([...PATTERN_OUTPUT_TYPES, ...PATTERN_FILTER_ALIASES]);
 
 export const DetectPatternsInputSchema = BasePairInputSchema.extend({
 	type: CandleTypeEnum.optional().default('1day'),
 	limit: z.number().int().min(20).max(365).optional().default(90),
 	patterns: z
-		.array(PatternTypeEnum)
+		.array(PatternFilterEnum)
 		.optional()
 		.describe(
 			[
@@ -35,6 +55,7 @@ export const DetectPatternsInputSchema = BasePairInputSchema.extend({
 				'- triple_top/triple_bottom: tolerancePct≈0.05',
 				'- triangle_*: tolerancePct≈0.06',
 				'- pennant: swingDepth≈5, minBarsBetweenSwings≈3',
+				"Aliases: 'flag' → bull_flag + bear_flag, 'pennant' → bull/bear pennant, 'triangle' → asc/desc/sym.",
 			].join('\n'),
 		),
 	// Heuristics
@@ -174,6 +195,19 @@ export const DetectedPatternSchema = z.object({
 	isTrendContinuation: z.boolean().optional(), // ブレイク方向が先行トレンドと一致しているか
 	flagpoleHeight: z.number().optional(), // フラッグポールの値幅
 	retracementRatio: z.number().optional(), // フラッグポールに対する戻し比率（0.38未満ならペナント的）
+	// bull_flag / bear_flag / bull_pennant / bear_pennant の検証情報。
+	// LLM がパターンの妥当性を即座に判断できるよう、pole の急騰/急落条件と
+	// チャネル幾何（傾き・spread）を明示する。
+	poleStartDate: z.string().optional(), // pole 開始日（UTC ISO）
+	poleEndDate: z.string().optional(), // pole 終了日（UTC ISO）
+	poleChangePct: z.number().optional(), // pole の価格変化率（0.15 = +15%）
+	poleBars: z.number().int().optional(), // pole のバー数
+	poleATRMult: z.number().optional(), // pole の magnitude / 局所 ATR
+	flagUpperSlope: z.number().optional(), // チャネル上限ラインの傾き（価格/バー）
+	flagLowerSlope: z.number().optional(), // チャネル下限ラインの傾き（価格/バー）
+	spreadAvg: z.number().optional(), // チャネル幅の平均
+	spreadStability: z.number().optional(), // チャネル幅の安定性（0-1, 1=完全に平行）
+	expectedBreakoutDirection: z.enum(['up', 'down']).optional(), // 期待されるブレイク方向（pole 方向と同じ）
 	aftermath: z
 		.object({
 			breakoutDate: z.string().nullable().optional(),
@@ -263,7 +297,8 @@ export const DetectPatternsOutputSchema = z.union([
 					candidates: z
 						.array(
 							z.object({
-								type: PatternTypeEnum,
+								// 候補ラベルは方向分類前の 'flag' / 'pennant' / 'triangle' を含むため filter enum を使う。
+								type: PatternFilterEnum,
 								accepted: z.boolean(),
 								reason: z.string().optional(),
 								indices: z.array(z.number().int()).optional(),

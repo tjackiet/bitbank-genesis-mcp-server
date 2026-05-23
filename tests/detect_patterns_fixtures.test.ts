@@ -499,13 +499,14 @@ describe('detect_patterns fixtures', () => {
 		expect(res.data.patterns).toEqual(
 			expect.arrayContaining([
 				expect.objectContaining({
-					type: 'flag',
+					type: 'bull_flag',
 					status: 'invalid',
 					breakoutDirection: 'down',
 					outcome: 'failure',
 					timeframe: '1day',
 					timeframeLabel: '日足',
 					targetMethod: 'flagpole_projection',
+					expectedBreakoutDirection: 'up',
 				}),
 			]),
 		);
@@ -524,7 +525,7 @@ describe('detect_patterns fixtures', () => {
 		expect(res.data.patterns).toEqual(
 			expect.arrayContaining([
 				expect.objectContaining({
-					type: 'pennant',
+					type: 'bull_pennant',
 					status: 'completed',
 					poleDirection: 'up',
 					breakoutDirection: 'up',
@@ -533,6 +534,7 @@ describe('detect_patterns fixtures', () => {
 					timeframe: '1day',
 					timeframeLabel: '日足',
 					targetMethod: 'flagpole_projection',
+					expectedBreakoutDirection: 'up',
 				}),
 			]),
 		);
@@ -551,7 +553,7 @@ describe('detect_patterns fixtures', () => {
 		expect(res.data.patterns).toEqual(
 			expect.arrayContaining([
 				expect.objectContaining({
-					type: 'pennant',
+					type: 'bull_pennant',
 					poleDirection: 'up',
 					breakoutDirection: 'down',
 					outcome: 'failure',
@@ -559,6 +561,7 @@ describe('detect_patterns fixtures', () => {
 					timeframe: '1day',
 					timeframeLabel: '日足',
 					targetMethod: 'flagpole_projection',
+					expectedBreakoutDirection: 'up',
 				}),
 			]),
 		);

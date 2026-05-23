@@ -102,7 +102,7 @@ describe('detectPennantsFlags — scanStart 修正の境界テスト（PR3）', 
 		});
 		const result = detectPennantsFlags(ctx);
 
-		const flags = result.patterns.filter((p) => p.type === 'flag');
+		const flags = result.patterns.filter((p) => p.type === 'bull_flag' || p.type === 'bear_flag');
 		// 中間の振れによる completed が存在しないこと
 		const completed = flags.filter((p) => p.status === 'completed');
 		expect(completed).toHaveLength(0);
@@ -120,7 +120,7 @@ describe('detectPennantsFlags — scanStart 修正の境界テスト（PR3）', 
 		});
 		const result = detectPennantsFlags(ctx);
 
-		const flags = result.patterns.filter((p) => p.type === 'flag');
+		const flags = result.patterns.filter((p) => p.type === 'bull_flag' || p.type === 'bear_flag');
 		const withBreakout = flags.filter((p) => p.breakoutBarIndex !== undefined);
 
 		expect(withBreakout.length).toBeGreaterThan(0);
@@ -145,7 +145,7 @@ describe('detectPennantsFlags — scanStart 修正の境界テスト（PR3）', 
 		});
 		const result = detectPennantsFlags(ctx);
 
-		const flags = result.patterns.filter((p) => p.type === 'flag');
+		const flags = result.patterns.filter((p) => p.type === 'bull_flag' || p.type === 'bear_flag');
 		// 検出された flag は completed/invalid にならず forming 系であるべき
 		for (const p of flags) {
 			expect(['forming', 'near_completion']).toContain(p.status);
@@ -185,7 +185,9 @@ describe('detectPennantsFlags — scanStart 修正の境界テスト（PR3）', 
 		const ctx = buildCtx({ candles, want: new Set(['flag']), includeForming: true });
 		const result = detectPennantsFlags(ctx);
 
-		const completed = result.patterns.filter((p) => p.type === 'flag' && p.breakoutBarIndex !== undefined);
+		const completed = result.patterns.filter(
+			(p) => (p.type === 'bull_flag' || p.type === 'bear_flag') && p.breakoutBarIndex !== undefined,
+		);
 		expect(completed.length).toBeGreaterThan(0);
 		for (const p of completed) {
 			expect(typeof p.targetReached).toBe('boolean');
@@ -213,12 +215,117 @@ describe('detectPennantsFlags — scanStart 修正の境界テスト（PR3）', 
 		const ctx = buildCtx({ candles, want: new Set(['flag']), includeForming: true });
 		const result = detectPennantsFlags(ctx);
 
-		const downBreakouts = result.patterns.filter((p) => p.type === 'flag' && p.breakoutDirection === 'down');
+		const downBreakouts = result.patterns.filter(
+			(p) => (p.type === 'bull_flag' || p.type === 'bear_flag') && p.breakoutDirection === 'down',
+		);
 		expect(downBreakouts.length).toBeGreaterThan(0);
 		for (const p of downBreakouts) {
 			expect(p.targetReached).toBe(true);
 			expect(p.targetReachedPct).toBeGreaterThanOrEqual(100);
 			expect(p.targetReachedPrice).toBe(0);
 		}
+	});
+});
+
+// ── bull/bear 分類・pole/spread メタデータ・重複抑制の改修テスト ──
+
+describe('detectPennantsFlags — bull/bear 分類とメタデータ', () => {
+	it('急騰 pole 後の平行下降チャネル → bull_flag として検出される', () => {
+		// pole: 100→140 (+40%, 5本) で急騰 / 保ち合い: 130〜138 で平行下降
+		const candles = closesToCandles(buildBullFlagCloses());
+		const ctx = buildCtx({ candles, want: new Set(['flag']), includeForming: true });
+		const result = detectPennantsFlags(ctx);
+
+		const bullFlags = result.patterns.filter((p) => p.type === 'bull_flag');
+		expect(bullFlags.length).toBeGreaterThan(0);
+		for (const p of bullFlags) {
+			expect(p.poleDirection).toBe('up');
+			expect(p.expectedBreakoutDirection).toBe('up');
+			expect(p.priorTrendDirection).toBe('bullish');
+			// メタデータが付与されている
+			expect(typeof p.poleStartDate).toBe('string');
+			expect(typeof p.poleEndDate).toBe('string');
+			expect(typeof p.poleChangePct).toBe('number');
+			expect(p.poleChangePct as number).toBeGreaterThanOrEqual(0.08);
+			expect(typeof p.flagUpperSlope).toBe('number');
+			expect(typeof p.flagLowerSlope).toBe('number');
+			expect(typeof p.spreadAvg).toBe('number');
+			expect(typeof p.spreadStability).toBe('number');
+			expect(p.spreadStability as number).toBeGreaterThanOrEqual(0.5);
+		}
+	});
+
+	it('bear_flag は急落 pole + 平行上昇チャネルで検出される', () => {
+		// pole: 200→140 (-30%, 5本) で急落 / 保ち合い: 145〜152 で平行上昇
+		const closes = [200, 188, 176, 164, 152, 140, 144, 142, 146, 144, 148, 146, 150, 148, 152, 150];
+		const candles = closesToCandles(closes);
+		const ctx = buildCtx({ candles, want: new Set(['flag']), includeForming: true });
+		const result = detectPennantsFlags(ctx);
+
+		const bearFlags = result.patterns.filter((p) => p.type === 'bear_flag');
+		expect(bearFlags.length).toBeGreaterThan(0);
+		for (const p of bearFlags) {
+			expect(p.poleDirection).toBe('down');
+			expect(p.expectedBreakoutDirection).toBe('down');
+			expect(p.priorTrendDirection).toBe('bearish');
+			expect(p.poleChangePct as number).toBeLessThan(0);
+		}
+	});
+
+	it('緩やかな上昇（per-bar impulse 未達）は pole として認められず flag 検出されない', () => {
+		// 30本かけて 100→115（+15%、per-bar impulse 低い、ATR mult も低い）。
+		// minPolePct 0.08 と minPoleATRMult 2.5 + perBarImpulse 0.4 のうち
+		// perBarImpulse が低くて棄却される想定。
+		const closes: number[] = [];
+		for (let i = 0; i < 30; i++) closes.push(100 + i * 0.5);
+		// 保ち合い相当
+		for (let i = 0; i < 8; i++) closes.push(115 + (i % 2));
+
+		const candles = closesToCandles(closes);
+		const ctx = buildCtx({ candles, want: new Set(['flag']), includeForming: true });
+		const result = detectPennantsFlags(ctx);
+
+		const flagsLike = result.patterns.filter(
+			(p) => p.type === 'bull_flag' || p.type === 'bear_flag' || p.type === 'bull_pennant' || p.type === 'bear_pennant',
+		);
+		expect(flagsLike).toHaveLength(0);
+	});
+
+	it('pole と同方向の傾き（上昇 pole + 上昇チャネル）は flag/pennant として検出されない', () => {
+		// pole: 100→140 (+40%, 5本) → 上昇チャネル 138, 142, 144, 148, 150, 154...
+		const closes = [100, 108, 116, 124, 132, 140, 138, 142, 144, 148, 150, 154, 156, 160, 162];
+		const candles = closesToCandles(closes);
+		const ctx = buildCtx({ candles, want: new Set(['flag']), includeForming: true });
+		const result = detectPennantsFlags(ctx);
+
+		const flagsLike = result.patterns.filter((p) => p.type === 'bull_flag' || p.type === 'bull_pennant');
+		expect(flagsLike).toHaveLength(0);
+	});
+
+	it('同区間の重複候補は dedup される（同 type は 1 件まで）', () => {
+		// 同じ pole + 同じ保ち合いから複数 poleEnd 位置で flag が候補化される条件。
+		// dedupFlagPennants が pole-end ±2 日 / 30% 期間重複で潰すため、最終的に 1 件に収束する想定。
+		const candles = closesToCandles(buildBullFlagCloses());
+		const ctx = buildCtx({ candles, want: new Set(['flag']), includeForming: true });
+		const result = detectPennantsFlags(ctx);
+
+		const bullFlags = result.patterns.filter((p) => p.type === 'bull_flag');
+		expect(bullFlags.length).toBe(1);
+	});
+
+	it('debug candidate に spread / pole 検証情報が含まれる', () => {
+		const candles = closesToCandles(buildBullFlagCloses());
+		const ctx = buildCtx({ candles, want: new Set(['flag']), includeForming: true });
+		detectPennantsFlags(ctx);
+
+		const accepted = ctx.debugCandidates.filter((c) => c.accepted && c.reason === 'detected');
+		expect(accepted.length).toBeGreaterThan(0);
+		const d = accepted[0].details as Record<string, unknown>;
+		expect(d.poleATRMult).toBeTypeOf('number');
+		expect(d.polePerBarImpulse).toBeTypeOf('number');
+		expect(d.spreadAvg).toBeTypeOf('number');
+		expect(d.spreadStability).toBeTypeOf('number');
+		expect(d.convergenceRatio).toBeTypeOf('number');
+		expect(d.expectedBreakoutDirection).toBeDefined();
 	});
 });

@@ -1,6 +1,5 @@
 /**
  * Triangle detection — swing-point + R²-regression, multi-scale.
- * + Trendoscope-style pennant reclassification (2-stage).
  *
  * Architecture:
  * 1. Relaxed swing detection (swingDepth=1) for peaks/valleys
@@ -11,8 +10,10 @@
  *              symmetrical (upper falling, lower rising)
  * 5. Convergence check (gap narrows ≥ 10%)
  * 6. Breakout detection with ATR × 0.3 buffer
- * 7. Pole detection: if impulsive move precedes the triangle → reclassify as pennant
- * 8. deduplicatePatterns() before returning
+ * 7. deduplicatePatterns() before returning
+ *
+ * Pennant (bull_pennant / bear_pennant) は `detect_pennants.ts` で
+ * pole-first スキャンとして検出する（このモジュールでは扱わない）。
  */
 
 import { barsPerDay, calcATR, computeTargetReach, deduplicatePatterns, finalizeConf } from './helpers.js';
@@ -33,101 +34,6 @@ function getTriangleParams(tf: string) {
 	const minConvergence = 0.9; // gap must narrow by ≥ 10%
 
 	return { minWindowBars, maxWindowBars, minR2, flatThreshold, moveThreshold, minConvergence };
-}
-
-// ---------------------------------------------------------------------------
-// Pole detection parameters for pennant reclassification (Trendoscope 2-stage)
-// ---------------------------------------------------------------------------
-function getPoleParams(tf: string) {
-	const bpd = barsPerDay(tf);
-	const poleMinBars = Math.max(2, Math.round(1 * bpd));
-	const poleMaxBars = Math.max(5, Math.round(15 * bpd));
-
-	const t = String(tf);
-	let minPoleATRMult = 1.5;
-	let minPolePct = 0.03;
-	if (t === '1day') {
-		minPoleATRMult = 2.0;
-		minPolePct = 0.05;
-	}
-	if (t === '1week') {
-		minPoleATRMult = 2.0;
-		minPolePct = 0.06;
-	}
-	if (t === '1month') {
-		minPoleATRMult = 2.5;
-		minPolePct = 0.08;
-	}
-	if (t === '1min' || t === '5min') {
-		minPolePct = 0.01;
-	}
-	if (t === '15min' || t === '30min') {
-		minPolePct = 0.015;
-	}
-	if (t === '1hour') {
-		minPolePct = 0.02;
-	}
-
-	return { poleMinBars, poleMaxBars, minPoleATRMult, minPolePct };
-}
-
-/**
- * Detect if there is an impulsive move (flagpole) immediately before winStart.
- * Returns pole info if found, null otherwise.
- */
-function detectPole(
-	candles: readonly { open: number; close: number; high: number; low: number; isoTime?: string }[],
-	winStart: number,
-	tf: string,
-): { poleStart: number; poleEnd: number; poleDirection: 'up' | 'down'; atrMult: number; poleHeight: number } | null {
-	const pp = getPoleParams(tf);
-
-	let bestPoleStart = -1;
-	let bestPoleMag = 0;
-	let bestPoleATRMult = 0;
-
-	// Pole ends just before the triangle window starts
-	const poleEnd = winStart - 1;
-	if (poleEnd < pp.poleMinBars) return null;
-
-	for (let poleLen = pp.poleMinBars; poleLen <= Math.min(pp.poleMaxBars, poleEnd); poleLen++) {
-		const ps = poleEnd - poleLen;
-		if (ps < 0) continue;
-		const startPrice = candles[ps].close;
-		const endPrice = candles[poleEnd].close;
-		const magnitude = endPrice - startPrice;
-		const changePct = Math.abs(magnitude) / Math.max(1e-12, startPrice);
-
-		const localATR = calcATR(candles, Math.max(1, ps), poleEnd, 14);
-		if (localATR <= 0) continue;
-
-		const atrMult = Math.abs(magnitude) / localATR;
-		if (atrMult < pp.minPoleATRMult || changePct < pp.minPolePct) continue;
-
-		if (atrMult > bestPoleATRMult) {
-			bestPoleStart = ps;
-			bestPoleMag = magnitude;
-			bestPoleATRMult = atrMult;
-		}
-	}
-
-	if (bestPoleStart < 0) return null;
-
-	// Consolidation (triangle) range should be contained within pole range
-	// Skip if triangle is too wide relative to pole
-	const poleRange = Math.abs(bestPoleMag);
-	const triangleHigh = Math.max(...candles.slice(winStart, winStart + 10).map((c) => c.high));
-	const triangleLow = Math.min(...candles.slice(winStart, winStart + 10).map((c) => c.low));
-	const triRange = triangleHigh - triangleLow;
-	if (triRange > poleRange * 0.9) return null;
-
-	return {
-		poleStart: bestPoleStart,
-		poleEnd,
-		poleDirection: bestPoleMag > 0 ? 'up' : 'down',
-		atrMult: bestPoleATRMult,
-		poleHeight: poleRange,
-	};
 }
 
 // ---------------------------------------------------------------------------
@@ -301,67 +207,7 @@ function determineTriangleStatus(
 }
 
 // ---------------------------------------------------------------------------
-// Pennant reclassification (Trendoscope 2-stage)
-// ---------------------------------------------------------------------------
-interface PennantInfo {
-	poleDirection: 'up' | 'down';
-	poleATRMult: number;
-	flagpoleHeight: number;
-	reclassifiedStartIso: string;
-	retracementRatio: number | undefined;
-	isTrendContinuation: boolean | undefined;
-}
-
-function buildPennantInfo(
-	candles: readonly { open: number; close: number; high: number; low: number; isoTime?: string }[],
-	peaks: readonly SwingPoint[],
-	valleys: readonly SwingPoint[],
-	winStart: number,
-	startIso: string,
-	tf: string,
-	hasBreakout: boolean,
-	breakoutDirection: 'up' | 'down' | null,
-): PennantInfo | null {
-	const pole = detectPole(candles, winStart, tf);
-	if (!pole) return null;
-
-	let reclassifiedStartIso = startIso;
-	const poleStartIso = candles[pole.poleStart]?.isoTime;
-	if (poleStartIso) reclassifiedStartIso = poleStartIso;
-
-	// Calculate retracement ratio: how much of the pole move has been retraced
-	const poleEndPrice = candles[pole.poleEnd].close;
-	const triHigh = Math.max(...peaks.map((p) => p.price));
-	const triLow = Math.min(...valleys.map((p) => p.price));
-
-	let retracementRatio: number | undefined;
-	if (pole.poleHeight > 0) {
-		retracementRatio =
-			pole.poleDirection === 'up'
-				? (poleEndPrice - triLow) / pole.poleHeight
-				: (triHigh - poleEndPrice) / pole.poleHeight;
-		retracementRatio = Math.max(0, Math.min(1, retracementRatio));
-	}
-
-	// ペナント失敗（ダマシ）は構造的には有効なパターンなので status は 'completed' のまま維持
-	// outcome で success/failure を区別する（'invalid' にすると includeInvalid フィルタで除外されてしまう）
-	let isTrendContinuation: boolean | undefined;
-	if (hasBreakout) {
-		isTrendContinuation = pole.poleDirection === breakoutDirection;
-	}
-
-	return {
-		poleDirection: pole.poleDirection,
-		poleATRMult: pole.atrMult,
-		flagpoleHeight: pole.poleHeight,
-		reclassifiedStartIso,
-		retracementRatio,
-		isTrendContinuation,
-	};
-}
-
-// ---------------------------------------------------------------------------
-// Result construction (scoring, pennant, target, entry, debug)
+// Result construction (scoring, target, entry, debug)
 // ---------------------------------------------------------------------------
 interface TriangleCandidateCtx {
 	candles: readonly { open: number; close: number; high: number; low: number; isoTime?: string }[];
@@ -387,8 +233,6 @@ interface TriangleCandidateCtx {
 	isExpectedBreakout: boolean;
 	resultEndIdx: number;
 	lastIdx: number;
-	wantPennant: boolean;
-	tf: string;
 }
 
 function buildTriangleResult(c: TriangleCandidateCtx): { pattern: PatternEntry; debug: CandDebugEntry } {
@@ -414,8 +258,6 @@ function buildTriangleResult(c: TriangleCandidateCtx): { pattern: PatternEntry; 
 		breakoutIdx,
 		breakoutDirection,
 		resultEndIdx,
-		wantPennant,
-		tf,
 	} = c;
 
 	// --- Neckline for aftermath ---
@@ -453,54 +295,21 @@ function buildTriangleResult(c: TriangleCandidateCtx): { pattern: PatternEntry; 
 		...valleys.map((p) => ({ idx: p.idx, price: p.price, kind: 'L' as const })),
 	].sort((a, b) => a.idx - b.idx);
 
-	// --- Pennant reclassification ---
-	const pennant = wantPennant
-		? buildPennantInfo(candles, peaks, valleys, winStart, startIso, tf, hasBreakout, breakoutDirection)
-		: null;
-	const finalType: string = pennant ? 'pennant' : triangleType;
-	const reclassifiedStartIso = pennant?.reclassifiedStartIso ?? startIso;
-	const poleDirection = pennant?.poleDirection;
-	const poleATRMult = pennant?.poleATRMult;
-	const flagpoleHeight = pennant?.flagpoleHeight;
-	const retracementRatio = pennant?.retracementRatio;
-	const isTrendContinuation = pennant?.isTrendContinuation;
-
-	// Confidence adjustment for pennants
-	let finalConfidence: number;
-	if (finalType === 'pennant') {
-		let pennantScore = baseScore * 0.9 + clamp01((poleATRMult ?? 0) / 6) * 0.05;
-		if (retracementRatio !== undefined && retracementRatio > 0.38) {
-			const penalty = Math.min(0.15, (retracementRatio - 0.38) * 0.25);
-			pennantScore -= penalty;
-		}
-		finalConfidence = finalizeConf(Math.max(0, pennantScore), 'pennant');
-	} else {
-		finalConfidence = confidence;
-	}
-
 	// --- ターゲット価格計算 ---
 	const patternHeight = gapStart;
 	let breakoutTarget: number | undefined;
 	let targetReach: ReturnType<typeof computeTargetReach> | undefined;
-	let targetMethod: 'flagpole_projection' | 'pattern_height' | undefined;
+	const targetMethod: 'pattern_height' | undefined = 'pattern_height';
 	if (hasBreakout && breakoutDirection) {
 		const bp = candles[breakoutIdx].close;
-		if (finalType === 'pennant' && flagpoleHeight !== undefined) {
-			breakoutTarget = breakoutDirection === 'up' ? bp + flagpoleHeight : bp - flagpoleHeight;
-			targetMethod = 'flagpole_projection';
-		} else {
-			breakoutTarget = breakoutDirection === 'up' ? bp + patternHeight : bp - patternHeight;
-			targetMethod = 'pattern_height';
-		}
+		breakoutTarget = breakoutDirection === 'up' ? bp + patternHeight : bp - patternHeight;
 		breakoutTarget = Math.round(breakoutTarget);
 		targetReach = computeTargetReach(candles, breakoutIdx, bp, breakoutTarget, breakoutDirection);
 	}
 
 	// --- 用語正規化ラベル ---
 	let trendlineLabel: string | undefined;
-	if (finalType === 'pennant') {
-		trendlineLabel = 'コンソリデーション境界線';
-	} else if (triangleType === 'triangle_ascending') {
+	if (triangleType === 'triangle_ascending') {
 		trendlineLabel = '上限トレンドライン（レジスタンス）';
 	} else if (triangleType === 'triangle_descending') {
 		trendlineLabel = '下限トレンドライン（サポート）';
@@ -509,23 +318,15 @@ function buildTriangleResult(c: TriangleCandidateCtx): { pattern: PatternEntry; 
 	}
 
 	const pattern: PatternEntry = {
-		type: finalType,
-		confidence: finalConfidence,
-		range: { start: reclassifiedStartIso, end: endIso },
+		type: triangleType,
+		confidence,
+		range: { start: startIso, end: endIso },
 		status,
 		pivots: allPivots,
 		neckline,
 		trendlineLabel,
 		breakoutDirection: breakoutDirection ?? undefined,
-		outcome: hasBreakout
-			? finalType === 'pennant'
-				? isTrendContinuation
-					? 'success'
-					: 'failure'
-				: status === 'completed'
-					? 'success'
-					: 'failure'
-			: undefined,
+		outcome: hasBreakout ? (status === 'completed' ? 'success' : 'failure') : undefined,
 		breakoutBarIndex: hasBreakout ? breakoutIdx : undefined,
 		...(breakoutTarget !== undefined ? { breakoutTarget, targetMethod } : {}),
 		...(targetReach
@@ -536,21 +337,12 @@ function buildTriangleResult(c: TriangleCandidateCtx): { pattern: PatternEntry; 
 					targetReachedPrice: targetReach.targetReachedPrice,
 				}
 			: {}),
-		...(poleDirection
-			? {
-					poleDirection,
-					priorTrendDirection: poleDirection === 'up' ? 'bullish' : 'bearish',
-					...(flagpoleHeight !== undefined ? { flagpoleHeight: Math.round(flagpoleHeight) } : {}),
-					...(retracementRatio !== undefined ? { retracementRatio: Number(retracementRatio.toFixed(2)) } : {}),
-					...(isTrendContinuation !== undefined ? { isTrendContinuation } : {}),
-				}
-			: {}),
 	};
 
 	const debug: CandDebugEntry = {
-		type: finalType,
+		type: triangleType,
 		accepted: true,
-		reason: finalType === 'pennant' ? 'reclassified_from_triangle' : 'detected',
+		reason: 'detected',
 		indices: [winStart, resultEndIdx],
 		details: {
 			convergenceRatio: Number(convergenceRatio.toFixed(3)),
@@ -563,16 +355,7 @@ function buildTriangleResult(c: TriangleCandidateCtx): { pattern: PatternEntry; 
 			outlierValleysRemoved: valleys.length - filteredValleys.length,
 			breakout: hasBreakout ? { idx: breakoutIdx, direction: breakoutDirection } : null,
 			status,
-			confidence: finalConfidence,
-			...(poleDirection
-				? {
-						poleDirection,
-						poleATRMult: Number((poleATRMult ?? 0).toFixed(2)),
-						...(flagpoleHeight !== undefined ? { flagpoleHeight: Math.round(flagpoleHeight) } : {}),
-						...(retracementRatio !== undefined ? { retracementRatio: Number(retracementRatio.toFixed(2)) } : {}),
-						...(isTrendContinuation !== undefined ? { isTrendContinuation } : {}),
-					}
-				: {}),
+			confidence,
 		},
 	};
 
@@ -584,10 +367,10 @@ export function detectTriangles(ctx: DetectContext): DetectResult {
 	const type = ctx.type;
 	let patterns: PatternEntry[] = [];
 
-	const wantPennant = want.size === 0 || want.has('pennant');
-	const wantAsc = want.size === 0 || want.has('triangle') || want.has('triangle_ascending') || wantPennant;
-	const wantDesc = want.size === 0 || want.has('triangle') || want.has('triangle_descending') || wantPennant;
-	const wantSym = want.size === 0 || want.has('triangle') || want.has('triangle_symmetrical') || wantPennant;
+	// pennant は detect_pennants.ts で処理。このモジュールは triangle のみ扱う。
+	const wantAsc = want.size === 0 || want.has('triangle') || want.has('triangle_ascending');
+	const wantDesc = want.size === 0 || want.has('triangle') || want.has('triangle_descending');
+	const wantSym = want.size === 0 || want.has('triangle') || want.has('triangle_symmetrical');
 	if (!wantAsc && !wantDesc && !wantSym) return { patterns: [] };
 
 	const lastIdx = candles.length - 1;
@@ -779,8 +562,6 @@ export function detectTriangles(ctx: DetectContext): DetectResult {
 				isExpectedBreakout,
 				resultEndIdx,
 				lastIdx,
-				wantPennant,
-				tf: type,
 			});
 			patterns.push(pattern);
 			debugCandidates.push(debug);

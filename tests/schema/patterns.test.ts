@@ -4,11 +4,12 @@ import {
 	CandlePatternTypeEnum,
 	DetectedPatternSchema,
 	DetectPatternsInputSchema,
+	PatternFilterEnum,
 	PatternTypeEnum,
 } from '../../src/schema/patterns.js';
 
 describe('PatternTypeEnum', () => {
-	it('全パターンタイプを受け入れる', () => {
+	it('出力 type は方向付きの確定パターンのみを受け入れる', () => {
 		const types = [
 			'double_top',
 			'double_bottom',
@@ -16,22 +17,55 @@ describe('PatternTypeEnum', () => {
 			'triple_bottom',
 			'head_and_shoulders',
 			'inverse_head_and_shoulders',
-			'triangle',
 			'triangle_ascending',
 			'triangle_descending',
 			'triangle_symmetrical',
 			'falling_wedge',
 			'rising_wedge',
-			'pennant',
-			'flag',
+			'bull_flag',
+			'bear_flag',
+			'bull_pennant',
+			'bear_pennant',
 		];
 		for (const t of types) {
 			expect(PatternTypeEnum.parse(t)).toBe(t);
 		}
 	});
 
+	it("legacy umbrella alias ('flag' / 'pennant' / 'triangle') は出力 type として拒否される", () => {
+		// これらは入力フィルタ用 alias のため、出力 type には現れてはならない。
+		expect(() => PatternTypeEnum.parse('flag')).toThrow();
+		expect(() => PatternTypeEnum.parse('pennant')).toThrow();
+		expect(() => PatternTypeEnum.parse('triangle')).toThrow();
+	});
+
 	it('無効なパターンを拒否する', () => {
 		expect(() => PatternTypeEnum.parse('unknown_pattern')).toThrow();
+	});
+});
+
+describe('PatternFilterEnum', () => {
+	it('出力 type と legacy umbrella alias の両方を受け入れる', () => {
+		const inputs = [
+			// directional output types
+			'bull_flag',
+			'bear_flag',
+			'bull_pennant',
+			'bear_pennant',
+			'triangle_ascending',
+			// umbrella aliases
+			'flag',
+			'pennant',
+			'triangle',
+		];
+		for (const t of inputs) {
+			expect(PatternFilterEnum.parse(t)).toBe(t);
+		}
+	});
+
+	it('入力フィルタとして DetectPatternsInputSchema.patterns に渡せる', () => {
+		const parsed = DetectPatternsInputSchema.parse({ patterns: ['flag', 'pennant', 'triangle'] });
+		expect(parsed.patterns).toEqual(['flag', 'pennant', 'triangle']);
 	});
 });
 
@@ -78,13 +112,14 @@ describe('DetectedPatternSchema', () => {
 
 	it('全オプショナルフィールドを含むパターン', () => {
 		const result = DetectedPatternSchema.parse({
-			type: 'pennant',
+			type: 'bull_pennant',
 			confidence: 0.7,
 			range: { start: '2024-01-01', end: '2024-01-15' },
 			status: 'completed',
 			breakoutDirection: 'up',
 			poleDirection: 'up',
 			isTrendContinuation: true,
+			expectedBreakoutDirection: 'up',
 			aftermath: {
 				breakoutConfirmed: true,
 				targetReached: false,

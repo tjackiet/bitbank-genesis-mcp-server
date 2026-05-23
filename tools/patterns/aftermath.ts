@@ -36,10 +36,11 @@ const BULLISH_TYPES = [
 	'inverse_head_and_shoulders',
 	'triangle_ascending',
 	'triangle_symmetrical',
-	'flag',
+	'bull_flag',
+	'bull_pennant',
 ];
-const BEARISH_TYPES = ['double_top', 'head_and_shoulders', 'triangle_descending'];
-// Note: 'pennant' is intentionally excluded from both lists — its direction is determined by poleDirection field.
+const BEARISH_TYPES = ['double_top', 'head_and_shoulders', 'triangle_descending', 'bear_flag', 'bear_pennant'];
+// Note: legacy 'pennant' / 'flag' (poleDirection-driven) は後方互換のため動的判定で扱う。
 
 export function analyzeAftermath(
 	p: PatternEntry,
@@ -54,9 +55,10 @@ export function analyzeAftermath(
 		if (!Number.isFinite(baseClose)) return null;
 		const nlAtEnd = necklineValue(p, endIdx);
 		const pType = String(p?.type);
-		const isPennant = pType === 'pennant';
-		const bullish = isPennant ? p?.poleDirection === 'up' : BULLISH_TYPES.includes(pType);
-		const bearish = isPennant ? p?.poleDirection === 'down' : BEARISH_TYPES.includes(pType);
+		// Legacy 'pennant' / 'flag' は poleDirection で方向を決める。
+		const isLegacyPoleDriven = pType === 'pennant' || pType === 'flag';
+		const bullish = isLegacyPoleDriven ? p?.poleDirection === 'up' : BULLISH_TYPES.includes(pType);
+		const bearish = isLegacyPoleDriven ? p?.poleDirection === 'down' : BEARISH_TYPES.includes(pType);
 		if (!Number.isFinite(nlAtEnd as number)) return null;
 		let breakoutConfirmed = false;
 		let breakoutDate: string | undefined;
@@ -132,7 +134,7 @@ export function analyzeAftermath(
 			const arr = [r3, r7, r14].filter((v: unknown) => typeof v === 'number') as number[];
 			if (!arr.length) return '評価不可（事後データ不足）';
 			const best = arr.reduce((m, v) => (Math.abs(v) > Math.abs(m) ? v : m), 0);
-			const isBullish = isPennant ? p?.poleDirection === 'up' : BULLISH_TYPES.includes(String(p?.type));
+			const isBullish = isLegacyPoleDriven ? p?.poleDirection === 'up' : BULLISH_TYPES.includes(String(p?.type));
 			const expected = isBullish ? 1 : -1;
 			const actual = best > 0 ? 1 : -1;
 			if (expected === actual && Math.abs(best) > 3)
