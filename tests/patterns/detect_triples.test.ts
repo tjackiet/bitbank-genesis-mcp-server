@@ -433,14 +433,226 @@ describe('detectTriples', () => {
 	// ── 形成中 Triple Top ───────────────────────────────────
 
 	it('includeForming=true + 2確定ピーク + 現在価格がピーク付近 → forming triple_top 検出', () => {
-		// allPeaks: [{idx:0,100}, {idx:20,101}], allValleys: [{idx:10,80}]
+		// allPeaks: [{idx:0,100}, {idx:20,101}], allValleys: [{idx:10,80}, {idx:32,81}]
 		// lastIdx=50, close=99（avgPeak=100.5 付近）
+		// peak2 と現在足の間にも valley を置き、ネックライン構成点 2 つを満たす。
 		const total = 51;
 		const candles: CandleData[] = Array.from({ length: total }, (_, i) => mkCandle(total - i, 85, 90, 80, 85));
 		candles[0] = mkCandle(total, 99, 100, 97, 99);
 		candles[10] = mkCandle(total - 10, 79, 81, 79, 80);
 		candles[20] = mkCandle(total - 20, 100, 101, 99, 100);
+		candles[32] = mkCandle(total - 32, 80, 82, 80, 81);
 		// 現在価格をピーク付近に設定
+		for (let i = 45; i < total; i++) {
+			candles[i] = mkCandle(total - i, 98, 100, 97, 99);
+		}
+
+		const allPeaks: Pivot[] = [
+			{ idx: 0, price: 100, kind: 'H' },
+			{ idx: 20, price: 101, kind: 'H' },
+		];
+		const allValleys: Pivot[] = [
+			{ idx: 10, price: 80, kind: 'L' },
+			{ idx: 32, price: 81, kind: 'L' },
+		];
+
+		const ctx = buildCtx({
+			candles,
+			pivots: [...allPeaks, ...allValleys],
+			allPeaks,
+			allValleys,
+			includeForming: true,
+		});
+		const result = detectTriples(ctx);
+
+		const forming = result.patterns.filter((p) => p.type === 'triple_top' && p.status === 'forming');
+		expect(forming.length).toBeGreaterThanOrEqual(1);
+		expect(forming[0]?.completionPct).toBeDefined();
+		expect(forming[0]?.breakoutTarget).toBeDefined();
+		// forming triple は confidence 上限が抑えられている（標準的扱い禁止）。
+		expect(forming[0]?.confidence).toBeLessThanOrEqual(0.59);
+	});
+
+	// ── 形成中 Triple Bottom ─────────────────────────────────
+
+	it('includeForming=true + 2確定谷 + 現在価格が谷水準に再到達 → forming triple_bottom 検出', () => {
+		// allValleys: [{idx:0,100}, {idx:20,101}], allPeaks: [{idx:10,120}, {idx:32,119}]
+		// lastIdx=50, close=100（valley 水準に再到達=3 谷目候補として現在価格を扱う）
+		// valley2 と現在足の間にも peak を置き、ネックライン構成点 2 つを満たす。
+		const total = 51;
+		const candles: CandleData[] = Array.from({ length: total }, (_, i) => mkCandle(total - i, 105, 115, 100, 110));
+		candles[0] = mkCandle(total, 100, 102, 99, 101);
+		candles[10] = mkCandle(total - 10, 119, 120, 118, 119);
+		candles[20] = mkCandle(total - 20, 100, 102, 100, 101);
+		candles[32] = mkCandle(total - 32, 118, 119, 117, 118);
+		for (let i = 45; i < total; i++) {
+			candles[i] = mkCandle(total - i, 101, 103, 99, 100);
+		}
+
+		const allValleys: Pivot[] = [
+			{ idx: 0, price: 100, kind: 'L' },
+			{ idx: 20, price: 101, kind: 'L' },
+		];
+		const allPeaks: Pivot[] = [
+			{ idx: 10, price: 120, kind: 'H' },
+			{ idx: 32, price: 119, kind: 'H' },
+		];
+
+		const ctx = buildCtx({
+			candles,
+			pivots: [...allPeaks, ...allValleys],
+			allPeaks,
+			allValleys,
+			includeForming: true,
+		});
+		const result = detectTriples(ctx);
+
+		const forming = result.patterns.filter((p) => p.type === 'triple_bottom' && p.status === 'forming');
+		expect(forming.length).toBeGreaterThanOrEqual(1);
+		expect(forming[0]?.completionPct).toBeDefined();
+		expect(forming[0]?.breakoutTarget).toBeDefined();
+		// forming triple は confidence 上限が抑えられている（標準的扱い禁止）。
+		expect(forming[0]?.confidence).toBeLessThanOrEqual(0.59);
+	});
+
+	// ── 形成中 Triple Top: 階段状切り上がり / 谷乖離の reject ──
+	//
+	// 再現シナリオ（実環境で発覚した誤検出）:
+	//   peak1=11,762,787 → peak2=12,353,404 → currentPrice=12,820,448 と切り上がり、
+	//   valley1=10,577,064 と valley2=12,000,002 で大きく乖離。
+	//   旧実装ではこれを triple_top forming として整合度 0.71 で「標準的」扱いしていた。
+	//   山と谷の水平性チェック・階段ステップチェックを入れて reject されることを検証する。
+
+	it('forming triple_top: 3 山が単調に切り上がる場合は forming_stair_step_up で reject', () => {
+		// peak1=100, peak2=100.5, currentPrice=104 → 階段状の切り上がり。
+		// peakDiff=0.5/100.5=0.50%、currentDiff=3.75/100.25=3.74% で
+		// tripleTolerancePct=0.04*1.2=0.048 を通過するが、stair-step ステップ
+		// = (104-100)/100 = 4.0% > FORMING_STAIR_STEP_LIMIT(2%) で reject される。
+		const total = 51;
+		const candles: CandleData[] = Array.from({ length: total }, (_, i) => mkCandle(total - i, 90, 95, 85, 90));
+		candles[0] = mkCandle(total, 99, 100, 98, 99);
+		candles[10] = mkCandle(total - 10, 80, 82, 79, 80);
+		candles[20] = mkCandle(total - 20, 99.5, 100.5, 99, 100);
+		candles[32] = mkCandle(total - 32, 80, 82, 79, 81);
+		for (let i = 45; i < total; i++) {
+			candles[i] = mkCandle(total - i, 103, 105, 102, 104);
+		}
+
+		const allPeaks: Pivot[] = [
+			{ idx: 0, price: 100, kind: 'H' },
+			{ idx: 20, price: 100.5, kind: 'H' },
+		];
+		const allValleys: Pivot[] = [
+			{ idx: 10, price: 80, kind: 'L' },
+			{ idx: 32, price: 81, kind: 'L' },
+		];
+
+		const ctx = buildCtx({
+			candles,
+			pivots: [...allPeaks, ...allValleys],
+			allPeaks,
+			allValleys,
+			includeForming: true,
+		});
+		const result = detectTriples(ctx);
+
+		// triple_top forming が検出されないこと（ユーザー報告の誤検出パターンの本質）
+		const forming = result.patterns.filter((p) => p.type === 'triple_top' && p.status === 'forming');
+		expect(forming).toHaveLength(0);
+		// 階段状切り上がりが reject 理由として記録されていること
+		const rejected = ctx.debugCandidates.find(
+			(d) => d.type === 'triple_top' && d.accepted === false && d.reason === 'forming_stair_step_up',
+		);
+		expect(rejected).toBeDefined();
+	});
+
+	it('forming triple_top: 3 山の累計 spread が tripleTolerancePct を超えると forming_peaks_not_level で reject', () => {
+		// 階段ではないが（peak1 > peak2 なので monotonic ではない）、
+		// 3 点累計 spread が大きいケース。peak1=110, peak2=100, current=110 → spread=10/110=9.09%。
+		const total = 51;
+		const candles: CandleData[] = Array.from({ length: total }, (_, i) => mkCandle(total - i, 90, 95, 85, 90));
+		candles[0] = mkCandle(total, 109, 110, 107, 109);
+		candles[10] = mkCandle(total - 10, 79, 81, 79, 80);
+		candles[20] = mkCandle(total - 20, 99, 100, 97, 99);
+		candles[32] = mkCandle(total - 32, 80, 82, 80, 81);
+		for (let i = 45; i < total; i++) {
+			candles[i] = mkCandle(total - i, 108, 110, 107, 109);
+		}
+
+		const allPeaks: Pivot[] = [
+			{ idx: 0, price: 110, kind: 'H' },
+			{ idx: 20, price: 100, kind: 'H' },
+		];
+		const allValleys: Pivot[] = [
+			{ idx: 10, price: 80, kind: 'L' },
+			{ idx: 32, price: 81, kind: 'L' },
+		];
+
+		const ctx = buildCtx({
+			candles,
+			pivots: [...allPeaks, ...allValleys],
+			allPeaks,
+			allValleys,
+			includeForming: true,
+			tolerancePct: 0.04, // tripleTolerancePct=4.8% → 9.09% で reject
+		});
+		const result = detectTriples(ctx);
+
+		const forming = result.patterns.filter((p) => p.type === 'triple_top' && p.status === 'forming');
+		expect(forming).toHaveLength(0);
+		// 旧実装ではこの状態でも素通りしてしまっていた。
+	});
+
+	it('forming triple_top: 谷の乖離が大きいと forming_neckline_not_horizontal で reject', () => {
+		// 3 山は水平だが、valleys が 10.58M と 12.00M で乖離（spread = 11.83%）。
+		// tolerancePct=0.04（necklineSpreadLimit=4%）→ reject。
+		const total = 51;
+		const candles: CandleData[] = Array.from({ length: total }, (_, i) =>
+			mkCandle(total - i, 12000000, 12200000, 11800000, 12000000),
+		);
+		candles[0] = mkCandle(total, 12349999, 12350000, 12349000, 12349999);
+		candles[10] = mkCandle(total - 10, 10577063, 10577064, 10577000, 10577063);
+		candles[20] = mkCandle(total - 20, 12350000, 12350001, 12349000, 12350000);
+		candles[32] = mkCandle(total - 32, 12000001, 12000002, 12000000, 12000001);
+		for (let i = 45; i < total; i++) {
+			candles[i] = mkCandle(total - i, 12350000, 12351000, 12349000, 12350000);
+		}
+
+		const allPeaks: Pivot[] = [
+			{ idx: 0, price: 12350000, kind: 'H' },
+			{ idx: 20, price: 12350000, kind: 'H' },
+		];
+		const allValleys: Pivot[] = [
+			{ idx: 10, price: 10577064, kind: 'L' },
+			{ idx: 32, price: 12000002, kind: 'L' },
+		];
+
+		const ctx = buildCtx({
+			candles,
+			pivots: [...allPeaks, ...allValleys],
+			allPeaks,
+			allValleys,
+			includeForming: true,
+			tolerancePct: 0.04,
+		});
+		const result = detectTriples(ctx);
+
+		const forming = result.patterns.filter((p) => p.type === 'triple_top' && p.status === 'forming');
+		expect(forming).toHaveLength(0);
+
+		const rejected = ctx.debugCandidates.find(
+			(d) => d.type === 'triple_top' && d.accepted === false && d.reason === 'forming_neckline_not_horizontal',
+		);
+		expect(rejected).toBeDefined();
+	});
+
+	it('forming triple_top: peak1 と現在足の間に valley が 1 個しかないと forming_neckline_points_insufficient で reject', () => {
+		// 3 山水平、谷も水平だが valley が 1 個しかない → ネックライン構成点不足で reject。
+		const total = 51;
+		const candles: CandleData[] = Array.from({ length: total }, (_, i) => mkCandle(total - i, 85, 90, 80, 85));
+		candles[0] = mkCandle(total, 99, 100, 97, 99);
+		candles[10] = mkCandle(total - 10, 79, 81, 79, 80);
+		candles[20] = mkCandle(total - 20, 100, 101, 99, 100);
 		for (let i = 45; i < total; i++) {
 			candles[i] = mkCandle(total - i, 98, 100, 97, 99);
 		}
@@ -461,16 +673,133 @@ describe('detectTriples', () => {
 		const result = detectTriples(ctx);
 
 		const forming = result.patterns.filter((p) => p.type === 'triple_top' && p.status === 'forming');
-		expect(forming.length).toBeGreaterThanOrEqual(1);
-		expect(forming[0]?.completionPct).toBeDefined();
-		expect(forming[0]?.breakoutTarget).toBeDefined();
+		expect(forming).toHaveLength(0);
+
+		const rejected = ctx.debugCandidates.find(
+			(d) => d.type === 'triple_top' && d.accepted === false && d.reason === 'forming_neckline_points_insufficient',
+		);
+		expect(rejected).toBeDefined();
 	});
 
-	// ── 形成中 Triple Bottom ─────────────────────────────────
+	it('forming triple_top: 確定 pivot は 2 個（pivots.length === 2）で 3 点目は未確定であることを示す', () => {
+		// LLM が pivots だけ見て 3 山構造と誤読しないよう、forming は 2 確定 pivot のみ返す。
+		const total = 51;
+		const candles: CandleData[] = Array.from({ length: total }, (_, i) => mkCandle(total - i, 85, 90, 80, 85));
+		candles[0] = mkCandle(total, 99, 100, 97, 99);
+		candles[10] = mkCandle(total - 10, 79, 81, 79, 80);
+		candles[20] = mkCandle(total - 20, 100, 101, 99, 100);
+		candles[32] = mkCandle(total - 32, 80, 82, 80, 81);
+		for (let i = 45; i < total; i++) {
+			candles[i] = mkCandle(total - i, 98, 100, 97, 99);
+		}
 
-	it('includeForming=true + 2確定谷 + 現在価格が谷とネックラインの間 → forming triple_bottom 検出', () => {
-		// allValleys: [{idx:0,100}, {idx:20,101}], allPeaks: [{idx:10,120}]
-		// lastIdx=50, close=115（100.5 と 120 の間）
+		const allPeaks: Pivot[] = [
+			{ idx: 0, price: 100, kind: 'H' },
+			{ idx: 20, price: 101, kind: 'H' },
+		];
+		const allValleys: Pivot[] = [
+			{ idx: 10, price: 80, kind: 'L' },
+			{ idx: 32, price: 81, kind: 'L' },
+		];
+
+		const ctx = buildCtx({
+			candles,
+			pivots: [...allPeaks, ...allValleys],
+			allPeaks,
+			allValleys,
+			includeForming: true,
+		});
+		const result = detectTriples(ctx);
+
+		const forming = result.patterns.find((p) => p.type === 'triple_top' && p.status === 'forming');
+		expect(forming).toBeDefined();
+		expect(Array.isArray(forming?.pivots) ? forming.pivots.length : -1).toBe(2);
+	});
+
+	// ── 形成中 Triple Bottom: 階段状切り下がり / 山乖離の reject（対称ケース）──
+
+	it('forming triple_bottom: 3 谷が単調に切り下がる場合は forming_stair_step_down で reject', () => {
+		// triple_top の対称: valley1=102, valley2=100, currentPrice=99 → 切り下がり。
+		// 全体ステップ = (102-99)/102 ≈ 2.94% で FORMING_STAIR_STEP_LIMIT=2% を超過。
+		// 早期 valleyDiff（|102-100|/102 = 1.96%）と currentDiff（|99-101|/101 = 1.98%）は
+		// tripleTolerancePct=4.8% 以下で通過するため、stair-step で reject されることを検証。
+		const total = 51;
+		const candles: CandleData[] = Array.from({ length: total }, (_, i) => mkCandle(total - i, 105, 115, 95, 105));
+		candles[0] = mkCandle(total, 101, 102, 100, 102);
+		candles[10] = mkCandle(total - 10, 109, 110, 108, 109);
+		candles[20] = mkCandle(total - 20, 99, 101, 99, 100);
+		candles[32] = mkCandle(total - 32, 109, 110, 108, 109);
+		for (let i = 45; i < total; i++) {
+			candles[i] = mkCandle(total - i, 99, 101, 98, 99);
+		}
+
+		const allValleys: Pivot[] = [
+			{ idx: 0, price: 102, kind: 'L' },
+			{ idx: 20, price: 100, kind: 'L' },
+		];
+		const allPeaks: Pivot[] = [
+			{ idx: 10, price: 110, kind: 'H' },
+			{ idx: 32, price: 110, kind: 'H' },
+		];
+
+		const ctx = buildCtx({
+			candles,
+			pivots: [...allPeaks, ...allValleys],
+			allPeaks,
+			allValleys,
+			includeForming: true,
+		});
+		const result = detectTriples(ctx);
+
+		const forming = result.patterns.filter((p) => p.type === 'triple_bottom' && p.status === 'forming');
+		expect(forming).toHaveLength(0);
+		const rejected = ctx.debugCandidates.find(
+			(d) => d.type === 'triple_bottom' && d.accepted === false && d.reason === 'forming_stair_step_down',
+		);
+		expect(rejected).toBeDefined();
+	});
+
+	it('forming triple_bottom: 山の乖離が大きいと forming_neckline_not_horizontal で reject', () => {
+		// 3 谷は水平だが、ネックライン構成 peak が大きく乖離（例: 110 と 130）。
+		// spread=(130-110)/130 ≈ 15.4% > necklineSpreadLimit=4% → reject。
+		const total = 51;
+		const candles: CandleData[] = Array.from({ length: total }, (_, i) => mkCandle(total - i, 105, 115, 95, 105));
+		candles[0] = mkCandle(total, 100, 102, 99, 101);
+		candles[10] = mkCandle(total - 10, 109, 110, 108, 109);
+		candles[20] = mkCandle(total - 20, 100, 102, 99, 101);
+		candles[32] = mkCandle(total - 32, 129, 130, 128, 129);
+		for (let i = 45; i < total; i++) {
+			candles[i] = mkCandle(total - i, 114, 116, 113, 115);
+		}
+
+		const allValleys: Pivot[] = [
+			{ idx: 0, price: 100, kind: 'L' },
+			{ idx: 20, price: 100, kind: 'L' },
+		];
+		const allPeaks: Pivot[] = [
+			{ idx: 10, price: 110, kind: 'H' },
+			{ idx: 32, price: 130, kind: 'H' },
+		];
+
+		const ctx = buildCtx({
+			candles,
+			pivots: [...allPeaks, ...allValleys],
+			allPeaks,
+			allValleys,
+			includeForming: true,
+		});
+		const result = detectTriples(ctx);
+
+		const forming = result.patterns.filter((p) => p.type === 'triple_bottom' && p.status === 'forming');
+		expect(forming).toHaveLength(0);
+
+		const rejected = ctx.debugCandidates.find(
+			(d) => d.type === 'triple_bottom' && d.accepted === false && d.reason === 'forming_neckline_not_horizontal',
+		);
+		expect(rejected).toBeDefined();
+	});
+
+	it('forming triple_bottom: valley1 と現在足の間に peak が 1 個しかないと forming_neckline_points_insufficient で reject', () => {
 		const total = 51;
 		const candles: CandleData[] = Array.from({ length: total }, (_, i) => mkCandle(total - i, 105, 115, 100, 110));
 		candles[0] = mkCandle(total, 100, 102, 99, 101);
@@ -496,9 +825,47 @@ describe('detectTriples', () => {
 		const result = detectTriples(ctx);
 
 		const forming = result.patterns.filter((p) => p.type === 'triple_bottom' && p.status === 'forming');
-		expect(forming.length).toBeGreaterThanOrEqual(1);
-		expect(forming[0]?.completionPct).toBeDefined();
-		expect(forming[0]?.breakoutTarget).toBeDefined();
+		expect(forming).toHaveLength(0);
+
+		const rejected = ctx.debugCandidates.find(
+			(d) => d.type === 'triple_bottom' && d.accepted === false && d.reason === 'forming_neckline_points_insufficient',
+		);
+		expect(rejected).toBeDefined();
+	});
+
+	it('forming triple_bottom: 確定 pivot は 2 個（pivots.length === 2）で 3 点目は未確定であることを示す', () => {
+		// 現在価格を valley 水準に置き、forming triple_bottom として検出させる。
+		const total = 51;
+		const candles: CandleData[] = Array.from({ length: total }, (_, i) => mkCandle(total - i, 105, 115, 100, 110));
+		candles[0] = mkCandle(total, 100, 102, 99, 101);
+		candles[10] = mkCandle(total - 10, 119, 120, 118, 119);
+		candles[20] = mkCandle(total - 20, 100, 102, 100, 101);
+		candles[32] = mkCandle(total - 32, 118, 119, 117, 118);
+		for (let i = 45; i < total; i++) {
+			candles[i] = mkCandle(total - i, 101, 103, 99, 100);
+		}
+
+		const allValleys: Pivot[] = [
+			{ idx: 0, price: 100, kind: 'L' },
+			{ idx: 20, price: 101, kind: 'L' },
+		];
+		const allPeaks: Pivot[] = [
+			{ idx: 10, price: 120, kind: 'H' },
+			{ idx: 32, price: 119, kind: 'H' },
+		];
+
+		const ctx = buildCtx({
+			candles,
+			pivots: [...allPeaks, ...allValleys],
+			allPeaks,
+			allValleys,
+			includeForming: true,
+		});
+		const result = detectTriples(ctx);
+
+		const forming = result.patterns.find((p) => p.type === 'triple_bottom' && p.status === 'forming');
+		expect(forming).toBeDefined();
+		expect(Array.isArray(forming?.pivots) ? forming.pivots.length : -1).toBe(2);
 	});
 
 	it('includeForming=false では forming / near_completion パターンは返さない', () => {
@@ -592,10 +959,11 @@ describe('detectTriples', () => {
 		// 720 バー × (1/24) = 30 日 ∈ [21, 90] → patternDays チェック OK
 		const total = 720;
 		const candles: CandleData[] = Array.from({ length: total }, (_, i) => mkCandle(total - i, 85, 90, 80, 85));
-		// 2 つ確定済みピークと谷
+		// 2 つ確定済みピークと 2 つの確定済み谷（ネックライン構成）
 		candles[0] = mkCandle(total, 99, 100, 97, 99);
 		candles[300] = mkCandle(total - 300, 79, 81, 79, 80);
 		candles[600] = mkCandle(total - 600, 100, 101, 99, 100);
+		candles[660] = mkCandle(total - 660, 80, 82, 80, 81);
 		for (let i = total - 5; i < total; i++) {
 			candles[i] = mkCandle(total - i, 98, 100, 97, 99);
 		}
@@ -604,7 +972,10 @@ describe('detectTriples', () => {
 			{ idx: 0, price: 100, kind: 'H' },
 			{ idx: 600, price: 101, kind: 'H' },
 		];
-		const allValleys: Pivot[] = [{ idx: 300, price: 80, kind: 'L' }];
+		const allValleys: Pivot[] = [
+			{ idx: 300, price: 80, kind: 'L' },
+			{ idx: 660, price: 81, kind: 'L' },
+		];
 
 		const ctx = buildCtx({
 			candles,
@@ -658,11 +1029,13 @@ describe('detectTriples', () => {
 		// 旧コード（1week → daysPerBar=7）でも同じ結論。新コードでも維持される。
 		// 構造制約: confirmedPeaks フィルタ idx < lastIdx-2 と minDist=5 を両立するため
 		// total=9, peak1=0, peak2=5 とする（peak2=5 < 6=lastIdx-2 OK, 5-0=5 >= minDist=5 OK）。
+		// ネックライン構成点 2 つを満たすため valley を 2 つ配置（idx=3 と idx=6）。
 		const total = 9;
 		const candles: CandleData[] = Array.from({ length: total }, (_, i) => mkCandle(total - i, 85, 90, 80, 85));
 		candles[0] = mkCandle(total, 99, 100, 97, 99);
 		candles[3] = mkCandle(total - 3, 79, 81, 79, 80);
 		candles[5] = mkCandle(total - 5, 100, 101, 99, 100);
+		candles[6] = mkCandle(total - 6, 80, 82, 80, 81);
 		for (let i = 7; i < total; i++) {
 			candles[i] = mkCandle(total - i, 98, 100, 97, 99);
 		}
@@ -671,7 +1044,10 @@ describe('detectTriples', () => {
 			{ idx: 0, price: 100, kind: 'H' },
 			{ idx: 5, price: 101, kind: 'H' },
 		];
-		const allValleys: Pivot[] = [{ idx: 3, price: 80, kind: 'L' }];
+		const allValleys: Pivot[] = [
+			{ idx: 3, price: 80, kind: 'L' },
+			{ idx: 6, price: 81, kind: 'L' },
+		];
 
 		const ctx = buildCtx({
 			candles,
@@ -725,11 +1101,13 @@ describe('detectTriples', () => {
 		// patternDays=25 と評価して誤って検出していた。
 		// 新コードでは daysPerBar(1month)=30 を介して patternDays=750 と評価し、
 		// FORMING_MAX_DAYS=90 を超えるため正しく拒否される。
+		// ネックライン構成点 2 つを満たすため valley を 2 つ配置。
 		const total = 26;
 		const candles: CandleData[] = Array.from({ length: total }, (_, i) => mkCandle(total - i, 85, 90, 80, 85));
 		candles[0] = mkCandle(total, 99, 100, 97, 99);
 		candles[10] = mkCandle(total - 10, 79, 81, 79, 80);
 		candles[20] = mkCandle(total - 20, 100, 101, 99, 100);
+		candles[22] = mkCandle(total - 22, 80, 82, 80, 81);
 		for (let i = 23; i < total; i++) {
 			candles[i] = mkCandle(total - i, 98, 100, 97, 99);
 		}
@@ -738,7 +1116,10 @@ describe('detectTriples', () => {
 			{ idx: 0, price: 100, kind: 'H' },
 			{ idx: 20, price: 101, kind: 'H' },
 		];
-		const allValleys: Pivot[] = [{ idx: 10, price: 80, kind: 'L' }];
+		const allValleys: Pivot[] = [
+			{ idx: 10, price: 80, kind: 'L' },
+			{ idx: 22, price: 81, kind: 'L' },
+		];
 
 		const ctx1day = buildCtx({
 			candles,

@@ -784,6 +784,65 @@ describe('formatPatternLine', () => {
 		const result = formatPatternLine(p, 0, 'full', emptyMeta);
 		expect(result).toMatch(/形状不十分|低信頼|信頼度: 低/);
 	});
+
+	// ── forming triple_top / triple_bottom の 3 点目暫定マーカー ──
+	//
+	// forming triple は pivots に 2 確定点しか入らない。LLM が「3 山構造」と
+	// 誤読しないよう、現在価格を 3 点目に仮置きしている旨を明示する。
+
+	it('forming triple_top: 確定 pivot 2 個 + 現在価格暫定マーカーを表示する', () => {
+		const p = makePattern({
+			type: 'triple_top',
+			status: 'forming',
+			pivots: [
+				{ idx: 0, price: 100 },
+				{ idx: 20, price: 101 },
+			],
+		});
+		const result = formatPatternLine(p, 0, 'detailed', emptyMeta);
+		expect(result).toContain('3 山目は現在価格を暫定');
+		expect(result).toContain('参考材料');
+	});
+
+	it('forming triple_bottom: 確定 pivot 2 個 + 現在価格暫定マーカーを表示する', () => {
+		const p = makePattern({
+			type: 'triple_bottom',
+			status: 'forming',
+			pivots: [
+				{ idx: 0, price: 100 },
+				{ idx: 20, price: 99 },
+			],
+		});
+		const result = formatPatternLine(p, 0, 'detailed', emptyMeta);
+		expect(result).toContain('3 谷目は現在価格を暫定');
+	});
+
+	it('completed triple_top（pivots.length===3）には暫定マーカーを付けない', () => {
+		const p = makePattern({
+			type: 'triple_top',
+			status: 'completed',
+			pivots: [
+				{ idx: 0, price: 100 },
+				{ idx: 20, price: 100 },
+				{ idx: 40, price: 100 },
+			],
+		});
+		const result = formatPatternLine(p, 0, 'detailed', emptyMeta);
+		expect(result).not.toContain('現在価格を暫定');
+	});
+
+	it('forming double_top には triple 用の暫定マーカーを付けない', () => {
+		const p = makePattern({
+			type: 'double_top',
+			status: 'forming',
+			pivots: [
+				{ idx: 0, price: 100 },
+				{ idx: 10, price: 100 },
+			],
+		});
+		const result = formatPatternLine(p, 0, 'detailed', emptyMeta);
+		expect(result).not.toContain('現在価格を暫定');
+	});
 });
 
 // ── formatSummaryView ──

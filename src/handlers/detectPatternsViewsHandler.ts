@@ -419,6 +419,19 @@ export function formatPatternLine(
 		statusLine = `   - 状態: ${statusJa[p.status] || p.status}`;
 	}
 
+	// forming triple: 3 点目が確定していないことを LLM に明示する。
+	// 2 確定ピボットだけで構成されているため、pivots 配列だけ見ると 3 山構造を勘違いされる。
+	let formingTripleNote: string | null = null;
+	if (
+		(p?.type === 'triple_top' || p?.type === 'triple_bottom') &&
+		p?.status === 'forming' &&
+		Array.isArray(p?.pivots) &&
+		p.pivots.length === 2
+	) {
+		const role = p.type === 'triple_top' ? '3 山目' : '3 谷目';
+		formingTripleNote = `   - 注: ${role}は現在価格を暫定（未確定）。2 確定ピボット + 現在価格で評価しているため、参考材料として扱う`;
+	}
+
 	// breakout direction & outcome
 	let outcomeLine: string | null = null;
 	try {
@@ -517,6 +530,7 @@ export function formatPatternLine(
 		lowConfWarning,
 		...periodLines,
 		statusLine,
+		formingTripleNote,
 		priceRange ? `   - 価格範囲: ${priceRange}` : null,
 		...(pivotLines.length ? pivotLines : []),
 		neckline ? `   - ${p?.trendlineLabel || 'ネックライン'}: ${neckline}` : null,
@@ -567,7 +581,7 @@ export function formatFullView(
 		? '\n\nチャート連携: structuredContent.data.overlays を render_chart_svg.overlays に渡すと注釈/範囲を描画できます。'
 		: '';
 	const trustNote =
-		'\n\nパターン整合度について（形状一致度・対称性・期間から算出）:\n  0.8以上 = 理想的な形状（教科書的パターン）\n  0.7-0.8 = 標準的な形状（他指標と併用推奨）\n  0.6-0.7 = やや不明瞭（慎重に判断）\n  0.6未満 = 形状不十分';
+		'\n\nパターン整合度について（形状一致度・対称性・期間から算出）:\n  0.8以上 = 理想的な形状（教科書的パターン）\n  0.7-0.8 = 標準的な形状（他指標と併用推奨）\n  0.6-0.7 = やや不明瞭（慎重に判断）\n  0.6未満 = 形状不十分\n  ※ status=forming は最終構成点が未確定のため、整合度に関わらず「参考材料」として扱う';
 	const text = `${hdr}（${typeSummary || '分類なし'}）\n${periodLine ? `${periodLine}\n` : ''}\n【検出パターン（全件）】\n${body}${overlayNote}${trustNote}`;
 	return { content: [{ type: 'text', text }], structuredContent: toStructured(res) };
 }
@@ -603,7 +617,7 @@ export function formatDetailedView(
 		? '\n\nチャート連携: structuredContent.data.overlays を render_chart_svg.overlays に渡すと注釈/範囲を描画できます。'
 		: '';
 	const trustNote =
-		'\n\nパターン整合度について（形状一致度・対称性・期間から算出）:\n  0.8以上 = 理想的な形状（教科書的パターン）\n  0.7-0.8 = 標準的な形状（他指標と併用推奨）\n  0.6-0.7 = やや不明瞭（慎重に判断）\n  0.6未満 = 形状不十分';
+		'\n\nパターン整合度について（形状一致度・対称性・期間から算出）:\n  0.8以上 = 理想的な形状（教科書的パターン）\n  0.7-0.8 = 標準的な形状（他指標と併用推奨）\n  0.6-0.7 = やや不明瞭（慎重に判断）\n  0.6未満 = 形状不十分\n  ※ status=forming は最終構成点が未確定のため、整合度に関わらず「参考材料」として扱う';
 	const usage = `\n\nusage_example:\n  step1: detect_patterns を実行\n  step2: structuredContent.data.overlays を取得\n  step3: render_chart_svg の overlays に渡す`;
 	const text = `${hdr}（${typeSummary || '分類なし'}）\n${periodLine ? `${periodLine}\n` : ''}\n${top.length ? `【検出パターン】\n${body}` : ''}${none}${overlayNote}${trustNote}${usage}`;
 	return {
