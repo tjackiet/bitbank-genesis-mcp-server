@@ -861,6 +861,26 @@ describe('detectHeadAndShoulders', () => {
 		expect(hs.targetReached).toBe(false);
 	});
 
+	it('H&S: ブレイク close == target（距離ゼロ）→ targetReached=true & pct=100 を確定で返す', () => {
+		// target = 40, breakClose=40 → breakoutPrice === target → targetDistance=0
+		// 旧式は EPSILON ガードで undefined を返し metadata が全て落ちていた。
+		// 新式は「ブレイク時点で既に到達」とみなして reached=true, pct=100 を確定で返す。
+		const { candles, pivots } = buildHsWithBreakout({ breakIdx: 65, breakClose: 40 });
+		const ctx = buildCtx({ candles, pivots });
+		const result = detectHeadAndShoulders(ctx);
+
+		const hs = result.patterns.find((p) => p.type === 'head_and_shoulders');
+		expect(hs).toBeDefined();
+		if (!hs) return;
+
+		expect(hs.status).toBe('completed');
+		expect(hs.breakoutTarget).toBe(40);
+		expect(hs.targetReached).toBe(true);
+		expect(hs.targetReachedPct).toBe(100);
+		expect(hs.targetReachedPrice).toBe(40);
+		expect(hs.targetReachedDate).toBeDefined();
+	});
+
 	it('H&S: ブレイク close が既に target を下回る（オーバーシュート）→ targetReached=true & pct>=100', () => {
 		// target = 40, breakClose=30 → breakoutPrice=30 < target 40 で既に到達済み
 		// 旧式: (extremePrice - 30) / (40 - 30) は分母 +10、extremePrice<30 で分子マイナス → pct が負
@@ -1004,6 +1024,24 @@ describe('detectHeadAndShoulders', () => {
 		expect(ihs.breakoutTarget).toBe(160);
 		expect(ihs.targetReachedPct).toBeLessThan(100);
 		expect(ihs.targetReached).toBe(false);
+	});
+
+	it('逆H&S: ブレイク close == target（距離ゼロ）→ targetReached=true & pct=100 を確定で返す', () => {
+		// target = 160, breakClose=160 → breakoutPrice === target → targetDistance=0
+		const { candles, pivots } = buildInverseHsWithBreakout({ breakIdx: 65, breakClose: 160 });
+		const ctx = buildCtx({ candles, pivots });
+		const result = detectHeadAndShoulders(ctx);
+
+		const ihs = result.patterns.find((p) => p.type === 'inverse_head_and_shoulders');
+		expect(ihs).toBeDefined();
+		if (!ihs) return;
+
+		expect(ihs.status).toBe('completed');
+		expect(ihs.breakoutTarget).toBe(160);
+		expect(ihs.targetReached).toBe(true);
+		expect(ihs.targetReachedPct).toBe(100);
+		expect(ihs.targetReachedPrice).toBe(160);
+		expect(ihs.targetReachedDate).toBeDefined();
 	});
 
 	it('逆H&S: ブレイク close が既に target を上回る（オーバーシュート）→ targetReached=true & pct>=100', () => {

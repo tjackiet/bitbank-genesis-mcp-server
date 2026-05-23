@@ -127,9 +127,19 @@ function computeHsTargetReach(
 ): HsTargetReachInfo | undefined {
 	if (!Number.isFinite(breakoutPrice) || !Number.isFinite(target)) return undefined;
 	const targetDistance = Math.abs(target - breakoutPrice);
-	if (targetDistance <= EPSILON) return undefined;
 	const startIdx = Math.max(0, breakoutIdx);
 	if (startIdx >= candles.length) return undefined;
+	// ブレイク close が target と一致する（距離ゼロ）= ブレイク時点で既に到達。
+	// undefined で metadata を落とさず、reached=true, pct=100 を確定で返す。
+	if (targetDistance <= EPSILON) {
+		const targetReachedDate = candles[startIdx]?.isoTime;
+		return {
+			targetReachedPct: 100,
+			targetReached: true,
+			...(targetReachedDate ? { targetReachedDate } : {}),
+			targetReachedPrice: breakoutPrice,
+		};
+	}
 
 	let extremePrice = direction === 'down' ? Number.POSITIVE_INFINITY : Number.NEGATIVE_INFINITY;
 	let extremeIdx = -1;
