@@ -90,13 +90,16 @@ export const intermediatePrompts: PromptDef[] = [
 1) get_flow_metrics(pair=btc_jpy, limit=300, bucketMs=60000, view=detailed)
 2) get_transactions(pair=btc_jpy, limit=200, view=summary) — 必要時
 
+【用途】デイトレ〜短期スイングの地合い確認。
+        執行タイミング判断（数秒～数分の売買）には鮮度が不足するため非推奨。
+
 【方針】CVDトレンド、Aggressor Ratio（50%基準）、Volume Spike（z>2）、直近1-3時間重視
 
 【出力】冒頭に 📸 YYYY/MM/DD HH:MM:SS JST 時点
 - 結論（買い/売り/拮抗）
 - CVD推移
 - スパイク（あれば）
-- 価格への影響
+- 価格との連動状況
 
 ${DISCLAIMER_MARKET}`),
 		metadata: {
@@ -104,31 +107,6 @@ ${DISCLAIMER_MARKET}`),
 			category: PromptCategory.ANALYSIS,
 			estimatedTime: '1分',
 			tags: ['intermediate', 'flow', 'cvd', 'volume', 'transactions', 'short-term'],
-		},
-	},
-	{
-		name: '中級：BTCの板の状況を詳しく見て',
-		description: '中級者向け：板の厚み・流動性分布・大口注文から短期的なサポート/レジスタンスを分析',
-		messages: userMessage(`BTCの板の状況を詳しく見て
-
-【ツール】
-1) get_orderbook(pair=btc_jpy, mode=statistics, ranges=[0.5,1,2], priceZones=10)
-2) get_orderbook(pair=btc_jpy, mode=raw) — 必要時
-
-【方針】±0.5/1/2%の厚み、大口（平均2倍）、スプレッド・バランス、短期サポレジ
-
-【出力】冒頭にツールの 📸 タイムスタンプ + 「時点」
-- 結論（買い/売り/拮抗）
-- 重要価格帯
-- 大口（あれば）
-- 短期示唆
-
-${DISCLAIMER_MARKET}`),
-		metadata: {
-			level: PromptLevel.INTERMEDIATE,
-			category: PromptCategory.ANALYSIS,
-			estimatedTime: '1分',
-			tags: ['intermediate', 'orderbook', 'depth', 'liquidity', 'support', 'resistance', 'short-term'],
 		},
 	},
 	{
