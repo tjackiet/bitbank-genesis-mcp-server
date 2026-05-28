@@ -119,14 +119,25 @@ export function App() {
 
 		mcpApp.ontoolresult = (params) => {
 			// preview_order の結果のみ取り込む。他ツール（特に create_order）の結果で
-			// state をリセットしないよう data.preview / confirmation_token の存在で
-			// フィルタする（PreviewOrderMetaSchema は action: z.literal('create_order')、
-			// 他ツール応答に preview / confirmation_token は含まれないため安全）。
+			// state をリセットしないよう data.preview の存在でフィルタする
+			// （preview フィールドは preview_* の Result にのみ存在し、create_order 等の
+			// 他ツール応答には含まれないため安全）。
+			//
+			// confirmation_token は意図的に structuredContent には含めない設計
+			// （docs/private-api.md「confirmation_token の受け渡し」参照）。
+			// SEP-1865 経由の UI 実行経路は pending action store 整備後に解禁予定で、
+			// 現状 token が来ないホスト（Claude.ai web 等）では preview 内容のみ表示し、
+			// 「このホストでは確認 UI 未対応」案内を出す。
 			const structured = params?.structuredContent as PreviewResult | undefined;
-			if (structured?.ok && structured.data?.preview && structured.data.confirmation_token) {
+			if (structured?.ok && structured.data?.preview) {
 				setPreview(structured.data.preview);
-				setToken(structured.data.confirmation_token);
-				setTokenExpiresAt(structured.data.expires_at);
+				if (structured.data.confirmation_token && structured.data.expires_at != null) {
+					setToken(structured.data.confirmation_token);
+					setTokenExpiresAt(structured.data.expires_at);
+				} else {
+					setToken(null);
+					setTokenExpiresAt(null);
+				}
 				setStatus('idle');
 				setMessage('');
 				setOrderId(null);
@@ -321,7 +332,7 @@ export function App() {
 					</div>
 				)}
 
-				{!isTerminal && (
+				{!isTerminal && token != null && (
 					<div className="actions">
 						<button
 							type="button"
@@ -339,6 +350,13 @@ export function App() {
 						>
 							{status === 'submitting' ? '送信中…' : '注文を確定する'}
 						</button>
+					</div>
+				)}
+
+				{!isTerminal && token == null && (
+					<div className="warn">
+						このホストでは注文確定 UI が未対応のため、プレビュー表示のみです。実際に発注するには
+						Claude Desktop など elicitation 対応クライアントで同じ操作を実行してください。
 					</div>
 				)}
 

@@ -127,22 +127,31 @@ export function App() {
 
 		mcpApp.ontoolresult = (params) => {
 			// preview_cancel_order(s) の結果のみ取り込む。
-			// meta.action が cancel_order / cancel_orders のいずれかかつ preview / token が
-			// 揃っているレスポンスのみを取り込み、cancel_order(s) の結果では state を
-			// リセットしないようにフィルタする。
+			// meta.action と preview の存在でフィルタし、cancel_order(s) の結果では
+			// state をリセットしないようにする。
+			//
+			// confirmation_token は意図的に structuredContent には含めない設計
+			// （docs/private-api.md「confirmation_token の受け渡し」参照）。
+			// SEP-1865 経由の UI 実行経路は pending action store 整備後に解禁予定で、
+			// 現状 token が来ないホストでは preview 内容のみ表示し、
+			// 「このホストでは確認 UI 未対応」案内を出す。
 			const structured = params?.structuredContent as PreviewResult | undefined;
 			const metaAction = structured?.meta?.action;
 			if (
 				structured?.ok &&
 				structured.data?.preview &&
-				structured.data.confirmation_token &&
 				(metaAction === 'cancel_order' || metaAction === 'cancel_orders')
 			) {
 				setAction(metaAction);
 				setPreview(structured.data.preview);
 				setOrder(structured.data.order ?? null);
-				setToken(structured.data.confirmation_token);
-				setTokenExpiresAt(structured.data.expires_at);
+				if (structured.data.confirmation_token && structured.data.expires_at != null) {
+					setToken(structured.data.confirmation_token);
+					setTokenExpiresAt(structured.data.expires_at);
+				} else {
+					setToken(null);
+					setTokenExpiresAt(null);
+				}
 				setStatus('idle');
 				setMessage('');
 			}
@@ -353,7 +362,7 @@ export function App() {
 					</div>
 				)}
 
-				{!isTerminal && (
+				{!isTerminal && token != null && (
 					<div className="actions">
 						<button
 							type="button"
@@ -371,6 +380,13 @@ export function App() {
 						>
 							{status === 'submitting' ? '送信中…' : 'キャンセルを確定する'}
 						</button>
+					</div>
+				)}
+
+				{!isTerminal && token == null && (
+					<div className="warn">
+						このホストではキャンセル確定 UI が未対応のため、プレビュー表示のみです。実際に
+						キャンセルするには Claude Desktop など elicitation 対応クライアントで同じ操作を実行してください。
 					</div>
 				)}
 
