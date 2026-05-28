@@ -43,6 +43,15 @@ export function clientSupportsElicitation(extra: ToolHandlerExtra | undefined): 
 	const server = (extra as { server?: { getClientCapabilities?: () => unknown } } | undefined)?.server;
 	const caps = typeof server?.getClientCapabilities === 'function' ? server.getClientCapabilities() : undefined;
 	const elicitation = (caps as { elicitation?: unknown } | undefined)?.elicitation;
+	// 診断ログ: クライアント capability を一度だけ標準エラーに出す（PR #585 切り分け用、後で削除）
+	if (process.env.MCP_DEBUG_ELICITATION === '1') {
+		const serverType = server ? typeof server : 'undefined';
+		const hasFn = typeof server?.getClientCapabilities === 'function';
+		const hasElicitInput = typeof (server as { elicitInput?: unknown } | undefined)?.elicitInput === 'function';
+		process.stderr.write(
+			`[elicitation-debug] serverType=${serverType} hasGetCaps=${hasFn} hasElicitInput=${hasElicitInput} caps=${JSON.stringify(caps)}\n`,
+		);
+	}
 	return Boolean(elicitation);
 }
 
