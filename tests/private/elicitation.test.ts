@@ -349,7 +349,7 @@ describe('withElicitedConfirmation', () => {
 	// BITBANK_TRUST_HOST_APPROVAL=1 のオプトイン妥協モード。
 	// elicitation 非対応 + フラグ ON + trustHostFallback 指定の三者揃いで、
 	// structuredContent から token を剥がさず caller のレスポンスをそのまま返す。
-	// 詳細は docs/adr/0002-hitl-confirmation-token-delivery.md。
+	// 詳細は docs/adr/0007-hitl-confirmation-token-delivery.md。
 	describe('trust-host-approval モード（BITBANK_TRUST_HOST_APPROVAL=1）', () => {
 		const tokenStructured = {
 			ok: true,

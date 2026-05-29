@@ -78,7 +78,7 @@ export const toolDef: ToolDefinition = {
 		].join('\n');
 
 		// BITBANK_TRUST_HOST_APPROVAL=1 のときに使う妥協経路用のレスポンス。
-		// 詳細は docs/adr/0002-hitl-confirmation-token-delivery.md。
+		// 詳細は docs/adr/0007-hitl-confirmation-token-delivery.md。
 		const trustHostFallbackText = [
 			result.summary,
 			'',

@@ -237,7 +237,7 @@ export const toolDef: ToolDefinition = {
 		// BITBANK_TRUST_HOST_APPROVAL=1 のときに使う妥協経路用のレスポンス。
 		// structuredContent に confirmation_token / expires_at を含めたまま返し、
 		// SEP-1865 iframe ボタン → create_order の経路を成立させる。
-		// 詳細は docs/adr/0002-hitl-confirmation-token-delivery.md。
+		// 詳細は docs/adr/0007-hitl-confirmation-token-delivery.md。
 		const trustHostFallbackText = [
 			result.summary,
 			'',

@@ -37,7 +37,7 @@ export function getPrivateApiConfig(): PrivateApiConfig | null {
  *   - 「LLM は preview_* 経由でしか execute ツールを呼ばない」という前提と、
  *     「ホスト（Claude Desktop 等）のツール承認 UI が必ず人間の click を要求する」
  *     前提に依存する
- *   - 詳細は docs/adr/0002-hitl-confirmation-token-delivery.md を参照
+ *   - 詳細は docs/adr/0007-hitl-confirmation-token-delivery.md を参照
  *
  * デフォルト（unset）では従来通り token を strip するセーフ側挙動を保つ。
  */

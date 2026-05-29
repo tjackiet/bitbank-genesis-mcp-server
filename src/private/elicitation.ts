@@ -117,7 +117,7 @@ export interface WithElicitedConfirmationOptions {
 	 *   - LLM は preview_* 経由でしか execute ツールを呼ばない（description で明示）
 	 *   - ホスト（Claude Desktop 等）のツール承認 UI が最終 gate
 	 *
-	 * 詳細は docs/adr/0002-hitl-confirmation-token-delivery.md を参照。
+	 * 詳細は docs/adr/0007-hitl-confirmation-token-delivery.md を参照。
 	 * オプトインフラグが false のとき、または本フィールド未指定のときは無視され、
 	 * 従来通り `fallback` が返る。
 	 */
@@ -154,7 +154,7 @@ export async function withElicitedConfirmation(opts: WithElicitedConfirmationOpt
 	// elicitation 非対応 + BITBANK_TRUST_HOST_APPROVAL=1 + trustHostFallback 指定の三者揃いで
 	// 「ホスト承認 UI を最終 gate として信頼する」妥協モードに入る。
 	// この経路では token を strip せず caller が用意したレスポンスをそのまま返す。
-	// 詳細は docs/adr/0002-hitl-confirmation-token-delivery.md を参照。
+	// 詳細は docs/adr/0007-hitl-confirmation-token-delivery.md を参照。
 	const trustHostFallback = isHostApprovalTrusted() ? opts.trustHostFallback : undefined;
 
 	if (!clientSupportsElicitation(opts.extra)) {
