@@ -25,6 +25,7 @@
 import { toStructured } from '../../lib/result.js';
 import type { Result } from '../schema/types.js';
 import type { McpResponse, ToolHandlerExtra } from '../tool-definition.js';
+import { isHostApprovalTrusted } from './config.js';
 
 /** SDK の elicitInput を呼び出すための最小限の interface */
 export interface ElicitCapableServer {
@@ -104,6 +105,23 @@ export interface WithElicitedConfirmationOptions {
 	 * `content[0].text` 側は caller の責任で token を含めないこと。
 	 */
 	fallback: McpResponse;
+	/**
+	 * `BITBANK_TRUST_HOST_APPROVAL=1`（`isHostApprovalTrusted()`）が true、かつ
+	 * クライアントが elicitation 非対応のときに `fallback` の代わりに返されるレスポンス。
+	 * SEP-1865 iframe ボタン経由の execute を許す妥協モード:
+	 *   - `confirmation_token` / `expires_at` を含む `structuredContent` を返す（strip しない）
+	 *   - 通常の `fallback` は LLM が触れない preview-only セマンティクス、
+	 *     こちらは LLM にも token が見える前提で iframe ボタンへの案内テキストを含める
+	 *
+	 * セキュリティ前提:
+	 *   - LLM は preview_* 経由でしか execute ツールを呼ばない（description で明示）
+	 *   - ホスト（Claude Desktop 等）のツール承認 UI が最終 gate
+	 *
+	 * 詳細は docs/adr/0007-hitl-confirmation-token-delivery.md を参照。
+	 * オプトインフラグが false のとき、または本フィールド未指定のときは無視され、
+	 * 従来通り `fallback` が返る。
+	 */
+	trustHostFallback?: McpResponse;
 }
 
 /**
@@ -133,13 +151,19 @@ export async function withElicitedConfirmation(opts: WithElicitedConfirmationOpt
 	};
 	const safeDeclinedStructured = stripConfirmationTokenFields(opts.declinedStructured);
 
+	// elicitation 非対応 + BITBANK_TRUST_HOST_APPROVAL=1 + trustHostFallback 指定の三者揃いで
+	// 「ホスト承認 UI を最終 gate として信頼する」妥協モードに入る。
+	// この経路では token を strip せず caller が用意したレスポンスをそのまま返す。
+	// 詳細は docs/adr/0007-hitl-confirmation-token-delivery.md を参照。
+	const trustHostFallback = isHostApprovalTrusted() ? opts.trustHostFallback : undefined;
+
 	if (!clientSupportsElicitation(opts.extra)) {
-		return safeFallback;
+		return trustHostFallback ?? safeFallback;
 	}
 
 	const server = (opts.extra as { server?: ElicitCapableServer } | undefined)?.server;
 	if (!server || typeof server.elicitInput !== 'function') {
-		return safeFallback;
+		return trustHostFallback ?? safeFallback;
 	}
 
 	let elicit: { action: 'accept' | 'decline' | 'cancel'; content?: Record<string, unknown> };
@@ -156,7 +180,8 @@ export async function withElicitedConfirmation(opts: WithElicitedConfirmationOpt
 		});
 	} catch {
 		// elicitInput が想定外に失敗した場合はフォールバックに進む。
-		return safeFallback;
+		// trust-host モード ON なら iframe ボタン経路を残す trustHostFallback を返す。
+		return trustHostFallback ?? safeFallback;
 	}
 
 	if (elicit.action !== 'accept' || !elicit.content?.confirmed) {
