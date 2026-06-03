@@ -137,6 +137,10 @@ const OrderItemSchema = z.object({
 	status: z.string().describe('注文ステータス'),
 	ordered_at: z.string().describe('注文日時（ISO8601）'),
 	expire_at: z.string().optional().describe('有効期限（ISO8601）'),
+	post_only: z.boolean().optional().describe('Post Only 指定か（limit のみ）'),
+	user_cancelable: z.boolean().optional().describe('ユーザーがキャンセル可能か'),
+	trigger_price: z.string().optional().describe('トリガー価格（stop / stop_limit / take_profit / stop_loss のみ）'),
+	triggered_at: z.string().optional().describe('トリガー発火日時（ISO8601）'),
 });
 
 export const GetMyOrdersDataSchema = z.object({

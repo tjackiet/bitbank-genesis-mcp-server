@@ -94,6 +94,10 @@ export default async function getMyOrders(args: { pair?: string; count?: number;
 				status: o.status,
 				ordered_at: toIsoMs(o.ordered_at) ?? String(o.ordered_at),
 				expire_at: o.expire_at ? (toIsoMs(o.expire_at) ?? String(o.expire_at)) : undefined,
+				post_only: o.post_only,
+				user_cancelable: o.user_cancelable,
+				trigger_price: o.trigger_price,
+				triggered_at: o.triggered_at != null ? (toIsoMs(Number(o.triggered_at)) ?? String(o.triggered_at)) : undefined,
 			}));
 
 		// サマリー文字列の生成
@@ -110,8 +114,11 @@ export default async function getMyOrders(args: { pair?: string; count?: number;
 				const isJpy = o.pair.includes('jpy');
 				const price = o.price ? (isJpy ? formatPrice(Number(o.price)) : o.price) : '成行';
 				const remaining = o.remaining_amount ?? '?';
+				const trig = o.trigger_price
+					? ` トリガー:${isJpy ? formatPrice(Number(o.trigger_price)) : o.trigger_price}`
+					: '';
 				lines.push(
-					`[ID: ${o.order_id}] ${formatPair(o.pair)} ${posLabel}${sideLabel}${o.type} ${remaining} @ ${price} [${o.status}] (${o.ordered_at})`,
+					`[ID: ${o.order_id}] ${formatPair(o.pair)} ${posLabel}${sideLabel}${o.type} ${remaining} @ ${price}${trig} [${o.status}] (${o.ordered_at})`,
 				);
 			}
 

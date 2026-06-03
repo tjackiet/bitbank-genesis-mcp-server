@@ -34,7 +34,7 @@ describe('get_my_orders', () => {
 		const result = await getMyOrders({});
 
 		assertOk(result);
-		expect(result.data.orders).toHaveLength(2);
+		expect(result.data.orders).toHaveLength(3);
 		// ordered_at が ISO8601 に変換されている
 		for (const order of result.data.orders) {
 			expect(order.ordered_at).toMatch(/^\d{4}-\d{2}-\d{2}T/);
@@ -60,7 +60,7 @@ describe('get_my_orders', () => {
 
 		assertOk(result);
 		expect(result.summary).toContain('買 1件');
-		expect(result.summary).toContain('売 1件');
+		expect(result.summary).toContain('売 2件');
 	});
 
 	it('order_id をサマリーに含む', async () => {
@@ -216,12 +216,12 @@ describe('get_my_orders', () => {
 		const result = await getMyOrders({});
 
 		assertOk(result);
-		// CANCELED_UNFILLED は除外され、UNFILLED と PARTIALLY_FILLED の 2 件のみ
-		expect(result.data.orders).toHaveLength(2);
+		// CANCELED_UNFILLED は除外され、UNFILLED / PARTIALLY_FILLED / INACTIVE の 3 件のみ
+		expect(result.data.orders).toHaveLength(3);
 		expect(result.data.orders.map((o) => o.order_id)).not.toContain(56947594386);
-		expect(result.summary).toContain('2件');
+		expect(result.summary).toContain('3件');
 		expect(result.summary).not.toContain('CANCELED_UNFILLED');
-		expect(result.meta.orderCount).toBe(2);
+		expect(result.meta.orderCount).toBe(3);
 	});
 
 	it('トリガー前の stop 注文（INACTIVE）をアクティブ注文として返す', async () => {
@@ -314,7 +314,7 @@ describe('get_my_orders', () => {
 
 		assertOk(result);
 		// REJECTED は終端ステータスなので ACTIVE_STATUSES から除外される
-		expect(result.data.orders).toHaveLength(2);
+		expect(result.data.orders).toHaveLength(3);
 		expect(result.data.orders.map((o) => o.order_id)).not.toContain(56975061099);
 	});
 
@@ -428,6 +428,30 @@ describe('get_my_orders', () => {
 			expect(o.position_side).toBeUndefined();
 		}
 		expect(result.summary).not.toMatch(/\b(long|short)\b/);
+	});
+
+	it('stop 注文の trigger_price が data に入り、サマリーに「トリガー:」が出る', async () => {
+		setupFetchMock(mockBitbankSuccess(rawActiveOrdersResponse));
+
+		const { default: getMyOrders } = await import('../../tools/private/get_my_orders.js');
+		const result = await getMyOrders({});
+
+		assertOk(result);
+		const stop = result.data.orders.find((o) => o.order_id === 2003);
+		expect(stop?.trigger_price).toBe('13000000');
+		expect(result.summary).toContain('トリガー:');
+	});
+
+	it('limit 注文の post_only / user_cancelable が data に入る', async () => {
+		setupFetchMock(mockBitbankSuccess(rawActiveOrdersResponse));
+
+		const { default: getMyOrders } = await import('../../tools/private/get_my_orders.js');
+		const result = await getMyOrders({});
+
+		assertOk(result);
+		const limit = result.data.orders.find((o) => o.order_id === 2001);
+		expect(limit?.post_only).toBe(true);
+		expect(limit?.user_cancelable).toBe(true);
 	});
 });
 
