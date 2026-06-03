@@ -172,17 +172,27 @@ function normalize(raw: RawPair): PairSpec | null {
 export interface FetchPairsSpecOptions {
 	/** リクエストタイムアウト（ms）。デフォルト 5000ms */
 	timeoutMs?: number;
+	/**
+	 * true なら TTL 内でもキャッシュをバイパスして必ず再 fetch し、新値で上書きする。
+	 * キャンペーン境界など手数料率を即時反映したいケース向け（既定 false）。
+	 * 取得失敗時は throw し、古いキャッシュは破棄しない（呼び出し側がフォールバック）。
+	 */
+	forceRefresh?: boolean;
 }
 
 /**
  * bitbank /spot/pairs を取得しキャッシュする。
  *
  * - キャッシュにあれば即返す（TTL: BITBANK_SPOT_PAIRS_TTL_MS、デフォルト 1h）
+ * - `forceRefresh: true` のときは TTL 内でもキャッシュを無視して再取得し、新値で上書きする。
  * - 取得失敗時は throw する。呼び出し側は warning にフォールバックする想定。
+ *   forceRefresh 時も失敗は throw し、既存キャッシュは温存される（上書きは成功時のみ）。
  */
 export async function fetchPairsSpec(opts: FetchPairsSpecOptions = {}): Promise<PairsSpecMap> {
-	const cached = cache.get(CACHE_KEY);
-	if (cached) return cached;
+	if (!opts.forceRefresh) {
+		const cached = cache.get(CACHE_KEY);
+		if (cached) return cached;
+	}
 
 	const timeoutMs = opts.timeoutMs ?? FETCH_TIMEOUT_MS_DEFAULT;
 	const ctrl = new AbortController();

@@ -429,6 +429,59 @@ describe('fetchPairsSpec', () => {
 		expect(spy).toHaveBeenCalledTimes(1);
 	});
 
+	it('forceRefresh=true は TTL 内でも再 fetch し、キャッシュを新値で上書きする', async () => {
+		const spy = vi
+			.spyOn(globalThis, 'fetch')
+			.mockResolvedValueOnce(new Response(JSON.stringify(mockSpotPairsResponse()), { status: 200 }))
+			.mockResolvedValueOnce(
+				new Response(
+					// 2回目は taker レートをキャンペーン値（0）に変えて返す
+					JSON.stringify(mockSpotPairsResponse([mockSpotPairSpec({ name: 'btc_jpy', taker_fee_rate_quote: '0' })])),
+					{ status: 200 },
+				),
+			);
+		const first = await fetchPairsSpec();
+		expect(first.get('btc_jpy')?.taker_fee_rate_quote).toBe('0.0012');
+
+		const refreshed = await fetchPairsSpec({ forceRefresh: true });
+		expect(spy).toHaveBeenCalledTimes(2);
+		expect(refreshed.get('btc_jpy')?.taker_fee_rate_quote).toBe('0');
+
+		// 上書き後はキャッシュヒットで新値が返る（3回目は fetch しない）
+		const cached = await fetchPairsSpec();
+		expect(spy).toHaveBeenCalledTimes(2);
+		expect(cached.get('btc_jpy')?.taker_fee_rate_quote).toBe('0');
+	});
+
+	it('forceRefresh 未指定はキャッシュヒットで fetch が走らない（退行なし）', async () => {
+		const spy = vi
+			.spyOn(globalThis, 'fetch')
+			.mockResolvedValueOnce(new Response(JSON.stringify(mockSpotPairsResponse()), { status: 200 }));
+		await fetchPairsSpec();
+		await fetchPairsSpec();
+		await fetchPairsSpec();
+		expect(spy).toHaveBeenCalledTimes(1);
+	});
+
+	it('forceRefresh の取得失敗は throw し、既存キャッシュを壊さない', async () => {
+		const spy = vi
+			.spyOn(globalThis, 'fetch')
+			.mockResolvedValueOnce(new Response(JSON.stringify(mockSpotPairsResponse()), { status: 200 }))
+			.mockResolvedValueOnce(new Response('boom', { status: 500 }));
+		// 先にキャッシュを温める
+		const first = await fetchPairsSpec();
+		expect(first.get('btc_jpy')?.taker_fee_rate_quote).toBe('0.0012');
+
+		// forceRefresh が失敗 → throw（上書きされない）
+		await expect(fetchPairsSpec({ forceRefresh: true })).rejects.toThrow(/取得失敗/);
+		expect(spy).toHaveBeenCalledTimes(2);
+
+		// 既存キャッシュは温存され、通常呼び出しで旧値が返る（再 fetch なし）
+		const cached = await fetchPairsSpec();
+		expect(spy).toHaveBeenCalledTimes(2);
+		expect(cached.get('btc_jpy')?.taker_fee_rate_quote).toBe('0.0012');
+	});
+
 	it('HTTP エラーで throw', async () => {
 		vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(new Response('boom', { status: 500 }));
 		await expect(fetchPairsSpec()).rejects.toThrow(/取得失敗/);

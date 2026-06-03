@@ -7,5 +7,6 @@ export * from './candle-validate.js';
 export * from './chart.js';
 export * from './indicators.js';
 export * from './market-data.js';
+export * from './pairs.js';
 export * from './patterns.js';
 export * from './types.js';

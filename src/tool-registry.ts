@@ -32,6 +32,7 @@ import { toolDef as getTicker } from '../tools/get_ticker.js';
 import { toolDef as getTransactions } from '../tools/get_transactions.js';
 import { toolDef as prepareChartData } from '../tools/prepare_chart_data.js';
 import { toolDef as prepareDepthData } from '../tools/prepare_depth_data.js';
+import { toolDef as refreshPairsCache } from '../tools/refresh_pairs_cache.js';
 import { toolDef as renderCandlePatternDiagram } from '../tools/render_candle_pattern_diagram.js';
 import { toolDef as renderDepthSvg } from '../tools/render_depth_svg.js';
 import { toolDef as validateCandleData } from '../tools/validate_candle_data.js';
@@ -102,6 +103,9 @@ export const allToolDefs: ToolDefinition[] = [
 
 	// ── Backtesting (1) ──
 	runBacktest,
+
+	// ── Maintenance (1) ──
+	refreshPairsCache,
 ];
 
 // ── Private API tools（APIキー設定時のみ有効化） ──
