@@ -29,7 +29,7 @@ export default async function refreshPairsCache(
 		const map = await fetchPairsSpec({ forceRefresh: true });
 		const fetchedAt = nowIso();
 
-		const requested = args.pair?.toLowerCase();
+		const requested = args.pair?.trim().toLowerCase();
 		// 注記対象ペア + 主要ペアを表示（重複排除・存在するもののみ）。
 		const targetNames = [...new Set([...(requested ? [requested] : []), ...HIGHLIGHT_PAIRS])];
 		const shown: PairSpec[] = [];

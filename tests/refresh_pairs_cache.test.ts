@@ -83,6 +83,18 @@ describe('refresh_pairs_cache', () => {
 		expect(res.content[0]?.text).toContain("'zzz_jpy' は /spot/pairs に存在しません");
 	});
 
+	it('pair の前後空白・大文字は正規化される（未対応扱いにならない）', async () => {
+		vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+			new Response(JSON.stringify(mockSpotPairsResponse()), { status: 200 }),
+		);
+		const res = await refreshPairsCache({ pair: '  BTC_JPY  ' });
+		expect(isMcpResponse(res)).toBe(true);
+		if (!isMcpResponse(res)) return;
+		const text = res.content[0]?.text ?? '';
+		expect(text).not.toContain('存在しません');
+		expect(text).toContain('btc_jpy');
+	});
+
 	it('取得失敗時は fail を返す（サーバーは継続）', async () => {
 		vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(new Response('boom', { status: 500 }));
 		const res = await refreshPairsCache();
