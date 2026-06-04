@@ -108,15 +108,6 @@ export function nowIso(): string {
 }
 
 /**
- * 現在時刻を指定タイムゾーンで取得
- * @param tz タイムゾーン（デフォルト: 'Asia/Tokyo'）
- * @returns dayjs インスタンス
- */
-export function nowTz(tz: string = 'Asia/Tokyo') {
-	return dayjs().tz(tz);
-}
-
-/**
  * N日前の日付を取得
  * @param daysAgo 何日前か
  * @param format 出力フォーマット（デフォルト: 'YYYYMMDD'）

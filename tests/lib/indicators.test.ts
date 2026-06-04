@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import {
-	atr,
 	bollingerBands,
 	ema,
 	ichimokuSeries,
@@ -1148,78 +1147,6 @@ describe('trueRange', () => {
 	});
 });
 
-// --- ATR ---
-
-describe('atr', () => {
-	it('基本的な ATR を計算する（period=3）', () => {
-		// 5 本のキャンドル → TR は index 1-4 の 4 値
-		// ATR(3) = first valid at index 3 (SMA of TR[1..3])
-		const highs = [110, 115, 112, 118, 120];
-		const lows = [100, 105, 108, 110, 112];
-		const closes = [105, 110, 109, 115, 118];
-		const result = atr(highs, lows, closes, 3);
-		expect(result).toHaveLength(5);
-		expect(result[0]).toBeNaN();
-		expect(result[1]).toBeNaN();
-		expect(result[2]).toBeNaN();
-		// TR[1]=10, TR[2]=4, TR[3]=9 → ATR[3] = (10+4+9)/3 ≈ 7.667
-		expect(result[3]).toBeCloseTo(23 / 3, 10);
-		// TR[4] = max(120-112, |120-115|, |112-115|) = max(8, 5, 3) = 8
-		// ATR[4] = SMA(TR[2..4]) = (4+9+8)/3 = 7
-		expect(result[4]).toBeCloseTo(7, 10);
-	});
-
-	it('データ不足のとき全て NaN', () => {
-		const result = atr([110, 115], [100, 105], [105, 110], 14);
-		expect(result.every((v) => Number.isNaN(v))).toBe(true);
-	});
-
-	it('TR 窓内に NaN があるバーは ATR=NaN、窓から抜けると回復する', () => {
-		// 構成: closes は全て 100、lows も全て 100、
-		// highs = [100, 101, 101, NaN, 101, 101] とすると
-		// TR[0]=NaN(prevClose 無し), TR[1]=1, TR[2]=1, TR[3]=NaN(high=NaN),
-		// TR[4]=max(1,1,0)=1, TR[5]=1
-		const highs = [100, 101, 101, NaN, 101, 101];
-		const lows = [100, 100, 100, 100, 100, 100];
-		const closes = [100, 100, 100, 100, 100, 100];
-		const result = atr(highs, lows, closes, 2);
-		// シード窓 tr[1..2]=[1,1] は有限 → result[2]=1
-		expect(result[0]).toBeNaN();
-		expect(result[1]).toBeNaN();
-		expect(result[2]).toBeCloseTo(1, 10);
-		// 窓 tr[2..3]=[1,NaN] → NaN
-		expect(result[3]).toBeNaN();
-		// 窓 tr[3..4]=[NaN,1] → NaN
-		expect(result[4]).toBeNaN();
-		// 窓 tr[4..5]=[1,1] → 1（NaN が抜けて回復）
-		expect(result[5]).toBeCloseTo(1, 10);
-	});
-
-	it('シード窓に NaN を含んでも後続が回復する（Infinity → NaN）', () => {
-		// highs[2]=Infinity → trueRange で TR[2]=NaN。
-		// period=3, シード窓 tr[1..3] に NaN が混在 → result[3]=NaN。
-		// データを延ばすことで NaN が窓から完全に外れて以降は回復する。
-		const highs = [110, 115, Infinity, 118, 120, 121, 122];
-		const lows = [100, 105, 108, 110, 112, 113, 114];
-		const closes = [105, 110, 109, 115, 118, 120, 121];
-		// TR[1]=max(115-105,|115-105|,|105-105|)=10
-		// TR[2]=NaN (high=Infinity)
-		// TR[3]=max(118-110,|118-109|,|110-109|)=max(8,9,1)=9
-		// TR[4]=max(120-112,|120-115|,|112-115|)=max(8,5,3)=8
-		// TR[5]=max(121-113,|121-118|,|113-118|)=max(8,3,5)=8
-		// TR[6]=max(122-114,|122-120|,|114-120|)=max(8,2,6)=8
-		const result = atr(highs, lows, closes, 3);
-		// シード窓 [10, NaN, 9] → result[3]=NaN
-		expect(result[3]).toBeNaN();
-		// 窓 [NaN, 9, 8] → NaN
-		expect(result[4]).toBeNaN();
-		// 窓 [9, 8, 8]=25/3 → 8.333… （NaN が抜けて回復）
-		expect(result[5]).toBeCloseTo(25 / 3, 10);
-		// 窓 [8, 8, 8]=8
-		expect(result[6]).toBeCloseTo(8, 10);
-	});
-});
-
 // --- Wilder ATR ---
 
 describe('wilderAtr', () => {
@@ -1241,14 +1168,14 @@ describe('wilderAtr', () => {
 		expect(result[4]).toBeCloseTo(70 / 9, 10);
 	});
 
-	it('SMA-ATR と Wilder ATR は初回値（シード）で一致する', () => {
-		// 初回 ATR は SMA(TR[1..period]) として定義されるため両者一致
+	it('Wilder ATR の初回値は SMA(TR[1..period]) と一致する', () => {
+		// 初回 ATR は SMA(TR[1..period]) として定義される
+		// TR[1]=10, TR[2]=4, TR[3]=9 → シード = (10+4+9)/3 = 23/3
 		const highs = [110, 115, 112, 118, 120];
 		const lows = [100, 105, 108, 110, 112];
 		const closes = [105, 110, 109, 115, 118];
-		const smaResult = atr(highs, lows, closes, 3);
 		const wilderResult = wilderAtr(highs, lows, closes, 3);
-		expect(wilderResult[3]).toBeCloseTo(smaResult[3], 10);
+		expect(wilderResult[3]).toBeCloseTo(23 / 3, 10);
 	});
 
 	it('Wilder の漸化式どおりに次のバーを更新する', () => {

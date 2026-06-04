@@ -573,49 +573,6 @@ export function trueRange(highs: number[], lows: number[], closes: number[]): nu
 }
 
 /**
- * ATR (Average True Range) — TR の SMA
- *
- * 窓内に NaN を含む場合は NaN を返し、窓が完全に有限値で埋まった時点で計算を再開する。
- * TR[0] は常に NaN（前足 close が存在しない）。シード窓は tr[1..period]。
- *
- * @param highs 高値配列（古い順）
- * @param lows 安値配列（古い順）
- * @param closes 終値配列（古い順）
- * @param period 期間（デフォルト 14）
- * @returns ATR 配列（NaN 埋め、先頭 period 個は NaN）
- */
-export function atr(highs: number[], lows: number[], closes: number[], period: number = 14): number[] {
-	// SMA-ATR（population 窓の単純平均）。Wilder の RMA 版は wilderAtr() を参照。
-	const tr = trueRange(highs, lows, closes);
-	const n = tr.length;
-	const result: number[] = nanArray(n);
-
-	if (n < period + 1) return result;
-
-	let sum = 0;
-	let nanCount = 0;
-	for (let i = 1; i <= period; i++) {
-		if (Number.isNaN(tr[i])) nanCount++;
-		else sum += tr[i];
-	}
-	result[period] = nanCount === 0 ? sum / period : NaN;
-
-	for (let i = period + 1; i < n; i++) {
-		const oldVal = tr[i - period];
-		if (Number.isNaN(oldVal)) nanCount--;
-		else sum -= oldVal;
-
-		const newVal = tr[i];
-		if (Number.isNaN(newVal)) nanCount++;
-		else sum += newVal;
-
-		result[i] = nanCount === 0 ? sum / period : NaN;
-	}
-
-	return result;
-}
-
-/**
  * Wilder ATR (RMA-based)
  *
  * 初回値は SMA(TR[1..period])。以降は次の漸化式で更新:
