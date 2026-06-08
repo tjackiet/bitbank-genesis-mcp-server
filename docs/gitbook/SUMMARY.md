@@ -2,7 +2,7 @@
 
 * [はじめに](README.md)
 
-## Getting Started
+## MCP サーバー
 
 * [クイックスタート（5分）](getting-started/quickstart.md)
 * [セットアップ詳細](getting-started/setup.md)
@@ -10,25 +10,24 @@
   * [Plugin 導入（Claude Code / Cursor / Codex / Gemini CLI）](getting-started/plugin-clients.md)
   * [その他の MCP クライアント](getting-started/other-clients.md)
 * [トラブルシューティング](getting-started/troubleshooting.md)
-
-## 使い方ガイド
-
-* [何を聞けばいい？（プロンプト集）](guides/prompts.md)
+* [プロンプト集](guides/prompts.md)
 * [ツールの選び方・使い分け](guides/tools.md)
 * [チャートを表示する](guides/charts.md)
 * [会話レシピ集](guides/recipes.md)
+* [Private API（取引機能）](private-api/setup.md)
+  * [取引の安全設計（2段階確認）](private-api/safety.md)
+  * [ツールと注文タイプ](private-api/tools.md)
+  * [手数料の考え方](private-api/fees.md)
 
-## Private API（取引機能）
+## CLI
 
-* [概要とセットアップ](private-api/setup.md)
-* [取引の安全設計（2段階確認）](private-api/safety.md)
-* [ツールと注文タイプ](private-api/tools.md)
-* [手数料の考え方](private-api/fees.md)
+* [CLI（準備中）](cli/README.md)
 
 ## Reference
 
 * [よくある質問（FAQ）](reference/faq.md)
 * [免責事項](reference/disclaimer.md)
-* [GitHubリポジトリ](https://github.com/tjackiet/bitbank-genesis-mcp-server)
+* [GitHubリポジトリ（MCP サーバー）](https://github.com/tjackiet/bitbank-genesis-mcp-server)
+* [GitHubリポジトリ（CLI）](https://github.com/tjackiet/bitbank-cli-skills)
 * [全ツール一覧（docs/tools.md）](https://github.com/tjackiet/bitbank-genesis-mcp-server/blob/main/docs/tools.md)
 * [変更履歴（CHANGELOG）](https://github.com/tjackiet/bitbank-genesis-mcp-server/blob/main/CHANGELOG.md)
